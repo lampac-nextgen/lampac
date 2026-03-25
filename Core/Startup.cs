@@ -679,22 +679,7 @@ namespace Core
                                 try
                                 {
                                     manifestMod = JsonConvert.DeserializeObject<RootModule>(File.ReadAllText(manifestPath));
-
-                                    var excludedProperties = new HashSet<string>(StringComparer.OrdinalIgnoreCase)
-                                    {
-                                        nameof(RootModule.dynamic),
-                                        nameof(RootModule.name),
-                                        nameof(RootModule.assembly),
-                                        nameof(RootModule.assemblyLoadContext)
-                                    };
-
-                                    foreach (var property in typeof(RootModule).GetProperties(BindingFlags.Public | BindingFlags.Instance))
-                                    {
-                                        if (!property.CanRead || !property.CanWrite || excludedProperties.Contains(property.Name))
-                                            continue;
-
-                                        property.SetValue(mod, property.GetValue(manifestMod));
-                                    }
+                                    mod.enable = manifestMod.enable;
                                 }
                                 catch (Exception manifestEx)
                                 {
