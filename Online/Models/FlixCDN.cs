@@ -12,7 +12,7 @@ namespace Online.Models.FlixCDN
 
         public string title_orig { get; set; }
 
-        public int year { get; set; }
+        public int? year { get; set; }
 
         public string poster { get; set; }
 
