@@ -44,6 +44,10 @@
     return {};
   }
   
+  function formatEpisodeNumber(episodeNumber) {
+    return (episodeNumber < 10 ? '0' : '') + episodeNumber;
+  }
+
   var Network = Lampa.Reguest;
 
   function component(object) {
@@ -1035,7 +1039,7 @@
             scroll_to_element = html;
           }
           if (serial && !episode) {
-            image.append('<div class="online-prestige__episode-number">' + ('0' + (element.episode || index + 1)).slice(-2) + '</div>');
+            image.append('<div class="online-prestige__episode-number">' + formatEpisodeNumber(element.episode || index + 1) + '</div>');
             loader.remove();
           }
 		  else if (!serial && object.movie.backdrop_path == 'undefined') loader.remove();
@@ -1047,7 +1051,7 @@
             img.onload = function() {
               image.addClass('online-prestige__img--loaded');
               loader.remove();
-              if (serial) image.append('<div class="online-prestige__episode-number">' + ('0' + (element.episode || index + 1)).slice(-2) + '</div>');
+              if (serial) image.append('<div class="online-prestige__episode-number">' + formatEpisodeNumber(element.episode || index + 1) + '</div>');
             };
             img.src = Lampa.TMDB.image('t/p/w300' + (episode ? episode.still_path : object.movie.backdrop_path));
             images.push(img);
@@ -1160,13 +1164,13 @@
               img.onload = function() {
                 image.addClass('online-prestige__img--loaded');
                 loader.remove();
-                image.append('<div class="online-prestige__episode-number">' + ('0' + episode.episode_number).slice(-2) + '</div>');
+                image.append('<div class="online-prestige__episode-number">' + formatEpisodeNumber(episode.episode_number) + '</div>');
               };
               img.src = Lampa.TMDB.image('t/p/w300' + episode.still_path);
               images.push(img);
             } else {
               loader.remove();
-              image.append('<div class="online-prestige__episode-number">' + ('0' + episode.episode_number).slice(-2) + '</div>');
+              image.append('<div class="online-prestige__episode-number">' + formatEpisodeNumber(episode.episode_number) + '</div>');
             }
             html.on('hover:focus', function(e) {
               last = e.target;
@@ -1551,7 +1555,7 @@
     window.lampac_plugin = true;
     var manifst = {
       type: 'video',
-      version: '1.6.8',
+      version: '1.6.9',
       name: 'Lampac',
       description: 'Плагин для просмотра онлайн сериалов и фильмов',
       component: 'lampac',
