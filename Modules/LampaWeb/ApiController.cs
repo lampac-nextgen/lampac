@@ -356,7 +356,7 @@ namespace LampaWeb.Controllers
                 foreach (var plugin in ModInit.conf.initPlugins.customPlugins)
                 {
                     if (!string.IsNullOrEmpty(plugin.url))
-                        initiale += $"{{\"url\": \"{plugin.url}\",\"status\": 1,\"name\": \"{plugin.name}\",\"author\": \"{plugin.author}\"}},";
+                        initiale += $"{{\"url\": {JsonConvert.ToString(plugin.url)},\"status\": 1,\"name\": {JsonConvert.ToString(plugin.name)},\"author\": {JsonConvert.ToString(plugin.author)}}},";
                 }
             }
 
