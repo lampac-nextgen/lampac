@@ -30,7 +30,7 @@ namespace Sync.Controllers
         {
             SetHeadersNoCache();
 
-            string plugin = FileCache.ReadAllText("plugins/bookmark.js", "bookmark.js")
+            string plugin = FileCache.ReadAllText($"{ModInit.modpath}/plugins/bookmark.js", "bookmark.js")
                 .Replace("{localhost}", host)
                 .Replace("{token}", HttpUtility.UrlEncode(token));
 
