@@ -3,6 +3,15 @@ using System.Collections.Generic;
 
 namespace LampaWeb
 {
+    public class CustomPlugin
+    {
+        public string url { get; set; }
+
+        public string name { get; set; }
+
+        public string author { get; set; }
+    }
+
     public class ModuleConf : ModuleBaseConf
     {
         public bool autoupdate { get; set; }
@@ -59,5 +68,7 @@ namespace LampaWeb
         public bool bookmark { get; set; }
 
         public bool timecode { get; set; }
+
+        public List<CustomPlugin> customPlugins { get; set; }
     }
 }

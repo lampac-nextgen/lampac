@@ -351,6 +351,15 @@ namespace LampaWeb.Controllers
             if (ModInit.conf.initPlugins.backup)
                 initiale += "{\"url\": \"{localhost}/backup.js\",\"status\": 1,\"name\": \"Backup\",\"author\": \"lampac\"},";
 
+            if (ModInit.conf.initPlugins.customPlugins != null)
+            {
+                foreach (var plugin in ModInit.conf.initPlugins.customPlugins)
+                {
+                    if (!string.IsNullOrEmpty(plugin.url))
+                        initiale += $"{{\"url\": \"{plugin.url}\",\"status\": 1,\"name\": \"{plugin.name}\",\"author\": \"{plugin.author}\"}},";
+                }
+            }
+
             if (ModInit.conf.initPlugins.pirate_store)
                 sb = sb.Replace("{pirate_store}", FileCache.ReadAllText("plugins/pirate_store.js", "pirate_store.js"));
 
