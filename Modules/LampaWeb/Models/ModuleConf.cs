@@ -1,4 +1,4 @@
-﻿using Shared.Models.Module;
+using Shared.Models.Module;
 using System.Collections.Generic;
 
 namespace LampaWeb
@@ -59,5 +59,7 @@ namespace LampaWeb
         public bool bookmark { get; set; }
 
         public bool timecode { get; set; }
+
+        public List<CustomPlugin> customPlugins { get; set; }
     }
 }
