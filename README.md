@@ -41,6 +41,7 @@
    - [Англоязычный контент](#англоязычный-контент)
    - [Украинские CDN](#украинские-cdn)
    - [SISI (контент 18+)](#sisi-контент-18)
+   - [NextHUB (18+)](#nexthub-18)
 10. [API-эндпоинты](#api-эндпоинты)
 11. [Зависимости](#зависимости)
 12. [Структура проекта](#структура-проекта)
@@ -90,7 +91,7 @@
 | **Core** | Точка входа, Middleware Pipeline, основной `ApiController` |
 | **Shared** | Общие модели, базовые контроллеры, конфигурация, HTTP-пулы |
 | **Online** | Ядро VOD: основные провайдеры; часть источников вынесена в **OnlinePacks** (`Modules/OnlinePacks/`: RUS, Anime, ENG, UKR, GEO) |
-| **SISI** | Модуль контента 18+: ~15 платформ |
+| **SISI** | Модуль контента 18+: 15 платформ (см. `SISI/README.md`) |
 | **Modules/** | Остальные функциональные модули (каталог, прокси, TorrServer, NextHUB, Sync/Storage и др.) + упаковки Online |
 
 Сборочные модули (Online, SISI, Catalog, прокси, синхронизация и др.) подключаются как **скомпилированные сборки** из каталога `runtimes/references/` при старте процесса (`Core.dll`). Параллельно в образе/публикации присутствуют каталоги **`module/`** и **`mods/`**: туда копируются исходники из `Modules/`, `Online/`, `SISI/` и `TestModules/` (см. `Core.csproj`) — их компилирует **Roslyn** (`CSharpEval`) при запуске, что даёт горячую подгрузку и пользовательские оверлеи. Дополнительно пользователь может положить свои модули в **`mods/`** на машине с уже развёрнутым сервером (рядом с `Core.dll`), не пересобирая solution целиком.
@@ -99,8 +100,8 @@
 
 ## Возможности
 
-- **~60 VOD-провайдеров** — Rezka, Filmix, KinoPub, HDVB, Collaps, CDNmovies, Kodik, VideoCDN и многие другие
-- **~15 аниме-источников** — AniLibria, Kodik, AniLiberty, AnimeGo, AniMedia и другие
+- **~54 VOD- и аниме-источника** — ядро `Online/` (Rezka, Filmix, KinoPub и др.) + пакеты **OnlinePacks** (`OnlineRUS`, `OnlineAnime`, `OnlineENG`, `OnlineUKR`, `OnlineGEO`): HDVB, Collaps, Kodik, VidSrc, Kinoflix и другие
+- **10 аниме-провайдеров** в `OnlineAnime` — AniLibria, AniLiberty, AnimeGo, AniMedia, Kodik и др.
 - **Англоязычный контент** — VidSrc, AutoEmbed, SmashyStream, TwoEmbed, VidLink и другие
 - **SISI (18+)** — PornHub, XVideos, XHamster, Chaturbate, BongaCams и другие
 - **TorrServer** — встроенный торрент-сервер, управляемый как подпроцесс
@@ -385,14 +386,14 @@ RUNTIME_ID=linux-arm64 ./build.sh
 
 | Модуль | По умолч. | Описание |
 | --- | :---: | --- |
-| **Online** | ✅ вкл | Агрегация VOD-потоков с ~60 провайдеров. Плагин `/online.js` для Lampa. WAF: 10 req/s на `/lite/`. |
-| **SISI** | ✅ вкл | Контент 18+ с ~15 платформ. Плагин `/sisi.js`. История и закладки в SQLite. |
+| **Online** | ✅ вкл | VOD: ядро `Online/` + **OnlinePacks** (RUS, Anime, ENG, UKR, GEO). Плагин `/online.js`. WAF: 10 req/s на `/lite/`. |
+| **SISI** | ✅ вкл | Контент 18+: **15** встроенных платформ (см. `SISI/README.md`). Плагин `/sisi.js`. История и закладки в SQLite. |
 | **Catalog** | ⛔ откл | Браузер каталогов сайтов на основе YAML-описаний из папки `sites/`. Эндпоинт `/catalog/`. Без экранирования запросов — только в доверенной сети. |
 | **CubProxy** | ✅ вкл | HTTP/HTTPS прокси с файловым кешем (`cache/cub/`), FileSystemWatcher для инвалидации кеша. |
 | **DLNA** | ⛔ откл | DLNA/UPnP медиасервер. Обслуживает локальные файлы, автозагрузка трекеров торрентов. Форматы: aac, flac, mp4, mkv, ts, webm, avi и другие. Без экранирования запросов — только в доверенной сети. |
 | **JacRed** | ✅ вкл | Агрегатор торрент-индексаторов (совместимый с Jackett API). Источники: Rutor, Megapeer, Kinozal, Rutracker, NNMClub, Toloka, Bitru и другие. |
 | **LampaWeb** | ✅ вкл | Встроенный хостинг Lampa Web UI. Автообновление с GitHub каждые 90 минут. |
-| **NextHUB** | ✅ вкл | Браузер NextHUB для SISI. Маршрут `/nexthub`. Для маршрута настроен лимит WAF. |
+| **NextHUB** | ✅ вкл | Дополнительный браузер 18+ по YAML (`Modules/NextHUB/sites/`, **42** сайта в поставке). `GET /nexthub?plugin=…`. См. `Modules/NextHUB/README.md`. WAF: 5 req/s на `/nexthub`. |
 | **Sync** | ⛔ откл | Синхронизация хранилища и закладок между устройствами. Эндпоинты `/storage/`, `/bookmark/`. SQLite-бэкенд. Для расширенной схемы см. **SyncEvents** и **Storage**. |
 | **SyncEvents** | ⛔ откл | Трансляция событий синхронизации через NWS (`NwsEvents`). |
 | **Storage** | ⛔ откл | Модуль хранилища в связке с Sync: NWS (`onlyreg`), пользовательские лимиты WAF из конфигурации модуля. |
@@ -428,33 +429,27 @@ RUNTIME_ID=linux-arm64 ./build.sh
 | Провайдер | Сервис | Примечания |
 | --- | --- | --- |
 | `Alloha` | Alloha CDN | |
-| `CDNmovies` | CDN Movies | Офлайн БД `data/cdnmovies.json` |
 | `CDNvideohub` | CDN VideoHub | |
 | `Collaps` | Collaps | Включая DASH-вариант |
 | `FanCDN` | FanCDN | |
 | `Filmix` | Filmix.my | FilmixPartner, FilmixTV варианты |
 | `FlixCDN` | FlixCDN | |
-| `Geosaitebi` / `AsiaGe` | Georgian CDN | |
+| `Geosaitebi` / `AsiaGe` / `Kinoflix` | Грузинские CDN | `Kinoflix` — `OnlineGEO` |
 | `GetsTV` | GetsTV | |
 | `HDVB` | HDVB | |
 | `IptvOnline` | IPTV Online | |
 | `KinoPub` | KinoPub | Требует токен |
 | `Kinobase` | KinoBase | |
-| `Kinoflix` | Kinoflix | |
 | `Kinogo` | Kinogo | |
 | `Kinotochka` | Kinotochka | |
 | `LeProduction` | Le Production | |
-| `Lumex` | Lumex | Офлайн БД `data/lumex.json` (~130k записей) |
 | `Mirage` | Mirage CDN | |
 | `PiTor` | PidTor | Стриминг через торрент |
-| `Plvideo` | Plvideo | |
-| `Redheadsound` | RedheadSound | |
 | `Rezka` / `RezkaPremium` | HDRezka | |
 | `RutubeMovie` | Rutube | |
-| `VDBmovies` | VDBmovies | |
 | `VeoVeo` | VeoVeo | Офлайн БД `data/veoveo.json` |
 | `Vibix` | Vibix | |
-| `VideoCDN` / `VideoDB` / `Videoseed` | Video CDN | |
+| `VideoDB` / `Videoseed` | Video CDN (разные обходы) | Маршруты `/lite/videodb`, `/lite/videoseed` |
 | `VkMovie` | VK Видео | |
 | `VoKino` | VoKino | |
 | `iRemux` | iRemux | |
@@ -507,14 +502,26 @@ RUNTIME_ID=linux-arm64 ./build.sh
 | `Eporner` | Eporner | `/epr` |
 | `HQporner` | HQporner | `/hqr` |
 | `PornHub` | PornHub | `/phub` |
-| `PornHubPremium` | PornHub Premium | |
+| `PornHubPremium` | PornHub Premium | `/phubprem` |
 | `Porntrex` | Porntrex | `/ptx` |
 | `Runetki` | Runetki | `/runetki` |
 | `Spankbang` | Spankbang | `/sbg` |
 | `Tizam` | Tizam | `/tizam` |
 | `Xhamster` | XHamster | `/xmr` |
 | `Xnxx` | XNXX | `/xnx` |
-| `Xvideos` / `XvideosRED` | XVideos / XVideos RED | `/xds` |
+| `Xvideos` | XVideos | `/xds` (+ варианты `/xdsgay`, `/xdssml`) |
+| `XvideosRED` | XVideos RED | `/xdsred` |
+
+### NextHUB (18+)
+
+Модуль **NextHUB** — витрина дополнительных сайтов 18+ по описаниям **YAML** (парсинг списков и просмотр через общий UI). В репозитории: каталог [`Modules/NextHUB/sites/`](Modules/NextHUB/sites/) (**42** файла `.yaml`). Имя файла без расширения — значение параметра `plugin` в URL.
+
+- **Маршрут:** `GET /nexthub` — параметры: `plugin` (обязателен), опционально `search`, `sort`, `cat`, `model`, `pg` (см. `ListController`).
+- **Конфиг** (`init.conf`, секция `NextHUB`): `sites_enabled` — если задана непустая строка, плагин разрешён только если его имя **содержится в строке** как подстрока (удобно перечислять имена через запятую, например `pornhub,beeg`); иначе доступны все YAML из `sites/`.
+- **Переопределения:** `Modules/NextHUB/override/{plugin}.yaml` или `_.yaml` (слияние поверх базового YAML), см. `Root.goInit`.
+- **WAF:** при загрузке модуля добавляется лимит **5** запросов в секунду на `^/nexthub` (по `plugin` в query), см. `Modules/NextHUB/ModInit.cs`.
+
+Подробнее — [`Modules/NextHUB/README.md`](Modules/NextHUB/README.md).
 
 ---
 
@@ -572,7 +579,8 @@ RUNTIME_ID=linux-arm64 ./build.sh
 | `GET` | `/tmdb/…` | TMDB прокси/кеш |
 | `GET` | `/transcoding/…` | HLS/DASH транскодинг |
 | `GET` | `/ffprobe` | Метаданные дорожек (FFprobe) |
-| `GET` | `/nexthub` | SISI NextHUB браузер |
+| `GET` | `/nexthub` | NextHUB: браузер 18+ по YAML (`plugin`, см. [NextHUB (18+)](#nexthub-18)) |
+| `GET` | `/nexthub/vidosik` | NextHUB: просмотр элемента (`uri`, `related`) |
 | `GET` | `/ts/…` | TorrServer |
 | `GET` | `/weblog` | Отладка HTTP/Playwright в реальном времени |
 
