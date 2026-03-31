@@ -43,6 +43,10 @@ namespace TelegramAuth.Models
         public string? ApprovedBy { get; set; }
         public DateTime? CreatedAt { get; set; }
         public DateTime? ExpiresAt { get; set; }
+
+
+        public bool Disabled { get; set; }
+
         public List<DeviceRecord> Devices { get; set; } = new();
     }
 
@@ -77,5 +81,11 @@ namespace TelegramAuth.Models
         public int ImportedDevices { get; set; }
         public int ImportedAdmins { get; set; }
         public int ImportedLangs { get; set; }
+    }
+
+    public class AdminSetUserDisabledRequest
+    {
+        public string TelegramId { get; set; } = "";
+        public bool Disabled { get; set; } = true;
     }
 }

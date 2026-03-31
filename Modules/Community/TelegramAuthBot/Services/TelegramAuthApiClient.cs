@@ -90,6 +90,28 @@ namespace TelegramAuthBot.Services
             return resp.IsSuccessStatusCode ? (true, body) : (false, body);
         }
 
+        public async Task<AdminUsersListResponseDto> GetAdminUsersAsync(CancellationToken ct)
+        {
+            using var req = new HttpRequestMessage(HttpMethod.Get, "tg/auth/admin/users");
+            AddMutationsSecret(req);
+            using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+            var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode)
+                return null;
+            return JsonConvert.DeserializeObject<AdminUsersListResponseDto>(body);
+        }
+
+        public async Task<(bool ok, string detail)> SetUserDisabledAsync(string telegramId, bool disabled, CancellationToken ct)
+        {
+            var payload = new { telegramId, disabled };
+            using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+            using var req = new HttpRequestMessage(HttpMethod.Post, "tg/auth/admin/user/disabled") { Content = content };
+            AddMutationsSecret(req);
+            using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+            var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            return resp.IsSuccessStatusCode ? (true, body) : (false, body);
+        }
+
         void AddMutationsSecret(HttpRequestMessage req)
         {
             if (_mutationsSecret.Length > 0)

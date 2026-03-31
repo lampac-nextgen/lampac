@@ -12,6 +12,11 @@ namespace TelegramAuthBot.Services
         const string BtnDevices = "📱 Мои устройства";
         const string BtnHelp = "❓ Помощь";
 
+        const int AdminUsersPageSize = 8;
+        const string CbUsersPage = "ulp:";
+        const string CbDisableUser = "d|";
+        const string CbEnableUser = "e|";
+
         readonly TelegramAuthApiClient _api;
         readonly string _displayName;
         int _firstUpdateLogged;
@@ -160,6 +165,12 @@ namespace TelegramAuthBot.Services
                 return;
             }
 
+            if (IsCommand(text, "/users"))
+            {
+                await CmdUsersAsync(bot, chatId, tgId, ct).ConfigureAwait(false);
+                return;
+            }
+
             var trimmed = text.Trim();
             if (trimmed == BtnStatus)
             {
@@ -254,13 +265,14 @@ namespace TelegramAuthBot.Services
 
             var maxDev = data.maxDevices == -1 ? "∞" : data.maxDevices.ToString();
             var expires = string.IsNullOrEmpty(data.expiresAt) ? "-" : data.expiresAt;
+            var accessNote = data.disabled ? " (отключён администратором)" : "";
             var text =
                 $"<b>Профиль {EscapeHtml(name)}</b>\n\n" +
                 $"<b>Пользователь:</b> @{EscapeHtml(data.username ?? "-")}\n" +
                 $"<b>Telegram ID:</b> <code>{EscapeHtml(data.telegramId ?? tgId)}</code>\n" +
                 $"<b>Роль:</b> {EscapeHtml(data.role ?? "-")}\n" +
                 $"<b>Язык:</b> {EscapeHtml(data.lang ?? "-")}\n" +
-                $"<b>Активен:</b> {(data.active ? "да" : "нет")}\n" +
+                $"<b>Активен:</b> {(data.active ? "да" : "нет")}{accessNote}\n" +
                 $"<b>Срок доступа:</b> {EscapeHtml(expires)}\n" +
                 $"<b>Устройств:</b> {data.deviceCount} / {maxDev}";
             await bot.SendMessage(chatId, text, parseMode: ParseMode.Html, replyMarkup: MainMenuKeyboard(), cancellationToken: ct).ConfigureAwait(false);
@@ -334,6 +346,136 @@ namespace TelegramAuthBot.Services
             }
 
             return true;
+        }
+
+        async Task<bool> TryEnsureAdminForCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, CancellationToken ct)
+        {
+            var chatId = cq.Message?.Chat.Id ?? new ChatId(cq.From.Id);
+            var conf = ModInit.conf;
+            if (string.IsNullOrEmpty(conf.mutations_api_secret))
+            {
+                await bot.SendMessage(chatId,
+                    "В конфиге бота не задан <code>mutations_api_secret</code> — тот же секрет, что <code>TelegramAuth.mutations_api_secret</code> в init.conf.",
+                    parseMode: ParseMode.Html,
+                    cancellationToken: ct).ConfigureAwait(false);
+                return false;
+            }
+
+            if (!IsAllowedAdminCommandChat(conf, chatId.Identifier))
+            {
+                await bot.SendMessage(chatId,
+                    "Админ-команды с этого чата запрещены. Используй чат из списка <code>admin_chat_ids</code> в конфиге бота.",
+                    parseMode: ParseMode.Html,
+                    cancellationToken: ct).ConfigureAwait(false);
+                return false;
+            }
+
+            var tgId = cq.From.Id.ToString();
+            var user = await _api.GetUserByTelegramAsync(tgId, ct).ConfigureAwait(false);
+            if (!IsTelegramAuthAdmin(user))
+            {
+                await bot.SendMessage(chatId,
+                    "Команда только для администраторов (роль admin в базе TelegramAuth).",
+                    cancellationToken: ct).ConfigureAwait(false);
+                return false;
+            }
+
+            return true;
+        }
+
+        static string ShortUserLabel(AdminUserRowDto u)
+        {
+            var n = string.IsNullOrEmpty(u.username) ? u.telegramId : u.username;
+            if (n.Length > 14)
+                n = n.Substring(0, 12) + "…";
+            return n;
+        }
+
+        static (string text, InlineKeyboardMarkup? markup) BuildAdminUsersPage(AdminUsersListResponseDto data, int page, string actorTgId)
+        {
+            var all = data.users ?? new List<AdminUserRowDto>();
+            var total = all.Count;
+            var totalPages = total == 0 ? 1 : (total + AdminUsersPageSize - 1) / AdminUsersPageSize;
+            if (page < 0) page = 0;
+            if (page >= totalPages) page = totalPages - 1;
+
+            var slice = all.Skip(page * AdminUsersPageSize).Take(AdminUsersPageSize).ToList();
+            var lines = new List<string>
+            {
+                $"<b>Пользователи TelegramAuth</b> · всего {total} · стр. {page + 1}/{totalPages}\n"
+            };
+
+            foreach (var u in slice)
+            {
+                var adm = string.Equals(u.role, "admin", StringComparison.OrdinalIgnoreCase);
+                var st = u.disabled ? "🔒 отключён" : u.active ? "✅ доступ" : "⏸ нет доступа";
+                var tag = string.IsNullOrEmpty(u.username) ? "—" : "@" + EscapeHtml(u.username);
+                lines.Add($"{tag} · <code>{EscapeHtml(u.telegramId)}</code> · {st}{(adm ? " · <b>admin</b>" : "")}");
+            }
+
+            if (total == 0)
+                lines.Add("\n<i>Записей пока нет.</i>");
+
+            var rows = new List<InlineKeyboardButton[]>();
+            foreach (var u in slice)
+            {
+                var isAdmin = string.Equals(u.role, "admin", StringComparison.OrdinalIgnoreCase);
+                var self = string.Equals(u.telegramId, actorTgId, StringComparison.Ordinal);
+                if (isAdmin || self)
+                    continue;
+
+                var label = ShortUserLabel(u);
+                var cb = u.disabled
+                    ? $"{CbEnableUser}{page}|{u.telegramId}"
+                    : $"{CbDisableUser}{page}|{u.telegramId}";
+                if (Encoding.UTF8.GetByteCount(cb) <= 64)
+                {
+                    var title = u.disabled ? $"✅ Вкл · {label}" : $"🚫 Выкл · {label}";
+                    rows.Add(new[] { InlineKeyboardButton.WithCallbackData(title, cb) });
+                }
+            }
+
+            if (totalPages > 1)
+            {
+                var nav = new List<InlineKeyboardButton>();
+                if (page > 0)
+                    nav.Add(InlineKeyboardButton.WithCallbackData("◀️", CbUsersPage + (page - 1)));
+                if (page < totalPages - 1)
+                    nav.Add(InlineKeyboardButton.WithCallbackData("▶️", CbUsersPage + (page + 1)));
+                if (nav.Count > 0)
+                    rows.Add(nav.ToArray());
+            }
+
+            var markup = rows.Count > 0 ? new InlineKeyboardMarkup(rows) : null;
+            return (string.Join("\n", lines), markup);
+        }
+
+        async Task SendOrEditAdminUsersPageAsync(ITelegramBotClient bot, ChatId chatId, int? messageId, AdminUsersListResponseDto data, int page, string actorTgId, CancellationToken ct)
+        {
+            var (text, markup) = BuildAdminUsersPage(data, page, actorTgId);
+            if (messageId.HasValue)
+            {
+                await bot.EditMessageText(chatId, messageId.Value, text, parseMode: ParseMode.Html, replyMarkup: markup, cancellationToken: ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await bot.SendMessage(chatId, text, parseMode: ParseMode.Html, replyMarkup: markup, cancellationToken: ct).ConfigureAwait(false);
+            }
+        }
+
+        async Task CmdUsersAsync(ITelegramBotClient bot, ChatId chatId, string tgId, CancellationToken ct)
+        {
+            if (!await TryEnsureAdminMutationAccessAsync(bot, chatId, tgId, ct).ConfigureAwait(false))
+                return;
+
+            var data = await _api.GetAdminUsersAsync(ct).ConfigureAwait(false);
+            if (data == null || !data.ok)
+            {
+                await bot.SendMessage(chatId, "❌ Не удалось загрузить список пользователей (проверь секрет и доступ к Lampac).", cancellationToken: ct).ConfigureAwait(false);
+                return;
+            }
+
+            await SendOrEditAdminUsersPageAsync(bot, chatId, null, data, 0, tgId, ct).ConfigureAwait(false);
         }
 
         async Task CmdImportAsync(ITelegramBotClient bot, ChatId chatId, string tgId, CancellationToken ct)
@@ -412,7 +554,7 @@ namespace TelegramAuthBot.Services
                 "👤 Мой статус — профиль и срок доступа\n" +
                 "📱 Мои устройства — список устройств и кнопки отвязки\n" +
                 "❓ Помощь — эта подсказка\n\n" +
-                "<b>Админ (роль admin):</b> <code>/import</code>, <code>/cleanup</code> — нужен <code>mutations_api_secret</code> в конфиге бота и в TelegramAuth." +
+                "<b>Админ (роль admin):</b> <code>/users</code> — список пользователей, отключить/включить кнопками; <code>/import</code>, <code>/cleanup</code> — нужен <code>mutations_api_secret</code> в конфиге бота и в TelegramAuth." +
                 (conf.admin_chat_ids != null && conf.admin_chat_ids.Length > 0
                     ? "\n\nАдмин-команды разрешены только в чатах из <code>admin_chat_ids</code>."
                     : "");
@@ -421,19 +563,34 @@ namespace TelegramAuthBot.Services
 
         async Task HandleCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, CancellationToken ct)
         {
-            await bot.AnswerCallbackQuery(cq.Id, cancellationToken: ct).ConfigureAwait(false);
-
             var data = cq.Data ?? "";
-            if (!data.StartsWith("unbind:", StringComparison.Ordinal))
+            if (data.StartsWith("unbind:", StringComparison.Ordinal))
+            {
+                await HandleUnbindDeviceCallbackAsync(bot, cq, ct).ConfigureAwait(false);
                 return;
+            }
 
-            var uid = data.Length > 7 ? data.Substring(7) : "";
+            if (data.StartsWith(CbUsersPage, StringComparison.Ordinal)
+                || data.StartsWith(CbDisableUser, StringComparison.Ordinal)
+                || data.StartsWith(CbEnableUser, StringComparison.Ordinal))
+            {
+                await HandleAdminUsersInlineAsync(bot, cq, ct).ConfigureAwait(false);
+                return;
+            }
+
+            await bot.AnswerCallbackQuery(cq.Id, cancellationToken: ct).ConfigureAwait(false);
+        }
+
+        async Task HandleUnbindDeviceCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, CancellationToken ct)
+        {
+            var uid = cq.Data != null && cq.Data.Length > 7 ? cq.Data.Substring(7) : "";
             var tgId = cq.From.Id.ToString();
             var name = _displayName;
 
             var user = await _api.GetUserByTelegramAsync(tgId, ct).ConfigureAwait(false);
             if (user == null || !user.found)
             {
+                await bot.AnswerCallbackQuery(cq.Id, cancellationToken: ct).ConfigureAwait(false);
                 await bot.EditMessageText(cq.Message!.Chat.Id, cq.Message.MessageId, $"Тебя нет в базе {name}.", cancellationToken: ct).ConfigureAwait(false);
                 return;
             }
@@ -443,15 +600,105 @@ namespace TelegramAuthBot.Services
             var uids = devices.Select(d => d.uid).Where(u => !string.IsNullOrEmpty(u)).ToHashSet(StringComparer.OrdinalIgnoreCase);
             if (!uids.Contains(uid))
             {
+                await bot.AnswerCallbackQuery(cq.Id, cancellationToken: ct).ConfigureAwait(false);
                 await bot.EditMessageText(cq.Message.Chat.Id, cq.Message.MessageId, "Это устройство не принадлежит тебе.", cancellationToken: ct).ConfigureAwait(false);
                 return;
             }
 
             var ok = await _api.UnbindDeviceAsync(uid, ct).ConfigureAwait(false);
+            await bot.AnswerCallbackQuery(cq.Id, cancellationToken: ct).ConfigureAwait(false);
             if (ok)
                 await bot.EditMessageText(cq.Message.Chat.Id, cq.Message.MessageId, $"Устройство {uid} отвязано.", cancellationToken: ct).ConfigureAwait(false);
             else
                 await bot.EditMessageText(cq.Message.Chat.Id, cq.Message.MessageId, "Не удалось отвязать устройство.", cancellationToken: ct).ConfigureAwait(false);
+        }
+
+        async Task HandleAdminUsersInlineAsync(ITelegramBotClient bot, CallbackQuery cq, CancellationToken ct)
+        {
+            if (!await TryEnsureAdminForCallbackAsync(bot, cq, ct).ConfigureAwait(false))
+            {
+                await bot.AnswerCallbackQuery(cq.Id, cancellationToken: ct).ConfigureAwait(false);
+                return;
+            }
+
+            var msg = cq.Message;
+            if (msg == null)
+            {
+                await bot.AnswerCallbackQuery(cq.Id, cancellationToken: ct).ConfigureAwait(false);
+                return;
+            }
+
+            var chatId = msg.Chat.Id;
+            var msgId = msg.MessageId;
+            var actorTgId = cq.From.Id.ToString();
+            var data = cq.Data ?? "";
+
+            if (data.StartsWith(CbUsersPage, StringComparison.Ordinal))
+            {
+                if (!int.TryParse(data.AsSpan(CbUsersPage.Length), out var page) || page < 0)
+                    page = 0;
+                var list = await _api.GetAdminUsersAsync(ct).ConfigureAwait(false);
+                if (list == null || !list.ok)
+                {
+                    await bot.AnswerCallbackQuery(cq.Id, "Не удалось обновить список.", showAlert: true, cancellationToken: ct).ConfigureAwait(false);
+                    return;
+                }
+
+                await SendOrEditAdminUsersPageAsync(bot, chatId, msgId, list, page, actorTgId, ct).ConfigureAwait(false);
+                await bot.AnswerCallbackQuery(cq.Id, cancellationToken: ct).ConfigureAwait(false);
+                return;
+            }
+
+            if (data.StartsWith(CbDisableUser, StringComparison.Ordinal) || data.StartsWith(CbEnableUser, StringComparison.Ordinal))
+            {
+                var disable = data.StartsWith(CbDisableUser, StringComparison.Ordinal);
+                var rest = disable ? data.Substring(CbDisableUser.Length) : data.Substring(CbEnableUser.Length);
+                var parts = rest.Split('|', 2);
+                if (parts.Length != 2 || !int.TryParse(parts[0], out var returnPage) || returnPage < 0 || string.IsNullOrWhiteSpace(parts[1]))
+                {
+                    await bot.AnswerCallbackQuery(cq.Id, "Некорректные данные кнопки.", showAlert: true, cancellationToken: ct).ConfigureAwait(false);
+                    return;
+                }
+
+                var targetId = parts[1].Trim();
+                if (disable && string.Equals(targetId, actorTgId, StringComparison.Ordinal))
+                {
+                    await bot.AnswerCallbackQuery(cq.Id, "Нельзя отключить самого себя.", showAlert: true, cancellationToken: ct).ConfigureAwait(false);
+                    return;
+                }
+
+                var (ok, detail) = await _api.SetUserDisabledAsync(targetId, disable, ct).ConfigureAwait(false);
+                if (!ok)
+                {
+                    await bot.AnswerCallbackQuery(cq.Id, TruncateForTelegram(StripJsonError(detail), 180), showAlert: true, cancellationToken: ct).ConfigureAwait(false);
+                    return;
+                }
+
+                var fresh = await _api.GetAdminUsersAsync(ct).ConfigureAwait(false);
+                if (fresh != null && fresh.ok)
+                    await SendOrEditAdminUsersPageAsync(bot, chatId, msgId, fresh, returnPage, actorTgId, ct).ConfigureAwait(false);
+
+                await bot.AnswerCallbackQuery(cq.Id, disable ? "Доступ отключён." : "Доступ включён.", showAlert: false, cancellationToken: ct).ConfigureAwait(false);
+            }
+        }
+
+        static string StripJsonError(string json)
+        {
+            if (string.IsNullOrEmpty(json))
+                return "Ошибка API";
+            try
+            {
+                var jo = JObject.Parse(json);
+                var err = jo.Value<string>("error");
+                var det = jo.Value<string>("detail");
+                if (!string.IsNullOrEmpty(det))
+                    return det;
+                return err ?? json;
+            }
+            catch
+            {
+                return json;
+            }
         }
 
         static string EscapeHtml(string s)

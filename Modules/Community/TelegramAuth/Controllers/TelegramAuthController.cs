@@ -100,6 +100,10 @@ namespace TelegramAuth.Controllers
             {
                 return JsonError(404, "user not found", "Включите auto_provision_users в TelegramAuth или добавьте пользователя в users.json.");
             }
+            catch (InvalidOperationException ex) when (ex.Message == TelegramAuthStore.BindUserDisabledMessage)
+            {
+                return JsonError(403, "user disabled", "Аккаунт отключён администратором.");
+            }
             catch (Exception ex)
             {
                 return JsonError(500, "bind failed", ex.Message);
@@ -135,9 +139,62 @@ namespace TelegramAuth.Controllers
                 approvedBy = user.ApprovedBy,
                 createdAt = user.CreatedAt,
                 expiresAt = user.ExpiresAt,
+                disabled = user.Disabled,
                 active = store.IsActive(user),
                 deviceCount = user.Devices.Count(d => d.Active),
                 maxDevices = store.GetMaxDevices(user)
+            });
+        }
+
+        [HttpGet]
+        [AllowAnonymous]
+        [AuthorizeAnonymous]
+        [Route("/tg/auth/admin/users")]
+        public ActionResult AdminListUsers()
+        {
+            if (!TryAuthorizeMutations())
+                return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
+
+            var users = store.GetUsers()
+                .OrderBy(u => u.TelegramId, StringComparer.Ordinal)
+                .Select(u => new
+                {
+                    telegramId = u.TelegramId,
+                    username = u.TgUsername,
+                    role = u.Role,
+                    disabled = u.Disabled,
+                    active = store.IsActive(u),
+                    expiresAt = u.ExpiresAt,
+                    deviceCount = u.Devices.Count(d => d.Active)
+                })
+                .ToList();
+
+            return JsonOk(new { ok = true, users });
+        }
+
+        [HttpPost]
+        [AllowAnonymous]
+        [AuthorizeAnonymous]
+        [Route("/tg/auth/admin/user/disabled")]
+        public ActionResult AdminSetUserDisabled([FromBody] AdminSetUserDisabledRequest? request)
+        {
+            if (!TryAuthorizeMutations())
+                return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
+
+            if (request == null || string.IsNullOrWhiteSpace(request.TelegramId))
+                return JsonError(400, "telegramId is required");
+
+            var outcome = store.TrySetUserDisabled(request.TelegramId.Trim(), request.Disabled);
+            if (outcome == TelegramAuthStore.SetUserDisabledOutcome.NotFound)
+                return JsonError(404, "user not found");
+            if (outcome == TelegramAuthStore.SetUserDisabledOutcome.CannotDisableAdmin)
+                return JsonError(403, "cannot disable admin", "Нельзя отключить учётную запись с ролью admin.");
+
+            return JsonOk(new
+            {
+                ok = true,
+                telegramId = request.TelegramId.Trim(),
+                disabled = request.Disabled
             });
         }
 
