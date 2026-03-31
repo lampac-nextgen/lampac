@@ -52,7 +52,9 @@ namespace TelegramAuthBot.Services
         {
             var payload = new { uid, telegramId, username };
             using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-            using var resp = await _http.PostAsync("tg/auth/bind/complete", content, ct).ConfigureAwait(false);
+            using var req = new HttpRequestMessage(HttpMethod.Post, "tg/auth/bind/complete") { Content = content };
+            AddMutationsSecret(req);
+            using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
             var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
                 return new BindCompleteResult();
@@ -64,9 +66,9 @@ namespace TelegramAuthBot.Services
             };
         }
 
-        public async Task<bool> UnbindDeviceAsync(string uid, CancellationToken ct)
+        public async Task<bool> UnbindDeviceAsync(string telegramId, string uid, CancellationToken ct)
         {
-            var payload = new { uid };
+            var payload = new { telegramId, uid };
             using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
             using var resp = await _http.PostAsync("tg/auth/device/unbind", content, ct).ConfigureAwait(false);
             var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);

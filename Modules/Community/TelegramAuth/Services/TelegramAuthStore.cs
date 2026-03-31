@@ -242,6 +242,35 @@ namespace TelegramAuth.Services
             DeviceNotFound
         }
 
+        public enum UnbindDeviceOutcome
+        {
+            Ok,
+            UserNotFound,
+            DeviceNotFound
+        }
+
+        /// <summary>Деактивирует устройство только если UID принадлежит указанному Telegram-пользователю.</summary>
+        public UnbindDeviceOutcome TryUnbindDevice(string telegramId, string uid)
+        {
+            var tid = telegramId?.Trim();
+            var u = uid?.Trim();
+            if (string.IsNullOrEmpty(tid) || string.IsNullOrEmpty(u))
+                return UnbindDeviceOutcome.DeviceNotFound;
+
+            var users = GetUsers();
+            var user = users.FirstOrDefault(x => string.Equals(x.TelegramId, tid, StringComparison.Ordinal));
+            if (user == null)
+                return UnbindDeviceOutcome.UserNotFound;
+
+            var device = user.Devices?.FirstOrDefault(d => string.Equals(d.Uid, u, StringComparison.OrdinalIgnoreCase));
+            if (device == null)
+                return UnbindDeviceOutcome.DeviceNotFound;
+
+            device.Active = false;
+            SaveUsers(users);
+            return UnbindDeviceOutcome.Ok;
+        }
+
         public ReactivateDeviceOutcome TryReactivateDevice(string telegramId, string uid)
         {
             var tid = telegramId?.Trim();

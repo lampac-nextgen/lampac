@@ -849,7 +849,7 @@ namespace TelegramAuthBot.Services
                 return;
             }
 
-            var ok = await _api.UnbindDeviceAsync(uid, ct).ConfigureAwait(false);
+            var ok = await _api.UnbindDeviceAsync(tgId, uid, ct).ConfigureAwait(false);
             await bot.AnswerCallbackQuery(cq.Id, cancellationToken: ct).ConfigureAwait(false);
             if (ok)
                 await bot.EditMessageText(cq.Message.Chat.Id, cq.Message.MessageId, $"Устройство {uid} отвязано.", cancellationToken: ct).ConfigureAwait(false);

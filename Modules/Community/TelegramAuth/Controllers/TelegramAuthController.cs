@@ -85,6 +85,10 @@ namespace TelegramAuth.Controllers
             if (request == null || string.IsNullOrWhiteSpace(request.Uid) || string.IsNullOrWhiteSpace(request.TelegramId))
                 return JsonError(400, "uid and telegramId are required");
 
+            var mutSecret = ModInit.conf.mutations_api_secret?.Trim() ?? "";
+            if (mutSecret.Length > 0 && !TryAuthorizeMutations())
+                return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
+
             try
             {
                 var bindOutcome = store.BindDevice(request.TelegramId, request.Uid, request.Username, request.DeviceName, "manual-complete");
@@ -267,27 +271,18 @@ namespace TelegramAuth.Controllers
         [AllowAnonymous]
         [AuthorizeAnonymous]
         [Route("/tg/auth/device/unbind")]
-        public ActionResult Unbind([FromBody] BindStartRequest? request)
+        public ActionResult Unbind([FromBody] DeviceUnbindRequest? request)
         {
-            if (request == null || string.IsNullOrWhiteSpace(request.Uid))
-                return JsonError(400, "uid is required");
+            if (request == null || string.IsNullOrWhiteSpace(request.Uid) || string.IsNullOrWhiteSpace(request.TelegramId))
+                return JsonError(400, "telegramId and uid are required");
 
-            var users = store.GetUsers();
-            var changed = false;
-            foreach (var user in users)
-            {
-                var device = user.Devices.Find(d => string.Equals(d.Uid, request.Uid, StringComparison.OrdinalIgnoreCase));
-                if (device != null)
-                {
-                    device.Active = false;
-                    changed = true;
-                }
-            }
+            var outcome = store.TryUnbindDevice(request.TelegramId.Trim(), request.Uid.Trim());
+            if (outcome == TelegramAuthStore.UnbindDeviceOutcome.UserNotFound)
+                return JsonError(404, "user not found");
+            if (outcome == TelegramAuthStore.UnbindDeviceOutcome.DeviceNotFound)
+                return JsonError(404, "device not found", "UID не найден среди устройств этого пользователя.");
 
-            if (changed)
-                store.SaveUsers(users);
-
-            return JsonOk(new { ok = changed, uid = request.Uid });
+            return JsonOk(new { ok = true, uid = request.Uid.Trim() });
         }
 
         [HttpPost]

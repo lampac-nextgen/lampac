@@ -87,6 +87,12 @@ namespace TelegramAuth.Models
         public string Uid { get; set; } = "";
     }
 
+    public class DeviceUnbindRequest
+    {
+        public string TelegramId { get; set; } = "";
+        public string Uid { get; set; } = "";
+    }
+
     public class BindCompleteRequest
     {
         public string Uid { get; set; } = "";
