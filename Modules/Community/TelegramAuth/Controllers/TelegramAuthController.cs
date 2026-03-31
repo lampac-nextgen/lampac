@@ -96,6 +96,10 @@ namespace TelegramAuth.Controllers
                     telegramId = request.TelegramId
                 });
             }
+            catch (InvalidOperationException ex) when (ex.Message == TelegramAuthStore.BindUserNotFoundMessage)
+            {
+                return JsonError(404, "user not found", "Включите auto_provision_users в TelegramAuth или добавьте пользователя в users.json.");
+            }
             catch (Exception ex)
             {
                 return JsonError(500, "bind failed", ex.Message);

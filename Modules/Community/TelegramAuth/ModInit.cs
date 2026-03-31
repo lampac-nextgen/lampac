@@ -35,6 +35,10 @@ namespace TelegramAuth
                 enable_cleanup = true,
                 max_active_devices_per_user = 0,
                 mutations_api_secret = "",
+                auto_provision_users = false,
+                auto_provision_role = "user",
+                auto_provision_lang = "ru",
+                auto_provision_expires_days = 0,
                 limit_map = new List<WafLimitRootMap>
                 {
                     new("^/tg/auth", new WafLimitMap { limit = 25, second = 1 })

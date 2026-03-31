@@ -211,13 +211,7 @@ namespace TelegramAuthBot.Services
         {
             var name = _displayName;
             var user = await _api.GetUserByTelegramAsync(tgId, ct).ConfigureAwait(false);
-            if (user == null || !user.found)
-            {
-                await bot.SendMessage(chatId, $"Тебя нет в базе {EscapeHtml(name)}. Обратись к администратору.", parseMode: ParseMode.Html, replyMarkup: MainMenuKeyboard(), cancellationToken: ct).ConfigureAwait(false);
-                return true;
-            }
-
-            if (!user.active)
+            if (user != null && user.found && !user.active)
             {
                 await bot.SendMessage(chatId, "Твой доступ истёк или отключён.", replyMarkup: MainMenuKeyboard(), cancellationToken: ct).ConfigureAwait(false);
                 return true;
@@ -241,7 +235,10 @@ namespace TelegramAuthBot.Services
             if (fromStartDeepLink)
                 return false;
 
-            await bot.SendMessage(chatId, "Не удалось привязать устройство.", replyMarkup: MainMenuKeyboard(), cancellationToken: ct).ConfigureAwait(false);
+            if (user != null && user.found)
+                await bot.SendMessage(chatId, "Не удалось привязать устройство.", replyMarkup: MainMenuKeyboard(), cancellationToken: ct).ConfigureAwait(false);
+            else
+                await bot.SendMessage(chatId, $"Тебя нет в базе {EscapeHtml(name)}. Обратись к администратору.", parseMode: ParseMode.Html, replyMarkup: MainMenuKeyboard(), cancellationToken: ct).ConfigureAwait(false);
             return true;
         }
 

@@ -87,12 +87,39 @@ namespace TelegramAuth.Services
             return max > 0 ? max : MaxActiveDevicesPerUser;
         }
 
+        public const string BindUserNotFoundMessage = "user not found";
+
         public void BindDevice(string telegramId, string uid, string? name = null, string source = "manual")
         {
             var users = GetUsers();
             var user = users.FirstOrDefault(u => u.TelegramId == telegramId);
             if (user == null)
-                throw new InvalidOperationException("user not found");
+            {
+                if (!_conf.auto_provision_users)
+                    throw new InvalidOperationException(BindUserNotFoundMessage);
+
+                DateTime? expires = null;
+                var days = _conf.auto_provision_expires_days;
+                if (days > 0)
+                    expires = DateTime.UtcNow.AddDays(days);
+
+                var role = string.IsNullOrWhiteSpace(_conf.auto_provision_role)
+                    ? "user"
+                    : _conf.auto_provision_role.Trim();
+
+                user = new TelegramUserRecord
+                {
+                    TelegramId = telegramId,
+                    TgUsername = name?.Trim() ?? "",
+                    Role = role,
+                    Lang = string.IsNullOrWhiteSpace(_conf.auto_provision_lang) ? "ru" : _conf.auto_provision_lang.Trim(),
+                    CreatedAt = DateTime.UtcNow,
+                    ExpiresAt = expires,
+                    ApprovedBy = "auto-provision",
+                    Devices = new List<DeviceRecord>()
+                };
+                users.Add(user);
+            }
 
             CleanupInactiveDevices(users, 90);
 
