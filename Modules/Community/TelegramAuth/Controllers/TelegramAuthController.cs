@@ -82,12 +82,12 @@ namespace TelegramAuth.Controllers
         [Route("/tg/auth/bind/complete")]
         public ActionResult BindComplete([FromBody] BindCompleteRequest? request)
         {
-            if (request == null || string.IsNullOrWhiteSpace(request.Uid) || string.IsNullOrWhiteSpace(request.TelegramId))
-                return JsonError(400, "uid and telegramId are required");
-
             var mutSecret = ModInit.conf.mutations_api_secret?.Trim() ?? "";
             if (mutSecret.Length > 0 && !TryAuthorizeMutations())
                 return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
+
+            if (request == null || string.IsNullOrWhiteSpace(request.Uid) || string.IsNullOrWhiteSpace(request.TelegramId))
+                return JsonError(400, "uid and telegramId are required");
 
             try
             {
