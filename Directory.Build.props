@@ -1,0 +1,7 @@
+<Project>
+  <PropertyGroup>
+    <!-- Workaround: Microsoft.AspNetCore.App.Ref pack not installed on this system.
+         Install via: sudo pacman -S aspnet-runtime-10.0 -->
+    <AllowMissingPrunePackageData>true</AllowMissingPrunePackageData>
+  </PropertyGroup>
+</Project>

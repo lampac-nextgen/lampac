@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Информация</title>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <div class="card mt-4">
+            <div class="card-body">
+                <h5 class="card-title">Присоединяйтесь к нашей Telegram группе</h5>
+                <p class="card-text">Нажмите на ссылку ниже, чтобы присоединиться:</p>
+                <a href="https://t.me/+TIXtgvGBBOc3ZTUy" class="btn btn-primary" target="_blank">Присоединиться к группе</a>
+            </div>
+        </div>
+
+        <div class="card mt-4">
+            <div class="card-body">
+                <h5 class="card-title">DeepWiki</h5>
+                Если вам нужно подробное описание переменных, вывозов и т.д <br>
+<br>
+1. Откройте https://deepwiki.com/immisterio/Lampac <br>
+2. В "Ask a follow-up question" напишите вопрос <br>
+<br>
+И через пару секунд AI напишет подробный ответ с примерами
+            </div>
+        </div>
+		
+        <div class="card mt-4">
+            <div class="card-body">
+                <h5 class="card-title">Отключение админки</h5>
+                <p class="card-text">Для отключения админки добавьте в init.conf следующий код:</p>
+                <pre style="margin-bottom: 0px;"><code>"overrideResponse": [
+  {
+    "firstEndpoint": true,
+    "pattern": "^/admin",
+    "action": "html",
+    "type": "text/plain; charset=utf-8",
+    "val": "deny"
+  }
+]</code></pre>
+            </div>
+        </div>
+		
+    </div>
+</body>
+</html>

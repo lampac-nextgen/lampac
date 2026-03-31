@@ -1,0 +1,132 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard</title>
+    <link rel="stylesheet" href="/control/npm/codemirror.min.css">
+    <link href="/control/npm/bootstrap.min.css" rel="stylesheet">
+    <script src="/control/npm/bootstrap.bundle.min.js"></script>
+    <style>
+        .navbar-nav .nav-link {
+            transition: background 0.2s, color 0.2s, box-shadow 0.2s, border-color 0.2s, transform 0.15s;
+        }
+
+            .navbar-nav .nav-link:hover, .navbar-nav .nav-link:focus {
+                background: #e7f1ff;
+                color: #0d6efd !important;
+                border-color: #0d6efd !important;
+                box-shadow: 0 2px 12px rgba(13,110,253,0.15);
+                transform: translateY(-2px) scale(1.04);
+                text-decoration: none;
+            }
+
+            .navbar-nav .nav-link.active {
+                background: linear-gradient(90deg, #d0e7ff 60%, #b6d6ff 100%);
+                color: #0a58ca !important;
+                border-color: #0a58ca !important;
+                box-shadow: 0 4px 18px rgba(13,110,253,0.18);
+                font-weight: bold;
+                transform: translateY(-2px) scale(1.06);
+                outline: 2px solid #d0f7ff;
+                outline-offset: -2px;
+                z-index: 2;
+            }
+        .bg-light {
+            background-color: #e9ecef !important;
+        }
+    </style>
+</head>
+<body style="background-color: #fafafa;">
+    <nav class="navbar navbar-expand-lg navbar-light bg-light">
+        <div class="container-fluid">
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto mb-2 mb-lg-0 gap-4">
+                    <li class="nav-item">
+                        <a class="nav-link px-3 rounded-1 fw-semibold text-primary bg-white shadow-sm border border-primary" href="#" data-page="editor" onclick="navigate('editor'); setActiveNav(this);">
+                            Редактор
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link px-3 rounded-1 fw-semibold text-primary bg-white shadow-sm border border-primary" href="#" data-page="users" onclick="navigate('users'); setActiveNav(this);">
+                            Пользователи
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link px-3 rounded-1 fw-semibold text-primary bg-white shadow-sm border border-primary" href="#" data-page="online" onclick="navigate('online'); setActiveNav(this);">
+                            Балансеры
+                        </a>
+                    </li>
+                    <!--<li class="nav-item">
+                        <a class="nav-link px-3 rounded-1 fw-semibold text-primary bg-white shadow-sm border border-primary" href="#" data-page="torrent" onclick="navigate('torrent'); setActiveNav(this);">
+                            Торренты
+                        </a>
+                    </li>-->
+                    <li class="nav-item">
+                        <a class="nav-link px-3 rounded-1 fw-semibold text-primary bg-white shadow-sm border border-primary" href="#" data-page="proxy" onclick="navigate('proxy'); setActiveNav(this);">
+                            Прокси
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link px-3 rounded-1 fw-semibold text-primary bg-white shadow-sm border border-primary" href="#" data-page="other" onclick="navigate('other'); setActiveNav(this);">
+                            Остальное
+                        </a>
+                    </li>
+                </ul>
+                <ul class="navbar-nav ms-auto mb-2 mb-lg-0 gap-3">
+                    <li class="nav-item">
+                        <a class="nav-link px-3 rounded-1 fw-semibold text-primary bg-white shadow-sm border border-primary" href="/admin/manifest/install" data-page="faq">
+                            Модули
+                        </a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link px-3 rounded-1 fw-semibold text-primary bg-white shadow-sm border border-primary" href="/control/faq.html" data-page="faq">
+                            FAQ
+                        </a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+    <div class="container mt-4 px-5" id="content" style="max-width: 2000px;"></div>
+    <script>
+        // Функция для установки active на выбранную кнопку
+        function setActiveNav(el) {
+            document.querySelectorAll('.navbar-nav .nav-link').forEach(link => {
+                link.classList.remove('active');
+            });
+            el.classList.add('active');
+        }
+        // При загрузке страницы можно активировать первую кнопку по умолчанию
+        document.addEventListener('DOMContentLoaded', function () {
+            // Например, активируем "Редактор" по умолчанию
+            var first = document.querySelector('.navbar-nav .nav-link[data-page="editor"]');
+            if (first) first.classList.add('active');
+        });
+    </script>
+	
+	
+	<!-- структра для uparams.js
+	window.invc = {
+	  newUser: function(user) {   // значения default при добавлении пользователя
+	    //user.params = {};
+	    //user.params.epg = 'http://epg.one/ru2.xml.gz';
+	    //user.params.m3u = 'https://smolnp.github.io/IPTVru//IPTVstable.m3u8';
+	    //console.log(user);
+	  },
+	  editUser: function(user) {
+	    // modal
+	  }
+	}
+	-->
+	<script src="/control/uparams.js"></script>
+	
+	
+	
+    <script src="/control/app.js"></script>
+    <script src="/control/npm/codemirror.min.js"></script>
+    <script src="/control/npm/javascript.min.js"></script>
+</body>
+</html>
