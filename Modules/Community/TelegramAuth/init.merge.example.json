@@ -1,0 +1,19 @@
+{
+  "TelegramAuth": {
+    "data_dir": "database/tgauth",
+    "legacy_import_path": "database/legacy_tgauth",
+    "enable_import": true,
+    "enable_cleanup": true,
+    "mutations_api_secret": "GENERATE_A_LONG_RANDOM_SECRET",
+    "max_active_devices_per_user": 5,
+    "limit_map": [
+      {
+        "pattern": "^/tg/auth",
+        "map": {
+          "limit": 25,
+          "second": 1
+        }
+      }
+    ]
+  }
+}
