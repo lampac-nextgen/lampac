@@ -1,4 +1,4 @@
-﻿using LampaWeb.Models;
+using LampaWeb.Models;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
@@ -373,7 +373,7 @@ namespace LampaWeb.Controllers
             #endregion
 
             if (ModInit.conf.initPlugins.pirate_store)
-                sb = sb.Replace("{pirate_store}", FileCache.ReadAllText("plugins/pirate_store.js", "pirate_store.js"));
+                sb = sb.Replace("{pirate_store}", FileCache.ReadAllText($"{ModInit.modpath}/plugins/pirate_store.js", "pirate_store.js"));
 
             if (CoreInit.conf.accsdb.enable)
                 sb = sb.Replace("{deny}", FileCache.ReadAllText($"{ModInit.modpath}/plugins/deny.js", "deny.js").Replace("{cubMesage}", CoreInit.conf.accsdb.authMesage));
@@ -392,7 +392,7 @@ namespace LampaWeb.Controllers
                 sb = sb.Replace("{jachost}", "jac.red");
 
             #region full_btn_priority_hash
-            string online_version = Regex.Match(FileCache.ReadAllText("plugins/online.js", "online.js"), "version: '([^']+)'").Groups[1].Value;
+            string online_version = Regex.Match(FileCache.ReadAllText($"{ModInit.modpath}/plugins/online.js", "online.js"), "version: '([^']+)'").Groups[1].Value;
 
             string LampaUtilshash(string input)
             {
@@ -537,7 +537,7 @@ namespace LampaWeb.Controllers
             if (user == null || user.ban || DateTime.UtcNow > user.expires)
                 return Content(string.Empty, "application/javascript; charset=utf-8");
 
-            string privateinit = FileCache.ReadAllText("plugins/privateinit.js", "privateinit.js")
+            string privateinit = FileCache.ReadAllText($"{ModInit.modpath}/plugins/privateinit.js", "privateinit.js")
                 .Replace("{country}", requestInfo.Country)
                 .Replace("{localhost}", host);
 
@@ -550,14 +550,14 @@ namespace LampaWeb.Controllers
         }
         #endregion
 
-        #region TelegramAuth
+        #region telegram_auth_gate.js
         [HttpGet]
         [Route("telegram_auth_gate.js")]
         public ActionResult TelegramAuthGate()
         {
             SetHeadersNoCache();
 
-            string gate = FileCache.ReadAllText("plugins/telegram_auth_gate.js", "telegram_auth_gate.js")
+            string gate = FileCache.ReadAllText($"{ModInit.modpath}/plugins/telegram_auth_gate.js", "telegram_auth_gate.js")
                 .Replace("{country}", requestInfo.Country)
                 .Replace("{localhost}", host);
 
