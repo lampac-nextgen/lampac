@@ -1,10 +1,13 @@
 using System;
+using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
 using Shared;
 using Shared.Attributes;
@@ -176,11 +179,106 @@ namespace TelegramAuth.Controllers
                     registrationPending = TelegramAuthStore.IsRegistrationPending(u),
                     active = store.IsActive(u),
                     expiresAt = u.ExpiresAt,
-                    deviceCount = u.Devices.Count(d => d.Active)
+                    deviceCount = u.Devices.Count(d => d.Active),
+                    accs = u.Accs == null
+                        ? null
+                        : new
+                        {
+                            u.Accs.group,
+                            u.Accs.IsPasswd,
+                            u.Accs.ban,
+                            u.Accs.ban_msg,
+                            u.Accs.comment,
+                            u.Accs.ids,
+                            u.Accs.@params
+                        }
                 })
                 .ToList();
 
             return JsonOk(new { ok = true, users });
+        }
+
+        [HttpGet]
+        [AllowAnonymous]
+        [AuthorizeAnonymous]
+        [Route("/tg/auth/admin/user")]
+        public ActionResult AdminGetUser([FromQuery] string telegramId)
+        {
+            if (!TryAuthorizeMutations())
+                return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
+
+            if (string.IsNullOrWhiteSpace(telegramId))
+                return JsonError(400, "telegramId is required");
+
+            var user = store.FindByTelegramId(telegramId.Trim());
+            if (user == null)
+                return JsonError(404, "user not found");
+
+            return JsonOk(new
+            {
+                ok = true,
+                telegramId = user.TelegramId,
+                username = user.TgUsername,
+                role = user.Role,
+                lang = user.Lang,
+                approvedBy = user.ApprovedBy,
+                createdAt = user.CreatedAt,
+                expiresAt = user.ExpiresAt,
+                disabled = user.Disabled,
+                registrationPending = TelegramAuthStore.IsRegistrationPending(user),
+                active = store.IsActive(user),
+                deviceCount = user.Devices.Count(d => d.Active),
+                maxDevices = store.GetMaxDevices(user),
+                accs = user.Accs,
+                devices = user.Devices.Select(d => new
+                {
+                    uid = d.Uid,
+                    name = d.Name,
+                    active = d.Active,
+                    linkedAt = d.LinkedAt,
+                    lastSeenAt = d.LastSeenAt,
+                    source = d.Source
+                }).ToList()
+            });
+        }
+
+        [HttpPost]
+        [AllowAnonymous]
+        [AuthorizeAnonymous]
+        [Route("/tg/auth/admin/user/patch")]
+        public async Task<ActionResult> AdminPatchUser()
+        {
+            if (!TryAuthorizeMutations())
+                return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
+
+            string raw;
+            using (var reader = new StreamReader(Request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true))
+                raw = await reader.ReadToEndAsync().ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(raw))
+                return JsonError(400, "body is required");
+
+            JObject body;
+            try
+            {
+                body = JObject.Parse(raw);
+            }
+            catch (JsonReaderException)
+            {
+                return JsonError(400, "invalid json");
+            }
+
+            var tid = body.Value<string>("telegramId");
+            if (string.IsNullOrWhiteSpace(tid))
+                return JsonError(400, "telegramId is required");
+
+            var outcome = store.TryAdminPatchUser(tid.Trim(), body, out var err);
+            if (outcome == TelegramAuthStore.AdminPatchUserOutcome.NotFound)
+                return JsonError(404, "user not found");
+            if (outcome == TelegramAuthStore.AdminPatchUserOutcome.InvalidPayload)
+                return JsonError(400, "invalid payload", err);
+
+            return JsonOk(new { ok = true, telegramId = tid.Trim() });
         }
 
         [HttpPost]

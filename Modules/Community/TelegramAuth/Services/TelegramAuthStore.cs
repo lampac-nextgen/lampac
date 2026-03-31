@@ -4,6 +4,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
+using Shared;
 using TelegramAuth.Models;
 
 namespace TelegramAuth.Services
@@ -164,6 +166,15 @@ namespace TelegramAuth.Services
             if (disabled)
             {
                 user.RegistrationPending = false;
+                if (ShouldSyncAccsdb() && user.Devices != null)
+                {
+                    foreach (var d in user.Devices)
+                    {
+                        if (!string.IsNullOrWhiteSpace(d.Uid))
+                            AccsdbUidSync.RemoveUid(d.Uid);
+                    }
+                }
+
                 if (user.Devices != null)
                 {
                     foreach (var d in user.Devices)
@@ -174,6 +185,16 @@ namespace TelegramAuth.Services
                 user.RegistrationPending = false;
 
             SaveUsers(users);
+
+            if (!disabled && ShouldSyncAccsdb() && IsActive(user))
+            {
+                foreach (var d in user.Devices ?? new List<DeviceRecord>())
+                {
+                    if (d.Active && !string.IsNullOrWhiteSpace(d.Uid))
+                        SyncDeviceToAccsdb(user, d.Uid);
+                }
+            }
+
             return SetUserDisabledOutcome.Ok;
         }
 
@@ -202,6 +223,15 @@ namespace TelegramAuth.Services
             user.Disabled = false;
             user.ApprovedBy = "admin-approved";
             SaveUsers(users);
+            if (ShouldSyncAccsdb() && IsActive(user))
+            {
+                foreach (var d in user.Devices ?? new List<DeviceRecord>())
+                {
+                    if (d.Active && !string.IsNullOrWhiteSpace(d.Uid))
+                        SyncDeviceToAccsdb(user, d.Uid);
+                }
+            }
+
             return PendingDecisionOutcome.Ok;
         }
 
@@ -219,6 +249,15 @@ namespace TelegramAuth.Services
                 return PendingDecisionOutcome.NotPending;
             if (string.Equals(user.Role, "admin", StringComparison.OrdinalIgnoreCase))
                 return PendingDecisionOutcome.CannotRejectAdmin;
+
+            if (ShouldSyncAccsdb())
+            {
+                foreach (var d in user.Devices ?? new List<DeviceRecord>())
+                {
+                    if (!string.IsNullOrWhiteSpace(d.Uid))
+                        AccsdbUidSync.RemoveUid(d.Uid);
+                }
+            }
 
             users.Remove(user);
             SaveUsers(users);
@@ -249,7 +288,6 @@ namespace TelegramAuth.Services
             DeviceNotFound
         }
 
-        /// <summary>Деактивирует устройство только если UID принадлежит указанному Telegram-пользователю.</summary>
         public UnbindDeviceOutcome TryUnbindDevice(string telegramId, string uid)
         {
             var tid = telegramId?.Trim();
@@ -268,6 +306,8 @@ namespace TelegramAuth.Services
 
             device.Active = false;
             SaveUsers(users);
+            if (ShouldSyncAccsdb())
+                AccsdbUidSync.RemoveUid(u);
             return UnbindDeviceOutcome.Ok;
         }
 
@@ -293,21 +333,13 @@ namespace TelegramAuth.Services
 
             CleanupInactiveDevices(users, 90);
 
-            var maxDevices = GetMaxDevices(user);
-            if (maxDevices > 0)
-            {
-                var devList = user.Devices ?? new List<DeviceRecord>();
-                var activeDevices = devList.Where(d => d.Active).OrderByDescending(d => d.LastSeenAt ?? d.LinkedAt).ToList();
-                if (activeDevices.Count >= maxDevices)
-                {
-                    var oldestActive = activeDevices.Last();
-                    oldestActive.Active = false;
-                }
-            }
+            BumpOldestActiveDeviceIfAtDeviceLimit(user);
 
             device.Active = true;
             device.LastSeenAt = DateTime.UtcNow;
             SaveUsers(users);
+            if (ShouldSyncAccsdb() && IsActive(user) && device.Active)
+                SyncDeviceToAccsdb(user, u);
             return ReactivateDeviceOutcome.Ok;
         }
 
@@ -417,13 +449,7 @@ namespace TelegramAuth.Services
             var existing = user.Devices.FirstOrDefault(d => string.Equals(d.Uid, uid, StringComparison.OrdinalIgnoreCase));
             if (existing == null)
             {
-                var activeDevices = user.Devices.Where(d => d.Active).OrderByDescending(d => d.LastSeenAt ?? d.LinkedAt).ToList();
-                var maxDevices = GetMaxDevices(user);
-                if (maxDevices > 0 && activeDevices.Count >= maxDevices)
-                {
-                    var oldestActive = activeDevices.Last();
-                    oldestActive.Active = false;
-                }
+                BumpOldestActiveDeviceIfAtDeviceLimit(user);
 
                 user.Devices.Add(new DeviceRecord
                 {
@@ -437,6 +463,9 @@ namespace TelegramAuth.Services
             }
             else
             {
+                if (!existing.Active)
+                    BumpOldestActiveDeviceIfAtDeviceLimit(user);
+
                 existing.Active = true;
                 if (!string.IsNullOrWhiteSpace(resolvedDeviceName))
                     existing.Name = resolvedDeviceName;
@@ -444,6 +473,7 @@ namespace TelegramAuth.Services
             }
 
             SaveUsers(users);
+            SyncAccsdbForBind(user, uid);
             return outcome;
         }
 
@@ -531,7 +561,10 @@ namespace TelegramAuth.Services
                     if (activeDevices.Count > maxDevices)
                     {
                         foreach (var extra in activeDevices.Skip(maxDevices))
+                        {
                             extra.Active = false;
+                            RemoveUidFromAccsdbIfSync(extra.Uid);
+                        }
                     }
                 }
 
@@ -540,6 +573,364 @@ namespace TelegramAuth.Services
 
             SaveUsers(users);
             return removed;
+        }
+
+        bool ShouldSyncAccsdb() =>
+            _conf.sync_lampa_uid_to_accsdb && CoreInit.conf != null && CoreInit.conf.accsdb.enable;
+
+        void RemoveUidFromAccsdbIfSync(string deviceUid)
+        {
+            if (!ShouldSyncAccsdb() || string.IsNullOrWhiteSpace(deviceUid))
+                return;
+            AccsdbUidSync.RemoveUid(deviceUid.Trim());
+        }
+
+        void BumpOldestActiveDeviceIfAtDeviceLimit(TelegramUserRecord user)
+        {
+            var maxDevices = GetMaxDevices(user);
+            if (maxDevices <= 0 || user.Devices == null)
+                return;
+
+            var activeDevices = user.Devices.Where(d => d.Active).OrderByDescending(d => d.LastSeenAt ?? d.LinkedAt).ToList();
+            if (activeDevices.Count < maxDevices)
+                return;
+
+            var oldestActive = activeDevices.Last();
+            oldestActive.Active = false;
+            RemoveUidFromAccsdbIfSync(oldestActive.Uid);
+        }
+
+        DateTime ResolveAccsdbExpiresLocal(TelegramUserRecord user)
+        {
+            if (user.ExpiresAt.HasValue)
+            {
+                var v = user.ExpiresAt.Value;
+                return v.Kind == DateTimeKind.Utc ? v.ToLocalTime() : v;
+            }
+
+            var sd = CoreInit.conf?.accsdb?.shared_daytime ?? 0;
+            var days = sd > 0 ? Math.Max(1, sd) : 365;
+            return DateTime.Now.AddDays(days);
+        }
+
+        void SyncDeviceToAccsdb(TelegramUserRecord user, string deviceUid)
+        {
+            if (string.IsNullOrWhiteSpace(deviceUid) || user == null)
+                return;
+
+            if (!ShouldSyncAccsdb())
+                return;
+
+            var u = deviceUid.Trim();
+
+            if (user.Disabled || IsRegistrationPending(user))
+            {
+                AccsdbUidSync.RemoveUid(u);
+                return;
+            }
+
+            AccsdbUidSync.UpsertTelegramDevice(
+                u,
+                user,
+                ResolveAccsdbExpiresLocal(user),
+                _conf.accsdb_sync_group_admin,
+                _conf.accsdb_sync_group_user);
+        }
+
+        public void ResyncUserDevicesToAccsdb(TelegramUserRecord user)
+        {
+            if (user == null || !ShouldSyncAccsdb())
+                return;
+
+            if (user.Disabled || IsRegistrationPending(user))
+            {
+                foreach (var d in user.Devices ?? Enumerable.Empty<DeviceRecord>())
+                {
+                    if (!string.IsNullOrWhiteSpace(d.Uid))
+                        AccsdbUidSync.RemoveUid(d.Uid.Trim());
+                }
+
+                return;
+            }
+
+            foreach (var d in user.Devices ?? Enumerable.Empty<DeviceRecord>())
+            {
+                if (d.Active && !string.IsNullOrWhiteSpace(d.Uid))
+                    SyncDeviceToAccsdb(user, d.Uid.Trim());
+            }
+        }
+
+        public enum AdminPatchUserOutcome
+        {
+            Ok,
+            NotFound,
+            InvalidPayload
+        }
+
+        public AdminPatchUserOutcome TryAdminPatchUser(string telegramId, JObject body, out string? errorDetail)
+        {
+            errorDetail = null;
+            if (string.IsNullOrWhiteSpace(telegramId))
+            {
+                errorDetail = "telegramId is required";
+                return AdminPatchUserOutcome.InvalidPayload;
+            }
+
+            if (body == null)
+            {
+                errorDetail = "body is required";
+                return AdminPatchUserOutcome.InvalidPayload;
+            }
+
+            var users = GetUsers();
+            var tid = telegramId.Trim();
+            var user = users.FirstOrDefault(u => string.Equals(u.TelegramId, tid, StringComparison.Ordinal));
+            if (user == null)
+                return AdminPatchUserOutcome.NotFound;
+
+            if (body.ContainsKey("expiresAt"))
+            {
+                var t = body["expiresAt"];
+                if (t == null || t.Type == JTokenType.Null)
+                    user.ExpiresAt = null;
+                else if (t.Type == JTokenType.String && string.IsNullOrWhiteSpace(t.Value<string>()))
+                    user.ExpiresAt = null;
+                else
+                {
+                    var s = t.Type == JTokenType.String ? t.Value<string>() : t.ToString();
+                    if (!DateTime.TryParse(s, CultureInfo.InvariantCulture, DateTimeStyles.RoundtripKind, out var dt))
+                    {
+                        errorDetail = "expiresAt: invalid date";
+                        return AdminPatchUserOutcome.InvalidPayload;
+                    }
+
+                    user.ExpiresAt = dt;
+                }
+            }
+
+            if (body.ContainsKey("lang"))
+            {
+                var s = body["lang"]?.Value<string>()?.Trim();
+                if (!string.IsNullOrEmpty(s))
+                    user.Lang = s;
+            }
+
+            if (body.ContainsKey("role"))
+            {
+                var r = body["role"]?.Value<string>()?.Trim();
+                if (string.IsNullOrEmpty(r))
+                {
+                    errorDetail = "role: empty";
+                    return AdminPatchUserOutcome.InvalidPayload;
+                }
+
+                if (!string.Equals(r, "admin", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(r, "user", StringComparison.OrdinalIgnoreCase))
+                {
+                    errorDetail = "role: use user or admin";
+                    return AdminPatchUserOutcome.InvalidPayload;
+                }
+
+                user.Role = string.Equals(r, "admin", StringComparison.OrdinalIgnoreCase) ? "admin" : "user";
+            }
+
+            if (body["accs"] is JObject accsJo)
+            {
+                user.Accs ??= new TelegramAccsProfile();
+                MergeAccsPatch(user.Accs, accsJo, out var accsErr);
+                if (accsErr != null)
+                {
+                    errorDetail = accsErr;
+                    return AdminPatchUserOutcome.InvalidPayload;
+                }
+            }
+
+            if (body["accsRemove"] is JArray rem)
+            {
+                user.Accs ??= new TelegramAccsProfile();
+                foreach (var x in rem)
+                {
+                    var key = x.Value<string>()?.Trim();
+                    if (!string.IsNullOrEmpty(key))
+                        ApplyAccsRemove(user.Accs, key);
+                }
+            }
+
+            if (body["paramsRemove"] is JArray pr)
+            {
+                user.Accs ??= new TelegramAccsProfile();
+                user.Accs.@params ??= new Dictionary<string, object>(StringComparer.Ordinal);
+                foreach (var x in pr)
+                {
+                    var k = x.Value<string>();
+                    if (!string.IsNullOrEmpty(k))
+                        user.Accs.@params.Remove(k);
+                }
+            }
+
+            SaveUsers(users);
+            ResyncUserDevicesToAccsdb(user);
+            return AdminPatchUserOutcome.Ok;
+        }
+
+        static void MergeAccsPatch(TelegramAccsProfile accs, JObject jo, out string? error)
+        {
+            error = null;
+            if (jo.ContainsKey("group"))
+            {
+                var t = jo["group"];
+                if (t == null || t.Type == JTokenType.Null)
+                    accs.group = null;
+                else if (t.Type == JTokenType.Integer || t.Type == JTokenType.Float)
+                    accs.group = (int)t.Value<long>();
+                else
+                {
+                    error = "accs.group: expected integer or null";
+                    return;
+                }
+            }
+
+            if (jo.ContainsKey("IsPasswd"))
+            {
+                var t = jo["IsPasswd"];
+                if (t == null || t.Type == JTokenType.Null)
+                    accs.IsPasswd = null;
+                else if (t.Type != JTokenType.Boolean)
+                {
+                    error = "accs.IsPasswd: expected boolean or null";
+                    return;
+                }
+                else
+                    accs.IsPasswd = t.Value<bool>();
+            }
+
+            if (jo.ContainsKey("ban"))
+            {
+                var t = jo["ban"];
+                if (t == null || t.Type == JTokenType.Null)
+                    accs.ban = null;
+                else if (t.Type != JTokenType.Boolean)
+                {
+                    error = "accs.ban: expected boolean or null";
+                    return;
+                }
+                else
+                    accs.ban = t.Value<bool>();
+            }
+
+            if (jo.ContainsKey("ban_msg"))
+            {
+                var t = jo["ban_msg"];
+                if (t == null || t.Type == JTokenType.Null)
+                    accs.ban_msg = null;
+                else
+                {
+                    var s = t.Value<string>()?.Trim();
+                    accs.ban_msg = string.IsNullOrEmpty(s) ? null : s;
+                }
+            }
+
+            if (jo.ContainsKey("comment"))
+            {
+                var t = jo["comment"];
+                if (t == null || t.Type == JTokenType.Null)
+                    accs.comment = null;
+                else
+                {
+                    var s = t.Value<string>()?.Trim();
+                    accs.comment = string.IsNullOrEmpty(s) ? null : s;
+                }
+            }
+
+            if (jo.ContainsKey("ids"))
+            {
+                var arr = jo["ids"] as JArray;
+                if (arr == null || arr.Count == 0)
+                    accs.ids = null;
+                else
+                {
+                    accs.ids = arr
+                        .Select(x => x?.ToString())
+                        .Where(s => !string.IsNullOrWhiteSpace(s))
+                        .Select(s => s!.Trim())
+                        .Distinct(StringComparer.OrdinalIgnoreCase)
+                        .ToList();
+                }
+            }
+
+            if (jo["params"] is JObject pjo)
+            {
+                accs.@params ??= new Dictionary<string, object>(StringComparer.Ordinal);
+                foreach (var prop in pjo.Properties())
+                {
+                    if (prop.Value == null || prop.Value.Type == JTokenType.Null)
+                        accs.@params.Remove(prop.Name);
+                    else
+                        accs.@params[prop.Name] = prop.Value.Type == JTokenType.String
+                            ? (prop.Value.Value<string>() ?? "")
+                            : prop.Value.Type == JTokenType.Integer
+                                ? prop.Value.Value<long>()
+                                : prop.Value.Type == JTokenType.Float
+                                    ? prop.Value.Value<double>()
+                                    : prop.Value.Type == JTokenType.Boolean
+                                        ? prop.Value.Value<bool>()
+                                        : prop.Value.ToString(Formatting.None);
+                }
+            }
+        }
+
+        static void ApplyAccsRemove(TelegramAccsProfile accs, string key)
+        {
+            switch (key.ToLowerInvariant())
+            {
+                case "group":
+                    accs.group = null;
+                    break;
+                case "ispasswd":
+                case "is_passwd":
+                case "passwd":
+                    accs.IsPasswd = null;
+                    break;
+                case "ban":
+                    accs.ban = null;
+                    break;
+                case "ban_msg":
+                case "banmsg":
+                    accs.ban_msg = null;
+                    break;
+                case "comment":
+                    accs.comment = null;
+                    break;
+                case "ids":
+                    accs.ids = null;
+                    break;
+                case "params":
+                    accs.@params = null;
+                    break;
+            }
+        }
+
+        void SyncAccsdbForBind(TelegramUserRecord user, string? deviceUid)
+        {
+            if (!ShouldSyncAccsdb() || string.IsNullOrWhiteSpace(deviceUid))
+                return;
+
+            var u = deviceUid.Trim();
+
+            if (user.Disabled || IsRegistrationPending(user))
+            {
+                AccsdbUidSync.RemoveUid(u);
+                return;
+            }
+
+            if (!IsActive(user))
+                return;
+
+            var dev = user.Devices?.FirstOrDefault(d => string.Equals(d.Uid, u, StringComparison.OrdinalIgnoreCase));
+            if (dev == null || !dev.Active)
+                return;
+
+            SyncDeviceToAccsdb(user, u);
         }
 
         const string RegistrationPendingApprovedByMarker = "registration-pending";

@@ -4,41 +4,68 @@
   if (window.telegram_auth_gate_loaded) return;
   window.telegram_auth_gate_loaded = true;
 
+  var CONFIG = {
+    botUsername: 'YOUR_BOT_USERNAME',
+    serviceName: 'YOUR_SERVICE_NAME',
+    lsUidKey: 'lampac_unic_id',
+    lsUserKey: 'tg_auth_user',
+    checkIntervalMs: 10000,
+    statusTimeoutMs: 8000,
+    successOverlayMs: 1600,
+    testaccsdbTpl: '{localhost}/testaccsdb',
+    footerLines: [
+      'Хорошего вечера',
+      'Почти внутри — остался один шаг',
+      'Сейчас впустим тебя внутрь'
+    ]
+  };
+
   var ORIGIN = location.protocol + '//' + location.host;
   var STATUS_URL = ORIGIN + '/tg/auth/status';
-  var LS_KEY = 'lampac_unic_id';
-  var USER_KEY = 'tg_auth_user';
-  var CHECK_INTERVAL = 10000;
   var DEVICE_NAME_URL = ORIGIN + '/tg/auth/device/name';
-  var BOT_USERNAME = 'YOUR_BOT_USERNAME';
-  var FOOTER_MESSAGES = [
-    'Хорошего вечера 🌒',
-    'Музыка уже рядом',
-    'Почти внутри. Остался один шаг',
-    'Пусть сегодня всё звучит как надо',
-    'Сейчас впустим тебя внутрь',
-    'Пусть этот вечер будет спокойным',
-    'Павлухе и Бате на пиво не забудь отправить 🍻',
-    'Если читаешь с MSX — возьми себе Apple TV 😏'
-  ];
+
   var overlay = null;
   var pollTimer = null;
   var authorized = false;
+  var accsNetwork = new Lampa.Reguest();
+  var accsdbAuthHint = '';
+
+  function accsdbUrl() {
+    var tpl = CONFIG.testaccsdbTpl;
+    return tpl.indexOf('{') >= 0 ? ORIGIN + '/testaccsdb' : tpl;
+  }
+
+  function escapeHtml(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
 
   function getUID() {
     var uid = '';
     try {
-      uid = Lampa.Storage.get(LS_KEY, '');
-    } catch (e) {}
+      uid = Lampa.Storage.get(CONFIG.lsUidKey, '');
+    } catch (e) { }
 
     if (!uid) {
       uid = Math.random().toString(36).slice(2, 10).toLowerCase();
       try {
-        Lampa.Storage.set(LS_KEY, uid);
-      } catch (e) {}
+        Lampa.Storage.set(CONFIG.lsUidKey, uid);
+      } catch (e2) { }
     }
 
     return uid;
+  }
+
+  function applyServerNewUid(res) {
+    if (!res || !res.newuid) return;
+    var id = Lampa.Utils.uid(8).toLowerCase();
+    try {
+      Lampa.Storage.set(CONFIG.lsUidKey, id);
+    } catch (e) { }
   }
 
   function truncateDeviceLabel(s, maxLen) {
@@ -113,7 +140,7 @@
         if (typeof pl.vendor === 'function') {
           try {
             pushDeviceSegment(segments, pl.vendor());
-          } catch (e1) {}
+          } catch (e1) { }
         }
         if (typeof pl.screen === 'string') pushDeviceSegment(segments, pl.screen);
 
@@ -137,11 +164,11 @@
                 pushDeviceSegment(segments, platformTags[j][1]);
                 break;
               }
-            } catch (e2) {}
+            } catch (e2) { }
           }
         }
       }
-    } catch (e) {}
+    } catch (e) { }
 
     if (segments.length === 0) {
       pushDeviceSegment(segments, compactUaDeviceHint(ua));
@@ -149,7 +176,7 @@
       var isBrowser = false;
       try {
         isBrowser = typeof Lampa !== 'undefined' && Lampa.Platform && typeof Lampa.Platform.is === 'function' && Lampa.Platform.is('browser');
-      } catch (e3) {}
+      } catch (e3) { }
       if (isBrowser) {
         pushDeviceSegment(segments, clientBrandsHint());
         if (segments.length < 3) pushDeviceSegment(segments, compactUaDeviceHint(ua));
@@ -173,7 +200,7 @@
           headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
           body: body,
           credentials: 'same-origin'
-        }).catch(function () {});
+        }).catch(function () { });
         return;
       }
       try {
@@ -181,7 +208,7 @@
         xhr.open('POST', DEVICE_NAME_URL, true);
         xhr.setRequestHeader('Content-Type', 'application/json');
         xhr.send(body);
-      } catch (e) {}
+      } catch (e) { }
     }
 
     sendOnce();
@@ -199,9 +226,7 @@
         if (onError) onError(err || {});
       },
       false,
-      {
-        timeout: 1000 * 8
-      }
+      { timeout: CONFIG.statusTimeoutMs }
     );
   }
 
@@ -257,30 +282,61 @@
     document.body.classList.add('tg-auth-gate-lock');
   }
 
+  /** Сброс стека Lampa и переход на главную (как после успешного пароля в deny.js). */
+  function reloadToMainPage() {
+    try {
+      localStorage.removeItem('activity');
+    } catch (e) { }
+    try {
+      var u = new URL(window.location.href);
+      u.search = '';
+      u.hash = '';
+      window.location.replace(u.origin + u.pathname);
+    } catch (e2) {
+      try {
+        window.location.replace('/');
+      } catch (e3) { }
+    }
+  }
+
   function unlockApp() {
     authorized = true;
     stopPolling();
     removeOverlay();
     document.body.classList.remove('tg-auth-gate-lock');
+    try {
+      delete window.start_deep_link;
+    } catch (e) { }
+    try {
+      window.sync_disable = false;
+    } catch (e) { }
+    var appEl = document.getElementById('app');
+    if (appEl) appEl.style.display = '';
+    reloadToMainPage();
+  }
+
+  function serviceLabel() {
+    return escapeHtml(CONFIG.serviceName);
   }
 
   function showSuccessOverlay(result) {
     ensureStyle();
     removeOverlay();
 
+    var uname = escapeHtml((result && result.username) || '');
     overlay = document.createElement('div');
     overlay.id = 'tg-auth-gate-overlay';
     overlay.innerHTML =
       '<div class="tg-auth-gate__shell">' +
-        '<div class="tg-auth-gate__box" style="max-width:760px;">' +
-          '<div class="tg-auth-gate__eyebrow">YOUR_SERVICE_NAME · Авторизация</div>' +
-          '<div class="tg-auth-gate__title">Устройство авторизовано</div>' +
-          '<div class="tg-auth-gate__text">Выполняется вход в YOUR_SERVICE_NAME. Подождите пару секунд...</div>' +
-          '<div class="tg-auth-gate__steps">' +
-            '<div class="tg-auth-gate__step"><div class="tg-auth-gate__step-index">✓</div><div><b>@' + (result.username || '') + '</b> успешно подтверждён через Telegram.</div></div>' +
-            '<div class="tg-auth-gate__step"><div class="tg-auth-gate__step-index">→</div><div>Сейчас экран авторизации закроется автоматически.</div></div>' +
-          '</div>' +
-        '</div>' +
+      '<div class="tg-auth-gate__box" style="max-width:760px;">' +
+      '<div class="tg-auth-gate__eyebrow">' + serviceLabel() + ' · Авторизация</div>' +
+      '<div class="tg-auth-gate__title">Устройство авторизовано</div>' +
+      '<div class="tg-auth-gate__text">Выполняется вход в ' + serviceLabel() + '. Подождите пару секунд...</div>' +
+      '<div class="tg-auth-gate__steps">' +
+      '<div class="tg-auth-gate__step"><div class="tg-auth-gate__step-index">✓</div><div><b>@' + uname + '</b> успешно подтверждён через Telegram.</div></div>' +
+      '<div class="tg-auth-gate__step"><div class="tg-auth-gate__step-index">→</div><div>Сейчас экран авторизации закроется автоматически.</div></div>' +
+      '</div>' +
+      '</div>' +
       '</div>';
 
     document.body.appendChild(overlay);
@@ -290,46 +346,50 @@
     ensureStyle();
     removeOverlay();
 
-    var tgUrl = 'https://t.me/' + BOT_USERNAME + '?start=' + encodeURIComponent(uid);
+    var bot = CONFIG.botUsername.replace(/^@/, '');
+    var tgUrl = 'https://t.me/' + encodeURIComponent(bot) + '?start=' + encodeURIComponent(uid);
     var qrUrl = 'https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=' + encodeURIComponent(tgUrl);
-    var footerMessage = FOOTER_MESSAGES[Math.floor(Math.random() * FOOTER_MESSAGES.length)];
+    var footArr = CONFIG.footerLines;
+    var footerMessage = footArr.length ? footArr[Math.floor(Math.random() * footArr.length)] : '';
+    var msgHtml = escapeHtml(message || '');
+    var botEsc = escapeHtml(bot);
 
     overlay = document.createElement('div');
     overlay.id = 'tg-auth-gate-overlay';
     overlay.innerHTML =
       '<div class="tg-auth-gate__shell">' +
-        '<div class="tg-auth-gate__box">' +
-          '<div class="tg-auth-gate__grid">' +
-            '<div>' +
-              '<div class="tg-auth-gate__eyebrow">YOUR_SERVICE_NAME · Авторизация</div>' +
-              '<div class="tg-auth-gate__title">Вход в YOUR_SERVICE_NAME</div>' +
-              '<div class="tg-auth-gate__text">' + (message || 'Открой Telegram и привяжи это устройство, чтобы продолжить просмотр.') + '</div>' +
-              '<div class="tg-auth-gate__steps">' +
-                '<div class="tg-auth-gate__step tg-auth-gate__only-desktop"><div class="tg-auth-gate__step-index">1</div><div>Нажми <b>Открыть Telegram</b> или отсканируй QR-код телефоном.</div></div>' +
-                '<div class="tg-auth-gate__step tg-auth-gate__only-mobile"><div class="tg-auth-gate__step-index">1</div><div>Нажми <b>Открыть Telegram</b> — откроется чат с ботом, UID подставится в стартовое сообщение.</div></div>' +
-                '<div class="tg-auth-gate__step"><div class="tg-auth-gate__step-index">2</div><div>Бот <b>@' + BOT_USERNAME + '</b> автоматически получит UID устройства.</div></div>' +
-                '<div class="tg-auth-gate__step"><div class="tg-auth-gate__step-index">3</div><div>После сообщения об успехе вернись сюда и нажми <b>Проверить снова</b>.</div></div>' +
-              '</div>' +
-              '<div class="tg-auth-gate__uid-label">UID устройства</div>' +
-              '<div class="tg-auth-gate__uid">' + uid + '</div>' +
-              '<div class="tg-auth-gate__hint">' +
-                '<span class="tg-auth-gate__hint-desktop">Если Telegram не открылся автоматически, скопируй UID вручную и отправь его боту. Для ТВ оставлен крупный QR и большой код, чтобы ничего не мешало с дивана.</span>' +
-                '<span class="tg-auth-gate__hint-mobile">На этом экране QR не нужен: открой Telegram кнопкой ниже или скопируй UID и отправь боту вручную.</span>' +
-              '</div>' +
-              '<div class="tg-auth-gate__actions">' +
-                '<div class="tg-auth-gate__button tg-auth-gate__button--primary selector" id="tg-auth-gate-open">Открыть Telegram</div>' +
-                '<div class="tg-auth-gate__button selector" id="tg-auth-gate-refresh">Проверить снова</div>' +
-                '<div class="tg-auth-gate__button tg-auth-gate__button--ghost selector" id="tg-auth-gate-copy">Скопировать UID</div>' +
-              '</div>' +
-              '<div class="tg-auth-gate__meta" style="margin-top:1.35em;font-size:1.02em;color:#c4cad4;">' + footerMessage + '</div>' +
-            '</div>' +
-            '<div class="tg-auth-gate__qr-wrap">' +
-              '<img class="tg-auth-gate__qr" src="' + qrUrl + '" alt="Telegram QR">' +
-              '<div class="tg-auth-gate__qr-title">Сканируй QR</div>' +
-              '<div class="tg-auth-gate__qr-text">Телефон откроет Telegram с готовой ссылкой на вход в YOUR_SERVICE_NAME.</div>' +
-            '</div>' +
-          '</div>' +
-        '</div>' +
+      '<div class="tg-auth-gate__box">' +
+      '<div class="tg-auth-gate__grid">' +
+      '<div>' +
+      '<div class="tg-auth-gate__eyebrow">' + serviceLabel() + ' · Авторизация</div>' +
+      '<div class="tg-auth-gate__title">Вход в ' + serviceLabel() + '</div>' +
+      '<div class="tg-auth-gate__text">' + (msgHtml || escapeHtml('Открой Telegram и привяжи это устройство, чтобы продолжить просмотр.')) + '</div>' +
+      '<div class="tg-auth-gate__steps">' +
+      '<div class="tg-auth-gate__step tg-auth-gate__only-desktop"><div class="tg-auth-gate__step-index">1</div><div>Нажми <b>Открыть Telegram</b> или отсканируй QR-код телефоном.</div></div>' +
+      '<div class="tg-auth-gate__step tg-auth-gate__only-mobile"><div class="tg-auth-gate__step-index">1</div><div>Нажми <b>Открыть Telegram</b> — откроется чат с ботом, UID подставится в стартовое сообщение.</div></div>' +
+      '<div class="tg-auth-gate__step"><div class="tg-auth-gate__step-index">2</div><div>Бот <b>@' + botEsc + '</b> автоматически получит UID устройства.</div></div>' +
+      '<div class="tg-auth-gate__step"><div class="tg-auth-gate__step-index">3</div><div>После сообщения об успехе вернись сюда и нажми <b>Проверить снова</b>.</div></div>' +
+      '</div>' +
+      '<div class="tg-auth-gate__uid-label">UID устройства</div>' +
+      '<div class="tg-auth-gate__uid">' + escapeHtml(uid) + '</div>' +
+      '<div class="tg-auth-gate__hint">' +
+      '<span class="tg-auth-gate__hint-desktop">Если Telegram не открылся автоматически, скопируй UID вручную и отправь его боту. Для ТВ оставлен крупный QR и большой код.</span>' +
+      '<span class="tg-auth-gate__hint-mobile">На этом экране QR не нужен: открой Telegram кнопкой ниже или скопируй UID и отправь боту вручную.</span>' +
+      '</div>' +
+      '<div class="tg-auth-gate__actions">' +
+      '<div class="tg-auth-gate__button tg-auth-gate__button--primary selector" id="tg-auth-gate-open">Открыть Telegram</div>' +
+      '<div class="tg-auth-gate__button selector" id="tg-auth-gate-refresh">Проверить снова</div>' +
+      '<div class="tg-auth-gate__button tg-auth-gate__button--ghost selector" id="tg-auth-gate-copy">Скопировать UID</div>' +
+      '</div>' +
+      (footerMessage ? '<div class="tg-auth-gate__meta" style="margin-top:1.35em;font-size:1.02em;color:#c4cad4;">' + escapeHtml(footerMessage) + '</div>' : '') +
+      '</div>' +
+      '<div class="tg-auth-gate__qr-wrap">' +
+      '<img class="tg-auth-gate__qr" src="' + escapeHtml(qrUrl) + '" alt="Telegram QR">' +
+      '<div class="tg-auth-gate__qr-title">Сканируй QR</div>' +
+      '<div class="tg-auth-gate__qr-text">Телефон откроет Telegram с готовой ссылкой на вход в ' + serviceLabel() + '.</div>' +
+      '</div>' +
+      '</div>' +
+      '</div>' +
       '</div>';
 
     document.body.appendChild(overlay);
@@ -369,30 +429,34 @@
     stopPolling();
     pollTimer = setInterval(function () {
       if (!authorized) checkAccess(false);
-    }, CHECK_INTERVAL);
+    }, CONFIG.checkIntervalMs);
   }
 
   function handleAuthorized(uid, result) {
     postDeviceDisplayName(uid);
 
     try {
-      Lampa.Storage.set(USER_KEY, {
+      Lampa.Storage.set(CONFIG.lsUserKey, {
         telegramId: result.telegramId || '',
         username: result.username || '',
         role: result.role || 'user',
         expiresAt: result.expiresAt || ''
       });
-    } catch (e) {}
+    } catch (e) { }
 
     showSuccessOverlay(result || {});
     setTimeout(function () {
       unlockApp();
-    }, 1600);
+    }, CONFIG.successOverlayMs);
   }
 
   function handleUnauthorized(uid, result) {
     lockApp();
-    buildOverlay(uid, result && result.message ? result.message : 'Подтвердите устройство через Telegram-бота.');
+    var hint =
+      (result && result.message) ||
+      accsdbAuthHint ||
+      'Подтвердите устройство через Telegram-бота.';
+    buildOverlay(uid, hint);
     startPolling();
   }
 
@@ -418,13 +482,68 @@
     checkAccess(false);
   }
 
-  if (window.appready) {
+  function onAccsdbRequiresAuth(res) {
+    // Не выставляем start_deep_link на denypages: ядро Lampa тогда пишет в URL
+    // ?component=denypages&page=1 и открывает экран deny; здесь достаточно оверлея и скрытого #app.
+
+    applyServerNewUid(res);
+
+    window.sync_disable = true;
+    var appEl = document.getElementById('app');
+    if (appEl) appEl.style.display = 'none';
+
+    if (res.denymsg) {
+      var pwait = document.createElement('div');
+      pwait.id = 'loading-element';
+      pwait.style.fontSize = 'xxx-large';
+      pwait.style.textAlign = 'center';
+      pwait.style.marginTop = '2em';
+      pwait.innerHTML = res.denymsg;
+      document.body.appendChild(pwait);
+      return;
+    }
+
+    accsdbAuthHint = res && res.msg ? String(res.msg) : '';
     startGate();
-  } else if (document.readyState === 'complete' || document.readyState === 'interactive') {
-    setTimeout(startGate, 500);
-  } else {
-    document.addEventListener('DOMContentLoaded', function () {
-      setTimeout(startGate, 500);
-    });
   }
+
+  function buildTestaccsdbRequestUrl() {
+    var url = accsdbUrl();
+    var email = Lampa.Storage.get('account_email');
+    if (email) url = Lampa.Utils.addUrlComponent(url, 'account_email=' + encodeURIComponent(email));
+    var uid0 = Lampa.Storage.get(CONFIG.lsUidKey, '');
+    if (uid0) url = Lampa.Utils.addUrlComponent(url, 'uid=' + encodeURIComponent(uid0));
+    var token = '{token}';
+    if (token) url = Lampa.Utils.addUrlComponent(url, 'token={token}');
+    return url;
+  }
+
+  function checkAutch() {
+    accsNetwork.silent(
+      buildTestaccsdbRequestUrl(),
+      function (res) {
+        if (res.accsdb) {
+          onAccsdbRequiresAuth(res);
+        } else {
+          accsNetwork.clear();
+          accsNetwork = null;
+        }
+      },
+      function () { }
+    );
+  }
+
+  function scheduleCheckAutch() {
+    if (window.appready) {
+      checkAutch();
+    } else if (document.readyState === 'complete' || document.readyState === 'interactive') {
+      setTimeout(checkAutch, 500);
+    } else {
+      document.addEventListener('DOMContentLoaded', function () {
+        setTimeout(checkAutch, 500);
+      });
+    }
+  }
+
+  scheduleCheckAutch();
 })();

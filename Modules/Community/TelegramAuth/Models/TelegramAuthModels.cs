@@ -35,6 +35,26 @@ namespace TelegramAuth.Models
         public string Source { get; set; } = "import";
     }
 
+    public class TelegramAccsProfile
+    {
+        [JsonProperty("group")]
+        public int? group { get; set; }
+
+        [JsonProperty("IsPasswd")]
+        public bool? IsPasswd { get; set; }
+
+        public bool? ban { get; set; }
+
+        public string? ban_msg { get; set; }
+
+        public string? comment { get; set; }
+
+        [JsonProperty("params")]
+        public Dictionary<string, object>? @params { get; set; }
+
+        public List<string>? ids { get; set; }
+    }
+
     public class TelegramUserRecord
     {
         public string TelegramId { get; set; } = "";
@@ -48,17 +68,18 @@ namespace TelegramAuth.Models
 
         public bool Disabled { get; set; }
 
-        /// <summary>Ожидает решения модератора (подтвердить / отклонить регистрацию).</summary>
         public bool RegistrationPending { get; set; }
 
         public List<DeviceRecord> Devices { get; set; } = new();
+
+        [JsonProperty("accs")]
+        public TelegramAccsProfile? Accs { get; set; }
     }
 
     public class AuthStatusResponse
     {
         public bool Authorized { get; set; }
         public bool Pending { get; set; }
-        /// <summary>True если аккаунт создан и ждёт подтверждения администратора.</summary>
         public bool RegistrationPending { get; set; }
         public string? Message { get; set; }
         public string? TelegramId { get; set; }
@@ -118,7 +139,6 @@ namespace TelegramAuth.Models
     public class AdminPendingDecisionRequest
     {
         public string TelegramId { get; set; } = "";
-        /// <summary>true — подтвердить и включить доступ; false — отклонить и удалить запись пользователя.</summary>
         [JsonProperty("approve")]
         public bool Approve { get; set; } = true;
     }

@@ -43,6 +43,16 @@ namespace TelegramAuthBot.Models
         public List<AdminUserRowDto> users { get; set; }
     }
 
+    public class AdminUserAccsBriefDto
+    {
+        public int? group { get; set; }
+        public bool? IsPasswd { get; set; }
+        public bool? ban { get; set; }
+        public string ban_msg { get; set; }
+        public string comment { get; set; }
+        public List<string> ids { get; set; }
+    }
+
     public class AdminUserRowDto
     {
         public string telegramId { get; set; }
@@ -53,5 +63,6 @@ namespace TelegramAuthBot.Models
         public bool active { get; set; }
         public string expiresAt { get; set; }
         public int deviceCount { get; set; }
+        public AdminUserAccsBriefDto accs { get; set; }
     }
 }

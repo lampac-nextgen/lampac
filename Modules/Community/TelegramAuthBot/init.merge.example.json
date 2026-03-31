@@ -7,6 +7,7 @@
     "service_display_name": "Lampac NextGen Bot",
     "mutations_api_secret": "SAME_AS_TelegramAuth.mutations_api_secret",
     "admin_chat_ids": [],
-    "owner_telegram_ids": []
+    "owner_telegram_ids": [],
+    "notify_admins_on_pending_provision": true
   }
 }

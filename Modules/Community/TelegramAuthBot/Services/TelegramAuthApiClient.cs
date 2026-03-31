@@ -87,7 +87,7 @@ namespace TelegramAuthBot.Services
             return resp.IsSuccessStatusCode ? (true, body) : (false, body);
         }
 
-        public async Task<(bool ok, string detail)> SetDeviceDisplayNameAsync(string uid, string? name, CancellationToken ct)
+        public async Task<(bool ok, string detail)> SetDeviceDisplayNameAsync(string uid, string name, CancellationToken ct)
         {
             var payload = new { uid, name };
             using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
@@ -141,6 +141,35 @@ namespace TelegramAuthBot.Services
             var payload = new { telegramId, approve };
             using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
             using var req = new HttpRequestMessage(HttpMethod.Post, "tg/auth/admin/user/pending") { Content = content };
+            AddMutationsSecret(req);
+            using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+            var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            return resp.IsSuccessStatusCode ? (true, body) : (false, body);
+        }
+
+        public async Task<(bool ok, JObject data, string errorBody)> GetAdminUserDetailAsync(string telegramId, CancellationToken ct)
+        {
+            var path = "tg/auth/admin/user?" + Uri.EscapeDataString("telegramId") + "=" + Uri.EscapeDataString(telegramId);
+            using var req = new HttpRequestMessage(HttpMethod.Get, path);
+            AddMutationsSecret(req);
+            using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+            var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            if (!resp.IsSuccessStatusCode)
+                return (false, null, body);
+            try
+            {
+                return (true, JObject.Parse(body), body);
+            }
+            catch
+            {
+                return (false, null, body);
+            }
+        }
+
+        public async Task<(bool ok, string detail)> PatchAdminUserAsync(JObject patch, CancellationToken ct)
+        {
+            using var content = new StringContent(patch.ToString(Formatting.None), Encoding.UTF8, "application/json");
+            using var req = new HttpRequestMessage(HttpMethod.Post, "tg/auth/admin/user/patch") { Content = content };
             AddMutationsSecret(req);
             using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
             var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);

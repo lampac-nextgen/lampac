@@ -2,6 +2,16 @@
 
 Модуль **HTTP API и файлового хранилища** для авторизации клиентов Lampac через привязку устройства (UID) к учётной записи Telegram. Работает совместно с модулем [TelegramAuthBot](../TelegramAuthBot/README.md) и/или с кастомными клиентами (например, плагин в LampaWeb).
 
+### Интеграция с accsdb и `/testaccsdb`
+
+При **`sync_lampa_uid_to_accsdb`: `true`** модуль при загрузке конфига выставляет **`accsdb.enable`** в Core. Для каждого **активного** привязанного Lampa UID в **корневой** **`users.json`** (рядом с `init.conf`) пишется запись в формате **`AccsUser`**: `id` = UID, `expires`, `group`, `ban`, `ban_msg`, `comment`, `IsPasswd`, `ids`, `params` — см. [`Services/AccsdbUidSync.cs`](Services/AccsdbUidSync.cs). Хост подмешивает файл в память (типично до ~1 с после записи).
+
+В **`data_dir`/users.json** у записи Telegram-пользователя опционально объект **`accs`**: те же смыслы, что в accsdb, кроме `id` и `expires` (срок берётся из **`ExpiresAt`** пользователя или из **`accsdb.shared_daytime`** / 365 дней). **`group`**: из **`accs.group`**, иначе из роли и полей **`accsdb_sync_group_admin`** / **`accsdb_sync_group_user`**. **`accs.ban`** — бан в accsdb **без** отключения учётки в Telegram; текст — **`accs.ban_msg`**. В **`params`** при синхронизации добавляются **`telegram_id`** и при наличии **`telegram_username`**.
+
+**Пока учётка в ожидании подтверждения** (`RegistrationPending`) **или отключена** (`Disabled`): в корневой **`users.json` UID не добавляется** (upsert не выполняется); при привязке UID в этом состоянии лишняя строка по этому UID **удаляется** (`RemoveUid`). После **одобрения** или **включения** — снова upsert для активных устройств. **`shared_passwd`**, **`authMesage`**, **`denyMesage`** задаются в секции **`accsdb`** init. Выключение **`sync_lampa_uid_to_accsdb`** не отключает accsdb целиком.
+
+**Лимит активных устройств:** при добавлении нового UID, **реактивации** неактивного или при **`CleanupInactiveDevices`**, если слотов не хватает, самое старое активное устройство (по `LastSeenAt` / `LinkedAt`) переводится в неактивное и его UID **снимается с accsdb** — иначе старый клиент остался бы в `users.json` и проходил бы проверку.
+
 ## Назначение
 
 - Хранить пользователей Telegram (`telegramId`, роль, срок доступа, язык) и список привязанных **устройств** (UID).
@@ -9,7 +19,9 @@
 - Ограничивать число активных устройств на пользователя (для роли `user`; у `admin` лимит снят).
 - Опционально: импорт из **legacy**-каталога и фоновая очистка старых записей устройств.
 
-Если `auto_provision_users` выключен, при привязке UID запись с таким `telegramId` **уже должна быть** в `users.json`. Если включён — неизвестный id может быть создан автоматически (см. блок «Регистрация» в конфиге). Владельцы из `owner_telegram_ids` добавляются/обновляются как **admin** при **старте модуля** (не через бота).
+**Краткий поток accsdb** (при включённом `sync_lampa_uid_to_accsdb`): upsert в корневой `users.json` только для пользователя **без** `RegistrationPending`, **не** `Disabled`, с **активным** устройством; иначе для затронутых UID вызывается удаление строки. Ресинк всех активных UID одного пользователя — после патча админом, одобрения pending, включения учётки; полное снятие UID — при отключении, отклонении pending, отвязке, вытеснении по лимиту устройств.
+
+Если `auto_provision_users` выключен, при привязке UID запись с таким `telegramId` **уже должна быть** в **`data_dir`/users.json**. Если включён — неизвестный id может быть создан автоматически (см. блок «Регистрация» в конфиге). Владельцы из `owner_telegram_ids` добавляются/обновляются как **admin** при **старте модуля** (не через бота).
 
 Статус **«ожидает подтверждения модератором»** задаётся только флагом **`RegistrationPending`** в `users.json` (вместе с `Disabled: true` при создании через auto-provision без немедленной активации). Подтверждение и отклонение — через `POST /tg/auth/admin/user/pending` или бота (см. [TelegramAuthBot](../TelegramAuthBot/README.md)).
 
@@ -34,13 +46,16 @@
 | `enable_cleanup` | Разрешить очистку (`POST /tg/auth/devices/cleanup`). |
 | `max_active_devices_per_user` | Максимум **активных** устройств для роли `user`. `0` — использовать встроенное значение **5**. Для роли `admin` лимит не применяется (∞). |
 | `mutations_api_secret` | Общий секрет через заголовок `X-TelegramAuth-Mutations-Secret` (должен совпадать с `TelegramAuthBot.mutations_api_secret`). Если строка **не пустая**, её же требуют завершение привязки (`POST /tg/auth/bind/complete`) и админские мутации (import, cleanup, список пользователей и т.д.). Если **пусто** — `bind/complete` доступен без этого заголовка (см. «Безопасность»). |
-| `owner_telegram_ids` | Числовые user id владельцев; при старте модуля — запись admin в `users.json`. |
+| `owner_telegram_ids` | Числовые user id владельцев; при старте модуля — запись admin в **`data_dir`/users.json** (хранилище Telegram). |
 | `auto_provision_users` | Разрешить создание пользователя при bind для неизвестного `telegramId`. |
 | `auto_provision_role` | Роль новой записи (кроме `admin` — принудительно `user`). |
 | `auto_provision_lang` | Язык по умолчанию. |
 | `auto_provision_expires_days` | Срок доступа в днях; `0` — без срока. |
 | `auto_provision_activate_immediately` | `false`: новый пользователь в статусе **ожидания подтверждения** (`RegistrationPending: true`, `Disabled: true`, `ApprovedBy`: `registration-pending` — только метка в JSON) до решения администратора; `true`: сразу активен. |
 | `limit_map` | Дополнительные правила WAF (модуль добавляет в начало списка правило для `^/tg/auth`, по умолчанию ~25 запросов/сек). |
+| `sync_lampa_uid_to_accsdb` | Включить **`accsdb.enable`** и синхронизировать активные UID в **корневой** `users.json`. |
+| `accsdb_sync_group_admin` | Значение **`group`** в accsdb для роли `admin`, если в **`accs.group`** не задано (по умолчанию `100`). |
+| `accsdb_sync_group_user` | То же для обычного пользователя (по умолчанию `0`). |
 
 ## Хранилище
 
@@ -48,7 +63,7 @@
 
 | Файл | Содержимое |
 | ---- | ---------- |
-| `users.json` | Массив пользователей: `TelegramId`, `TgUsername`, `Role`, …, массив `Devices` (`Uid`, `Name` — подпись устройства, `Active`, `LastSeenAt`, …) |
+| `users.json` (в **`data_dir`**, не путать с корневым accsdb) | Массив пользователей Telegram: `TelegramId`, `Role`, `ExpiresAt`, `Devices`, опционально **`accs`** (`group`, `ban`, `ban_msg`, …) |
 | `admins.json` | Служебный список (заполняется при импорте из legacy). |
 | `user_langs.json` | Словарь `telegramId → язык`. |
 
@@ -56,7 +71,7 @@
 
 ## HTTP API (префикс `/tg/auth`)
 
-Все перечисленные маршруты помечены в коде как анонимные (`AuthorizeAnonymous`) — доступ не через стандартную cookie-сессию Lampac, а по смыслу операции (UID / Telegram ID в запросе). **Административные мутации** (import, cleanup, список пользователей, отключение учётки, решение по pending) дополнительно требуют либо cookie `accspasswd` (значение = root-пароль сервера), либо заголовок `X-TelegramAuth-Mutations-Secret` с тем же значением, что в `mutations_api_secret` (при непустом секрете). **`POST /tg/auth/bind/complete`** использует те же правила **только если** `mutations_api_secret` задан; иначе вызов остаётся без заголовка мутаций.
+Все перечисленные маршруты помечены в коде как анонимные (`AuthorizeAnonymous`) — доступ не через стандартную cookie-сессию Lampac, а по смыслу операции (UID / Telegram ID в запросе). **Административные мутации** (import, cleanup, список пользователей, отключение учётки, решение по pending) требуют успешной проверки «мутаций»: cookie **`accspasswd`** (= root-пароль сервера) **или** заголовок **`X-TelegramAuth-Mutations-Secret`**, совпадающий с непустым **`mutations_api_secret`**. Если **`mutations_api_secret` пуст**, заголовок мутаций **не принимается** — остаётся только cookie `accspasswd` (удобно для вызовов из браузера под root; серверный бот без секрета админские методы через API не пройдёт). **`POST /tg/auth/bind/complete`** проверяет секрет **только при непустом** `mutations_api_secret`; при пустом секрете привязка возможна без заголовка и без этой cookie.
 
 ### Чтение / статус
 
@@ -71,31 +86,33 @@
 ### Привязка устройства
 
 - **`POST /tg/auth/bind/start`** — тело JSON `{ "uid" }`. Опциональный шаг для клиентов до привязки в боте; имя устройства задаётся после входа через **`POST /tg/auth/device/name`**.
-- **`POST /tg/auth/bind/complete`** — тело JSON `{ "uid", "telegramId", "username?", "deviceName?" }`. `username` — Telegram @; опционально **`deviceName`** → `Devices[].Name`. Пользователь с таким `telegramId` **должен существовать** (или создаётся при `auto_provision_users`), отключённый аккаунт получает 403. Если в конфиге задан **`mutations_api_secret`**, нужны cookie `accspasswd` или заголовок **`X-TelegramAuth-Mutations-Secret`** (как у админских методов); иначе ответ **403**. Типичный вызывающий — [TelegramAuthBot](../TelegramAuthBot/README.md) с тем же секретом в своей конфигурации.
+- **`POST /tg/auth/bind/complete`** — тело JSON `{ "uid", "telegramId", "username?", "deviceName?" }`. Новый UID или **реактивация** существующего неактивного устройства учитывают лимит активных (вытеснение + `RemoveUid` на accsdb). Пока **`RegistrationPending`** или **`Disabled`**, в accsdb UID **не появляется**; при привязке в этом состоянии UID в корневом `users.json` **удаляется**, если был. Секрет мутаций — как выше, если **`mutations_api_secret`** не пустой.
 - **`POST /tg/auth/device/name`** — тело `{ "uid", "name?" }`. **`Devices[].Name`** для активного UID. Плагин Lampa вызывает после успешного `status`; пустой `name` очищает подпись.
 
 ### Отвязка
 
 - **`POST /tg/auth/device/unbind`** — тело `{ "telegramId", "uid" }`: помечает устройство неактивным **только** если этот UID принадлежит указанному Telegram-пользователю; иначе **404** (`user not found` / `device not found`). Секрет мутаций не требуется.
-- **`POST /tg/auth/device/reactivate`** — тело `{ "telegramId", "uid" }`: снова активирует устройство, если UID принадлежит этому пользователю; учитывается лимит активных устройств (при переполнении самое старое активное отключается). Если аккаунт отключён администратором — `403`.
+- **`POST /tg/auth/device/reactivate`** — тело `{ "telegramId", "uid" }`: снова активирует устройство; при переполнении лимита самое старое активное отключается и его UID снимается с accsdb (как при `bind/complete`). Если аккаунт в pending / отключён — `403`.
 
 ### Административные (секрет или root-cookie)
 
-- **`GET /tg/auth/admin/users`** — JSON `{ "ok", "users" }`: сводка по всем записям в `users.json` (без полного дампа устройств).
+- **`GET /tg/auth/admin/users`** — `{ "ok", "users" }`: краткая сводка по каждому пользователю, в т.ч. урезанный **`accs`** (для списка в боте).
+- **`GET /tg/auth/admin/user?telegramId=`** — полная карточка: профиль, **`accs`**, список устройств.
+- **`POST /tg/auth/admin/user/patch`** — JSON-патч одного пользователя: обязателен **`telegramId`**; опционально **`expiresAt`**, **`lang`**, **`role`**, объект **`accs`** (слияние полей: `group`, `IsPasswd`, `ban`, `ban_msg`, `comment`, `ids`, `params`), массив **`accsRemove`** (имена полей: `group`, `ispasswd`, `ban`, `ban_msg`, …), **`paramsRemove`** (ключи из `accs.params`). После сохранения выполняется ресинк UID в корневой `users.json` (pending/disabled — только `RemoveUid` по устройствам).
 - **`POST /tg/auth/admin/user/disabled`** — тело `{ "telegramId", "disabled" }` (`disabled: true` — отключить доступ, деактивировать все устройства; `false` — снова разрешить вход, сбросить `RegistrationPending`). Учётки с ролью `admin` **нельзя** отключить этим методом.
-- **`POST /tg/auth/admin/user/pending`** — тело `{ "telegramId", "approve" }` (секрет мутаций, как у остальных admin-методов). `approve: true` — подтвердить регистрацию: снять ожидание, включить доступ (`RegistrationPending: false`, `Disabled: false`). `approve: false` — **отклонить**: удалить запись пользователя из `users.json` (устройства вместе с ней). Работает только при `RegistrationPending: true`. Запись `admin` отклонить нельзя.
+- **`POST /tg/auth/admin/user/pending`** — тело `{ "telegramId", "approve" }`. `approve: true` — подтвердить регистрацию (`RegistrationPending: false`, `Disabled: false`). `approve: false` — **отклонить**: удалить запись пользователя из `data_dir`/users.json; UID устройств снимаются с корневого accsdb при включённом sync. Запись `admin` отклонить нельзя.
 - **`POST /tg/auth/import`** — импорт из `legacy_import_path`: ожидаются `tokens.json`, опционально `admin_ids.json`, `user_langs.json` (формат см. в `TelegramAuthStore.ImportFromLegacy`).
 - **`POST /tg/auth/devices/cleanup`** — удаление давно неактивных записей устройств и ужатие превышения лимита активных.
 
 ## Безопасность
 
-- Храните **`mutations_api_secret`** как секрет; не коммитьте в репозиторий. Рекомендуется задать ненулевой секрет в продакшене: тогда **`bind/complete`** нельзя вызвать снаружи без секрета или root-cookie, а бот передаёт заголовок автоматически.
+- Храните **`mutations_api_secret`** как секрет; не коммитьте в репозиторий. Рекомендуется задать ненулевой секрет в продакшене: тогда **`bind/complete`** нельзя вызвать снаружи без секрета или root-cookie, а [TelegramAuthBot](../TelegramAuthBot/README.md) передаёт заголовок автоматически и может рассылать уведомления админам о новых заявках на регистрацию.
 - Ограничения WAF на `/tg/auth` снижают перебор; при необходимости расширьте `limit_map` в конфиге.
 - Публичные GET с `uid` / `telegramId` раскрывают факт привязки и метаданные — закрывайте доступ на уровне сети или прокси, если это критично для вашей модели угроз.
 
 ## Связь с TelegramAuthBot
 
-Бот обращается к этому API по базовому URL (`TelegramAuthBot.lampac_base_url`). Секрет мутаций должен быть **одинаковым** в обеих секциях `init.conf`, если задан **`mutations_api_secret`** — иначе привязка из бота (`bind/complete`) и админские команды (`/users`, `/import`, `/cleanup` и т.д.) получат **403**.
+Бот вызывает этот API по **`TelegramAuthBot.lampac_base_url`**. Секрет **`mutations_api_secret`** должен совпадать у **TelegramAuth** и **TelegramAuthBot**, иначе `bind/complete` и админские HTTP-методы вернут **403**. Команды бота **`/user`**, **`/setuser`**, **`/users`**, **`/import`**, **`/cleanup`** зависят от секрета и роли `admin` так же, как описано в [README бота](../TelegramAuthBot/README.md).
 
 ## Legacy-импорт
 

@@ -41,11 +41,17 @@ namespace TelegramAuth
                 auto_provision_lang = "ru",
                 auto_provision_expires_days = 0,
                 auto_provision_activate_immediately = false,
+                sync_lampa_uid_to_accsdb = false,
+                accsdb_sync_group_admin = 100,
+                accsdb_sync_group_user = 0,
                 limit_map = new List<WafLimitRootMap>
                 {
                     new("^/tg/auth", new WafLimitMap { limit = 25, second = 1 })
                 }
             });
+
+            if (conf.sync_lampa_uid_to_accsdb && CoreInit.conf != null)
+                CoreInit.conf.accsdb.enable = true;
 
             Store = new TelegramAuthStore(conf);
             Store.EnsureStorage();
