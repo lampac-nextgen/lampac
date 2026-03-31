@@ -124,9 +124,14 @@ namespace TelegramAuth.Services
             return GetUsers().FirstOrDefault(u => string.Equals(u.TelegramId, telegramId, StringComparison.Ordinal));
         }
 
+        public static bool IsRegistrationPending(TelegramUserRecord? user) => user?.RegistrationPending == true;
+
         public bool IsActive(TelegramUserRecord user)
         {
             if (user == null)
+                return false;
+
+            if (IsRegistrationPending(user))
                 return false;
 
             if (user.Disabled)
@@ -156,14 +161,68 @@ namespace TelegramAuth.Services
                 return SetUserDisabledOutcome.CannotDisableAdmin;
 
             user.Disabled = disabled;
-            if (disabled && user.Devices != null)
+            if (disabled)
             {
-                foreach (var d in user.Devices)
-                    d.Active = false;
+                user.RegistrationPending = false;
+                if (user.Devices != null)
+                {
+                    foreach (var d in user.Devices)
+                        d.Active = false;
+                }
             }
+            else
+                user.RegistrationPending = false;
 
             SaveUsers(users);
             return SetUserDisabledOutcome.Ok;
+        }
+
+        public enum PendingDecisionOutcome
+        {
+            Ok,
+            NotFound,
+            NotPending,
+            CannotRejectAdmin
+        }
+
+        public PendingDecisionOutcome TryApproveRegistrationPending(string telegramId)
+        {
+            var tid = telegramId?.Trim();
+            if (string.IsNullOrEmpty(tid))
+                return PendingDecisionOutcome.NotFound;
+
+            var users = GetUsers();
+            var user = users.FirstOrDefault(u => string.Equals(u.TelegramId, tid, StringComparison.Ordinal));
+            if (user == null)
+                return PendingDecisionOutcome.NotFound;
+            if (!IsRegistrationPending(user))
+                return PendingDecisionOutcome.NotPending;
+
+            user.RegistrationPending = false;
+            user.Disabled = false;
+            user.ApprovedBy = "admin-approved";
+            SaveUsers(users);
+            return PendingDecisionOutcome.Ok;
+        }
+
+        public PendingDecisionOutcome TryRejectRegistrationPending(string telegramId)
+        {
+            var tid = telegramId?.Trim();
+            if (string.IsNullOrEmpty(tid))
+                return PendingDecisionOutcome.NotFound;
+
+            var users = GetUsers();
+            var user = users.FirstOrDefault(u => string.Equals(u.TelegramId, tid, StringComparison.Ordinal));
+            if (user == null)
+                return PendingDecisionOutcome.NotFound;
+            if (!IsRegistrationPending(user))
+                return PendingDecisionOutcome.NotPending;
+            if (string.Equals(user.Role, "admin", StringComparison.OrdinalIgnoreCase))
+                return PendingDecisionOutcome.CannotRejectAdmin;
+
+            users.Remove(user);
+            SaveUsers(users);
+            return PendingDecisionOutcome.Ok;
         }
 
         internal const int DeviceDisplayNameMaxLen = 500;
@@ -194,7 +253,7 @@ namespace TelegramAuth.Services
             var user = users.FirstOrDefault(x => string.Equals(x.TelegramId, tid, StringComparison.Ordinal));
             if (user == null)
                 return ReactivateDeviceOutcome.UserNotFound;
-            if (user.Disabled)
+            if (IsRegistrationPending(user) || user.Disabled)
                 return ReactivateDeviceOutcome.UserDisabled;
 
             var device = user.Devices?.FirstOrDefault(d => string.Equals(d.Uid, u, StringComparison.OrdinalIgnoreCase));
@@ -297,15 +356,16 @@ namespace TelegramAuth.Services
                     Lang = string.IsNullOrWhiteSpace(_conf.auto_provision_lang) ? "ru" : _conf.auto_provision_lang.Trim(),
                     CreatedAt = DateTime.UtcNow,
                     ExpiresAt = expires,
-                    ApprovedBy = pendingApproval ? "auto-provision-pending" : "auto-provision",
+                    ApprovedBy = pendingApproval ? RegistrationPendingApprovedByMarker : "auto-provision",
                     Disabled = pendingApproval,
+                    RegistrationPending = pendingApproval,
                     Devices = new List<DeviceRecord>()
                 };
                 users.Add(user);
                 outcome.NewUserProvisioned = true;
                 outcome.PendingAdminApproval = pendingApproval;
             }
-            else if (user.Disabled)
+            else if (user.Disabled && !IsRegistrationPending(user))
             {
                 throw new InvalidOperationException(BindUserDisabledMessage);
             }
@@ -372,12 +432,29 @@ namespace TelegramAuth.Services
             }
 
             var now = DateTime.UtcNow;
+            if (IsRegistrationPending(user))
+            {
+                return new AuthStatusResponse
+                {
+                    Authorized = false,
+                    Pending = true,
+                    RegistrationPending = true,
+                    Message = "Аккаунт ожидает подтверждения администратора.",
+                    TelegramId = user.TelegramId,
+                    Username = user.TgUsername,
+                    Role = user.Role,
+                    ExpiresAt = user.ExpiresAt,
+                    DeviceCount = user.Devices.Count(d => d.Active)
+                };
+            }
+
             if (user.Disabled)
             {
                 return new AuthStatusResponse
                 {
                     Authorized = false,
                     Pending = false,
+                    RegistrationPending = false,
                     Message = "Доступ отключён администратором.",
                     TelegramId = user.TelegramId,
                     Username = user.TgUsername,
@@ -392,6 +469,7 @@ namespace TelegramAuth.Services
             {
                 Authorized = !expired,
                 Pending = false,
+                RegistrationPending = false,
                 Message = expired ? "Срок доступа истёк." : "OK",
                 TelegramId = user.TelegramId,
                 Username = user.TgUsername,
@@ -433,6 +511,15 @@ namespace TelegramAuth.Services
 
             SaveUsers(users);
             return removed;
+        }
+
+        const string RegistrationPendingApprovedByMarker = "registration-pending";
+
+        static bool LegacyApprovedByIsRegistrationPending(string? approvedBy)
+        {
+            if (string.IsNullOrWhiteSpace(approvedBy))
+                return false;
+            return string.Equals(approvedBy.Trim(), RegistrationPendingApprovedByMarker, StringComparison.OrdinalIgnoreCase);
         }
 
         public ImportResult ImportFromLegacy(string legacyBasePath)
@@ -480,15 +567,26 @@ namespace TelegramAuth.Services
 
                     if (!users.TryGetValue(item.telegram_id, out var user))
                     {
+                        var pending = LegacyApprovedByIsRegistrationPending(item.approved_by);
+                        var isAdmin = adminIds.Contains(item.telegram_id);
+                        if (isAdmin)
+                            pending = false;
+
+                        var approvedBy = string.IsNullOrWhiteSpace(item.approved_by)
+                            ? "legacy-import"
+                            : item.approved_by.Trim();
+
                         user = new TelegramUserRecord
                         {
                             TelegramId = item.telegram_id,
                             TgUsername = item.tg_username ?? "",
-                            ApprovedBy = item.approved_by,
+                            ApprovedBy = approvedBy,
                             CreatedAt = item.created_at,
                             ExpiresAt = item.expires_at,
                             Lang = langs.TryGetValue(item.telegram_id, out var lang) ? lang : "ru",
-                            Role = adminIds.Contains(item.telegram_id) ? "admin" : "user",
+                            Role = isAdmin ? "admin" : "user",
+                            Disabled = pending,
+                            RegistrationPending = pending,
                             Devices = new List<DeviceRecord>()
                         };
                         users[item.telegram_id] = user;

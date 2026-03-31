@@ -133,6 +133,7 @@ namespace TelegramAuth.Controllers
                 });
             }
 
+            var registrationPending = TelegramAuthStore.IsRegistrationPending(user);
             return JsonOk(new
             {
                 found = true,
@@ -144,6 +145,7 @@ namespace TelegramAuth.Controllers
                 createdAt = user.CreatedAt,
                 expiresAt = user.ExpiresAt,
                 disabled = user.Disabled,
+                registrationPending,
                 active = store.IsActive(user),
                 deviceCount = user.Devices.Count(d => d.Active),
                 maxDevices = store.GetMaxDevices(user)
@@ -167,6 +169,7 @@ namespace TelegramAuth.Controllers
                     username = u.TgUsername,
                     role = u.Role,
                     disabled = u.Disabled,
+                    registrationPending = TelegramAuthStore.IsRegistrationPending(u),
                     active = store.IsActive(u),
                     expiresAt = u.ExpiresAt,
                     deviceCount = u.Devices.Count(d => d.Active)
@@ -200,6 +203,43 @@ namespace TelegramAuth.Controllers
                 telegramId = request.TelegramId.Trim(),
                 disabled = request.Disabled
             });
+        }
+
+        [HttpPost]
+        [AllowAnonymous]
+        [AuthorizeAnonymous]
+        [Route("/tg/auth/admin/user/pending")]
+        public ActionResult AdminResolveRegistrationPending([FromBody] AdminPendingDecisionRequest? request)
+        {
+            if (!TryAuthorizeMutations())
+                return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
+
+            if (request == null || string.IsNullOrWhiteSpace(request.TelegramId))
+                return JsonError(400, "telegramId is required");
+
+            var tid = request.TelegramId.Trim();
+            if (request.Approve)
+            {
+                var outcome = store.TryApproveRegistrationPending(tid);
+                if (outcome == TelegramAuthStore.PendingDecisionOutcome.NotFound)
+                    return JsonError(404, "user not found");
+                if (outcome == TelegramAuthStore.PendingDecisionOutcome.NotPending)
+                    return JsonError(400, "not pending", "Пользователь не в статусе ожидания подтверждения.");
+
+                return JsonOk(new { ok = true, telegramId = tid, approved = true });
+            }
+            else
+            {
+                var outcome = store.TryRejectRegistrationPending(tid);
+                if (outcome == TelegramAuthStore.PendingDecisionOutcome.NotFound)
+                    return JsonError(404, "user not found");
+                if (outcome == TelegramAuthStore.PendingDecisionOutcome.NotPending)
+                    return JsonError(400, "not pending", "Пользователь не в статусе ожидания подтверждения.");
+                if (outcome == TelegramAuthStore.PendingDecisionOutcome.CannotRejectAdmin)
+                    return JsonError(403, "cannot reject admin");
+
+                return JsonOk(new { ok = true, telegramId = tid, rejected = true });
+            }
         }
 
         [HttpGet]

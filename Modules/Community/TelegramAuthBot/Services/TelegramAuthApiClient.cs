@@ -134,6 +134,17 @@ namespace TelegramAuthBot.Services
             return resp.IsSuccessStatusCode ? (true, body) : (false, body);
         }
 
+        public async Task<(bool ok, string detail)> ResolveRegistrationPendingAsync(string telegramId, bool approve, CancellationToken ct)
+        {
+            var payload = new { telegramId, approve };
+            using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
+            using var req = new HttpRequestMessage(HttpMethod.Post, "tg/auth/admin/user/pending") { Content = content };
+            AddMutationsSecret(req);
+            using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
+            var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
+            return resp.IsSuccessStatusCode ? (true, body) : (false, body);
+        }
+
         void AddMutationsSecret(HttpRequestMessage req)
         {
             if (_mutationsSecret.Length > 0)

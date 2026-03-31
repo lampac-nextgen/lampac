@@ -11,6 +11,8 @@
 
 Если `auto_provision_users` выключен, при привязке UID запись с таким `telegramId` **уже должна быть** в `users.json`. Если включён — неизвестный id может быть создан автоматически (см. блок «Регистрация» в конфиге). Владельцы из `owner_telegram_ids` добавляются/обновляются как **admin** при **старте модуля** (не через бота).
 
+Статус **«ожидает подтверждения модератором»** задаётся только флагом **`RegistrationPending`** в `users.json` (вместе с `Disabled: true` при создании через auto-provision без немедленной активации). Подтверждение и отклонение — через `POST /tg/auth/admin/user/pending` или бота (см. [TelegramAuthBot](../TelegramAuthBot/README.md)).
+
 ## Включение
 
 В `manifest.json` модуля: `"enable": true`. Секция конфигурации в `init.conf` (рядом с Core): ключ **`TelegramAuth`**. Пример merge: [`init.merge.example.json`](init.merge.example.json).
@@ -37,7 +39,7 @@
 | `auto_provision_role` | Роль новой записи (кроме `admin` — принудительно `user`). |
 | `auto_provision_lang` | Язык по умолчанию. |
 | `auto_provision_expires_days` | Срок доступа в днях; `0` — без срока. |
-| `auto_provision_activate_immediately` | `false`: новый пользователь с `Disabled` до включения в `/users`; `true`: сразу активен. |
+| `auto_provision_activate_immediately` | `false`: новый пользователь в статусе **ожидания подтверждения** (`RegistrationPending: true`, `Disabled: true`, `ApprovedBy`: `registration-pending` — только метка в JSON) до решения администратора; `true`: сразу активен. |
 | `limit_map` | Дополнительные правила WAF (модуль добавляет в начало списка правило для `^/tg/auth`, по умолчанию ~25 запросов/сек). |
 
 ## Хранилище
@@ -63,7 +65,7 @@
 
 ### Пользователь по Telegram
 
-- **`GET /tg/auth/user/by-telegram?telegramId=`** — краткая сводка: найден ли пользователь, активен ли доступ, флаг `disabled`, лимит устройств и т.д. (используется ботом).
+- **`GET /tg/auth/user/by-telegram?telegramId=`** — краткая сводка: найден ли пользователь, активен ли доступ, флаги `disabled`, `registrationPending`, лимит устройств и т.д. (используется ботом).
 - **`GET /tg/auth/devices?telegramId=`** — список устройств пользователя.
 
 ### Привязка устройства
@@ -80,7 +82,8 @@
 ### Административные (секрет или root-cookie)
 
 - **`GET /tg/auth/admin/users`** — JSON `{ "ok", "users" }`: сводка по всем записям в `users.json` (без полного дампа устройств).
-- **`POST /tg/auth/admin/user/disabled`** — тело `{ "telegramId", "disabled" }` (`disabled: true` — отключить доступ, деактивировать все устройства пользователя; `false` — снова разрешить вход). Учётки с ролью `admin` **нельзя** отключить этим методом.
+- **`POST /tg/auth/admin/user/disabled`** — тело `{ "telegramId", "disabled" }` (`disabled: true` — отключить доступ, деактивировать все устройства; `false` — снова разрешить вход, сбросить `RegistrationPending`). Учётки с ролью `admin` **нельзя** отключить этим методом.
+- **`POST /tg/auth/admin/user/pending`** — тело `{ "telegramId", "approve" }` (секрет мутаций, как у остальных admin-методов). `approve: true` — подтвердить регистрацию: снять ожидание, включить доступ (`RegistrationPending: false`, `Disabled: false`). `approve: false` — **отклонить**: удалить запись пользователя из `users.json` (устройства вместе с ней). Работает только при `RegistrationPending: true`. Запись `admin` отклонить нельзя.
 - **`POST /tg/auth/import`** — импорт из `legacy_import_path`: ожидаются `tokens.json`, опционально `admin_ids.json`, `user_langs.json` (формат см. в `TelegramAuthStore.ImportFromLegacy`).
 - **`POST /tg/auth/devices/cleanup`** — удаление давно неактивных записей устройств и ужатие превышения лимита активных.
 
@@ -97,3 +100,5 @@
 ## Legacy-импорт
 
 Каталог `legacy_import_path` должен содержать как минимум `tokens.json` в ожидаемом формате (`LegacyTokenRecord` / устройства `LegacyDeviceRecord` в коде). После импорта пользователи появляются в `users.json`, языки и админы — в соответствующих файлах.
+
+Для **новой модели модерации**: если в `tokens.json` у записи `approved_by` указано значение **`registration-pending`** (без учёта регистра), при импорте выставляются **`RegistrationPending: true`** и **`Disabled: true`**, как при auto-provision без немедленной активации. Для строки с **`telegram_id` из `admin_ids.json`** ожидание подтверждения не применяется. Пустой `approved_by` заменяется на **`legacy-import`**, иначе в запись переносится текст из файла.

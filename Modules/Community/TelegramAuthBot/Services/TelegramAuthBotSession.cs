@@ -16,6 +16,8 @@ namespace TelegramAuthBot.Services
         const string CbUsersPage = "ulp:";
         const string CbDisableUser = "d|";
         const string CbEnableUser = "e|";
+        const string CbApprovePending = "ap|";
+        const string CbRejectPending = "rp|";
         const string CbReactivateDevice = "react:";
 
         readonly TelegramAuthApiClient _api;
@@ -268,11 +270,26 @@ namespace TelegramAuthBot.Services
 
             var at = string.IsNullOrEmpty(username) ? "—" : "@" + EscapeHtml(username);
             var text =
-                "🔔 <b>Новый пользователь (авто-регистрация)</b>\n\n" +
+                "🔔 <b>Новый пользователь (ожидает решения)</b>\n\n" +
                 $"<b>Telegram ID:</b> <code>{EscapeHtml(newUserTgId)}</code>\n" +
                 $"<b>Username:</b> {at}\n" +
                 $"<b>UID устройства:</b> <code>{EscapeHtml(deviceUid)}</code>\n\n" +
-                "Аккаунт создан <b>неактивным</b>. Включи доступ: <code>/users</code> → кнопка включения.";
+                "<b>Подтвердить</b> — включить доступ. <b>Отклонить</b> — удалить запись из базы.";
+
+            var cbApprove = CbApprovePending + "0|" + newUserTgId;
+            var cbReject = CbRejectPending + "0|" + newUserTgId;
+            InlineKeyboardMarkup? notifyKb = null;
+            if (Encoding.UTF8.GetByteCount(cbApprove) <= 64 && Encoding.UTF8.GetByteCount(cbReject) <= 64)
+            {
+                notifyKb = new InlineKeyboardMarkup(new[]
+                {
+                    new[]
+                    {
+                        InlineKeyboardButton.WithCallbackData("✅ Принять", cbApprove),
+                        InlineKeyboardButton.WithCallbackData("❌ Отклонить", cbReject)
+                    }
+                });
+            }
 
             foreach (var a in admins)
             {
@@ -280,7 +297,7 @@ namespace TelegramAuthBot.Services
                     continue;
                 try
                 {
-                    await bot.SendMessage(new ChatId(adminChatId), text, parseMode: ParseMode.Html, cancellationToken: ct).ConfigureAwait(false);
+                    await bot.SendMessage(new ChatId(adminChatId), text, parseMode: ParseMode.Html, replyMarkup: notifyKb, cancellationToken: ct).ConfigureAwait(false);
                 }
                 catch (Exception ex)
                 {
@@ -295,10 +312,13 @@ namespace TelegramAuthBot.Services
             var user = await _api.GetUserByTelegramAsync(tgId, ct).ConfigureAwait(false);
             if (user != null && user.found && !user.active)
             {
-                var blocked =
-                    user.disabled
-                        ? "Доступ ещё не включён или отключён администратором. Если ты только что отправил UID, дождись активации и снова нажми «Проверить снова» в приложении."
-                        : "Твой доступ истёк.";
+                string blocked;
+                if (user.registrationPending)
+                    blocked = "Аккаунт ожидает подтверждения администратора. Когда доступ подтвердят, нажми «Проверить снова» в приложении.";
+                else if (user.disabled)
+                    blocked = "Доступ отключён администратором. Если только что отправил UID, дождись включения и снова нажми «Проверить снова» в приложении.";
+                else
+                    blocked = "Твой доступ истёк.";
                 await bot.SendMessage(chatId, blocked, replyMarkup: MainMenuKeyboard(), cancellationToken: ct).ConfigureAwait(false);
                 return true;
             }
@@ -314,8 +334,8 @@ namespace TelegramAuthBot.Services
                 {
                     userText =
                         $"✅ <b>Запрос принят</b>\n\n<code>{EscapeHtml(uid)}</code>\n\n" +
-                        "Аккаунт создан, но <b>доступ пока выключен</b>. Администратор получит уведомление и может включить тебя в списке пользователей.\n\n" +
-                        $"После включения вернись в {EscapeHtml(name)} и нажми <b>«Проверить снова»</b>.";
+                        "Аккаунт создан и <b>ждёт подтверждения</b> администратора (уведомление с кнопками «Принять» / «Отклонить» или список <code>/users</code>).\n\n" +
+                        $"После подтверждения вернись в {EscapeHtml(name)} и нажми <b>«Проверить снова»</b>.";
                 }
                 else
                 {
@@ -353,7 +373,9 @@ namespace TelegramAuthBot.Services
 
             var maxDev = data.maxDevices == -1 ? "∞" : data.maxDevices.ToString();
             var expires = string.IsNullOrEmpty(data.expiresAt) ? "-" : data.expiresAt;
-            var accessNote = data.disabled ? " (отключён администратором)" : "";
+            var accessNote = data.registrationPending
+                ? " (ожидает подтверждения)"
+                : data.disabled ? " (отключён администратором)" : "";
             var text =
                 $"<b>Профиль {EscapeHtml(name)}</b>\n\n" +
                 $"<b>Пользователь:</b> @{EscapeHtml(data.username ?? "-")}\n" +
@@ -597,7 +619,9 @@ namespace TelegramAuthBot.Services
             foreach (var u in slice)
             {
                 var adm = string.Equals(u.role, "admin", StringComparison.OrdinalIgnoreCase);
-                var st = u.disabled ? "🔒 отключён" : u.active ? "✅ доступ" : "⏸ нет доступа";
+                var st = u.registrationPending
+                    ? "⏳ ждёт подтв."
+                    : u.disabled ? "🔒 отключён" : u.active ? "✅ доступ" : "⏸ нет доступа";
                 var tag = string.IsNullOrEmpty(u.username) ? "—" : "@" + EscapeHtml(u.username);
                 lines.Add($"{tag} · <code>{EscapeHtml(u.telegramId)}</code> · {st}{(adm ? " · <b>admin</b>" : "")}");
             }
@@ -614,6 +638,22 @@ namespace TelegramAuthBot.Services
                     continue;
 
                 var label = ShortUserLabel(u);
+                if (u.registrationPending)
+                {
+                    var cbA = $"{CbApprovePending}{page}|{u.telegramId}";
+                    var cbR = $"{CbRejectPending}{page}|{u.telegramId}";
+                    if (Encoding.UTF8.GetByteCount(cbA) <= 64 && Encoding.UTF8.GetByteCount(cbR) <= 64)
+                    {
+                        rows.Add(new[]
+                        {
+                            InlineKeyboardButton.WithCallbackData($"✅ Принять · {label}", cbA),
+                            InlineKeyboardButton.WithCallbackData($"❌ Отклонить · {label}", cbR)
+                        });
+                    }
+
+                    continue;
+                }
+
                 var cb = u.disabled
                     ? $"{CbEnableUser}{page}|{u.telegramId}"
                     : $"{CbDisableUser}{page}|{u.telegramId}";
@@ -744,7 +784,7 @@ namespace TelegramAuthBot.Services
                 "📱 Мои устройства — список; отвязать активные, включить отключённые\n" +
                 "<code>/devicename &lt;uid&gt; &lt;имя&gt;</code> — имя в базе (для админки); <code>-</code> сбрасывает\n" +
                 "❓ Помощь — эта подсказка\n\n" +
-                "<b>Владелец:</b> числовой user id в <code>TelegramAuth.owner_telegram_ids</code> — при старте Lampac запись admin создаётся в базе. Остальные шлют UID; ты включаешь в <code>/users</code>.\n\n" +
+                "<b>Владелец:</b> числовой user id в <code>TelegramAuth.owner_telegram_ids</code> — при старте Lampac запись admin создаётся в базе. Остальные шлют UID; новых пользователей подтверждаешь в <code>/users</code> (Принять / Отклонить) или кнопками в уведомлении.\n\n" +
                 "<b>Админ-команды:</b> <code>/users</code>, <code>/import</code>, <code>/cleanup</code> + одинаковый <code>mutations_api_secret</code>." +
                 (conf.admin_chat_ids != null && conf.admin_chat_ids.Length > 0
                     ? "\n\n<code>admin_chat_ids</code> задан: команды из группы — только там; из лички — если твой id в <code>owner_telegram_ids</code> бота (как на сервере)."
@@ -764,6 +804,13 @@ namespace TelegramAuthBot.Services
             if (data.StartsWith(CbReactivateDevice, StringComparison.Ordinal))
             {
                 await HandleReactivateDeviceCallbackAsync(bot, cq, ct).ConfigureAwait(false);
+                return;
+            }
+
+            if (data.StartsWith(CbApprovePending, StringComparison.Ordinal)
+                || data.StartsWith(CbRejectPending, StringComparison.Ordinal))
+            {
+                await HandlePendingRegistrationCallbackAsync(bot, cq, ct).ConfigureAwait(false);
                 return;
             }
 
@@ -841,6 +888,65 @@ namespace TelegramAuthBot.Services
                 await bot.EditMessageText(cq.Message.Chat.Id, cq.Message.MessageId, $"Устройство <code>{EscapeHtml(uid)}</code> снова активно. Открой приложение и при необходимости нажми «Проверить снова».", parseMode: ParseMode.Html, cancellationToken: ct).ConfigureAwait(false);
             else
                 await bot.EditMessageText(cq.Message.Chat.Id, cq.Message.MessageId, "Не удалось включить устройство.\n" + TruncateForTelegram(StripJsonError(detail), 500), cancellationToken: ct).ConfigureAwait(false);
+        }
+
+        async Task HandlePendingRegistrationCallbackAsync(ITelegramBotClient bot, CallbackQuery cq, CancellationToken ct)
+        {
+            if (!await TryEnsureAdminForCallbackAsync(bot, cq, ct).ConfigureAwait(false))
+            {
+                await bot.AnswerCallbackQuery(cq.Id, cancellationToken: ct).ConfigureAwait(false);
+                return;
+            }
+
+            var data = cq.Data ?? "";
+            var approve = data.StartsWith(CbApprovePending, StringComparison.Ordinal);
+            if (!approve && !data.StartsWith(CbRejectPending, StringComparison.Ordinal))
+            {
+                await bot.AnswerCallbackQuery(cq.Id, cancellationToken: ct).ConfigureAwait(false);
+                return;
+            }
+
+            var prefixLen = approve ? CbApprovePending.Length : CbRejectPending.Length;
+            var rest = data.Length > prefixLen ? data.Substring(prefixLen) : "";
+            var parts = rest.Split('|', 2);
+            if (parts.Length != 2 || !int.TryParse(parts[0], out var returnPage) || returnPage < 0 || string.IsNullOrWhiteSpace(parts[1]))
+            {
+                await bot.AnswerCallbackQuery(cq.Id, "Некорректные данные кнопки.", showAlert: true, cancellationToken: ct).ConfigureAwait(false);
+                return;
+            }
+
+            var targetId = parts[1].Trim();
+            var (ok, detail) = await _api.ResolveRegistrationPendingAsync(targetId, approve, ct).ConfigureAwait(false);
+            if (!ok)
+            {
+                await bot.AnswerCallbackQuery(cq.Id, TruncateForTelegram(StripJsonError(detail), 180), showAlert: true, cancellationToken: ct).ConfigureAwait(false);
+                return;
+            }
+
+            var msg = cq.Message;
+            var actorTgId = cq.From.Id.ToString();
+            if (msg != null && msg.Text != null && msg.Text.IndexOf("Пользователи TelegramAuth", StringComparison.Ordinal) >= 0)
+            {
+                var list = await _api.GetAdminUsersAsync(ct).ConfigureAwait(false);
+                if (list != null && list.ok)
+                    await SendOrEditAdminUsersPageAsync(bot, msg.Chat.Id, msg.MessageId, list, returnPage, actorTgId, ct).ConfigureAwait(false);
+            }
+            else if (msg != null)
+            {
+                var suffix = approve
+                    ? "\n\n✅ <b>Подтверждено</b> — доступ включён."
+                    : "\n\n❌ <b>Отклонено</b> — запись пользователя удалена из базы.";
+                try
+                {
+                    await bot.EditMessageText(msg.Chat.Id, msg.MessageId, msg.Text + suffix, parseMode: ParseMode.Html, replyMarkup: null, cancellationToken: ct).ConfigureAwait(false);
+                }
+                catch
+                {
+                    // ignore edit errors (e.g. message too old)
+                }
+            }
+
+            await bot.AnswerCallbackQuery(cq.Id, approve ? "Доступ подтверждён." : "Запись удалена.", cancellationToken: ct).ConfigureAwait(false);
         }
 
         async Task HandleAdminUsersInlineAsync(ITelegramBotClient bot, CallbackQuery cq, CancellationToken ct)
