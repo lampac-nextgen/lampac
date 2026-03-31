@@ -15,5 +15,9 @@ namespace TelegramAuthBot.Models
         public string mutations_api_secret { get; set; } = "";
 
         public long[] admin_chat_ids { get; set; }
+
+        public long[] owner_telegram_ids { get; set; }
+
+        public bool notify_admins_on_pending_provision { get; set; } = true;
     }
 }

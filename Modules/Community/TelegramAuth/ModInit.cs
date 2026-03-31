@@ -35,10 +35,12 @@ namespace TelegramAuth
                 enable_cleanup = true,
                 max_active_devices_per_user = 0,
                 mutations_api_secret = "",
+                owner_telegram_ids = null,
                 auto_provision_users = false,
                 auto_provision_role = "user",
                 auto_provision_lang = "ru",
                 auto_provision_expires_days = 0,
+                auto_provision_activate_immediately = false,
                 limit_map = new List<WafLimitRootMap>
                 {
                     new("^/tg/auth", new WafLimitMap { limit = 25, second = 1 })
@@ -47,6 +49,7 @@ namespace TelegramAuth
 
             Store = new TelegramAuthStore(conf);
             Store.EnsureStorage();
+            Store.EnsureOwnerUsersAtStartup();
         }
 
         public void Dispose()

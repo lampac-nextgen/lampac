@@ -5,10 +5,12 @@
     "enable_import": true,
     "enable_cleanup": true,
     "mutations_api_secret": "GENERATE_A_LONG_RANDOM_SECRET",
+    "owner_telegram_ids": [123456789],
     "auto_provision_users": false,
     "auto_provision_role": "user",
     "auto_provision_lang": "ru",
     "auto_provision_expires_days": 0,
+    "auto_provision_activate_immediately": false,
     "max_active_devices_per_user": 5,
     "limit_map": [
       {

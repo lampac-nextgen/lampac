@@ -2,6 +2,12 @@ using System.Collections.Generic;
 
 namespace TelegramAuthBot.Models
 {
+    public sealed class BindCompleteResult
+    {
+        public bool Ok { get; set; }
+        public bool PendingAdminApproval { get; set; }
+    }
+
     public class UserByTelegramDto
     {
         public bool found { get; set; }

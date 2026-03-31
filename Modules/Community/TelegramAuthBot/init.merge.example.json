@@ -6,8 +6,7 @@
     "request_timeout_sec": 10,
     "service_display_name": "Lampac NextGen Bot",
     "mutations_api_secret": "SAME_AS_TelegramAuth.mutations_api_secret",
-    "admin_chat_ids": [
-      -1001234567890
-    ]
+    "admin_chat_ids": [],
+    "owner_telegram_ids": []
   }
 }

@@ -9,6 +9,7 @@
   var LS_KEY = 'lampac_unic_id';
   var USER_KEY = 'tg_auth_user';
   var CHECK_INTERVAL = 10000;
+  var DEVICE_NAME_URL = ORIGIN + '/tg/auth/device/name';
   var BOT_USERNAME = 'YOUR_BOT_USERNAME';
   var FOOTER_MESSAGES = [
     'Хорошего вечера 🌒',
@@ -38,6 +39,153 @@
     }
 
     return uid;
+  }
+
+  function truncateDeviceLabel(s, maxLen) {
+    maxLen = maxLen || 200;
+    s = String(s).replace(/\s+/g, ' ').trim();
+    if (s.length > maxLen) return s.slice(0, maxLen - 3) + '...';
+    return s;
+  }
+
+  function pushDeviceSegment(segments, raw) {
+    if (raw == null) return;
+    var s = String(raw).replace(/\s+/g, ' ').trim();
+    if (!s || s.length > 160) return;
+    var low = s.toLowerCase();
+    for (var i = 0; i < segments.length; i++) {
+      var e = segments[i];
+      var el = e.toLowerCase();
+      if (el === low) return;
+      if (el.indexOf(low) !== -1) return;
+      if (low.indexOf(el) !== -1) {
+        segments[i] = s;
+        return;
+      }
+    }
+    segments.push(s);
+  }
+
+  function compactUaDeviceHint(ua) {
+    if (!ua) return '';
+    if (/SMART-TV|Tizen/i.test(ua)) return 'Tizen TV';
+    if (/Web0S|webOS/i.test(ua)) return 'webOS TV';
+    if (/Android TV|AndroidTV|ATV|BRAVIA|AFTM|AFTB|AFTT|AFTSS|AFTS|MiTV|PHILIPSTV|HisenseTV|SmartTV/i.test(ua)) return 'Android TV';
+    if (/\bCrKey\b|Chromecast/i.test(ua)) return 'Chromecast';
+    if (/AppleTV|Apple TV|tvOS/i.test(ua)) return 'Apple TV';
+    if (/SmartHub|Maple/i.test(ua)) return 'Samsung Smart TV';
+    if (/Opera TV|HbbTV/i.test(ua)) return 'HbbTV / Opera TV';
+    var m = ua.match(/\(([^)]+)\)/);
+    if (m) {
+      var inner = m[1].replace(/\s+/g, ' ').trim();
+      var parts = inner.split(';').map(function (x) { return x.trim(); }).filter(Boolean);
+      inner = parts.slice(0, 4).join(' · ');
+      return truncateDeviceLabel(inner, 120);
+    }
+    return truncateDeviceLabel(ua, 120);
+  }
+
+  function clientBrandsHint() {
+    try {
+      var uad = navigator.userAgentData;
+      if (!uad || !uad.brands || !uad.brands.length) return '';
+      var skip = /^Not.A.Brand$/i;
+      var names = [];
+      for (var i = 0; i < uad.brands.length; i++) {
+        var b = uad.brands[i];
+        if (!b || !b.brand || skip.test(b.brand)) continue;
+        names.push(b.brand);
+        if (names.length >= 2) break;
+      }
+      return names.join(' / ');
+    } catch (e) {
+      return '';
+    }
+  }
+
+  function getDeviceDisplayName() {
+    var segments = [];
+    var ua = navigator.userAgent || '';
+
+    try {
+      var pl = typeof Lampa !== 'undefined' ? Lampa.Platform : null;
+      if (pl) {
+        if (typeof pl.vendor === 'function') {
+          try {
+            pushDeviceSegment(segments, pl.vendor());
+          } catch (e1) {}
+        }
+        if (typeof pl.screen === 'string') pushDeviceSegment(segments, pl.screen);
+
+        if (typeof pl.is === 'function') {
+          var platformTags = [
+            ['apple_tv_gtv', 'Apple TV'],
+            ['apple_tv', 'Apple TV'],
+            ['tizen', 'Tizen'],
+            ['webos', 'webOS'],
+            ['webos_land', 'webOS'],
+            ['android', 'Android'],
+            ['orsay', 'Samsung Orsay'],
+            ['netcast', 'LG NetCast'],
+            ['nw', 'NW.js'],
+            ['electron', 'Electron'],
+            ['browser', 'Browser']
+          ];
+          for (var j = 0; j < platformTags.length; j++) {
+            try {
+              if (pl.is(platformTags[j][0])) {
+                pushDeviceSegment(segments, platformTags[j][1]);
+                break;
+              }
+            } catch (e2) {}
+          }
+        }
+      }
+    } catch (e) {}
+
+    if (segments.length === 0) {
+      pushDeviceSegment(segments, compactUaDeviceHint(ua));
+    } else {
+      var isBrowser = false;
+      try {
+        isBrowser = typeof Lampa !== 'undefined' && Lampa.Platform && typeof Lampa.Platform.is === 'function' && Lampa.Platform.is('browser');
+      } catch (e3) {}
+      if (isBrowser) {
+        pushDeviceSegment(segments, clientBrandsHint());
+        if (segments.length < 3) pushDeviceSegment(segments, compactUaDeviceHint(ua));
+      }
+    }
+
+    var label = segments.join(' · ');
+    if (!label.trim()) label = 'Web';
+    return truncateDeviceLabel(label, 200);
+  }
+
+  function postDeviceDisplayName(uid) {
+    if (!uid) return;
+    var label = getDeviceDisplayName();
+    var body = JSON.stringify({ uid: uid, name: label });
+
+    function sendOnce() {
+      if (typeof fetch === 'function') {
+        fetch(DEVICE_NAME_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Accept: 'application/json' },
+          body: body,
+          credentials: 'same-origin'
+        }).catch(function () {});
+        return;
+      }
+      try {
+        var xhr = new XMLHttpRequest();
+        xhr.open('POST', DEVICE_NAME_URL, true);
+        xhr.setRequestHeader('Content-Type', 'application/json');
+        xhr.send(body);
+      } catch (e) {}
+    }
+
+    sendOnce();
+    setTimeout(sendOnce, 600);
   }
 
   function requestStatus(uid, onSuccess, onError) {
@@ -87,7 +235,11 @@
       '.tg-auth-gate__qr{width:min(100%,320px);aspect-ratio:1/1;border-radius:18px;background:#fff;padding:14px;box-sizing:border-box;}' +
       '.tg-auth-gate__qr-title{font-size:1.2em;font-weight:700;margin-top:1em;margin-bottom:.35em;}' +
       '.tg-auth-gate__qr-text{font-size:1em;line-height:1.45;color:#b8bec9;text-align:center;max-width:18em;}' +
-      '@media (max-width: 980px){.tg-auth-gate__box{padding:2em 1.4em;border-radius:22px;}.tg-auth-gate__grid{grid-template-columns:1fr;gap:1.6em;}.tg-auth-gate__text,.tg-auth-gate__hint{max-width:none;}.tg-auth-gate__qr-wrap{order:-1;}.tg-auth-gate__actions{display:grid;grid-template-columns:1fr;}}';
+      '.tg-auth-gate__only-desktop{display:flex;}' +
+      '.tg-auth-gate__only-mobile{display:none !important;}' +
+      '.tg-auth-gate__hint-mobile{display:none;}' +
+      '@media (max-width: 980px){.tg-auth-gate__box{padding:2em 1.4em;border-radius:22px;}.tg-auth-gate__grid{grid-template-columns:1fr;gap:1.6em;}.tg-auth-gate__text,.tg-auth-gate__hint{max-width:none;}.tg-auth-gate__qr-wrap{order:-1;}.tg-auth-gate__actions{display:grid;grid-template-columns:1fr;}}' +
+      '@media (max-width: 600px){#tg-auth-gate-overlay{align-items:flex-start;justify-content:flex-start;padding:max(1rem,env(safe-area-inset-top)) max(1rem,env(safe-area-inset-right)) max(1.25rem,env(safe-area-inset-bottom)) max(1rem,env(safe-area-inset-left));overflow-y:auto;-webkit-overflow-scrolling:touch;}.tg-auth-gate__shell{width:100%;min-height:min-content;padding-bottom:.5rem;}.tg-auth-gate__box{padding:1.35rem 1.1rem;border-radius:18px;}.tg-auth-gate__grid{gap:1.1rem;}.tg-auth-gate__qr-wrap{display:none !important;}.tg-auth-gate__eyebrow{font-size:.82em;margin-bottom:.65em;}.tg-auth-gate__title{font-size:clamp(1.55rem,6.5vw,2.1rem);}.tg-auth-gate__text{font-size:1rem;margin-bottom:.95em;}.tg-auth-gate__steps{margin:1em 0 1.25em;gap:.55em;}.tg-auth-gate__step{font-size:.95rem;gap:.65em;}.tg-auth-gate__step-index{flex:0 0 1.65em;height:1.65em;font-size:.9em;}.tg-auth-gate__uid-label{font-size:.78em;margin-bottom:.45em;}.tg-auth-gate__uid{font-size:clamp(1.35rem,5.2vw,1.85rem);letter-spacing:.1em;padding:.5em .55em;border-radius:14px;margin-bottom:.5em;}.tg-auth-gate__hint{font-size:.9rem;line-height:1.45;margin-bottom:1.1em;}.tg-auth-gate__button{min-height:3rem;font-size:1rem;border-radius:14px;width:100%;}.tg-auth-gate__actions{gap:.65em;}.tg-auth-gate__only-desktop{display:none !important;}.tg-auth-gate__only-mobile{display:flex !important;}.tg-auth-gate__hint-desktop{display:none !important;}.tg-auth-gate__hint-mobile{display:block !important;color:#afb6c2;}}';
     document.body.appendChild(style);
   }
 
@@ -153,13 +305,17 @@
               '<div class="tg-auth-gate__title">Вход в YOUR_SERVICE_NAME</div>' +
               '<div class="tg-auth-gate__text">' + (message || 'Открой Telegram и привяжи это устройство, чтобы продолжить просмотр.') + '</div>' +
               '<div class="tg-auth-gate__steps">' +
-                '<div class="tg-auth-gate__step"><div class="tg-auth-gate__step-index">1</div><div>Нажми <b>Открыть Telegram</b> или отсканируй QR-код телефоном.</div></div>' +
+                '<div class="tg-auth-gate__step tg-auth-gate__only-desktop"><div class="tg-auth-gate__step-index">1</div><div>Нажми <b>Открыть Telegram</b> или отсканируй QR-код телефоном.</div></div>' +
+                '<div class="tg-auth-gate__step tg-auth-gate__only-mobile"><div class="tg-auth-gate__step-index">1</div><div>Нажми <b>Открыть Telegram</b> — откроется чат с ботом, UID подставится в стартовое сообщение.</div></div>' +
                 '<div class="tg-auth-gate__step"><div class="tg-auth-gate__step-index">2</div><div>Бот <b>@' + BOT_USERNAME + '</b> автоматически получит UID устройства.</div></div>' +
                 '<div class="tg-auth-gate__step"><div class="tg-auth-gate__step-index">3</div><div>После сообщения об успехе вернись сюда и нажми <b>Проверить снова</b>.</div></div>' +
               '</div>' +
               '<div class="tg-auth-gate__uid-label">UID устройства</div>' +
               '<div class="tg-auth-gate__uid">' + uid + '</div>' +
-              '<div class="tg-auth-gate__hint">Если Telegram не открылся автоматически, скопируй UID вручную и отправь его боту. Для ТВ оставлен крупный QR и большой код, чтобы ничего не мешало с дивана.</div>' +
+              '<div class="tg-auth-gate__hint">' +
+                '<span class="tg-auth-gate__hint-desktop">Если Telegram не открылся автоматически, скопируй UID вручную и отправь его боту. Для ТВ оставлен крупный QR и большой код, чтобы ничего не мешало с дивана.</span>' +
+                '<span class="tg-auth-gate__hint-mobile">На этом экране QR не нужен: открой Telegram кнопкой ниже или скопируй UID и отправь боту вручную.</span>' +
+              '</div>' +
               '<div class="tg-auth-gate__actions">' +
                 '<div class="tg-auth-gate__button tg-auth-gate__button--primary selector" id="tg-auth-gate-open">Открыть Telegram</div>' +
                 '<div class="tg-auth-gate__button selector" id="tg-auth-gate-refresh">Проверить снова</div>' +
@@ -216,7 +372,9 @@
     }, CHECK_INTERVAL);
   }
 
-  function handleAuthorized(result) {
+  function handleAuthorized(uid, result) {
+    postDeviceDisplayName(uid);
+
     try {
       Lampa.Storage.set(USER_KEY, {
         telegramId: result.telegramId || '',
@@ -243,7 +401,7 @@
 
     requestStatus(uid, function (result) {
       if (result && result.authorized) {
-        handleAuthorized(result);
+        handleAuthorized(uid, result);
       } else {
         handleUnauthorized(uid, result);
         if (forceNotify) {

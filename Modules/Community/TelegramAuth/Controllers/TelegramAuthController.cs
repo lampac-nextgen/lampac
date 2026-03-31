@@ -70,7 +70,7 @@ namespace TelegramAuth.Controllers
                 ok = true,
                 pending = true,
                 uid = request.Uid,
-                message = "MVP: устройство отмечено как ожидающее Telegram-подтверждение. Следующий шаг — связать это с ботом."
+                message = "Привяжи UID в Telegram-боте."
             };
 
             return JsonOk(response);
@@ -87,13 +87,17 @@ namespace TelegramAuth.Controllers
 
             try
             {
-                store.BindDevice(request.TelegramId, request.Uid, request.Username, "manual-complete");
+                var bindOutcome = store.BindDevice(request.TelegramId, request.Uid, request.Username, request.DeviceName, "manual-complete");
                 return JsonOk(new
                 {
                     ok = true,
-                    message = "Устройство привязано",
+                    message = bindOutcome.PendingAdminApproval
+                        ? "Устройство привязано; доступ включит администратор"
+                        : "Устройство привязано",
                     uid = request.Uid,
-                    telegramId = request.TelegramId
+                    telegramId = request.TelegramId,
+                    newUserProvisioned = bindOutcome.NewUserProvisioned,
+                    pendingAdminApproval = bindOutcome.PendingAdminApproval
                 });
             }
             catch (InvalidOperationException ex) when (ex.Message == TelegramAuthStore.BindUserNotFoundMessage)
@@ -244,6 +248,49 @@ namespace TelegramAuth.Controllers
                 store.SaveUsers(users);
 
             return JsonOk(new { ok = changed, uid = request.Uid });
+        }
+
+        [HttpPost]
+        [AllowAnonymous]
+        [AuthorizeAnonymous]
+        [Route("/tg/auth/device/reactivate")]
+        public ActionResult ReactivateDevice([FromBody] DeviceReactivateRequest? request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.TelegramId) || string.IsNullOrWhiteSpace(request.Uid))
+                return JsonError(400, "telegramId and uid are required");
+
+            var outcome = store.TryReactivateDevice(request.TelegramId.Trim(), request.Uid.Trim());
+            if (outcome == TelegramAuthStore.ReactivateDeviceOutcome.UserNotFound)
+                return JsonError(404, "user not found");
+            if (outcome == TelegramAuthStore.ReactivateDeviceOutcome.UserDisabled)
+                return JsonError(403, "user disabled", "Аккаунт отключён администратором.");
+            if (outcome == TelegramAuthStore.ReactivateDeviceOutcome.DeviceNotFound)
+                return JsonError(404, "device not found", "UID не найден среди ваших устройств.");
+
+            return JsonOk(new { ok = true, uid = request.Uid.Trim() });
+        }
+
+        [HttpPost]
+        [AllowAnonymous]
+        [AuthorizeAnonymous]
+        [Route("/tg/auth/device/name")]
+        public ActionResult SetDeviceName([FromBody] DeviceSetNameRequest? request)
+        {
+            if (request == null || string.IsNullOrWhiteSpace(request.Uid))
+                return JsonError(400, "uid is required");
+
+            var outcome = store.TrySetActiveDeviceDisplayName(request.Uid, request.Name);
+            if (outcome == TelegramAuthStore.SetDeviceDisplayNameOutcome.InvalidUid)
+                return JsonError(400, "uid is required");
+            if (outcome == TelegramAuthStore.SetDeviceDisplayNameOutcome.NotFoundOrInactive)
+                return JsonError(404, "device not found or access inactive", "UID не привязан или срок доступа истёк.");
+
+            return JsonOk(new
+            {
+                ok = true,
+                uid = request.Uid.Trim(),
+                name = string.IsNullOrWhiteSpace(request.Name) ? (string?)null : request.Name.Trim()
+            });
         }
 
         [HttpPost]

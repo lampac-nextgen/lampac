@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Newtonsoft.Json;
 
 namespace TelegramAuth.Models
 {
@@ -65,7 +66,20 @@ namespace TelegramAuth.Models
     public class BindStartRequest
     {
         public string Uid { get; set; } = "";
+    }
+
+    public class DeviceSetNameRequest
+    {
+        [JsonProperty("uid", Required = Required.Always)]
+        public string Uid { get; set; } = "";
+        [JsonProperty("name")]
         public string? Name { get; set; }
+    }
+
+    public class DeviceReactivateRequest
+    {
+        public string TelegramId { get; set; } = "";
+        public string Uid { get; set; } = "";
     }
 
     public class BindCompleteRequest
@@ -73,6 +87,7 @@ namespace TelegramAuth.Models
         public string Uid { get; set; } = "";
         public string TelegramId { get; set; } = "";
         public string? Username { get; set; }
+        public string? DeviceName { get; set; }
     }
 
     public class ImportResult
@@ -87,5 +102,11 @@ namespace TelegramAuth.Models
     {
         public string TelegramId { get; set; } = "";
         public bool Disabled { get; set; } = true;
+    }
+
+    public class BindDeviceOutcome
+    {
+        public bool NewUserProvisioned { get; set; }
+        public bool PendingAdminApproval { get; set; }
     }
 }

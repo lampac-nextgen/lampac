@@ -40,6 +40,60 @@ namespace TelegramAuth.Services
             if (!File.Exists(langsPath)) File.WriteAllText(langsPath, "{}");
         }
 
+        public void EnsureOwnerUsersAtStartup()
+        {
+            var ids = _conf.owner_telegram_ids;
+            if (ids == null || ids.Length == 0)
+                return;
+
+            var users = GetUsers();
+            var changed = false;
+            var lang = string.IsNullOrWhiteSpace(_conf.auto_provision_lang) ? "ru" : _conf.auto_provision_lang.Trim();
+
+            foreach (var ownerNumericId in ids)
+            {
+                var telegramId = ownerNumericId.ToString(CultureInfo.InvariantCulture);
+                var user = users.FirstOrDefault(u => string.Equals(u.TelegramId, telegramId, StringComparison.Ordinal));
+                if (user == null)
+                {
+                    users.Add(new TelegramUserRecord
+                    {
+                        TelegramId = telegramId,
+                        TgUsername = "",
+                        Role = "admin",
+                        Lang = lang,
+                        CreatedAt = DateTime.UtcNow,
+                        ApprovedBy = "owner-config",
+                        Disabled = false,
+                        Devices = new List<DeviceRecord>()
+                    });
+                    changed = true;
+                    continue;
+                }
+
+                if (!string.Equals(user.Role, "admin", StringComparison.OrdinalIgnoreCase))
+                {
+                    user.Role = "admin";
+                    changed = true;
+                }
+
+                if (user.Disabled)
+                {
+                    user.Disabled = false;
+                    changed = true;
+                }
+
+                if (string.IsNullOrWhiteSpace(user.ApprovedBy))
+                {
+                    user.ApprovedBy = "owner-config";
+                    changed = true;
+                }
+            }
+
+            if (changed)
+                SaveUsers(users);
+        }
+
         public List<TelegramUserRecord> GetUsers()
         {
             EnsureStorage();
@@ -88,7 +142,6 @@ namespace TelegramAuth.Services
             CannotDisableAdmin
         }
 
-        /// <summary>Sets account disabled flag. Disabling deactivates all devices for immediate logout.</summary>
         public SetUserDisabledOutcome TrySetUserDisabled(string telegramId, bool disabled)
         {
             if (string.IsNullOrWhiteSpace(telegramId))
@@ -113,6 +166,95 @@ namespace TelegramAuth.Services
             return SetUserDisabledOutcome.Ok;
         }
 
+        internal const int DeviceDisplayNameMaxLen = 500;
+
+        public enum SetDeviceDisplayNameOutcome
+        {
+            Ok,
+            InvalidUid,
+            NotFoundOrInactive
+        }
+
+        public enum ReactivateDeviceOutcome
+        {
+            Ok,
+            UserNotFound,
+            UserDisabled,
+            DeviceNotFound
+        }
+
+        public ReactivateDeviceOutcome TryReactivateDevice(string telegramId, string uid)
+        {
+            var tid = telegramId?.Trim();
+            var u = uid?.Trim();
+            if (string.IsNullOrEmpty(tid) || string.IsNullOrEmpty(u))
+                return ReactivateDeviceOutcome.DeviceNotFound;
+
+            var users = GetUsers();
+            var user = users.FirstOrDefault(x => string.Equals(x.TelegramId, tid, StringComparison.Ordinal));
+            if (user == null)
+                return ReactivateDeviceOutcome.UserNotFound;
+            if (user.Disabled)
+                return ReactivateDeviceOutcome.UserDisabled;
+
+            var device = user.Devices?.FirstOrDefault(d => string.Equals(d.Uid, u, StringComparison.OrdinalIgnoreCase));
+            if (device == null)
+                return ReactivateDeviceOutcome.DeviceNotFound;
+            if (device.Active)
+                return ReactivateDeviceOutcome.Ok;
+
+            CleanupInactiveDevices(users, 90);
+
+            var maxDevices = GetMaxDevices(user);
+            if (maxDevices > 0)
+            {
+                var devList = user.Devices ?? new List<DeviceRecord>();
+                var activeDevices = devList.Where(d => d.Active).OrderByDescending(d => d.LastSeenAt ?? d.LinkedAt).ToList();
+                if (activeDevices.Count >= maxDevices)
+                {
+                    var oldestActive = activeDevices.Last();
+                    oldestActive.Active = false;
+                }
+            }
+
+            device.Active = true;
+            device.LastSeenAt = DateTime.UtcNow;
+            SaveUsers(users);
+            return ReactivateDeviceOutcome.Ok;
+        }
+
+        public SetDeviceDisplayNameOutcome TrySetActiveDeviceDisplayName(string uid, string? name)
+        {
+            var u = uid?.Trim();
+            if (string.IsNullOrEmpty(u))
+                return SetDeviceDisplayNameOutcome.InvalidUid;
+
+            string? resolved = null;
+            if (!string.IsNullOrWhiteSpace(name))
+            {
+                resolved = name.Trim();
+                if (resolved.Length > DeviceDisplayNameMaxLen)
+                    resolved = resolved.Substring(0, DeviceDisplayNameMaxLen);
+            }
+
+            var users = GetUsers();
+            foreach (var user in users)
+            {
+                if (!IsActive(user))
+                    continue;
+
+                var dev = user.Devices?.FirstOrDefault(d => d.Active && string.Equals(d.Uid, u, StringComparison.OrdinalIgnoreCase));
+                if (dev == null)
+                    continue;
+
+                dev.Name = resolved;
+                SaveUsers(users);
+                return SetDeviceDisplayNameOutcome.Ok;
+            }
+
+            return SetDeviceDisplayNameOutcome.NotFoundOrInactive;
+        }
+
         public int GetMaxDevices(TelegramUserRecord user)
         {
             if (user != null && string.Equals(user.Role, "admin", StringComparison.OrdinalIgnoreCase))
@@ -125,8 +267,9 @@ namespace TelegramAuth.Services
         public const string BindUserNotFoundMessage = "user not found";
         public const string BindUserDisabledMessage = "user disabled";
 
-        public void BindDevice(string telegramId, string uid, string? name = null, string source = "manual")
+        public BindDeviceOutcome BindDevice(string telegramId, string uid, string? telegramUsername = null, string? deviceDisplayName = null, string source = "manual")
         {
+            var outcome = new BindDeviceOutcome();
             var users = GetUsers();
             var user = users.FirstOrDefault(u => u.TelegramId == telegramId);
             if (user == null)
@@ -142,23 +285,42 @@ namespace TelegramAuth.Services
                 var role = string.IsNullOrWhiteSpace(_conf.auto_provision_role)
                     ? "user"
                     : _conf.auto_provision_role.Trim();
+                if (string.Equals(role, "admin", StringComparison.OrdinalIgnoreCase))
+                    role = "user";
 
+                var pendingApproval = !_conf.auto_provision_activate_immediately;
                 user = new TelegramUserRecord
                 {
                     TelegramId = telegramId,
-                    TgUsername = name?.Trim() ?? "",
+                    TgUsername = telegramUsername?.Trim() ?? "",
                     Role = role,
                     Lang = string.IsNullOrWhiteSpace(_conf.auto_provision_lang) ? "ru" : _conf.auto_provision_lang.Trim(),
                     CreatedAt = DateTime.UtcNow,
                     ExpiresAt = expires,
-                    ApprovedBy = "auto-provision",
+                    ApprovedBy = pendingApproval ? "auto-provision-pending" : "auto-provision",
+                    Disabled = pendingApproval,
                     Devices = new List<DeviceRecord>()
                 };
                 users.Add(user);
+                outcome.NewUserProvisioned = true;
+                outcome.PendingAdminApproval = pendingApproval;
             }
             else if (user.Disabled)
             {
                 throw new InvalidOperationException(BindUserDisabledMessage);
+            }
+            else if (!string.IsNullOrWhiteSpace(telegramUsername))
+            {
+                var trimmed = telegramUsername.Trim();
+                if (!string.Equals(user.TgUsername, trimmed, StringComparison.Ordinal))
+                    user.TgUsername = trimmed;
+            }
+
+            string? resolvedDeviceName = null;
+            if (!string.IsNullOrWhiteSpace(deviceDisplayName))
+            {
+                var t = deviceDisplayName.Trim();
+                resolvedDeviceName = t.Length > DeviceDisplayNameMaxLen ? t.Substring(0, DeviceDisplayNameMaxLen) : t;
             }
 
             CleanupInactiveDevices(users, 90);
@@ -177,7 +339,7 @@ namespace TelegramAuth.Services
                 user.Devices.Add(new DeviceRecord
                 {
                     Uid = uid,
-                    Name = name,
+                    Name = resolvedDeviceName,
                     LinkedAt = DateTime.UtcNow,
                     LastSeenAt = DateTime.UtcNow,
                     Active = true,
@@ -187,11 +349,13 @@ namespace TelegramAuth.Services
             else
             {
                 existing.Active = true;
-                existing.Name = name ?? existing.Name;
+                if (!string.IsNullOrWhiteSpace(resolvedDeviceName))
+                    existing.Name = resolvedDeviceName;
                 existing.LastSeenAt = DateTime.UtcNow;
             }
 
             SaveUsers(users);
+            return outcome;
         }
 
         public AuthStatusResponse GetStatus(string uid)
