@@ -549,5 +549,20 @@ namespace LampaWeb.Controllers
             return Content(privateinit, "application/javascript; charset=utf-8");
         }
         #endregion
+
+        #region TelegramAuth
+        [HttpGet]
+        [Route("telegram_auth_gate.js")]
+        public ActionResult TelegramAuthGate()
+        {
+            SetHeadersNoCache();
+
+            string gate = FileCache.ReadAllText("plugins/telegram_auth_gate.js", "telegram_auth_gate.js")
+                .Replace("{country}", requestInfo.Country)
+                .Replace("{localhost}", host);
+
+            return Content(gate, "application/javascript; charset=utf-8");
+        }
+        #endregion
     }
 }
