@@ -24,10 +24,10 @@
 | `lampac_base_url` | Базовый URL Lampac **без** завершающего слэша, например `http://127.0.0.1:9118`. К нему добавляются пути вида `tg/auth/...`. |
 | `request_timeout_sec` | Таймаут HTTP-клиента к Lampac (минимум 1 сек). |
 | `service_display_name` | Отображаемое имя сервиса в текстах бота (HTML-экранирование учитывается в коде). |
-| `mutations_api_secret` | Тот же секрет, что **`TelegramAuth.mutations_api_secret`**. Нужен для админ-команд и их HTTP-вызовов (`X-TelegramAuth-Mutations-Secret`). Если пусто — бот сообщит об этом. |
+| `lampac_accspasswd` | Значение cookie **`accspasswd`** для HTTP к Lampac — **то же содержимое**, что файл **`passwd`** рядом с Lampac (как для остального хоста; см. [TelegramAuth](../TelegramAuth/README.md)). Если пусто — админ-вызовы и уведомления о pending не смогут ходить в защищённые API. |
 | `admin_chat_ids` | Если **не пустой** — админ-команды только из этих групп, **кроме** лички пользователей из `owner_telegram_ids`. Если **пустой** — из любого чата. |
 | `owner_telegram_ids` | Числовые **user** id (как в `TelegramAuth.owner_telegram_ids`). Нужны, если задан `admin_chat_ids`, но владелец хочет вызывать `/users` из лички. |
-| `notify_admins_on_pending_provision` | `true` по умолчанию. После успешной привязки UID, когда новый пользователь создан в режиме **ожидания подтверждения** (`auto_provision_activate_immediately: false`), бот рассылает администраторам (роль `admin` в базе) личные сообщения с кнопками «Принять» / «Отклонить`. Для запроса списка админов используется тот же API, что и `/users`; поэтому при **пустом** `mutations_api_secret` уведомления **не отправляются** (в лог пишется предупреждение). Установите `false`, чтобы отключить рассылку. |
+| `notify_admins_on_pending_provision` | `true` по умолчанию. После успешной привязки UID, когда новый пользователь создан в режиме **ожидания подтверждения** (`auto_provision_activate_immediately: false`), бот рассылает администраторам (роль `admin` в базе) личные сообщения с кнопками «Принять» / «Отклонить». Для запроса списка админов нужен **`GET /tg/auth/admin/users`**; при **пустом** `lampac_accspasswd` уведомления **не отправляются** (в лог пишется предупреждение). Установите `false`, чтобы отключить рассылку. |
 
 ## Как это работает
 
@@ -54,11 +54,11 @@
 | `/help` | Все | Подсказка по входу и кнопкам. |
 | `/me` | Все | Профиль из API (роль, срок, число устройств, лимит). |
 | `/devices` | Все | Список устройств; для активных — **Отвязать**, для отключённых — **✅ Включить** (снова активирует UID на сервере). |
-| `/devicename` | Все | `/devicename <uid> <имя>` — имя в `Devices[].Name` через `POST /tg/auth/device/name` (только **свой** активный UID). Вместо имени `-` сбрасывает подпись. Секрет мутаций не нужен. |
+| `/devicename` | Все | `/devicename <uid> <имя>` — имя в `Devices[].Name` через `POST /tg/auth/device/name` (только **свой** активный UID). Вместо имени `-` сбрасывает подпись. Cookie мутаций не нужен. |
 | `/users` | Админы TelegramAuth | Список пользователей (постранично); в строке кратко видно **`accs`** (группа, `ban`, …). Ожидающие — **Принять** / **Отклонить**; остальные — **Выкл** / **Вкл**. |
 | `/user` | Админы | `/user <telegramId>` — карточка, JSON **`accs`**, устройства (`GET /tg/auth/admin/user`). |
 | `/setuser` | Админы | Правка профиля и **`accs`** через `POST /tg/auth/admin/user/patch` (срок, роль, `group`, `ban`, `banmsg`, `comment`, `ids`, `param`, сброс полей — см. подсказку без аргументов). |
-| `/import` | Админы TelegramAuth | `POST /tg/auth/import` (секрет + роль `admin` + при необходимости чат из `admin_chat_ids`). |
+| `/import` | Админы TelegramAuth | `POST /tg/auth/import` (cookie **`accspasswd`**, роль `admin`, при необходимости чат из `admin_chat_ids`). |
 | `/cleanup` | Админы TelegramAuth | `POST /tg/auth/devices/cleanup`. |
 
 Админ определяется по полю **роли** в ответе API пользователя (`role == admin`), не по списку `admin_chat_ids` (этот список только ограничивает **чаты**, не роли).
@@ -76,7 +76,7 @@
 | Бот молчит при старте | `enable`, `bot_token`, сеть до `api.telegram.org`, логи Serilog / консоль. |
 | «Тебя нет в базе» | Запись пользователя с вашим Telegram ID в `users.json` (TelegramAuth), импорт или ручное добавление. |
 | Привязка не срабатывает | Lampac доступен с хоста бота по `lampac_base_url`; пользователь `active`; лимит устройств не превышен. |
-| `/import` или `/cleanup` не работают | Непустой `mutations_api_secret` (бот не подставляет root-cookie); значение совпадает с `TelegramAuth.mutations_api_secret`; роль `admin`; если задан `admin_chat_ids` — команда из этой группы или из лички при наличии твоего id в `owner_telegram_ids`. |
-| Админы не получили уведомление о новой заявке | Включён `notify_admins_on_pending_provision`; задан ненулевой `mutations_api_secret`; в `users.json` есть хотя бы один пользователь с ролью `admin`. |
+| `/import` или `/cleanup` не работают | Задан **`lampac_accspasswd`** = содержимое **`passwd`** на сервере Lampac; роль `admin`; если задан `admin_chat_ids` — команда из этой группы или из лички при наличии твоего id в `owner_telegram_ids`. |
+| Админы не получили уведомление о новой заявке | Включён `notify_admins_on_pending_provision`; задан **`lampac_accspasswd`**; в `users.json` есть хотя бы один пользователь с ролью `admin`. |
 
 Подробное описание HTTP API см. в [README модуля TelegramAuth](../TelegramAuth/README.md).

@@ -5,7 +5,6 @@
     "legacy_import_path": "database/legacy_tgauth",
     "enable_import": true,
     "enable_cleanup": true,
-    "mutations_api_secret": "GENERATE_A_LONG_RANDOM_SECRET",
     "owner_telegram_ids": [123456789],
     "auto_provision_users": false,
     "auto_provision_role": "user",

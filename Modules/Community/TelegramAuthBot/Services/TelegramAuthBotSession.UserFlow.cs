@@ -11,10 +11,10 @@ namespace TelegramAuthBot.Services
             if (!conf.notify_admins_on_pending_provision)
                 return;
 
-            if (string.IsNullOrEmpty(conf.mutations_api_secret?.Trim()))
+            if (string.IsNullOrEmpty(conf.lampac_accspasswd?.Trim()))
             {
                 TelegramAuthBotSerilog.Log.Warning(
-                    "Новый пользователь ожидает активации (TelegramId={TgId}), mutations_api_secret пуст — уведомления админам не отправлены.",
+                    "Новый пользователь ожидает активации (TelegramId={TgId}), lampac_accspasswd пуст — уведомления админам не отправлены.",
                     newUserTgId);
                 return;
             }
@@ -292,7 +292,7 @@ namespace TelegramAuthBot.Services
                 "<code>/devicename &lt;uid&gt; &lt;имя&gt;</code> — имя в базе (для админки); <code>-</code> сбрасывает\n" +
                 "❓ Помощь — эта подсказка\n\n" +
                 "<b>Владелец:</b> числовой user id в <code>TelegramAuth.owner_telegram_ids</code> — при старте Lampac запись admin создаётся в базе. Остальные шлют UID; новых пользователей подтверждаешь в <code>/users</code> (Принять / Отклонить) или кнопками в уведомлении.\n\n" +
-                "<b>Админ-команды:</b> <code>/users</code>, <code>/user</code> &lt;id&gt;, <code>/setuser</code> …, <code>/import</code>, <code>/cleanup</code> + одинаковый <code>mutations_api_secret</code>." +
+                "<b>Админ-команды:</b> <code>/users</code>, <code>/user</code> &lt;id&gt;, <code>/setuser</code> …, <code>/import</code>, <code>/cleanup</code> + cookie <code>accspasswd</code> (<code>lampac_accspasswd</code> = файл <code>passwd</code> на Lampac)." +
                 (conf.admin_chat_ids != null && conf.admin_chat_ids.Length > 0
                     ? "\n\n<code>admin_chat_ids</code> задан: команды из группы — только там; из лички — если твой id в <code>owner_telegram_ids</code> бота (как на сервере)."
                     : "\n\nПустой <code>admin_chat_ids</code> — админ-команды из лички без доп. списков.");

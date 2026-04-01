@@ -33,7 +33,6 @@ namespace TelegramAuth
                 enable_import = true,
                 enable_cleanup = true,
                 max_active_devices_per_user = 0,
-                mutations_api_secret = "",
                 owner_telegram_ids = null,
                 auto_provision_users = false,
                 auto_provision_role = "user",

@@ -17,8 +17,6 @@ namespace TelegramAuth.Models
 
         public int max_active_devices_per_user { get; set; }
 
-        public string mutations_api_secret { get; set; } = "";
-
         public long[]? owner_telegram_ids { get; set; }
 
         public bool auto_provision_users { get; set; }

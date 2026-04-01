@@ -16,7 +16,7 @@
 1. В `init.conf` (или merge-файле) задать секции **`TelegramAuth`** и **`TelegramAuthBot`** по примерам:  
    [`TelegramAuth/init.merge.example.json`](TelegramAuth/init.merge.example.json),  
    [`TelegramAuthBot/init.merge.example.json`](TelegramAuthBot/init.merge.example.json).
-2. **`mutations_api_secret`** должен **совпадать** в обоих модулях (и быть ненулевым в проде, если нужны бот-админка и защищённый `bind/complete`).
+2. Файл **`passwd`** на сервере Lampac — тот же пароль, что cookie **`accspasswd`** для Accsdb. В **`TelegramAuthBot`** задать **`lampac_accspasswd`** тем же значением (бот подставляет cookie на защищённые **`/tg/auth/...`**). Чувствительные маршруты помечены **`[Authorize]`** + **`[AllowAnonymous]`** без **`[AuthorizeAnonymous]`** — проверка только в **Accsdb**, как у остальных модулей (см. README **TelegramAuth**).
 3. Включить модули в `manifest.json` (`"enable": true`).
 4. Для входа через accsdb: **`TelegramAuth.enable`: `true`** поднимает **`accsdb.enable`** в Core и синхронизирует привязанные UID в корневой **`users.json`**. Без этого API Telegram живёт, но «дверь» accsdb не заведётся из TelegramAuth.
 
