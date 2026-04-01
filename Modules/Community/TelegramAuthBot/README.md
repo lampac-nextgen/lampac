@@ -1,6 +1,8 @@
 # TelegramAuthBot
 
-Фоновый **Telegram-бот** (long polling), который помогает пользователям **привязать UID устройства** к уже существующей учётной записи в модуле [TelegramAuth](../TelegramAuth/README.md), смотреть статус и список устройств, отвязывать устройства и (для администраторов) запускать импорт и очистку через HTTP API Lampac.
+Фоновый **Telegram-бот** (long polling): привязка UID устройства к учётке в [TelegramAuth](../TelegramAuth/README.md), статус, устройства, админ-импорт/очистка через HTTP.
+
+**Клиент Lampa** (замена `deny.js`, оверлей входа): [Community README](../README.md).
 
 ## Зависимости
 
