@@ -1,5 +1,6 @@
 {
   "TelegramAuth": {
+    "enable": true,
     "data_dir": "database/tgauth",
     "legacy_import_path": "database/legacy_tgauth",
     "enable_import": true,
@@ -11,7 +12,6 @@
     "auto_provision_lang": "ru",
     "auto_provision_expires_days": 0,
     "auto_provision_activate_immediately": false,
-    "sync_lampa_uid_to_accsdb": true,
     "accsdb_sync_group_admin": 100,
     "accsdb_sync_group_user": 0,
     "max_active_devices_per_user": 5,

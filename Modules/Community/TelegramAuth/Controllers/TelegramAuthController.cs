@@ -107,11 +107,11 @@ namespace TelegramAuth.Controllers
                     pendingAdminApproval = bindOutcome.PendingAdminApproval
                 });
             }
-            catch (InvalidOperationException ex) when (ex.Message == TelegramAuthStore.BindUserNotFoundMessage)
+            catch (TelegramAuthBindException ex) when (ex.FailureKind == TelegramAuthBindFailureKind.UserNotFound)
             {
                 return JsonError(404, "user not found", "Включите auto_provision_users в TelegramAuth или добавьте пользователя в users.json.");
             }
-            catch (InvalidOperationException ex) when (ex.Message == TelegramAuthStore.BindUserDisabledMessage)
+            catch (TelegramAuthBindException ex) when (ex.FailureKind == TelegramAuthBindFailureKind.UserDisabled)
             {
                 return JsonError(403, "user disabled", "Аккаунт отключён администратором.");
             }

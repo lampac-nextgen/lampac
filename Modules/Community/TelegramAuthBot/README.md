@@ -30,7 +30,7 @@
 ## Как это работает
 
 1. При старте регистрируется `HostedService`: проверка токена (`GetMe`), снятие webhook, цикл **`GetUpdates`** (long polling).
-2. Для каждого апдейта создаётся сессия с HTTP-клиентом к `lampac_base_url` ([`TelegramAuthApiClient`](Services/TelegramAuthApiClient.cs)).
+2. Для каждого апдейта создаётся сессия с HTTP-клиентом к `lampac_base_url` ([`LampacTelegramAuthHttpClient`](Services/LampacTelegramAuthHttpClient.cs)).
 3. Привязка устройства: бот вызывает `GET .../tg/auth/user/by-telegram`. Если пользователь **найден**, но доступ **неактивен** (ожидание модерации, отключён админом или истёк срок), привязка **не выполняется** — пользователю отправляется пояснение. Если учётки **ещё нет** и включён `auto_provision_users`, привязка выполняется через `POST .../tg/auth/bind/complete` (создание пользователя и устройства на стороне API). Иначе — тот же `bind/complete` для уже существующей записи. При успешной регистрации с ожиданием подтверждения админам может уйти уведомление (см. **`notify_admins_on_pending_provision`**). Имя устройства в `users.json` клиент выставляет после входа (`POST .../tg/auth/device/name`) или пользователь — командой `/devicename` (см. [TelegramAuth](../TelegramAuth/README.md)).
 
 **Важно:** процесс должен видеть Lampac по сети. В Docker часто нужен URL вида `http://host.docker.internal:9118` или имя сервиса compose, а не только `127.0.0.1`, если бот крутится в другом контейнере.

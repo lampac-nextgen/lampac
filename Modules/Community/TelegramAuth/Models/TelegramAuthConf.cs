@@ -5,6 +5,8 @@ namespace TelegramAuth.Models
 {
     public class TelegramAuthConf : ModuleBaseConf
     {
+        public bool enable { get; set; }
+
         public string? data_dir { get; set; }
 
         public string legacy_import_path { get; set; } = "";
@@ -28,8 +30,6 @@ namespace TelegramAuth.Models
         public int auto_provision_expires_days { get; set; }
 
         public bool auto_provision_activate_immediately { get; set; }
-
-        public bool sync_lampa_uid_to_accsdb { get; set; }
 
         public int accsdb_sync_group_admin { get; set; } = 100;
 

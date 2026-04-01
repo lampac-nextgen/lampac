@@ -8,14 +8,14 @@ using TelegramAuthBot.Models;
 
 namespace TelegramAuthBot.Services
 {
-    sealed class TelegramAuthApiClient : IDisposable
+    sealed class LampacTelegramAuthHttpClient : IDisposable
     {
         public const string MutationsSecretHeaderName = "X-TelegramAuth-Mutations-Secret";
 
         readonly HttpClient _http;
         readonly string _mutationsSecret;
 
-        public TelegramAuthApiClient(TelegramAuthBotConf conf)
+        public LampacTelegramAuthHttpClient(TelegramAuthBotConf conf)
         {
             var baseUrl = (conf.lampac_base_url ?? "").Trim().TrimEnd('/') + "/";
             _http = new HttpClient { BaseAddress = new Uri(baseUrl, UriKind.Absolute) };

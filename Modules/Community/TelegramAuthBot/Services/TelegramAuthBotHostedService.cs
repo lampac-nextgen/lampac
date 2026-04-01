@@ -39,7 +39,7 @@ namespace TelegramAuthBot.Services
                 return;
             }
 
-            using var api = new TelegramAuthApiClient(conf);
+            using var api = new LampacTelegramAuthHttpClient(conf);
             var bot = new TelegramBotClient(conf.bot_token.Trim());
             var displayName = conf.service_display_name ?? "Lampac NextGen Bot";
 
