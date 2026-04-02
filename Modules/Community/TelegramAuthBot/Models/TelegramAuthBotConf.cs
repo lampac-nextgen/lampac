@@ -12,7 +12,8 @@ namespace TelegramAuthBot.Models
 
         public string service_display_name { get; set; } = "Lampac NextGen Bot";
 
-        public string mutations_api_secret { get; set; } = "";
+        /// <summary>Cookie <c>accspasswd</c> для HTTP к Lampac — то же содержимое, что файл <c>passwd</c> на сервере (<c>CoreInit.rootPasswd</c>).</summary>
+        public string lampac_accspasswd { get; set; } = "";
 
         public long[] admin_chat_ids { get; set; }
 

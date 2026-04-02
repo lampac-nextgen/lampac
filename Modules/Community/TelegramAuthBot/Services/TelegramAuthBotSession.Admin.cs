@@ -31,10 +31,10 @@ namespace TelegramAuthBot.Services
         async Task<bool> TryEnsureAdminMutationAccessAsync(ITelegramBotClient bot, Chat chat, string tgId, CancellationToken ct)
         {
             var conf = ModInit.conf;
-            if (string.IsNullOrEmpty(conf.mutations_api_secret))
+            if (string.IsNullOrEmpty(conf.lampac_accspasswd))
             {
                 await bot.SendMessage(chat.Id,
-                    "В конфиге бота не задан <code>mutations_api_secret</code> — тот же секрет, что <code>TelegramAuth.mutations_api_secret</code> в init.conf.",
+                    "В конфиге бота не задан <code>lampac_accspasswd</code> — тот же текст, что в файле <code>passwd</code> на сервере Lampac.",
                     parseMode: ParseMode.Html,
                     cancellationToken: ct).ConfigureAwait(false);
                 return false;
@@ -70,10 +70,10 @@ namespace TelegramAuthBot.Services
             var chat = cq.Message?.Chat;
             var chatId = chat?.Id ?? cq.From.Id;
             var conf = ModInit.conf;
-            if (string.IsNullOrEmpty(conf.mutations_api_secret))
+            if (string.IsNullOrEmpty(conf.lampac_accspasswd))
             {
                 await bot.SendMessage(chatId,
-                    "В конфиге бота не задан <code>mutations_api_secret</code> — тот же секрет, что <code>TelegramAuth.mutations_api_secret</code> в init.conf.",
+                    "В конфиге бота не задан <code>lampac_accspasswd</code> — тот же текст, что в файле <code>passwd</code> на сервере Lampac.",
                     parseMode: ParseMode.Html,
                     cancellationToken: ct).ConfigureAwait(false);
                 return false;
@@ -225,7 +225,7 @@ namespace TelegramAuthBot.Services
             var data = await _api.GetAdminUsersAsync(ct).ConfigureAwait(false);
             if (data == null || !data.ok)
             {
-                await bot.SendMessage(chat.Id, "❌ Не удалось загрузить список пользователей (проверь секрет и доступ к Lampac).", cancellationToken: ct).ConfigureAwait(false);
+                await bot.SendMessage(chat.Id, "❌ Не удалось загрузить список пользователей (проверь <code>lampac_accspasswd</code> и доступ к Lampac).", parseMode: ParseMode.Html, cancellationToken: ct).ConfigureAwait(false);
                 return;
             }
 

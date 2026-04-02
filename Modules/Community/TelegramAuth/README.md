@@ -8,7 +8,6 @@ HTTP API и файловое хранилище для привязки **UID у
 
 - `manifest.json`: `"enable": true`.
 - `init.conf`: секция **`TelegramAuth`**. Пример: [`init.merge.example.json`](init.merge.example.json).
-
 ---
 
 ## Назначение
@@ -50,7 +49,6 @@ HTTP API и файловое хранилище для привязки **UID у
 | `legacy_import_path` | База для `POST /tg/auth/import`. |
 | `enable_import` / `enable_cleanup` | Разрешить импорт / `POST /tg/auth/devices/cleanup`. |
 | `max_active_devices_per_user` | Лимит активных устройств для `user`; `0` → **5**. Для `admin` не применяется. |
-| `mutations_api_secret` | Заголовок **`X-TelegramAuth-Mutations-Secret`** (совпадает с ботом). Пусто → `bind/complete` без заголовка; мутации админа из бота без cookie — невозможны. |
 | `owner_telegram_ids` | Владельцы → admin при старте. |
 | `auto_provision_users` | Создавать пользователя при bind неизвестного `telegramId`. |
 | `auto_provision_role` | Роль новой записи (`admin` через auto-provision недоступен → `user`). |
@@ -64,9 +62,9 @@ HTTP API и файловое хранилище для привязки **UID у
 
 При **`TelegramAuth.enable`** записи из **`TelegramAuth.limit_map`** переносятся в **`CoreInit.conf.WAF.limit_map`**. Перед добавлением из глобального списка удаляются правила с тем же **`pattern`** (точное строковое совпадение, `Ordinal`). Core выбирает **первое** подходящее по пути правило; иначе — глобальный **`WAF.limit_req`**.
 
-Запрос может **не попадать** под лимит, если для него выставлены **`IsLocalRequest`** / **`IsAnonymousRequest`** — см. порядок middleware в хосте.
+Поведение **WAF** в Core без изменений: при **`IsAnonymousRequest`** (в т.ч. из‑за **`[AllowAnonymous]`** на действии) весь WAF для запроса обходится — **`limit_map`** на такие маршруты не действует. Для ограничения нагрузки опирайтесь на глобальный **`WAF`**, **`limit_map`** на путях без полного anonymous-bypass или на сетевой периметр.
 
-Шаблон по умолчанию в примере: `^/tg/auth` с лимитом запросов с IP. Переопределение: [`init.merge.example.json`](init.merge.example.json).
+Шаблон в примере: [`init.merge.example.json`](init.merge.example.json).
 
 ---
 
@@ -82,9 +80,11 @@ HTTP API и файловое хранилище для привязки **UID у
 
 ## HTTP API (префикс `/tg/auth`)
 
-Маршруты анонимны в смысле cookie-сессии Lampac; админские мутации требуют cookie **`accspasswd`** (root) **или** заголовок **`X-TelegramAuth-Mutations-Secret`** при **непустом** `mutations_api_secret`. Если секрет пуст — заголовок не принимается, для мутаций остаётся только cookie.
+Как в остальных модулях: **Accsdb** + атрибуты authorization.
 
-**`POST /tg/auth/bind/complete`:** секрет обязателен только если `mutations_api_secret` не пустой.
+**Публичные** (минимально необходимое): только **`[AllowAnonymous]`** — нет **`[Authorize]`**, первая зона Accsdb по атрибуту не включается; для проверки **пользователя** accsdb по `uid`/`token` запрос считается анонимным.
+
+**Чувствительные** (`/tg/auth/admin/...`, **`POST /tg/auth/bind/complete`**, **`import`**, **`devices/cleanup`**): **`[Authorize]`** + **`[AllowAnonymous]`** и **без** **`[AuthorizeAnonymous]`**. Тогда **Accsdb** в своей зоне Authorize требует cookie **`accspasswd`**, совпадающий с паролем из файла **`passwd`** хоста (**`CoreInit.rootPasswd`**), — та же модель, что для других защищённых путей. **`[AllowAnonymous]`** лишь отключает требование **залогиненного пользователя** accsdb по query (бот и служебные вызовы без `uid` в URL).
 
 ### Чтение / статус
 
@@ -101,7 +101,7 @@ HTTP API и файловое хранилище для привязки **UID у
 - `POST /tg/auth/bind/start` — `{ "uid" }`.
 - `POST /tg/auth/bind/complete` — `{ "uid", "telegramId", "username?", "deviceName?" }`.
 - `POST /tg/auth/device/name` — `{ "uid", "name?" }` (плагин Lampa после успешного статуса).
-- `POST /tg/auth/device/unbind` — `{ "telegramId", "uid" }` (без секрета мутаций).
+- `POST /tg/auth/device/unbind` — `{ "telegramId", "uid" }` (без cookie мутаций).
 - `POST /tg/auth/device/reactivate` — `{ "telegramId", "uid" }` (403 если pending/disabled).
 
 ### Административные
@@ -118,7 +118,7 @@ HTTP API и файловое хранилище для привязки **UID у
 
 ## Безопасность
 
-- Не коммитьте **`mutations_api_secret`**. В проде лучше ненулевой секрет.
+- Пароль для **`accspasswd`** — тот же, что в файле **`passwd`** рядом с приложением (как для остального Lampac). Бот задаёт его в **`TelegramAuthBot.lampac_accspasswd`** при HTTP к Lampac.
 - Расширяйте **`limit_map`** при необходимости.
 - GET с `uid` / `telegramId` раскрывают факт привязки — при жёсткой модели угроз ограничивайте сеть/прокси.
 
@@ -126,7 +126,7 @@ HTTP API и файловое хранилище для привязки **UID у
 
 ## Связь с ботом и клиентом
 
-- Бот ходит на **`TelegramAuthBot.lampac_base_url`** + пути `tg/auth/...`. Секрет должен совпадать с **`TelegramAuth.mutations_api_secret`**.
+- Бот для мутаций шлёт cookie **`accspasswd`** = **`lampac_accspasswd`** (содержимое **`passwd`** на сервере Lampac).
 - Клиент Lampa: [Community README — плагины](../README.md).
 
 ---

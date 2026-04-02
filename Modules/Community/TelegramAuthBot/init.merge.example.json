@@ -5,7 +5,7 @@
     "lampac_base_url": "http://127.0.0.1:9118",
     "request_timeout_sec": 10,
     "service_display_name": "Lampac NextGen Bot",
-    "mutations_api_secret": "SAME_AS_TelegramAuth.mutations_api_secret",
+    "lampac_accspasswd": "SAME_AS_lampac_passwd_file",
     "admin_chat_ids": [],
     "owner_telegram_ids": [],
     "notify_admins_on_pending_provision": true

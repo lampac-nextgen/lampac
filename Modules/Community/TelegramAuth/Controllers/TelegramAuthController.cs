@@ -1,7 +1,6 @@
 using System;
 using System.IO;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using Microsoft.AspNetCore.Authorization;
@@ -10,18 +9,14 @@ using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Newtonsoft.Json.Serialization;
 using Shared;
-using Shared.Attributes;
 using TelegramAuth;
 using TelegramAuth.Models;
 using TelegramAuth.Services;
 
 namespace TelegramAuth.Controllers
 {
-    [Authorize]
     public class TelegramAuthController : BaseController
     {
-        public const string MutationsSecretHeaderName = "X-TelegramAuth-Mutations-Secret";
-
         static readonly JsonSerializerSettings JsonSettings = new JsonSerializerSettings
         {
             ContractResolver = new CamelCasePropertyNamesContractResolver(),
@@ -32,7 +27,6 @@ namespace TelegramAuth.Controllers
 
         [HttpGet]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/status")]
         public ActionResult Status([FromQuery] string uid)
         {
@@ -45,7 +39,6 @@ namespace TelegramAuth.Controllers
 
         [HttpGet]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/me")]
         public ActionResult Me([FromQuery] string uid)
         {
@@ -61,7 +54,6 @@ namespace TelegramAuth.Controllers
 
         [HttpPost]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/bind/start")]
         public ActionResult BindStart([FromBody] BindStartRequest? request)
         {
@@ -80,15 +72,11 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpPost]
+        [Authorize]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/bind/complete")]
         public ActionResult BindComplete([FromBody] BindCompleteRequest? request)
         {
-            var mutSecret = ModInit.conf.mutations_api_secret?.Trim() ?? "";
-            if (mutSecret.Length > 0 && !TryAuthorizeMutations())
-                return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
-
             if (request == null || string.IsNullOrWhiteSpace(request.Uid) || string.IsNullOrWhiteSpace(request.TelegramId))
                 return JsonError(400, "uid and telegramId are required");
 
@@ -123,7 +111,6 @@ namespace TelegramAuth.Controllers
 
         [HttpGet]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/user/by-telegram")]
         public ActionResult UserByTelegram([FromQuery] string telegramId)
         {
@@ -160,14 +147,11 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpGet]
+        [Authorize]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/admin/users")]
         public ActionResult AdminListUsers()
         {
-            if (!TryAuthorizeMutations())
-                return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
-
             var users = store.GetUsers()
                 .OrderBy(u => u.TelegramId, StringComparer.Ordinal)
                 .Select(u => new
@@ -199,14 +183,11 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpGet]
+        [Authorize]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/admin/user")]
         public ActionResult AdminGetUser([FromQuery] string telegramId)
         {
-            if (!TryAuthorizeMutations())
-                return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
-
             if (string.IsNullOrWhiteSpace(telegramId))
                 return JsonError(400, "telegramId is required");
 
@@ -243,14 +224,11 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpPost]
+        [Authorize]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/admin/user/patch")]
         public async Task<ActionResult> AdminPatchUser()
         {
-            if (!TryAuthorizeMutations())
-                return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
-
             string raw;
             using (var reader = new StreamReader(Request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true))
                 raw = await reader.ReadToEndAsync().ConfigureAwait(false);
@@ -282,14 +260,11 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpPost]
+        [Authorize]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/admin/user/disabled")]
         public ActionResult AdminSetUserDisabled([FromBody] AdminSetUserDisabledRequest? request)
         {
-            if (!TryAuthorizeMutations())
-                return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
-
             if (request == null || string.IsNullOrWhiteSpace(request.TelegramId))
                 return JsonError(400, "telegramId is required");
 
@@ -308,14 +283,11 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpPost]
+        [Authorize]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/admin/user/pending")]
         public ActionResult AdminResolveRegistrationPending([FromBody] AdminPendingDecisionRequest? request)
         {
-            if (!TryAuthorizeMutations())
-                return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
-
             if (request == null || string.IsNullOrWhiteSpace(request.TelegramId))
                 return JsonError(400, "telegramId is required");
 
@@ -346,7 +318,6 @@ namespace TelegramAuth.Controllers
 
         [HttpGet]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/devices")]
         public ActionResult Devices([FromQuery] string telegramId)
         {
@@ -367,7 +338,6 @@ namespace TelegramAuth.Controllers
 
         [HttpPost]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/device/unbind")]
         public ActionResult Unbind([FromBody] DeviceUnbindRequest? request)
         {
@@ -385,7 +355,6 @@ namespace TelegramAuth.Controllers
 
         [HttpPost]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/device/reactivate")]
         public ActionResult ReactivateDevice([FromBody] DeviceReactivateRequest? request)
         {
@@ -405,7 +374,6 @@ namespace TelegramAuth.Controllers
 
         [HttpPost]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/device/name")]
         public ActionResult SetDeviceName([FromBody] DeviceSetNameRequest? request)
         {
@@ -427,16 +395,13 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpPost]
+        [Authorize]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/devices/cleanup")]
         public ActionResult CleanupDevices()
         {
             if (!ModInit.conf.enable_cleanup)
                 return JsonError(404, "cleanup disabled");
-
-            if (!TryAuthorizeMutations())
-                return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
 
             try
             {
@@ -450,16 +415,13 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpPost]
+        [Authorize]
         [AllowAnonymous]
-        [AuthorizeAnonymous]
         [Route("/tg/auth/import")]
         public ActionResult ImportLegacy()
         {
             if (!ModInit.conf.enable_import)
                 return JsonError(404, "import disabled");
-
-            if (!TryAuthorizeMutations())
-                return JsonError(403, "forbidden", "use accspasswd cookie or " + MutationsSecretHeaderName);
 
             var legacyPath = ModInit.conf.legacy_import_path?.Trim();
             if (string.IsNullOrEmpty(legacyPath))
@@ -474,30 +436,6 @@ namespace TelegramAuth.Controllers
             {
                 return JsonError(500, "import failed", ex.Message);
             }
-        }
-
-        bool TryAuthorizeMutations()
-        {
-            if (HttpContext.Request.Cookies.TryGetValue("accspasswd", out var cookie)
-                && !string.IsNullOrEmpty(CoreInit.rootPasswd)
-                && string.Equals(cookie, CoreInit.rootPasswd, StringComparison.Ordinal))
-                return true;
-
-            var secret = ModInit.conf.mutations_api_secret?.Trim() ?? "";
-            if (secret.Length == 0)
-                return false;
-
-            if (!HttpContext.Request.Headers.TryGetValue(MutationsSecretHeaderName, out var hv))
-                return false;
-
-            return FixedTimeEqualUtf8(hv.ToString(), secret);
-        }
-
-        static bool FixedTimeEqualUtf8(string a, string b)
-        {
-            var ba = Encoding.UTF8.GetBytes(a ?? "");
-            var bb = Encoding.UTF8.GetBytes(b ?? "");
-            return ba.Length == bb.Length && CryptographicOperations.FixedTimeEquals(ba, bb);
         }
 
         ContentResult JsonOk(object data)

@@ -49,7 +49,7 @@ namespace TelegramAuthBot
                 lampac_base_url = "http://127.0.0.1:9118",
                 request_timeout_sec = 10,
                 service_display_name = "Lampac NextGen Bot",
-                mutations_api_secret = ""
+                lampac_accspasswd = ""
             };
     }
 }
