@@ -654,7 +654,6 @@ namespace Core
                 };
 
                 watcher.Filters.Add("*.cs");
-                watcher.Filters.Add("manifest.json");
 
                 CancellationTokenSource debounceCts = null;
                 object debounceLock = new object();

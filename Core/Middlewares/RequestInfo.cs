@@ -41,117 +41,112 @@ namespace Core.Middlewares
                 ? false
                 : Shared.Services.Utilities.IPNetwork.IsLocalIp(clientIp);
 
-            using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(httpContext.RequestAborted))
+            if (httpContext.Request.Headers.TryGetValue("lcrqpasswd", out StringValues _localpasswd) && _localpasswd.Count > 0)
             {
-                ctsHttp.CancelAfter(TimeSpan.FromSeconds(CoreInit.conf.listen.ResponseCancelAfter));
+                if (!CoreInit.conf.WAF.allowExternalIpAccessToLocalRequest && CoreInit.conf.listen.localhost == "127.0.0.1" && !IsLocalIp)
+                    return httpContext.Response.WriteAsync("listen.localhost");
 
-                if (httpContext.Request.Headers.TryGetValue("lcrqpasswd", out StringValues _localpasswd) && _localpasswd.Count > 0)
+                if (_localpasswd[0] != CoreInit.rootPasswd)
+                    return httpContext.Response.WriteAsync("error passwd");
+
+                IsLocalRequest = true;
+
+                if (httpContext.Request.Headers.TryGetValue("x-client-ip", out StringValues xip) && xip.Count > 0)
                 {
-                    if (!CoreInit.conf.WAF.allowExternalIpAccessToLocalRequest && CoreInit.conf.listen.localhost == "127.0.0.1" && !IsLocalIp)
-                        return httpContext.Response.WriteAsync("listen.localhost", ctsHttp.Token);
-
-                    if (_localpasswd[0] != CoreInit.rootPasswd)
-                        return httpContext.Response.WriteAsync("error passwd", ctsHttp.Token);
-
-                    IsLocalRequest = true;
-
-                    if (httpContext.Request.Headers.TryGetValue("x-client-ip", out StringValues xip) && xip.Count > 0)
-                    {
-                        if (!string.IsNullOrEmpty(xip[0]))
-                            clientIp = xip[0];
-                    }
+                    if (!string.IsNullOrEmpty(xip[0]))
+                        clientIp = xip[0];
                 }
-                else if (CoreInit.conf.listen.frontend == "cloudflare")
+            }
+            else if (CoreInit.conf.listen.frontend == "cloudflare")
+            {
+                #region cloudflare
+                if (Program.cloudflare_ips != null && Program.cloudflare_ips.Count > 0)
                 {
-                    #region cloudflare
-                    if (Program.cloudflare_ips != null && Program.cloudflare_ips.Count > 0)
+                    try
                     {
-                        try
+                        var clientIPAddress = IPAddress.Parse(clientIp);
+                        foreach (var cf in Program.cloudflare_ips)
                         {
-                            var clientIPAddress = IPAddress.Parse(clientIp);
-                            foreach (var cf in Program.cloudflare_ips)
+                            if (new System.Net.IPNetwork(cf.prefix, cf.prefixLength).Contains(clientIPAddress))
                             {
-                                if (new System.Net.IPNetwork(cf.prefix, cf.prefixLength).Contains(clientIPAddress))
+                                if (httpContext.Request.Headers.TryGetValue("CF-Connecting-IP", out StringValues xip) && xip.Count > 0)
                                 {
-                                    if (httpContext.Request.Headers.TryGetValue("CF-Connecting-IP", out StringValues xip) && xip.Count > 0)
-                                    {
-                                        if (!string.IsNullOrEmpty(xip[0]))
-                                            clientIp = xip[0];
-                                    }
-
-                                    if (httpContext.Request.Headers.TryGetValue("X-Forwarded-Proto", out StringValues xfp) && xfp.Count > 0)
-                                    {
-                                        if (xfp[0] == "http" || xfp[0] == "https")
-                                            httpContext.Request.Scheme = xfp[0];
-                                    }
-
-                                    if (httpContext.Request.Headers.TryGetValue("CF-IPCountry", out StringValues xcountry) && xcountry.Count > 0)
-                                    {
-                                        if (!string.IsNullOrEmpty(xcountry[0]))
-                                            cf_country = xcountry[0];
-                                    }
-
-                                    break;
+                                    if (!string.IsNullOrEmpty(xip[0]))
+                                        clientIp = xip[0];
                                 }
+
+                                if (httpContext.Request.Headers.TryGetValue("X-Forwarded-Proto", out StringValues xfp) && xfp.Count > 0)
+                                {
+                                    if (xfp[0] == "http" || xfp[0] == "https")
+                                        httpContext.Request.Scheme = xfp[0];
+                                }
+
+                                if (httpContext.Request.Headers.TryGetValue("CF-IPCountry", out StringValues xcountry) && xcountry.Count > 0)
+                                {
+                                    if (!string.IsNullOrEmpty(xcountry[0]))
+                                        cf_country = xcountry[0];
+                                }
+
+                                break;
                             }
                         }
-                        catch (System.Exception ex)
-                        {
-                            Serilog.Log.Error(ex, "{Class} {CatchId}", "RequestInfo", "id_1ijosbv0");
-                        }
                     }
-                    #endregion
+                    catch (System.Exception ex)
+                    {
+                        Serilog.Log.Error(ex, "{Class} {CatchId}", "RequestInfo", "id_1ijosbv0");
+                    }
                 }
+                #endregion
+            }
 
-                var req = new RequestModel()
+            var req = new RequestModel()
+            {
+                IsLocalIp = IsLocalIp,
+                IsLocalRequest = IsLocalRequest,
+                IsWsRequest = IsWsRequest,
+                IsProxyRequest = IsProxyRequest,
+                IsProxyImg = IsProxyImg,
+                IP = clientIp,
+                Country = cf_country,
+                UserAgent = httpContext.Request.Headers.UserAgent
+            };
+
+            if (httpContext.Request.Headers.TryGetValue("X-Kit-AesGcm", out StringValues aesGcmKey) && aesGcmKey.Count > 0)
+                req.AesGcmKey = aesGcmKey;
+
+            if (!string.IsNullOrEmpty(CoreInit.conf.accsdb.domainId_pattern))
+            {
+                string uid = Regex.Match(httpContext.Request.Host.Host, CoreInit.conf.accsdb.domainId_pattern).Groups[1].Value;
+                req.user = CoreInit.conf.accsdb.findUser(uid);
+                req.user_uid = uid;
+
+                if (req.user == null)
+                    return httpContext.Response.WriteAsync("user not found");
+
+                req.@params = CoreInit.conf.accsdb.@params;
+
+                httpContext.Features.Set(req);
+                return _next(httpContext);
+            }
+            else
+            {
+                if (!IsWsRequest)
                 {
-                    IsLocalIp = IsLocalIp,
-                    IsLocalRequest = IsLocalRequest,
-                    IsWsRequest = IsWsRequest,
-                    IsProxyRequest = IsProxyRequest,
-                    IsProxyImg = IsProxyImg,
-                    IP = clientIp,
-                    Country = cf_country,
-                    UserAgent = httpContext.Request.Headers.UserAgent
-                };
-
-                if (httpContext.Request.Headers.TryGetValue("X-Kit-AesGcm", out StringValues aesGcmKey) && aesGcmKey.Count > 0)
-                    req.AesGcmKey = aesGcmKey;
-
-                if (!string.IsNullOrEmpty(CoreInit.conf.accsdb.domainId_pattern))
-                {
-                    string uid = Regex.Match(httpContext.Request.Host.Host, CoreInit.conf.accsdb.domainId_pattern).Groups[1].Value;
-                    req.user = CoreInit.conf.accsdb.findUser(uid);
+                    req.user = CoreInit.conf.accsdb.findUser(httpContext, out string uid);
                     req.user_uid = uid;
 
-                    if (req.user == null)
-                        return httpContext.Response.WriteAsync("user not found", ctsHttp.Token);
+                    if (req.user != null)
+                        req.@params = CoreInit.conf.accsdb.@params;
 
-                    req.@params = CoreInit.conf.accsdb.@params;
-
-                    httpContext.Features.Set(req);
-                    return _next(httpContext);
+                    if (string.IsNullOrEmpty(req.user_uid))
+                        req.user_uid = getuid(httpContext);
                 }
-                else
-                {
-                    if (!IsWsRequest)
-                    {
-                        req.user = CoreInit.conf.accsdb.findUser(httpContext, out string uid);
-                        req.user_uid = uid;
 
-                        if (req.user != null)
-                            req.@params = CoreInit.conf.accsdb.@params;
+                if (CoreInit.conf.kit.uidIdentity)
+                    req.AesGcmKey = req.user_uid;
 
-                        if (string.IsNullOrEmpty(req.user_uid))
-                            req.user_uid = getuid(httpContext);
-                    }
-
-                    if (CoreInit.conf.kit.uidIdentity)
-                        req.AesGcmKey = req.user_uid;
-
-                    httpContext.Features.Set(req);
-                    return _next(httpContext);
-                }
+                httpContext.Features.Set(req);
+                return _next(httpContext);
             }
         }
 

@@ -211,7 +211,7 @@ namespace SISI
 
             #region modules
             SisiModuleEntry.EnsureCache();
-            var args = new SisiEventsModel(rchtype, account_email, uid, token);
+            var args = new SisiEventsModel(rchtype, account_email, uid, token, lgbt);
 
             if (SisiModuleEntry.Modules != null && SisiModuleEntry.Modules.Count > 0)
             {

@@ -17,7 +17,7 @@ namespace NextHUB
                 try
                 {
                     string plugin = Path.GetFileNameWithoutExtension(inFile);
-                    if (plugin == "gayporntube")
+                    if (!args.lgbt && plugin == "gayporntube")
                         continue;
 
                     var init = Root.goInit(plugin);

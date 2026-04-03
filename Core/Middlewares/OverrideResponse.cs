@@ -35,69 +35,64 @@ namespace Core.Middlewares
             if (requestInfo.IsLocalRequest)
                 return _next(httpContext);
 
-            using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(httpContext.RequestAborted))
+            foreach (var over in CoreInit.conf.overrideResponse)
             {
-                ctsHttp.CancelAfter(TimeSpan.FromSeconds(CoreInit.conf.listen.ResponseCancelAfter));
+                if (over.firstEndpoint != first)
+                    continue;
 
-                foreach (var over in CoreInit.conf.overrideResponse)
+                if (Regex.IsMatch(httpContext.Request.Path.Value, over.pattern, RegexOptions.IgnoreCase))
                 {
-                    if (over.firstEndpoint != first)
-                        continue;
-
-                    if (Regex.IsMatch(httpContext.Request.Path.Value, over.pattern, RegexOptions.IgnoreCase))
+                    switch (over.action)
                     {
-                        switch (over.action)
-                        {
-                            case "html":
+                        case "html":
+                            {
+                                httpContext.Response.ContentType = over.type;
+
+                                if (over.val.Contains("{localhost}"))
+                                    return httpContext.Response.WriteAsync(over.val.Replace("{localhost}", CoreInit.Host(httpContext)));
+
+                                return httpContext.Response.WriteAsync(over.val);
+                            }
+                        case "file":
+                            {
+                                httpContext.Response.ContentType = over.type;
+
+                                if (string.IsNullOrEmpty(over.val) || !File.Exists(over.val))
                                 {
-                                    httpContext.Response.ContentType = over.type;
-
-                                    if (over.val.Contains("{localhost}"))
-                                        return httpContext.Response.WriteAsync(over.val.Replace("{localhost}", CoreInit.Host(httpContext)), ctsHttp.Token);
-
-                                    return httpContext.Response.WriteAsync(over.val, ctsHttp.Token);
-                                }
-                            case "file":
-                                {
-                                    httpContext.Response.ContentType = over.type;
-
-                                    if (string.IsNullOrEmpty(over.val) || !File.Exists(over.val))
-                                    {
-                                        httpContext.Response.StatusCode = 404;
-                                        return Task.CompletedTask;
-                                    }
-
-                                    if (Regex.IsMatch(over.val, "\\.(html|txt|css|js|json|xml)$", RegexOptions.IgnoreCase))
-                                    {
-                                        string val = FileCache.ReadAllText(over.val);
-                                        return httpContext.Response.WriteAsync(val.Replace("{localhost}", CoreInit.Host(httpContext)), ctsHttp.Token);
-                                    }
-                                    else
-                                    {
-                                        return httpContext.Response.SendFileAsync(over.val, ctsHttp.Token);
-                                    }
-                                }
-                            case "redirect":
-                                {
-                                    httpContext.Response.Redirect(over.val);
+                                    httpContext.Response.StatusCode = 404;
                                     return Task.CompletedTask;
                                 }
-                            case "eval":
+
+                                if (Regex.IsMatch(over.val, "\\.(html|txt|css|js|json|xml)$", RegexOptions.IgnoreCase))
                                 {
-                                    string url = httpContext.Request.Path.Value + httpContext.Request.QueryString.Value;
-                                    bool _next = CSharpEval.BaseExecute<bool>(over.val, new OverrideResponseGlobals(url, httpContext.Request, requestInfo), evalOptions);
-                                    if (!_next)
-                                        return Task.CompletedTask;
-                                    break;
+                                    string val = FileCache.ReadAllText(over.val);
+                                    return httpContext.Response.WriteAsync(val.Replace("{localhost}", CoreInit.Host(httpContext)));
                                 }
-                            default:
+                                else
+                                {
+                                    return httpContext.Response.SendFileAsync(over.val);
+                                }
+                            }
+                        case "redirect":
+                            {
+                                httpContext.Response.Redirect(over.val);
+                                return Task.CompletedTask;
+                            }
+                        case "eval":
+                            {
+                                string url = httpContext.Request.Path.Value + httpContext.Request.QueryString.Value;
+                                bool _next = CSharpEval.BaseExecute<bool>(over.val, new OverrideResponseGlobals(url, httpContext.Request, requestInfo), evalOptions);
+                                if (!_next)
+                                    return Task.CompletedTask;
                                 break;
-                        }
+                            }
+                        default:
+                            break;
                     }
                 }
-
-                return _next(httpContext);
             }
+
+            return _next(httpContext);
         }
     }
 }

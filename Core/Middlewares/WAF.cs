@@ -48,97 +48,116 @@ namespace Core.Middlewares
             if (waf.bypassLocalIP && requestInfo.IsLocalIp)
                 return _next(httpContext);
 
-            using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(httpContext.RequestAborted))
+            #region BruteForce
+            if (!disabled.bruteForceProtection && waf.bruteForceProtection && !requestInfo.IsLocalIp && CoreInit.conf.accsdb.enable)
             {
-                ctsHttp.CancelAfter(TimeSpan.FromSeconds(CoreInit.conf.listen.ResponseCancelAfter));
+                var currentMinute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60;
+                var perIp = BruteForceByMinute.GetOrAdd(currentMinute, static _ => new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>());
+                var ids = perIp.GetOrAdd(requestInfo.IP, static _ => new ConcurrentDictionary<string, byte>());
 
-                #region BruteForce
-                if (!disabled.bruteForceProtection && waf.bruteForceProtection && !requestInfo.IsLocalIp && CoreInit.conf.accsdb.enable)
+                ids.TryAdd(AccsDbInvk.Args(string.Empty, httpContext), 0);
+
+                if (ids.Count > 5)
                 {
-                    var currentMinute = DateTimeOffset.UtcNow.ToUnixTimeSeconds() / 60;
-                    var perIp = BruteForceByMinute.GetOrAdd(currentMinute, static _ => new ConcurrentDictionary<string, ConcurrentDictionary<string, byte>>());
-                    var ids = perIp.GetOrAdd(requestInfo.IP, static _ => new ConcurrentDictionary<string, byte>());
-
-                    ids.TryAdd(AccsDbInvk.Args(string.Empty, httpContext), 0);
-
-                    if (ids.Count > 5)
-                    {
-                        httpContext.Response.StatusCode = 429;
-                        return httpContext.Response.WriteAsync("Many devices for IP, set up KnownProxies to get the user's real IP", ctsHttp.Token);
-                    }
+                    httpContext.Response.StatusCode = 429;
+                    return httpContext.Response.WriteAsync("Many devices for IP, set up KnownProxies to get the user's real IP");
                 }
-                #endregion
+            }
+            #endregion
 
-                #region country
-                if (!disabled.country && waf.countryAllow != null)
+            #region country
+            if (!disabled.country && waf.countryAllow != null)
+            {
+                // если мы не знаем страну или точно знаем, что она не в списке разрешенных
+                if (string.IsNullOrEmpty(requestInfo.Country) || !waf.countryAllow.Contains(requestInfo.Country))
                 {
-                    // если мы не знаем страну или точно знаем, что она не в списке разрешенных
-                    if (string.IsNullOrEmpty(requestInfo.Country) || !waf.countryAllow.Contains(requestInfo.Country))
+                    httpContext.Response.StatusCode = 403;
+                    return Task.CompletedTask;
+                }
+            }
+
+            if (!disabled.country && waf.countryDeny != null)
+            {
+                // точно знаем страну и она есть в списке запрещенных
+                if (!string.IsNullOrEmpty(requestInfo.Country) && waf.countryDeny.Contains(requestInfo.Country))
+                {
+                    httpContext.Response.StatusCode = 403;
+                    return Task.CompletedTask;
+                }
+            }
+            #endregion
+
+            #region ASN
+            if (!disabled.asn && waf.asnAllow != null)
+            {
+                // если мы не знаем asn или точно знаем, что он не в списке разрешенных
+                if (requestInfo.ASN == -1 || !waf.asnAllow.Contains(requestInfo.ASN))
+                {
+                    httpContext.Response.StatusCode = 403;
+                    return Task.CompletedTask;
+                }
+            }
+
+            if (!disabled.asn && waf.asnDeny != null)
+            {
+                if (waf.asnDeny.Contains(requestInfo.ASN))
+                {
+                    httpContext.Response.StatusCode = 403;
+                    return Task.CompletedTask;
+                }
+            }
+            #endregion
+
+            #region ASN Range Deny
+            if (!disabled.asns && waf.asnsDeny != null && requestInfo.ASN != -1)
+            {
+                long asn = requestInfo.ASN;
+
+                foreach (var r in waf.asnsDeny)
+                {
+                    if (asn >= r.start && asn <= r.end)
                     {
                         httpContext.Response.StatusCode = 403;
                         return Task.CompletedTask;
                     }
                 }
+            }
+            #endregion
 
-                if (!disabled.country && waf.countryDeny != null)
+            #region ips
+            if (!disabled.ips && waf.ipsDeny != null)
+            {
+                if (waf.ipsDeny.Contains(requestInfo.IP))
                 {
-                    // точно знаем страну и она есть в списке запрещенных
-                    if (!string.IsNullOrEmpty(requestInfo.Country) && waf.countryDeny.Contains(requestInfo.Country))
-                    {
-                        httpContext.Response.StatusCode = 403;
-                        return Task.CompletedTask;
-                    }
-                }
-                #endregion
-
-                #region ASN
-                if (!disabled.asn && waf.asnAllow != null)
-                {
-                    // если мы не знаем asn или точно знаем, что он не в списке разрешенных
-                    if (requestInfo.ASN == -1 || !waf.asnAllow.Contains(requestInfo.ASN))
-                    {
-                        httpContext.Response.StatusCode = 403;
-                        return Task.CompletedTask;
-                    }
+                    httpContext.Response.StatusCode = 403;
+                    return Task.CompletedTask;
                 }
 
-                if (!disabled.asn && waf.asnDeny != null)
+                var clientIPAddress = IPAddress.Parse(requestInfo.IP);
+                foreach (string ip in waf.ipsDeny)
                 {
-                    if (waf.asnDeny.Contains(requestInfo.ASN))
+                    if (ip.Contains("/"))
                     {
-                        httpContext.Response.StatusCode = 403;
-                        return Task.CompletedTask;
-                    }
-                }
-                #endregion
-
-                #region ASN Range Deny
-                if (!disabled.asns && waf.asnsDeny != null && requestInfo.ASN != -1)
-                {
-                    long asn = requestInfo.ASN;
-
-                    foreach (var r in waf.asnsDeny)
-                    {
-                        if (asn >= r.start && asn <= r.end)
+                        string[] parts = ip.Split('/');
+                        if (int.TryParse(parts[1], out int prefixLength))
                         {
-                            httpContext.Response.StatusCode = 403;
-                            return Task.CompletedTask;
+                            if (new System.Net.IPNetwork(IPAddress.Parse(parts[0]), prefixLength).Contains(clientIPAddress))
+                            {
+                                httpContext.Response.StatusCode = 403;
+                                return Task.CompletedTask;
+                            }
                         }
                     }
                 }
-                #endregion
+            }
 
-                #region ips
-                if (!disabled.ips && waf.ipsDeny != null)
+            if (!disabled.ips && waf.ipsAllow != null)
+            {
+                if (!waf.ipsAllow.Contains(requestInfo.IP))
                 {
-                    if (waf.ipsDeny.Contains(requestInfo.IP))
-                    {
-                        httpContext.Response.StatusCode = 403;
-                        return Task.CompletedTask;
-                    }
-
+                    bool deny = true;
                     var clientIPAddress = IPAddress.Parse(requestInfo.IP);
-                    foreach (string ip in waf.ipsDeny)
+                    foreach (string ip in waf.ipsAllow)
                     {
                         if (ip.Contains("/"))
                         {
@@ -147,79 +166,55 @@ namespace Core.Middlewares
                             {
                                 if (new System.Net.IPNetwork(IPAddress.Parse(parts[0]), prefixLength).Contains(clientIPAddress))
                                 {
-                                    httpContext.Response.StatusCode = 403;
-                                    return Task.CompletedTask;
+                                    deny = false;
+                                    break;
                                 }
                             }
                         }
                     }
-                }
 
-                if (!disabled.ips && waf.ipsAllow != null)
-                {
-                    if (!waf.ipsAllow.Contains(requestInfo.IP))
+                    if (deny)
                     {
-                        bool deny = true;
-                        var clientIPAddress = IPAddress.Parse(requestInfo.IP);
-                        foreach (string ip in waf.ipsAllow)
-                        {
-                            if (ip.Contains("/"))
-                            {
-                                string[] parts = ip.Split('/');
-                                if (int.TryParse(parts[1], out int prefixLength))
-                                {
-                                    if (new System.Net.IPNetwork(IPAddress.Parse(parts[0]), prefixLength).Contains(clientIPAddress))
-                                    {
-                                        deny = false;
-                                        break;
-                                    }
-                                }
-                            }
-                        }
+                        httpContext.Response.StatusCode = 403;
+                        return Task.CompletedTask;
+                    }
+                }
+            }
+            #endregion
 
-                        if (deny)
+            #region headers
+            if (!disabled.headers && waf.headersDeny != null)
+            {
+                foreach (var header in waf.headersDeny)
+                {
+                    if (httpContext.Request.Headers.TryGetValue(header.Key, out StringValues headerValue) && headerValue.Count > 0)
+                    {
+                        if (Regex.IsMatch(headerValue, header.Value, RegexOptions.IgnoreCase))
                         {
                             httpContext.Response.StatusCode = 403;
                             return Task.CompletedTask;
                         }
                     }
                 }
-                #endregion
-
-                #region headers
-                if (!disabled.headers && waf.headersDeny != null)
-                {
-                    foreach (var header in waf.headersDeny)
-                    {
-                        if (httpContext.Request.Headers.TryGetValue(header.Key, out StringValues headerValue) && headerValue.Count > 0)
-                        {
-                            if (Regex.IsMatch(headerValue, header.Value, RegexOptions.IgnoreCase))
-                            {
-                                httpContext.Response.StatusCode = 403;
-                                return Task.CompletedTask;
-                            }
-                        }
-                    }
-                }
-                #endregion
-
-                #region limit_req
-                if (!disabled.limit_req)
-                {
-                    var _limit = MapLimited(waf, httpContext.Request.Path.Value);
-                    if (_limit?.map?.limit > 0)
-                    {
-                        if (RateLimited(httpContext, memoryCache, requestInfo.IP, _limit.map, _limit.pattern))
-                        {
-                            httpContext.Response.StatusCode = 429;
-                            return httpContext.Response.WriteAsync("429 Too Many Requests", ctsHttp.Token);
-                        }
-                    }
-                }
-                #endregion
-
-                return _next(httpContext);
             }
+            #endregion
+
+            #region limit_req
+            if (!disabled.limit_req)
+            {
+                var _limit = MapLimited(waf, httpContext.Request.Path.Value);
+                if (_limit?.map?.limit > 0)
+                {
+                    if (RateLimited(httpContext, memoryCache, requestInfo.IP, _limit.map, _limit.pattern))
+                    {
+                        httpContext.Response.StatusCode = 429;
+                        return httpContext.Response.WriteAsync("429 Too Many Requests");
+                    }
+                }
+            }
+            #endregion
+
+            return _next(httpContext);
         }
 
 

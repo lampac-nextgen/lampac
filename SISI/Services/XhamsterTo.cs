@@ -111,7 +111,7 @@ namespace SISI.Services
                     var pl = new PlaylistItem()
                     {
                         name = video.title,
-                        video = $"{route}?uri={Regex.Replace(video.pageURL, "^https?://[^/]+/", "")}",
+                        video = $"{route}?uri={HttpUtility.UrlEncode(Regex.Replace(video.pageURL, "^https?://[^/]+/", ""))}",
                         picture = video.thumbURL,
                         quality = video.isUHD ? "HD" : null,
                         preview = video.trailerURL ?? video.trailerFallbackUrl,

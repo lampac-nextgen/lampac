@@ -221,11 +221,7 @@ namespace Core.Middlewares
                 httpContext.Response.Headers["X-StatiCache-Status"] = "HIT";
                 httpContext.Response.ContentType = _r.contentType;
 
-                using (var cts = CancellationTokenSource.CreateLinkedTokenSource(httpContext.RequestAborted))
-                {
-                    cts.CancelAfter(TimeSpan.FromSeconds(CoreInit.conf.listen.ResponseCancelAfter));
-                    return httpContext.Response.SendFileAsync(_r.inFile, cts.Token);
-                }
+                return httpContext.Response.SendFileAsync(_r.inFile);
             }
 
             httpContext.Features.Set(new StaticacheFeature(route, cachekey));
