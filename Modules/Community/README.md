@@ -2,6 +2,51 @@
 
 Краткая карта модулей и клиентской части (Lampa). Подробности по API и конфигу — в README соответствующего модуля.
 
+## `repository.yaml`
+
+Если community-модули нужно подтягивать из внешних GitHub-репозиториев, создайте файл `module/Community/repository.yaml` в рабочей директории Lampac. На старте `ModuleRepository` читает этот файл, проверяет актуальный commit и при необходимости обновляет указанные папки в `module/Community/<имя_модуля>`.
+
+Минимальный пример:
+
+```yaml
+- repository: https://github.com/lampame/lampac-ukraine
+  branch: main
+  modules:
+    - AnimeON
+    - CikavaIdeya
+    - Uaflix
+    - Unimay
+```
+
+`branch` можно не указывать: Lampac попробует default branch репозитория, затем `main`, затем `master`.
+
+`modules` тоже можно не указывать, но в этом случае Lampac возьмёт только папки верхнего уровня репозитория. Если модули лежат глубже или нужны не все папки, список лучше задать явно.
+
+Пример с приватным GitHub-репозиторием:
+
+```yaml
+- repository: https://github.com/example/private-modules
+  token: access_tokens
+  token_type: Bearer
+  accept: application/vnd.github.raw
+```
+
+Где:
+
+- `repository` — адрес приватного репозитория на GitHub.
+- `token` — токен доступа, который будет отправляться в заголовке авторизации.
+- `token_type` — тип токена в заголовке `Authorization`, в примере получится `Authorization: Bearer access_tokens`.
+- `accept` — значение заголовка `Accept`, если репозиторию или прокси нужен нестандартный формат ответа.
+
+Что важно:
+
+- `repository` обязателен; поддерживаются GitHub URL вида `https://github.com/<owner>/<repo>`.
+- `branch` опционален; если не задан, Lampac попробует default branch репозитория, затем `main`, затем `master`.
+- `modules` можно задавать списком строк, списком объектов `path`/`target` или map-формой `source: target`.
+- `target` задаёт имя локальной папки модуля в `module/Community`; если его не указать, берётся последний сегмент `path`.
+- Для приватных репозиториев можно использовать `token`, `pat` или `auth_header`; значения с префиксом `env:` читаются из переменных окружения.
+- Если токен нужно брать из переменной окружения, используйте форму `token: env:GITHUB_TOKEN`.
+
 ## Состав
 
 | Модуль | Роль |
