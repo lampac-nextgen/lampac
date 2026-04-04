@@ -162,6 +162,9 @@ namespace OnlineAnime.Services
             string player_single = null;
             string domain = null, d_sign = null, pd = null, pd_sign = null, ref_domain = null, ref_sign = null, type = null, hash = null, id = null;
 
+            if (link.StartsWith("//"))
+                link = $"https:{link}";
+
             await httpHydra.GetSpan(link, iframe =>
             {
                 player_single = Rx.Match(iframe, "src=\"/(assets/js/app\\.player_[^\"]+\\.js)\"");
