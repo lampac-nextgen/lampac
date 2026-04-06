@@ -83,11 +83,15 @@ namespace LampaWeb.Services
                         await File.WriteAllBytesAsync("wwwroot/lampa.zip", array);
                         ZipFile.ExtractToDirectory("wwwroot/lampa.zip", "wwwroot/", overwriteFiles: true);
 
-                        if (istree)
+                        var repo = init.git.Split('/')[^1];
+                        var targetDirectory = $"{repo}-{(istree ? init.tree : "main")}";
+                        var isLampaMainDirectory = targetDirectory.Equals("lampa-main", StringComparison.OrdinalIgnoreCase);
+
+                        if (!isLampaMainDirectory)
                         {
-                            foreach (string infilePath in Directory.GetFiles($"wwwroot/lampa-{init.tree}", "*", SearchOption.AllDirectories))
+                            foreach (string infilePath in Directory.GetFiles($"wwwroot/{targetDirectory}", "*", SearchOption.AllDirectories))
                             {
-                                string outfile = infilePath.Replace($"lampa-{init.tree}", "lampa-main");
+                                string outfile = infilePath.Replace($"{targetDirectory}", "lampa-main");
                                 Directory.CreateDirectory(Path.GetDirectoryName(outfile));
                                 File.Copy(infilePath, outfile, true);
                             }
@@ -112,11 +116,11 @@ namespace LampaWeb.Services
 
                         File.Delete("wwwroot/lampa.zip");
 
-                        if (istree)
-                            Directory.Delete($"wwwroot/lampa-{init.tree}", true);
+                        if (!isLampaMainDirectory)
+                            Directory.Delete($"wwwroot/{targetDirectory}", true);
                     }
                 }
-            }
+            } 
             catch (System.Exception ex)
             {
                 Serilog.Log.Error(ex, "{Class} {CatchId}", "LampaCron", "id_30qftt0j");
