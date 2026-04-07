@@ -10,10 +10,13 @@ namespace WebLog
         public void Loaded(InitspaceModel baseconf)
         {
             modpath = baseconf.path;
+
+            LogEvents.Start();
         }
 
         public void Dispose()
         {
+            LogEvents.Stop();
         }
     }
 }
