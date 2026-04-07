@@ -1,0 +1,1824 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>OpenStat — Lampac Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+  <style>
+    /* ── Reset & Tokens ─────────────────────────── */
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0
+    }
+
+    :root {
+      --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+
+      /* Type scale */
+      --text-xs: 0.6875rem;
+      --text-sm: 0.8125rem;
+      --text-base: 0.875rem;
+      --text-lg: 1rem;
+      --text-xl: 1.25rem;
+
+      /* Spacing */
+      --sp-1: 0.25rem;
+      --sp-2: 0.5rem;
+      --sp-3: 0.75rem;
+      --sp-4: 1rem;
+      --sp-5: 1.25rem;
+      --sp-6: 1.5rem;
+      --sp-8: 2rem;
+
+      /* Radius */
+      --r-sm: 6px;
+      --r-md: 8px;
+      --r-lg: 12px;
+      --r-xl: 16px;
+
+      /* Transitions */
+      --ease: cubic-bezier(0.16, 1, 0.3, 1);
+      --dur: 180ms;
+    }
+
+    /* ── Dark Theme (default) ─────────────────────── */
+    [data-theme="dark"] {
+      --bg: #0c0e12;
+      --surface: #13161d;
+      --surface-2: #1a1e28;
+      --surface-3: #222733;
+      --border: #2a3040;
+      --border-subtle: rgba(255, 255, 255, 0.06);
+
+      --text: #e2e6ef;
+      --text-muted: #7c849a;
+      --text-faint: #4d5568;
+
+      --accent: #3ec9d1;
+      --accent-dim: rgba(62, 201, 209, 0.12);
+      --accent-hover: rgba(62, 201, 209, 0.22);
+
+      --ok: #4ade80;
+      --ok-dim: rgba(74, 222, 128, 0.12);
+      --warn: #facc15;
+      --warn-dim: rgba(250, 204, 21, 0.12);
+      --err: #f87171;
+      --err-dim: rgba(248, 113, 113, 0.12);
+
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+      --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.45);
+    }
+
+    /* ── Light Theme ─────────────────────── */
+    [data-theme="light"] {
+      --bg: #f4f5f8;
+      --surface: #ffffff;
+      --surface-2: #f0f1f5;
+      --surface-3: #e8eaf0;
+      --border: #d4d8e3;
+      --border-subtle: rgba(0, 0, 0, 0.06);
+
+      --text: #1a1e28;
+      --text-muted: #6b7280;
+      --text-faint: #9ca3af;
+
+      --accent: #0d9499;
+      --accent-dim: rgba(13, 148, 153, 0.1);
+      --accent-hover: rgba(13, 148, 153, 0.18);
+
+      --ok: #16a34a;
+      --ok-dim: rgba(22, 163, 74, 0.1);
+      --warn: #ca8a04;
+      --warn-dim: rgba(202, 138, 4, 0.1);
+      --err: #dc2626;
+      --err-dim: rgba(220, 38, 38, 0.1);
+
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+      --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
+    }
+
+    /* ── Base ─────────────────────── */
+    html {
+      height: 100%;
+      overflow: hidden;
+    }
+
+    body {
+      height: 100%;
+      font-family: var(--font-body);
+      font-size: var(--text-base);
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      overflow: hidden;
+    }
+
+    /* ── Layout ─────────────────────── */
+    .app {
+      display: grid;
+      grid-template-rows: auto 1fr;
+      height: 100dvh;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-4);
+      padding: var(--sp-3) var(--sp-6);
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      z-index: 20;
+      flex-wrap: wrap;
+    }
+
+    .topbar-start {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-3);
+      flex-wrap: wrap;
+      min-width: 0;
+      flex-shrink: 0;
+    }
+
+    .topbar-logo {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      font-weight: 700;
+      font-size: var(--text-lg);
+      letter-spacing: -0.02em;
+      color: var(--text);
+      flex-shrink: 0;
+    }
+
+    .topbar-logo svg {
+      flex-shrink: 0;
+    }
+
+    .topbar-app-nav {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      flex-shrink: 0;
+    }
+
+    .topbar-app-nav a {
+      font: inherit;
+      font-size: var(--text-xs);
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: var(--r-md);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text-muted);
+      text-decoration: none;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      min-width: 5.75rem;
+      box-sizing: border-box;
+      transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+    }
+
+    .topbar-app-nav a:hover {
+      color: var(--text);
+      background: var(--surface-3);
+    }
+
+    .topbar-app-nav a[aria-current="page"] {
+      background: var(--surface);
+      color: var(--accent);
+      border-color: var(--accent);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .topbar-fields {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-3);
+      flex: 1;
+      flex-wrap: wrap;
+      min-width: 0;
+    }
+
+    .topbar-fields label {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      display: flex;
+      align-items: center;
+      gap: var(--sp-1);
+      white-space: nowrap;
+    }
+
+    .topbar-actions {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      flex-shrink: 0;
+      margin-left: auto;
+    }
+
+    .topbar-actions>.btn:not(.btn-icon) {
+      min-height: 34px;
+      min-width: 8.75rem;
+      box-sizing: border-box;
+      justify-content: center;
+      display: inline-flex;
+      align-items: center;
+    }
+
+    .topbar-actions .btn-icon {
+      width: 34px;
+      height: 34px;
+      min-width: 34px;
+      min-height: 34px;
+    }
+
+    .topbar-input {
+      font: inherit;
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      padding: 6px 10px;
+      border-radius: var(--r-md);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+      min-width: 200px;
+      transition: border-color var(--dur) var(--ease);
+    }
+
+    .topbar-input:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+
+    .topbar-select {
+      font: inherit;
+      font-size: var(--text-xs);
+      padding: 6px 10px;
+      border-radius: var(--r-md);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+      cursor: pointer;
+    }
+
+    .btn {
+      font: inherit;
+      font-size: var(--text-xs);
+      font-weight: 600;
+      padding: 6px 14px;
+      border-radius: var(--r-md);
+      border: 1px solid var(--accent);
+      background: var(--accent-dim);
+      color: var(--accent);
+      cursor: pointer;
+      transition: background var(--dur) var(--ease), transform 80ms;
+      white-space: nowrap;
+    }
+
+    .btn:hover {
+      background: var(--accent-hover);
+    }
+
+    .btn:active {
+      transform: scale(0.97);
+    }
+
+    .btn-icon {
+      font: inherit;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      width: 32px;
+      height: 32px;
+      border-radius: var(--r-md);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text-muted);
+      cursor: pointer;
+      transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+    }
+
+    .btn-icon:hover {
+      color: var(--text);
+      background: var(--surface-3);
+    }
+
+    .status-dot {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+    }
+
+    .status-dot::before {
+      content: '';
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--text-faint);
+      flex-shrink: 0;
+    }
+
+    .status-dot.live::before {
+      background: var(--ok);
+      box-shadow: 0 0 8px rgba(74, 222, 128, 0.5);
+      animation: pulse 2s ease-in-out infinite;
+    }
+
+    .status-dot.error::before {
+      background: var(--err);
+      box-shadow: 0 0 8px rgba(248, 113, 113, 0.4);
+    }
+
+    @keyframes pulse {
+
+      0%,
+      100% {
+        opacity: 1;
+      }
+
+      50% {
+        opacity: 0.5;
+      }
+    }
+
+    /* ── Main scroll area ─────────────────────── */
+    .main {
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      padding: var(--sp-5) var(--sp-6) var(--sp-8);
+    }
+
+    /* ── Tabs ─────────────────────── */
+    .tab-bar {
+      display: flex;
+      gap: var(--sp-1);
+      padding: 3px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      margin-bottom: var(--sp-5);
+      flex-wrap: wrap;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .tab {
+      font: inherit;
+      font-size: var(--text-xs);
+      font-weight: 600;
+      padding: 8px 14px;
+      border: none;
+      border-radius: var(--r-md);
+      background: transparent;
+      color: var(--text-muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      transition: color var(--dur) var(--ease), background var(--dur) var(--ease);
+      white-space: nowrap;
+    }
+
+    .tab:hover {
+      color: var(--text);
+      background: var(--surface-2);
+    }
+
+    .tab[aria-selected="true"] {
+      color: var(--text);
+      background: var(--surface-2);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .tab .indicator {
+      width: 7px;
+      height: 7px;
+      border-radius: 50%;
+      flex-shrink: 0;
+      background: var(--text-faint);
+      transition: background var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+    }
+
+    .tab .indicator.ok {
+      background: var(--ok);
+      box-shadow: 0 0 6px rgba(74, 222, 128, 0.45);
+    }
+
+    .tab .indicator.warn {
+      background: var(--warn);
+    }
+
+    .tab .indicator.err {
+      background: var(--err);
+      box-shadow: 0 0 6px rgba(248, 113, 113, 0.4);
+    }
+
+    /* ── Section header ─────────────────────── */
+    .section-header {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: var(--sp-4);
+      margin-bottom: var(--sp-4);
+      flex-wrap: wrap;
+    }
+
+    .section-header h2 {
+      font-size: var(--text-lg);
+      font-weight: 700;
+      letter-spacing: -0.01em;
+    }
+
+    .section-header .endpoint {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      color: var(--text-faint);
+    }
+
+    /* ── KPI Grid ─────────────────────── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+      gap: var(--sp-3);
+      margin-bottom: var(--sp-5);
+    }
+
+    .kpi {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      padding: var(--sp-4);
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-1);
+      transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+    }
+
+    .kpi:hover {
+      border-color: color-mix(in srgb, var(--accent) 30%, var(--border));
+    }
+
+    .kpi-label {
+      font-size: var(--text-xs);
+      font-weight: 500;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-muted);
+    }
+
+    .kpi-value {
+      font-family: var(--font-mono);
+      font-size: var(--text-xl);
+      font-weight: 600;
+      font-variant-numeric: tabular-nums lining-nums;
+      color: var(--text);
+      line-height: 1.2;
+    }
+
+    .kpi-sub {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      color: var(--text-faint);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .kpi-spark {
+      height: 32px;
+      margin-top: var(--sp-1);
+    }
+
+    /* ── Cards ─────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      overflow: hidden;
+      box-shadow: var(--shadow-sm);
+    }
+
+    .card-body {
+      padding: var(--sp-4) var(--sp-5);
+    }
+
+    .card-title {
+      font-size: var(--text-xs);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--accent);
+      margin-bottom: var(--sp-3);
+    }
+
+    /* ── Grid layouts ─────────────────────── */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: var(--sp-4);
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: var(--sp-4);
+    }
+
+    @media (max-width: 860px) {
+
+      .grid-2,
+      .grid-3 {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    /* ── Key-Value list ─────────────────────── */
+    .kv-list {
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: 6px var(--sp-6);
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .kv-list dt {
+      color: var(--text-muted);
+    }
+
+    .kv-list dd {
+      text-align: right;
+      color: var(--text);
+    }
+
+    /* ── Progress bar ─────────────────────── */
+    .meter-container {
+      margin-bottom: var(--sp-3);
+    }
+
+    .meter-bar {
+      height: 6px;
+      border-radius: 3px;
+      background: var(--surface-3);
+      overflow: hidden;
+      margin-bottom: 4px;
+    }
+
+    .meter-bar>span {
+      display: block;
+      height: 100%;
+      border-radius: 3px;
+      background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent) 60%, var(--ok)));
+      transition: width 600ms var(--ease);
+    }
+
+    .meter-label {
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      color: var(--text-faint);
+    }
+
+    /* ── Table ─────────────────────── */
+    .data-table {
+      width: 100%;
+      border-collapse: collapse;
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      font-variant-numeric: tabular-nums;
+    }
+
+    .data-table th {
+      text-align: left;
+      padding: 8px 10px;
+      font-weight: 600;
+      color: var(--text-muted);
+      border-bottom: 1px solid var(--border);
+      position: sticky;
+      top: 0;
+      background: var(--surface);
+    }
+
+    .data-table td {
+      padding: 7px 10px;
+      border-bottom: 1px solid var(--border-subtle);
+      color: var(--text);
+    }
+
+    .data-table tr:last-child td {
+      border-bottom: none;
+    }
+
+    .data-table .path-cell {
+      word-break: break-all;
+      max-width: 400px;
+    }
+
+    /* ── Status badges ─────────────────────── */
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      font-size: var(--text-xs);
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: var(--r-sm);
+    }
+
+    .badge-ok {
+      background: var(--ok-dim);
+      color: var(--ok);
+    }
+
+    .badge-warn {
+      background: var(--warn-dim);
+      color: var(--warn);
+    }
+
+    .badge-err {
+      background: var(--err-dim);
+      color: var(--err);
+    }
+
+    /* ── JSON viewer ─────────────────────── */
+    .json-block {
+      margin-top: var(--sp-4);
+      border-radius: var(--r-md);
+      border: 1px solid var(--border);
+      overflow: hidden;
+    }
+
+    .json-toggle {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 8px 12px;
+      background: var(--surface-2);
+      border: none;
+      width: 100%;
+      cursor: pointer;
+      font: inherit;
+      font-size: var(--text-xs);
+      font-weight: 600;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .json-toggle:hover {
+      color: var(--text);
+    }
+
+    .json-toggle .arrow {
+      transition: transform var(--dur) var(--ease);
+    }
+
+    .json-toggle[aria-expanded="true"] .arrow {
+      transform: rotate(180deg);
+    }
+
+    .json-body {
+      display: none;
+      position: relative;
+    }
+
+    .json-body.open {
+      display: block;
+    }
+
+    .json-body pre {
+      margin: 0;
+      padding: var(--sp-4);
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      line-height: 1.5;
+      overflow: auto;
+      max-height: 400px;
+      color: var(--text-muted);
+      background: transparent;
+    }
+
+    .json-copy {
+      position: absolute;
+      top: 8px;
+      right: 8px;
+      font: inherit;
+      font-size: var(--text-xs);
+      padding: 4px 10px;
+      border-radius: var(--r-sm);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--accent);
+      cursor: pointer;
+      z-index: 2;
+    }
+
+    .json-copy:hover {
+      background: var(--surface-3);
+    }
+
+    /* ── Message boxes ─────────────────────── */
+    .msg-box {
+      padding: var(--sp-4);
+      border-radius: var(--r-md);
+      font-size: var(--text-sm);
+      display: flex;
+      align-items: flex-start;
+      gap: var(--sp-3);
+    }
+
+    .msg-box svg {
+      flex-shrink: 0;
+      margin-top: 2px;
+    }
+
+    .msg-box.err-msg {
+      background: var(--err-dim);
+      border: 1px solid color-mix(in srgb, var(--err) 25%, transparent);
+      color: var(--err);
+    }
+
+    .msg-box.warn-msg {
+      background: var(--warn-dim);
+      border: 1px solid color-mix(in srgb, var(--warn) 25%, transparent);
+      color: var(--warn);
+    }
+
+    /* ── Charts container ─────────────────────── */
+    .chart-container {
+      position: relative;
+      height: 200px;
+      margin-top: var(--sp-3);
+    }
+
+    /* ── Footer ─────────────────────── */
+    .footer-attr {
+      text-align: center;
+      padding: var(--sp-4) 0;
+      font-size: var(--text-xs);
+      color: var(--text-faint);
+    }
+
+    .footer-attr a {
+      color: var(--text-muted);
+      text-decoration: none;
+      transition: color var(--dur) var(--ease);
+    }
+
+    .footer-attr a:hover {
+      color: var(--accent);
+    }
+
+    /* ── Skeleton loading ─────────────────────── */
+    @keyframes shimmer {
+      0% {
+        background-position: -200% 0;
+      }
+
+      100% {
+        background-position: 200% 0;
+      }
+    }
+
+    .skeleton {
+      background: linear-gradient(90deg, var(--surface-2) 25%, var(--surface-3) 50%, var(--surface-2) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s ease-in-out infinite;
+      border-radius: var(--r-sm);
+    }
+
+    /* ── Responsive ─────────────────────── */
+    @media (max-width: 640px) {
+      .topbar {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        grid-template-rows: auto auto auto;
+        align-items: center;
+        gap: var(--sp-3);
+        padding: max(var(--sp-3), env(safe-area-inset-top, 0px)) max(var(--sp-3), env(safe-area-inset-right, 0px)) var(--sp-3) max(var(--sp-3), env(safe-area-inset-left, 0px));
+        row-gap: var(--sp-2);
+      }
+
+      .topbar-start {
+        grid-column: 1;
+        grid-row: 1;
+        min-width: 0;
+      }
+
+      .topbar-app-nav {
+        grid-column: 1 / -1;
+        grid-row: 2;
+        width: 100%;
+        min-width: 0;
+        box-sizing: border-box;
+        padding-top: var(--sp-2);
+        margin-top: calc(-1 * var(--sp-1));
+        border-top: 1px solid var(--border-subtle);
+        flex-wrap: nowrap;
+        justify-content: flex-start;
+        overflow-x: auto;
+        overflow-y: hidden;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: none;
+        touch-action: manipulation;
+        gap: var(--sp-2);
+      }
+
+      .topbar-app-nav::-webkit-scrollbar {
+        display: none;
+      }
+
+      .topbar-app-nav a {
+        flex: 0 0 auto;
+        min-width: 5.25rem;
+        min-height: 44px;
+        padding: 10px 14px;
+        font-size: var(--text-sm);
+      }
+
+      .topbar-actions {
+        grid-column: 2;
+        grid-row: 1;
+        margin-left: 0;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+        max-width: 100%;
+      }
+
+      .topbar-fields {
+        grid-column: 1 / -1;
+        grid-row: 3;
+        flex-direction: column;
+        align-items: stretch;
+        gap: var(--sp-2);
+      }
+
+      .topbar-fields label {
+        flex-direction: column;
+        align-items: stretch;
+        white-space: normal;
+        gap: var(--sp-1);
+      }
+
+      .topbar-input,
+      .topbar-select {
+        width: 100%;
+        min-width: 0;
+      }
+
+      .topbar-actions>.btn:not(.btn-icon) {
+        min-width: auto;
+        min-height: 40px;
+        padding: 8px 14px;
+      }
+
+      .topbar-actions .btn-icon {
+        width: 40px;
+        height: 40px;
+        min-width: 40px;
+        min-height: 40px;
+      }
+
+      .status-dot {
+        min-height: 40px;
+        align-items: center;
+      }
+
+      .main {
+        padding: var(--sp-4) max(var(--sp-3), env(safe-area-inset-right, 0px)) max(var(--sp-6), env(safe-area-inset-bottom, 0px)) max(var(--sp-3), env(safe-area-inset-left, 0px));
+      }
+
+      .tab-bar {
+        width: 100%;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        scrollbar-width: thin;
+        touch-action: manipulation;
+        gap: var(--sp-2);
+      }
+
+      .tab-bar .tab {
+        flex: 0 0 auto;
+        min-height: 44px;
+        padding: 10px 14px;
+      }
+
+      .section-header {
+        flex-direction: column;
+        align-items: flex-start;
+      }
+
+      .kpi-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: var(--sp-2);
+      }
+
+      .kpi {
+        padding: var(--sp-3);
+      }
+
+      .kpi-value {
+        font-size: var(--text-lg);
+      }
+
+      .card-body {
+        padding: var(--sp-3) var(--sp-4);
+      }
+
+      .json-body pre {
+        max-height: min(400px, 55vh);
+      }
+
+      .chart-container {
+        height: min(200px, 42vw);
+      }
+    }
+
+    @media (max-width: 380px) {
+      .kpi-grid {
+        grid-template-columns: 1fr;
+      }
+    }
+  </style>
+</head>
+
+<body>
+  <div class="app">
+    <!-- Top Bar -->
+    <header class="topbar">
+      <div class="topbar-start">
+        <div class="topbar-logo">
+          <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-label="OpenStat logo">
+            <rect x="2" y="2" width="24" height="24" rx="6" stroke="currentColor" stroke-width="1.5" fill="none" />
+            <rect x="7" y="16" width="3" height="6" rx="1" fill="var(--accent)" />
+            <rect x="12.5" y="11" width="3" height="11" rx="1" fill="var(--accent)" opacity="0.7" />
+            <rect x="18" y="6" width="3" height="16" rx="1" fill="var(--accent)" opacity="0.45" />
+          </svg>
+          OpenStat
+        </div>
+      </div>
+
+      <nav class="topbar-app-nav" aria-label="Lampac pages">
+        <a href="/adminpanel">Admin</a>
+        <a href="/stats" aria-current="page">Stats</a>
+        <a href="/weblog">Weblog</a>
+      </nav>
+
+      <div class="topbar-fields">
+        <label>
+          API
+          <input type="url" class="topbar-input" id="apiBase" placeholder="Same origin (default)" autocomplete="off">
+        </label>
+        <label>
+          Refresh
+          <select class="topbar-select" id="interval">
+            <option value="0">Manual</option>
+            <option value="3">3s</option>
+            <option value="5" selected>5s</option>
+            <option value="15">15s</option>
+            <option value="30">30s</option>
+            <option value="60">60s</option>
+          </select>
+        </label>
+      </div>
+
+      <div class="topbar-actions">
+        <button class="btn" id="btnRefresh" data-testid="button-refresh">Refresh</button>
+        <span class="status-dot" id="statusDot" data-testid="status-connection">Waiting</span>
+        <button class="btn-icon" id="themeToggle" aria-label="Toggle theme" data-testid="button-theme">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Main content -->
+    <main class="main" id="mainContent">
+      <nav class="tab-bar" role="tablist" aria-label="Stats categories" id="tabBar"></nav>
+      <div id="panelContent">
+        <p style="color:var(--text-muted);padding:var(--sp-4)">Connecting...</p>
+      </div>
+      <footer class="footer-attr">
+        <p>OpenStat — Lampac Dashboard</p>
+      </footer>
+    </main>
+  </div>
+
+  <script>
+    (function () {
+      'use strict';
+
+      // ── Config ──────────────────────────────
+      const ENDPOINTS = [
+        { id: 'gc', label: 'GC & Memory', icon: 'mem', path: 'gc', optional: false },
+        { id: 'threadpool', label: 'Thread Pool', icon: 'cpu', path: 'threadpool', optional: true },
+        { id: 'request', label: 'HTTP Requests', icon: 'http', path: 'request', optional: true },
+        { id: 'tempdb', label: 'Temp DB & Cache', icon: 'db', path: 'tempdb', optional: true },
+        { id: 'browser', label: 'Browser Contexts', icon: 'ctx', path: 'browser/context', optional: true }
+      ];
+
+      // ── State ──────────────────────────────
+      const state = {};
+      ENDPOINTS.forEach(ep => { state[ep.id] = { status: 'idle', json: null, httpStatus: null, error: null }; });
+      let activeId = 'gc';
+      let timer = null;
+      let refreshCount = 0;
+
+      // History for sparklines (keep last 60 data points)
+      const history = {
+        gc: { managedUsed: [], workingSet: [] },
+        threadpool: { queueLength: [], threadCount: [] },
+        request: { reqMin: [], httpActive: [], tcpConn: [] }
+      };
+      const MAX_HISTORY = 60;
+
+      function pushHistory(cat, key, val) {
+        const num = parseFloat(String(val).replace(/[^\d.]/g, ''));
+        if (!isNaN(num)) {
+          if (!history[cat]) history[cat] = {};
+          if (!history[cat][key]) history[cat][key] = [];
+          history[cat][key].push(num);
+          if (history[cat][key].length > MAX_HISTORY) history[cat][key].shift();
+        }
+      }
+
+      // ── DOM refs ──────────────────────────────
+      const apiBaseEl = document.getElementById('apiBase');
+      const intervalEl = document.getElementById('interval');
+      const tabBar = document.getElementById('tabBar');
+      const panel = document.getElementById('panelContent');
+      const statusDot = document.getElementById('statusDot');
+      const btnRefresh = document.getElementById('btnRefresh');
+      const themeBtn = document.getElementById('themeToggle');
+      const root = document.documentElement;
+
+      // ── localStorage (theme, API base, interval, active tab survive refresh) ──
+      const LS_PREFIX = 'openstat-dashboard:';
+      const LAMPAC_THEME_STORAGE_KEY = 'lampac-theme'; // same as /adminpanel/ + /weblog/ (same origin)
+      const LS_API = LS_PREFIX + 'apiBase';
+      const LS_INTERVAL = LS_PREFIX + 'interval';
+      const LS_TAB = LS_PREFIX + 'activeTab';
+
+      function lsGet(key) {
+        try { return localStorage.getItem(key); } catch (_) { return null; }
+      }
+
+      function lsSet(key, val) {
+        try { localStorage.setItem(key, val); } catch (_) { /* private mode / quota */ }
+      }
+
+      function persistApiBase() {
+        lsSet(LS_API, apiBaseEl.value.trim());
+      }
+      apiBaseEl.addEventListener('change', persistApiBase);
+      apiBaseEl.addEventListener('blur', persistApiBase);
+
+      // ── Theme toggle ──────────────────────────────
+      let darkMode = true;
+
+      function updateThemeIcon() {
+        themeBtn.innerHTML = darkMode
+          ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>'
+          : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>';
+      }
+
+      function loadPreferences() {
+        const storedTheme = lsGet(LAMPAC_THEME_STORAGE_KEY);
+        if (storedTheme === 'dark' || storedTheme === 'light') {
+          darkMode = storedTheme === 'dark';
+        } else {
+          darkMode = window.matchMedia('(prefers-color-scheme: dark)').matches;
+        }
+        root.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+        updateThemeIcon();
+
+        const api = lsGet(LS_API);
+        if (api != null) apiBaseEl.value = api;
+
+        const intv = lsGet(LS_INTERVAL);
+        if (intv != null && [...intervalEl.options].some(o => o.value === intv)) {
+          intervalEl.value = intv;
+        }
+
+        const tab = lsGet(LS_TAB);
+        if (tab && ENDPOINTS.some(e => e.id === tab)) {
+          activeId = tab;
+        }
+      }
+
+      themeBtn.addEventListener('click', () => {
+        darkMode = !darkMode;
+        root.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+        lsSet(LAMPAC_THEME_STORAGE_KEY, darkMode ? 'dark' : 'light');
+        updateThemeIcon();
+        // Destroy & recreate charts
+        Object.values(sparkCharts).forEach(c => c.destroy());
+        Object.keys(sparkCharts).forEach(k => delete sparkCharts[k]);
+        if (areaChart) { areaChart.destroy(); areaChart = null; }
+        renderActivePanel();
+      });
+
+      // ── Helpers ──────────────────────────────
+      function esc(s) {
+        if (s == null) return '';
+        return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+      }
+
+      function g(o) {
+        if (o == null) return undefined;
+        for (let i = 1; i < arguments.length; i++) {
+          const k = arguments[i];
+          if (o != null && Object.prototype.hasOwnProperty.call(o, k) && o[k] !== undefined) return o[k];
+        }
+        return undefined;
+      }
+
+      function statsUrl(path) {
+        const p = '/stats/' + path.replace(/^\//, '');
+        const r = apiBaseEl.value.trim().replace(/\/$/, '');
+        return r ? r + p : p;
+      }
+
+      function fmtVal(v) { return v != null ? String(v) : '—'; }
+
+      function prettyJson(obj) {
+        try { return JSON.stringify(obj, null, 2); } catch (_) { return String(obj); }
+      }
+
+      // ── Build tabs ──────────────────────────────
+      function buildTabs() {
+        tabBar.innerHTML = ENDPOINTS.map(ep => {
+          const sel = ep.id === activeId ? 'true' : 'false';
+          const st = state[ep.id].status;
+          const iClass = st === 'ok' ? 'ok' : st === '404' ? 'warn' : st === 'err' ? 'err' : '';
+          return `<button type="button" class="tab" role="tab" aria-selected="${sel}" data-id="${esc(ep.id)}" data-testid="tab-${ep.id}">
+        <span class="indicator ${iClass}"></span>${esc(ep.label)}
+      </button>`;
+        }).join('');
+
+        tabBar.querySelectorAll('.tab').forEach(btn => {
+          btn.addEventListener('click', () => {
+            activeId = btn.getAttribute('data-id');
+            lsSet(LS_TAB, activeId);
+            buildTabs();
+            renderActivePanel();
+          });
+        });
+      }
+
+      // ── KPI Card ──────────────────────────────
+      function kpiCard(label, value, opts = {}) {
+        const { sub, sparkId, cls } = opts;
+        return `<div class="kpi" data-testid="kpi-${label.toLowerCase().replace(/\s+/g, '-')}">
+      <span class="kpi-label">${esc(label)}</span>
+      <span class="kpi-value ${cls || ''}">${esc(fmtVal(value))}</span>
+      ${sub ? `<span class="kpi-sub">${esc(sub)}</span>` : ''}
+      ${sparkId ? `<div class="kpi-spark"><canvas id="spark-${sparkId}"></canvas></div>` : ''}
+    </div>`;
+      }
+
+      // ── Key-Value list ──────────────────────────────
+      function kvList(entries) {
+        return `<dl class="kv-list">${entries.map(([k, v]) =>
+          `<dt>${esc(k)}</dt><dd>${esc(fmtVal(v))}</dd>`
+        ).join('')}</dl>`;
+      }
+
+      // ── Meter bar ──────────────────────────────
+      function meterBar(label, used, max) {
+        const m = Number(max) || 0;
+        const u = Number(used) || 0;
+        const pct = m > 0 ? Math.min(100, Math.round((u / m) * 100)) : 0;
+        return `<div class="meter-container">
+      <div class="meter-bar"><span style="width:${pct}%"></span></div>
+      <div class="meter-label">${esc(label)} — ${u} / ${m} (${pct}%)</div>
+    </div>`;
+      }
+
+      // ── Card wrapper ──────────────────────────────
+      function card(title, inner) {
+        return `<div class="card"><div class="card-body"><div class="card-title">${esc(title)}</div>${inner}</div></div>`;
+      }
+
+      // ── JSON Block ──────────────────────────────
+      function jsonBlock(obj) {
+        const id = 'json-' + Math.random().toString(36).slice(2);
+        const text = obj == null ? '' : prettyJson(obj);
+        return `<div class="json-block">
+      <button class="json-toggle" aria-expanded="false" data-target="${id}" data-testid="button-json-toggle">
+        <span>Raw JSON</span>
+        <svg class="arrow" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      <div class="json-body" id="${id}">
+        <button class="json-copy" data-copy="${id}-pre" data-testid="button-copy-json">Copy</button>
+        <pre id="${id}-pre">${esc(text)}</pre>
+      </div>
+    </div>`;
+      }
+
+      // ── Sparkline Charts (Chart.js) ──────────────────
+      const sparkCharts = {};
+      let areaChart = null;
+
+      function createSparkline(canvasId, data, color) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        if (sparkCharts[canvasId]) { sparkCharts[canvasId].destroy(); }
+
+        const accent = getComputedStyle(root).getPropertyValue('--accent').trim();
+        const c = color || accent;
+
+        sparkCharts[canvasId] = new Chart(canvas, {
+          type: 'line',
+          data: {
+            labels: data.map((_, i) => i),
+            datasets: [{
+              data: data,
+              borderColor: c,
+              backgroundColor: c.replace(')', ', 0.1)').replace('rgb', 'rgba'),
+              borderWidth: 1.5,
+              fill: true,
+              tension: 0.4,
+              pointRadius: 0,
+              pointHoverRadius: 0
+            }]
+          },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 400 },
+            plugins: { legend: { display: false }, tooltip: { enabled: false } },
+            scales: {
+              x: { display: false },
+              y: { display: false, beginAtZero: true }
+            },
+            elements: { line: { borderCapStyle: 'round' } }
+          }
+        });
+      }
+
+      function createAreaChart(canvasId, datasets, labels) {
+        const canvas = document.getElementById(canvasId);
+        if (!canvas) return;
+        if (areaChart) { areaChart.destroy(); }
+
+        const colors = ['#3ec9d1', '#4ade80', '#facc15', '#f87171', '#a78bfa'];
+        const sets = datasets.map((ds, i) => ({
+          label: ds.label,
+          data: ds.data,
+          borderColor: colors[i % colors.length],
+          backgroundColor: colors[i % colors.length] + '18',
+          borderWidth: 1.5,
+          fill: true,
+          tension: 0.35,
+          pointRadius: 0,
+          pointHoverRadius: 3
+        }));
+
+        areaChart = new Chart(canvas, {
+          type: 'line',
+          data: { labels, datasets: sets },
+          options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            animation: { duration: 500 },
+            interaction: { mode: 'index', intersect: false },
+            plugins: {
+              legend: {
+                display: true,
+                position: 'top',
+                labels: {
+                  color: getComputedStyle(root).getPropertyValue('--text-muted').trim(),
+                  font: { family: "'Inter', sans-serif", size: 11 },
+                  boxWidth: 12, boxHeight: 2, padding: 12, usePointStyle: false
+                }
+              },
+              tooltip: {
+                backgroundColor: getComputedStyle(root).getPropertyValue('--surface-2').trim(),
+                titleColor: getComputedStyle(root).getPropertyValue('--text').trim(),
+                bodyColor: getComputedStyle(root).getPropertyValue('--text-muted').trim(),
+                borderColor: getComputedStyle(root).getPropertyValue('--border').trim(),
+                borderWidth: 1,
+                padding: 10,
+                titleFont: { family: "'Inter', sans-serif", size: 12, weight: '600' },
+                bodyFont: { family: "'JetBrains Mono', monospace", size: 11 },
+                displayColors: true,
+                boxWidth: 8, boxHeight: 8, boxPadding: 4
+              }
+            },
+            scales: {
+              x: {
+                display: true,
+                grid: { color: getComputedStyle(root).getPropertyValue('--border-subtle').trim() },
+                ticks: {
+                  color: getComputedStyle(root).getPropertyValue('--text-faint').trim(),
+                  font: { family: "'JetBrains Mono', monospace", size: 10 },
+                  maxTicksLimit: 10
+                }
+              },
+              y: {
+                display: true,
+                beginAtZero: true,
+                grid: { color: getComputedStyle(root).getPropertyValue('--border-subtle').trim() },
+                ticks: {
+                  color: getComputedStyle(root).getPropertyValue('--text-faint').trim(),
+                  font: { family: "'JetBrains Mono', monospace", size: 10 },
+                  maxTicksLimit: 6
+                }
+              }
+            }
+          }
+        });
+      }
+
+      // ── Render panels ──────────────────────────────
+      function renderActivePanel() {
+        const ep = ENDPOINTS.find(e => e.id === activeId);
+        const st = state[ep.id];
+
+        let html = `<div class="section-header">
+      <h2>${esc(ep.label)}</h2>
+      <span class="endpoint">GET ${esc(statsUrl(ep.path))}</span>
+    </div>`;
+
+        if (st.status === 'err') {
+          html += `<div class="msg-box err-msg">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+        <div><strong>Request failed</strong><br>${esc(st.error || 'Unknown error')}${st.httpStatus ? ' (HTTP ' + st.httpStatus + ')' : ''}
+        <p style="margin-top:6px;font-size:var(--text-xs);opacity:0.7">Check API base URL, CORS, and ensure the server is running.</p></div>
+      </div>`;
+          html += jsonBlock(null);
+          panel.innerHTML = html;
+          bindInteractions();
+          return;
+        }
+
+        if (st.status === '404') {
+          html += `<div class="msg-box warn-msg">
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        <div>Endpoint not available — enable <code style="font-family:var(--font-mono);font-size:var(--text-xs);background:var(--surface-2);padding:2px 6px;border-radius:4px">openstat</code> in server config.</div>
+      </div>`;
+          panel.innerHTML = html;
+          bindInteractions();
+          return;
+        }
+
+        if (st.status !== 'ok' || !st.json) {
+          html += `<div class="kpi-grid">
+        ${Array.from({ length: 4 }, () => '<div class="kpi"><div class="skeleton" style="height:14px;width:60px;margin-bottom:8px"></div><div class="skeleton" style="height:28px;width:80px"></div></div>').join('')}
+      </div>`;
+          panel.innerHTML = html;
+          return;
+        }
+
+        const data = st.json;
+
+        // ── GC & Memory ──
+        if (ep.id === 'gc') {
+          pushHistory('gc', 'managedUsed', g(data, 'managedUsed', 'ManagedUsed'));
+          pushHistory('gc', 'workingSet', g(data, 'workingSet', 'WorkingSet'));
+
+          html += `<div class="kpi-grid">
+        ${kpiCard('Managed Used', g(data, 'managedUsed', 'ManagedUsed'), { sparkId: 'gc-managed' })}
+        ${kpiCard('Managed Reserved', g(data, 'managedReserved', 'ManagedReserved'))}
+        ${kpiCard('Fragmented', g(data, 'managedFragmented', 'ManagedFragmented'))}
+        ${kpiCard('Working Set', g(data, 'workingSet', 'WorkingSet'), { sparkId: 'gc-working' })}
+        ${kpiCard('Private Memory', g(data, 'privateMemory', 'PrivateMemory'))}
+      </div>`;
+
+          html += `<div class="grid-2">
+        ${card('Memory Details', kvList([
+            ['ManagedReserved', g(data, 'managedReserved', 'ManagedReserved')],
+            ['ManagedUsed', g(data, 'managedUsed', 'ManagedUsed')],
+            ['ManagedFragmented', g(data, 'managedFragmented', 'ManagedFragmented')],
+            ['WorkingSet', g(data, 'workingSet', 'WorkingSet')],
+            ['PrivateMemory', g(data, 'privateMemory', 'PrivateMemory')]
+          ]))}
+        ${card('History (last ' + (history.gc.managedUsed.length || 0) + ' samples)', '<div class="chart-container"><canvas id="chart-gc-history"></canvas></div>')}
+      </div>`;
+
+          html += jsonBlock(data);
+          panel.innerHTML = html;
+          bindInteractions();
+
+          // Sparklines
+          if (history.gc.managedUsed.length > 1) createSparkline('spark-gc-managed', history.gc.managedUsed);
+          if (history.gc.workingSet.length > 1) createSparkline('spark-gc-working', history.gc.workingSet);
+
+          // Area chart
+          if (history.gc.managedUsed.length > 1) {
+            createAreaChart('chart-gc-history', [
+              { label: 'Managed Used', data: [...history.gc.managedUsed] },
+              { label: 'Working Set', data: [...history.gc.workingSet] }
+            ], history.gc.managedUsed.map((_, i) => i + 1));
+          }
+          return;
+        }
+
+        // ── Thread Pool ──
+        if (ep.id === 'threadpool') {
+          const tp = g(data, 'thread_pool', 'threadPool') || {};
+          const w = tp.worker || {};
+          const io = tp.io || {};
+          const td = g(data, 'task_diagnostics', 'taskDiagnostics') || {};
+          const starve = g(td, 'starvation_suspected', 'starvationSuspected');
+          const hint = g(td, 'starvation_hint', 'starvationHint') || '';
+
+          pushHistory('threadpool', 'queueLength', g(tp, 'queue_length', 'queueLength'));
+          pushHistory('threadpool', 'threadCount', g(tp, 'thread_count', 'threadCount'));
+
+          html += `<div class="kpi-grid">
+        ${kpiCard('Queue Length', g(tp, 'queue_length', 'queueLength'), { sparkId: 'tp-queue' })}
+        ${kpiCard('Thread Count', g(tp, 'thread_count', 'threadCount'), { sparkId: 'tp-threads' })}
+        ${kpiCard('Uptime', data.uptime, { sub: 'seconds' })}
+        ${kpiCard('Completed Items', g(tp, 'completed_work_item_count', 'completedWorkItemCount'))}
+      </div>`;
+
+          html += `<div class="grid-3">
+        ${card('Worker Threads', meterBar('Active / Max', w.active, w.max) + kvList([
+            ['min', w.min], ['max', w.max], ['available', w.available], ['active', w.active]
+          ]))}
+        ${card('I/O Threads', meterBar('Active / Max', io.active, io.max) + kvList([
+            ['min', io.min], ['max', io.max], ['available', io.available], ['active', io.active]
+          ]))}
+        ${card('Diagnostics', `<span class="badge ${starve ? 'badge-warn' : 'badge-ok'}">${starve ? 'Starvation suspected' : 'Healthy'}</span>
+          <p style="margin-top:var(--sp-3);font-size:var(--text-xs);color:var(--text-muted)">${esc(hint)}</p>`)}
+      </div>`;
+
+          html += jsonBlock(data);
+          panel.innerHTML = html;
+          bindInteractions();
+
+          if (history.threadpool.queueLength.length > 1) createSparkline('spark-tp-queue', history.threadpool.queueLength);
+          if (history.threadpool.threadCount.length > 1) createSparkline('spark-tp-threads', history.threadpool.threadCount);
+          return;
+        }
+
+        // ── HTTP Requests ──
+        if (ep.id === 'request') {
+          const lr = g(data, 'low_response', 'lowResponse') || {};
+          const top = lr.top || [];
+          const nws = data.nws || {};
+          const map = data.map || {};
+          const img = data.img || {};
+          const proxy = data.proxy || {};
+          const bot = data.bot || {};
+
+          pushHistory('request', 'reqMin', data.req_min);
+          pushHistory('request', 'httpActive', g(data, 'http_active', 'httpActive'));
+          pushHistory('request', 'tcpConn', g(data, 'tcpConnections', 'TcpConnections'));
+
+          html += `<div class="kpi-grid">
+        ${kpiCard('Req/min', data.req_min, { sub: data.req_hour + '/hr', sparkId: 'req-min' })}
+        ${kpiCard('HTTP Active', g(data, 'http_active', 'httpActive'), { sparkId: 'req-active' })}
+        ${kpiCard('TCP Connections', g(data, 'tcpConnections', 'TcpConnections'), { sparkId: 'req-tcp' })}
+        ${kpiCard('Avg Response', (g(lr, 'avg_ms', 'avgMs') || '—') + ' ms', { sub: lr.count + ' samples' })}
+        ${kpiCard('NWS Online', nws.online)}
+      </div>`;
+
+          // Traffic breakdown
+          html += `<div class="grid-2">
+        ${card('Traffic by Channel', `
+          <table class="data-table">
+            <thead><tr><th>Channel</th><th>Req/min</th><th>Req/hr</th></tr></thead>
+            <tbody>
+              <tr><td>Base</td><td>${esc(data.req_min)}</td><td>${esc(data.req_hour)}</td></tr>
+              <tr><td>Map</td><td>${esc(map.req_min)}</td><td>${esc(map.req_hour)}</td></tr>
+              <tr><td>Image</td><td>${esc(img.req_min)}</td><td>${esc(img.req_hour)}</td></tr>
+              <tr><td>Proxy</td><td>${esc(proxy.req_min)}</td><td>${esc(proxy.req_hour)}</td></tr>
+              <tr><td>Bot</td><td>${esc(bot.req_min)}</td><td>${esc(bot.req_hour)}</td></tr>
+              <tr><td>NWS</td><td>${esc(nws.req_min)}</td><td>${esc(nws.req_hour)}</td></tr>
+            </tbody>
+          </table>
+        `)}
+        ${card('WebSocket (per minute)', kvList([
+            ['receive', nws.receive_min],
+            ['send', nws.send_min]
+          ]) + '<div style="margin-top:var(--sp-4)">' + card('Response Sampling', kvList([
+            ['avg_ms', g(lr, 'avg_ms', 'avgMs')],
+            ['sample count', lr.count]
+          ])) + '</div>')}
+      </div>`;
+
+          // Slow paths
+          if (top.length) {
+            html += `<div style="margin-top:var(--sp-4)">
+          ${card('Slow Paths (top ' + top.length + ')', `
+            <table class="data-table">
+              <thead><tr><th>Path</th><th>Duration (ms)</th></tr></thead>
+              <tbody>${top.map(row => `<tr><td class="path-cell">${esc(row.path)}</td><td>${esc(g(row, 'durationMs', 'duration_ms'))}</td></tr>`).join('')}</tbody>
+            </table>
+          `)}
+        </div>`;
+          }
+
+          // Request history chart
+          if (history.request.reqMin.length > 1) {
+            html += `<div style="margin-top:var(--sp-4)">
+          ${card('Request History', '<div class="chart-container"><canvas id="chart-req-history"></canvas></div>')}
+        </div>`;
+          }
+
+          html += jsonBlock(data);
+          panel.innerHTML = html;
+          bindInteractions();
+
+          if (history.request.reqMin.length > 1) createSparkline('spark-req-min', history.request.reqMin);
+          if (history.request.httpActive.length > 1) createSparkline('spark-req-active', history.request.httpActive);
+          if (history.request.tcpConn.length > 1) createSparkline('spark-req-tcp', history.request.tcpConn);
+
+          if (history.request.reqMin.length > 1) {
+            createAreaChart('chart-req-history', [
+              { label: 'Req/min', data: [...history.request.reqMin] },
+              { label: 'HTTP Active', data: [...history.request.httpActive] },
+              { label: 'TCP Connections', data: [...history.request.tcpConn] }
+            ], history.request.reqMin.map((_, i) => i + 1));
+          }
+          return;
+        }
+
+        // ── Temp DB ──
+        if (ep.id === 'tempdb') {
+          const p = data.pool || {};
+          const msm = p.msm || {};
+          const sb = g(p, 'stringBuilder', 'StringBuilder') || {};
+          const bp = g(p, 'bufferPool', 'BufferPool') || {};
+          const bb = g(p, 'bufferByte', 'BufferByte') || {};
+          const bc = g(p, 'bufferChar', 'BufferChar') || {};
+          const bw = g(p, 'bufferWriterByte', 'BufferWriterByte') || {};
+          const nb = g(p, 'nativeBuffer', 'NativeBuffer') || {};
+          const jp = g(p, 'json', 'Json') || {};
+          const rch = data.rch || {};
+
+          html += `<div class="kpi-grid">
+        ${kpiCard('MemoryCache', data.memoryCache, { sub: 'entries' })}
+        ${kpiCard('HybridFileCache', g(data, 'hybridFileCache', 'HybridFileCache'))}
+        ${kpiCard('RCH Clients', rch.clients)}
+        ${kpiCard('RCH IDs', g(rch, 'ids', 'Ids'))}
+      </div>`;
+
+          html += `<div class="grid-2">
+        ${card('Caches & Locks', kvList([
+            ['memoryCache', data.memoryCache],
+            ['HybridFileCache', g(data, 'hybridFileCache', 'HybridFileCache')],
+            ['SemaphorManager', g(data, 'semaphorManager', 'SemaphorManager')],
+            ['ProxyLink', g(data, 'proxyLink', 'ProxyLink')],
+            ['ProxyAPI', g(data, 'proxyAPI', 'ProxyAPI')],
+            ['ProxyImg', g(data, 'proxyImg', 'ProxyImg')]
+          ]))}
+        ${card('MSM Pool', kvList([
+            ['smallPoolInUseSize', g(msm, 'smallPoolInUseSize', 'SmallPoolInUseSize')],
+            ['largePoolInUseSize', g(msm, 'largePoolInUseSize', 'LargePoolInUseSize')],
+            ['smallBlocksFree', g(msm, 'smallBlocksFree', 'SmallBlocksFree')],
+            ['smallPoolFreeSize', g(msm, 'smallPoolFreeSize', 'SmallPoolFreeSize')],
+            ['largeBuffersFree', g(msm, 'largeBuffersFree', 'LargeBuffersFree')],
+            ['largePoolFreeSize', g(msm, 'largePoolFreeSize', 'LargePoolFreeSize')]
+          ]))}
+      </div>`;
+
+          html += `<div style="margin-top:var(--sp-4)">
+        ${card('Object Pools', `
+          <table class="data-table">
+            <thead><tr><th>Pool</th><th>Small</th><th>Medium</th><th>Large</th><th>Dispose</th></tr></thead>
+            <tbody>
+              <tr><td>StringBuilder</td><td>${esc(sb.small)}</td><td>—</td><td>${esc(sb.large)}</td><td>${esc(sb.dispose)}</td></tr>
+              <tr><td>BufferPool</td><td colspan="2">${esc(g(bp, 'free', 'Free'))}</td><td>—</td><td>${esc(bp.dispose)}</td></tr>
+              <tr><td>BufferByte</td><td>${esc(bb.small)}</td><td>${esc(bb.medium)}</td><td>${esc(bb.large)}</td><td>${esc(bb.dispose)}</td></tr>
+              <tr><td>BufferChar</td><td>${esc(bc.small)}</td><td>${esc(bc.medium)}</td><td>${esc(bc.large)}</td><td>${esc(bc.dispose)}</td></tr>
+              <tr><td>BufferWriterByte</td><td>${esc(bw.small)}</td><td>—</td><td>${esc(bw.large)}</td><td>${esc(bw.dispose)}</td></tr>
+              <tr><td>NativeBuffer</td><td colspan="2">${esc(nb.created)}</td><td>—</td><td>${esc(nb.dispose)}</td></tr>
+              <tr><td>Json char pool</td><td>—</td><td>${esc(jp.medium)}</td><td>${esc(jp.large)}</td><td>${esc(jp.dispose)}</td></tr>
+            </tbody>
+          </table>
+        `)}
+      </div>`;
+
+          html += jsonBlock(data);
+          panel.innerHTML = html;
+          bindInteractions();
+          return;
+        }
+
+        // ── Browser Contexts ──
+        if (ep.id === 'browser') {
+          const c = g(data, 'chromium', 'Chromium') || {};
+          const f = g(data, 'firefox', 'Firefox') || {};
+          const ping = c.ping || {};
+
+          const pingBadge = ping.status
+            ? `<span class="badge ${ping.status === 'ok' || ping.status === 'OK' ? 'badge-ok' : 'badge-err'}">${esc(ping.status)}</span>`
+            : '<span class="badge" style="background:var(--surface-3);color:var(--text-faint)">N/A</span>';
+
+          html += `<div class="kpi-grid">
+        ${kpiCard('Chromium Open', c.open)}
+        ${kpiCard('Firefox Open', f.open)}
+        ${kpiCard('Ping Status', ping.status || 'N/A')}
+        ${kpiCard('Ping Time', ping.time || 'N/A')}
+      </div>`;
+
+          html += `<div class="grid-2">
+        ${card('Chromium', `
+          ${pingBadge}
+          <div style="margin-top:var(--sp-3)">
+          ${kvList([
+            ['open contexts', c.open],
+            ['req_keepopen', g(c, 'req_keepopen', 'reqKeepopen')],
+            ['req_newcontext', g(c, 'req_newcontext', 'reqNewcontext')],
+            ['ping.status', ping.status],
+            ['ping.time', ping.time],
+            ['ping.ex', ping.ex || '—']
+          ])}
+          </div>
+        `)}
+        ${card('Firefox', kvList([
+            ['open contexts', f.open],
+            ['req_keepopen', g(f, 'req_keepopen', 'reqKeepopen')],
+            ['req_newcontext', g(f, 'req_newcontext', 'reqNewcontext')]
+          ]))}
+      </div>`;
+
+          html += jsonBlock(data);
+          panel.innerHTML = html;
+          bindInteractions();
+          return;
+        }
+
+        // Fallback
+        html += jsonBlock(data);
+        panel.innerHTML = html;
+        bindInteractions();
+      }
+
+      // ── Bind interactive elements ──────────────────────────────
+      function bindInteractions() {
+        // JSON toggles
+        panel.querySelectorAll('.json-toggle').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const target = document.getElementById(btn.getAttribute('data-target'));
+            if (!target) return;
+            const open = target.classList.toggle('open');
+            btn.setAttribute('aria-expanded', open ? 'true' : 'false');
+          });
+        });
+
+        // Copy buttons
+        panel.querySelectorAll('.json-copy').forEach(btn => {
+          btn.addEventListener('click', () => {
+            const pre = document.getElementById(btn.getAttribute('data-copy'));
+            if (!pre) return;
+            navigator.clipboard.writeText(pre.textContent).then(() => {
+              btn.textContent = 'Copied';
+              setTimeout(() => { btn.textContent = 'Copy'; }, 1500);
+            });
+          });
+        });
+      }
+
+      // ── Fetch data ──────────────────────────────
+      async function fetchEndpoint(path) {
+        const url = statsUrl(path);
+        const res = await fetch(url, { credentials: 'include', headers: { Accept: 'application/json' } });
+        const text = await res.text();
+        let json = null;
+        try { json = text ? JSON.parse(text) : null; } catch (_) { }
+        return { res, json, text };
+      }
+
+      async function refresh() {
+        refreshCount++;
+        btnRefresh.textContent = 'Refreshing...';
+        btnRefresh.disabled = true;
+
+        await Promise.all(ENDPOINTS.map(async ep => {
+          try {
+            const r = await fetchEndpoint(ep.path);
+            if (r.res.status === 404 && ep.optional) {
+              state[ep.id] = { status: '404', json: null, httpStatus: 404, error: null };
+            } else if (!r.res.ok) {
+              state[ep.id] = { status: 'err', json: null, httpStatus: r.res.status, error: 'HTTP ' + r.res.status };
+            } else if (!r.json) {
+              state[ep.id] = { status: 'err', json: null, httpStatus: r.res.status, error: 'Invalid JSON' };
+            } else {
+              state[ep.id] = { status: 'ok', json: r.json, httpStatus: r.res.status, error: null };
+            }
+          } catch (e) {
+            state[ep.id] = { status: 'err', json: null, httpStatus: null, error: e.message || String(e) };
+          }
+        }));
+
+        // Update connection status
+        const anyOk = ENDPOINTS.some(ep => state[ep.id].status === 'ok');
+        const allErr = ENDPOINTS.every(ep => state[ep.id].status === 'err');
+        statusDot.textContent = new Date().toLocaleTimeString();
+        statusDot.className = 'status-dot' + (anyOk ? ' live' : allErr ? ' error' : '');
+
+        btnRefresh.textContent = 'Refresh';
+        btnRefresh.disabled = false;
+
+        buildTabs();
+        renderActivePanel();
+      }
+
+      function schedule() {
+        if (timer) clearInterval(timer);
+        timer = null;
+        const sec = parseInt(intervalEl.value, 10);
+        if (sec > 0) timer = setInterval(refresh, sec * 1000);
+        lsSet(LS_INTERVAL, intervalEl.value);
+      }
+
+      // ── Init ──────────────────────────────
+      btnRefresh.addEventListener('click', refresh);
+      intervalEl.addEventListener('change', schedule);
+
+      loadPreferences();
+      buildTabs();
+      refresh();
+      schedule();
+
+    })();
+  </script>
+  <script data-pplx-inline-edit>
+    (function () {
+      if (window === window.top) return;
+      function inlineAll(orig, clone) {
+        if (orig.nodeType !== 1) return;
+        try {
+          var cs = getComputedStyle(orig);
+          var t = '';
+          for (var i = 0; i < cs.length; i++) { t += cs[i] + ':' + cs.getPropertyValue(cs[i]) + ';'; }
+          clone.style.cssText = t;
+        } catch (e) { }
+        var oc = orig.children, cc = clone.children;
+        for (var j = 0; j < oc.length && j < cc.length; j++) { inlineAll(oc[j], cc[j]); }
+      }
+      function stripExternal(clone) {
+        var imgs = clone.querySelectorAll('img');
+        for (var i = 0; i < imgs.length; i++) {
+          var s = imgs[i].getAttribute('src');
+          if (s && !s.startsWith('data:')) imgs[i].removeAttribute('src');
+        }
+        var all = clone.querySelectorAll('*');
+        for (var i = 0; i < all.length; i++) {
+          var st = all[i].style.cssText;
+          if (st && st.indexOf('url(') >= 0) {
+            all[i].style.cssText = st.replace(/url\(["']?(?!data:)[^)"']*["']?\)/gi, 'none');
+          }
+        }
+      }
+      window.addEventListener('message', function (e) {
+        if (!e.data || e.data.type !== 'INLINE_EDIT_CAPTURE_REQUEST') return;
+        var scrollX = window.scrollX || window.pageXOffset || 0;
+        var scrollY = window.scrollY || window.pageYOffset || 0;
+        var w = window.innerWidth, h = window.innerHeight;
+        try {
+          var clone = document.documentElement.cloneNode(true);
+          var rm = clone.querySelectorAll('script,link[rel="stylesheet"],style');
+          for (var i = 0; i < rm.length; i++) { rm[i].remove(); }
+          inlineAll(document.documentElement, clone);
+          stripExternal(clone);
+          var html = new XMLSerializer().serializeToString(clone);
+          var svg = '<svg xmlns="http://www.w3.org/2000/svg" width="' + w + '" height="' + h + '">'
+            + '<foreignObject width="100%" height="100%">'
+            + '<div xmlns="http://www.w3.org/1999/xhtml" style="width:' + w + 'px;height:' + h + 'px;overflow:hidden">'
+            + '<div style="transform:translate(-' + scrollX + 'px,-' + scrollY + 'px);transform-origin:top left">'
+            + html + '</div></div></foreignObject></svg>';
+          var svgUrl = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(svg);
+          var img = new Image();
+          img.onload = function () {
+            var c = document.createElement('canvas'); c.width = w; c.height = h;
+            c.getContext('2d').drawImage(img, 0, 0);
+            window.parent.postMessage({ type: 'INLINE_EDIT_SCREENSHOT_RESULT', dataUrl: c.toDataURL('image/png'), scrollX: scrollX, scrollY: scrollY }, '*');
+          };
+          img.onerror = function () {
+            window.parent.postMessage({ type: 'INLINE_EDIT_SCREENSHOT_RESULT', dataUrl: null, scrollX: scrollX, scrollY: scrollY }, '*');
+          };
+          img.src = svgUrl;
+        } catch (err) {
+          window.parent.postMessage({ type: 'INLINE_EDIT_SCREENSHOT_RESULT', dataUrl: null, scrollX: scrollX, scrollY: scrollY }, '*');
+        }
+      });
+    })();
+  </script>
+</body>
+
+</html>

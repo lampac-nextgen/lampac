@@ -1,5 +1,6 @@
 ﻿using Core.Middlewares;
 using Core.Services;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc;
 using Shared;
 using Shared.Attributes;
@@ -12,6 +13,7 @@ using Shared.Services.Pools;
 using Shared.Services.Pools.Json;
 using System;
 using System.Diagnostics;
+using System.IO;
 using System.Linq;
 using System.Net.NetworkInformation;
 using System.Threading;
@@ -21,7 +23,28 @@ namespace Core.Controllers
     [Authorization]
     public class OpenStatController : BaseController
     {
+        readonly IWebHostEnvironment _env;
+
+        public OpenStatController(IWebHostEnvironment env)
+        {
+            _env = env;
+        }
+
         public OpenStatConf openstat => CoreInit.conf.openstat;
+
+        [HttpGet]
+        [Route("/stats")]
+        public ActionResult StatsPage()
+        {
+            if (!openstat.enable)
+                return NotFound();
+
+            string path = Path.Combine(_env.WebRootPath, "stats", "index.html");
+            if (!System.IO.File.Exists(path))
+                return NotFound();
+
+            return PhysicalFile(path, "text/html; charset=utf-8");
+        }
 
         #region GC
         [HttpGet]
