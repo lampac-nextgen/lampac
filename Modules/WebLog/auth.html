@@ -5,7 +5,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0c0e12" id="metaTheme">
-  <title>Вход — Lampac Admin</title>
+  <title>Вход — Lampac WebLog</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
@@ -336,7 +336,8 @@
         <form class="auth-form" id="loginForm">
           <div class="auth-field">
             <label for="password">Пароль</label>
-            <input type="password" id="password" name="password" placeholder="Пароль" required autocomplete="current-password" />
+            <input type="password" id="password" name="password" placeholder="Пароль" required
+              autocomplete="current-password" />
           </div>
           <button type="submit" class="btn btn-primary">Войти</button>
         </form>
@@ -390,8 +391,9 @@
         var maxAge = 60 * 60 * 24 * 180;
         document.cookie = 'accspasswd=' + encodeURIComponent(password) +
           '; max-age=' + maxAge +
-          '; path=/';
-        window.location.href = '/adminpanel';
+          '; path=/; SameSite=Lax' +
+          (window.isSecureContext ? '; Secure' : '');
+        window.location.href = '/weblog';
       });
     })();
   </script>

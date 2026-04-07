@@ -390,7 +390,8 @@
         var maxAge = 60 * 60 * 24 * 180;
         document.cookie = 'accspasswd=' + encodeURIComponent(password) +
           '; max-age=' + maxAge +
-          '; path=/';
+          '; path=/; SameSite=Lax' +
+          (window.isSecureContext ? '; Secure' : '');
         window.location.href = '/adminpanel';
       });
     })();
