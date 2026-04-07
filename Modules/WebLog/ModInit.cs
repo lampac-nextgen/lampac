@@ -5,14 +5,15 @@ namespace WebLog
 {
     public class ModInit : IModuleLoaded
     {
-        public void Loaded(InitspaceModel initspace)
+        public static string modpath;
+
+        public void Loaded(InitspaceModel baseconf)
         {
-            LogEvents.Start();
+            modpath = baseconf.path;
         }
 
         public void Dispose()
         {
-            LogEvents.Stop();
         }
     }
 }
