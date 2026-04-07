@@ -2211,6 +2211,13 @@
       var outageReported = false;
       function reportOutageOnce(msg) { if (!outageReported) { pushEntry(msg); outageReported = true; } }
 
+      function weblogPasswdFromCookie() {
+        try {
+          var m = document.cookie.match(/(?:^|;\s*)accspasswd=([^;]*)/);
+          return m ? decodeURIComponent(m[1]) : '';
+        } catch (e) { return ''; }
+      }
+
       var client = new NativeWsClient('/nws?ver=1', {
         autoReconnect: true,
         reconnectDelay: 2000,
@@ -2219,7 +2226,7 @@
           outageReported = false;
           statusDot.className = 'status-pill live';
           statusText.textContent = 'Live';
-          client.invoke('RegistryWebLog', __ROOT_PASSWD_JS__);
+          client.invoke('RegistryWebLog', weblogPasswdFromCookie());
         },
         onClose: function () {
           statusDot.className = 'status-pill error';
