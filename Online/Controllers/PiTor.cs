@@ -354,9 +354,9 @@ namespace Online.Controllers
                 {
                     if ((init.torrs == null || init.torrs.Length == 0) && (init.auth_torrs == null || init.auth_torrs.Count == 0))
                     {
-                        if (System.IO.File.Exists("torrserver/accs.db"))
+                        if (System.IO.File.Exists("data/ts/accs.db"))
                         {
-                            string accs = System.IO.File.ReadAllText("torrserver/accs.db");
+                            string accs = System.IO.File.ReadAllText("data/ts/accs.db");
                             string passwd = Regex.Match(accs, "\"ts\":\"([^\"]+)\"").Groups[1].Value;
 
                             return (HeadersModel.Init("Authorization", $"Basic {CrypTo.Base64($"ts:{passwd}")}"), $"http://{CoreInit.conf.listen.localhost}:9080");
@@ -365,9 +365,9 @@ namespace Online.Controllers
                         return (null, $"http://{CoreInit.conf.listen.localhost}:9080");
                     }
 
-                    if (init.auth_torrs != null && init.auth_torrs.Count > 0)
+                    if (init.auth_torrs?.FirstOrDefault(i => i.enable) != null)
                     {
-                        var ts = init.auth_torrs.First();
+                        var ts = init.auth_torrs.FirstOrDefault(i => i.enable);
                         string login = ts.login.Replace("{user_uid}", requestInfo.user_uid);
                         var auth = HeadersModel.Init("Authorization", $"Basic {CrypTo.Base64($"{login}:{ts.passwd}")}");
 
@@ -375,13 +375,13 @@ namespace Online.Controllers
                     }
                     else
                     {
-                        if (init.base_auth != null && init.base_auth.enable)
+                        if (init.base_auth?.enable == true)
                         {
-                            var ts = init.auth_torrs.First();
+                            string tshost = init.torrs.First();
                             string login = init.base_auth.login.Replace("{user_uid}", requestInfo.user_uid);
                             var auth = HeadersModel.Init("Authorization", $"Basic {CrypTo.Base64($"{login}:{init.base_auth.passwd}")}");
 
-                            return (httpHeaders(ts.host, HeadersModel.Join(auth, init.base_auth.headers)), ts.host);
+                            return (httpHeaders(tshost, HeadersModel.Join(auth, init.base_auth.headers)), tshost);
                         }
 
                         return (null, init.torrs.First());
@@ -392,7 +392,7 @@ namespace Online.Controllers
                 var ts = gots();
 
                 string magnet = $"magnet:?xt=urn:btih:{id}&" + tr;
-                string hash = await Http.Post($"{ts.host}/torrents", "{\"action\":\"add\",\"link\":\"" + magnet + "\",\"title\":\"\",\"poster\":\"\",\"save_to_db\":false}", timeoutSeconds: 8, headers: ts.header);
+                string hash = await Http.Post($"{ts.host}/torrents", "{\"action\":\"add\",\"link\":\"" + magnet + "\",\"title\":\"\",\"poster\":\"\",\"save_to_db\":false}", timeoutSeconds: 15, headers: ts.header);
                 if (hash == null)
                     return e.Fail("torrents:add");
 
@@ -400,24 +400,13 @@ namespace Online.Controllers
                 if (string.IsNullOrEmpty(hash))
                     return e.Fail("torrents:hash");
 
-                Stat stat = null;
-                var ex = DateTime.Now.AddSeconds(15);
+                var stat = await Http.Get<Stat>($"{ts.host}/stream?link={hash}&index=1&stat", timeoutSeconds: 20, headers: ts.header);
 
-            resetgotingo:
-                stat = await Http.Post<Stat>($"{ts.host}/torrents", "{\"action\":\"get\",\"hash\":\"" + hash + "\"}", timeoutSeconds: 5, headers: ts.header);
-                if (stat?.file_stats == null || stat.file_stats.Length == 0)
+                if (stat?.file_stats == null)
                 {
-                    if (DateTime.Now > ex)
-                    {
-                        _ = Http.Post($"{ts.host}/torrents", "{\"action\":\"rem\",\"hash\":\"" + hash + "\"}", headers: ts.header);
-                        return e.Fail("torrents:get");
-                    }
-
-                    await Task.Delay(250);
-                    goto resetgotingo;
+                    _ = Http.Post($"{ts.host}/torrents", "{\"action\":\"rem\",\"hash\":\"" + hash + "\"}", headers: ts.header);
+                    return e.Fail("file_stats");
                 }
-
-                _ = Http.Post($"{ts.host}/torrents", "{\"action\":\"rem\",\"hash\":\"" + hash + "\"}", headers: ts.header);
 
                 return e.Success(stat.file_stats);
             });
@@ -428,10 +417,10 @@ namespace Online.Controllers
 
                 foreach (var torrent in cache.Value)
                 {
-                    if (Path.GetExtension(torrent.Path) is ".srt" or ".txt" or ".jpg" or ".png")
+                    if (Path.GetExtension(torrent.path) is ".srt" or ".txt" or ".jpg" or ".png")
                         continue;
 
-                    mtpl.Append(Path.GetFileName(torrent.Path), title ?? original_title, s.ToString(), torrent.Id.ToString(), accsArgs($"{host}/lite/pidtor/s{id}?{tr}&tsid={torrent.Id}"));
+                    mtpl.Append(Path.GetFileName(torrent.path), title ?? original_title, s.ToString(), torrent.id.ToString(), accsArgs($"{host}/lite/pidtor/s{id}?{tr}&tsid={torrent.id}"));
                 }
 
                 return mtpl;
@@ -484,9 +473,9 @@ namespace Online.Controllers
 
             if ((init.torrs == null || init.torrs.Length == 0) && (init.auth_torrs == null || init.auth_torrs.Count == 0))
             {
-                if (System.IO.File.Exists("torrserver/accs.db"))
+                if (System.IO.File.Exists("data/ts/accs.db"))
                 {
-                    string accs = System.IO.File.ReadAllText("torrserver/accs.db");
+                    string accs = System.IO.File.ReadAllText("data/ts/accs.db");
                     string passwd = Regex.Match(accs, "\"ts\":\"([^\"]+)\"").Groups[1].Value;
 
                     return await auth_stream($"http://{CoreInit.conf.listen.localhost}:9080", "ts", passwd, uhost: $"{host}/ts");
@@ -495,7 +484,7 @@ namespace Online.Controllers
                 return Redirect($"{host}/ts/stream?link={HttpUtility.UrlEncode(magnet)}&index={index}&play");
             }
 
-            if (init.auth_torrs != null && init.auth_torrs.Count > 0)
+            if (init.auth_torrs?.FirstOrDefault(i => i.enable) != null)
             {
                 string tskey = $"pidtor:ts2:{id}:{requestInfo.IP}";
                 if (!hybridCache.TryGetValue(tskey, out PidTorAuthTS ts))
@@ -513,7 +502,7 @@ namespace Online.Controllers
             }
             else
             {
-                if (init.base_auth != null && init.base_auth.enable)
+                if (init.base_auth?.enable == true)
                 {
                     string tskey = $"pidtor:ts3:{id}:{requestInfo.IP}";
                     if (!hybridCache.TryGetValue(tskey, out string ts))

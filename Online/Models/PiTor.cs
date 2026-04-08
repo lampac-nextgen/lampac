@@ -30,11 +30,9 @@ namespace Online.Models.PiTor
 
     public class FileStat
     {
-        public int Id { get; set; }
+        public int id { get; set; }
 
-        public string Path { get; set; }
-
-        public long Length { get; set; }
+        public string path { get; set; }
     }
 
     public class Info
