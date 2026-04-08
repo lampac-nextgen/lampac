@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json;
+using Newtonsoft.Json.Linq;
 using Shared;
 using Shared.Services;
 using Shared.Services.Utilities;
@@ -12,9 +13,27 @@ namespace KitMod.Controllers
 {
     public class ApiController : Controller
     {
+        static string FormatKitConfForEditor(string raw)
+        {
+            if (string.IsNullOrWhiteSpace(raw))
+                return JToken.Parse("{}").ToString(Formatting.Indented);
+
+            try
+            {
+                return JToken.Parse(raw).ToString(Formatting.Indented);
+            }
+            catch (JsonException)
+            {
+                return raw.Trim();
+            }
+        }
+
+        static bool IsValidateOnlyRequest(string validateOnly) =>
+            validateOnly == "1" || string.Equals(validateOnly, "true", StringComparison.OrdinalIgnoreCase);
+
         [AllowAnonymous]
         [Route("/kit")]
-        public ActionResult KitIndex([FromForm] string json, string aesGcmKey)
+        public ActionResult KitIndex([FromForm] string json, string aesGcmKey, [FromForm] string validateOnly = null)
         {
             if (string.IsNullOrWhiteSpace(aesGcmKey))
             {
@@ -41,6 +60,19 @@ namespace KitMod.Controllers
 
             if (!string.IsNullOrEmpty(json))
             {
+                if (IsValidateOnlyRequest(validateOnly))
+                {
+                    try
+                    {
+                        JsonConvert.DeserializeObject<CoreInit>(json);
+                        return Content("{\"ok\":true}", "application/json; charset=utf-8");
+                    }
+                    catch (Exception ex)
+                    {
+                        return Json(new { error = true, ex = ex.Message });
+                    }
+                }
+
                 try
                 {
                     JsonConvert.DeserializeObject<CoreInit>(json);
@@ -62,9 +94,10 @@ namespace KitMod.Controllers
             else
             {
                 string html = IO.File.ReadAllText($"{ModInit.folder_mod}/html/settings.html");
-                string conf = IO.File.Exists(filePath) ? CryptoKit.ReadFile(aesGcmKey, filePath) : null;
+                string raw = IO.File.Exists(filePath) ? CryptoKit.ReadFile(aesGcmKey, filePath) : null;
+                string conf = FormatKitConfForEditor(raw);
 
-                return Content(html.Replace("{conf}", conf ?? string.Empty), "text/html; charset=utf-8");
+                return Content(html.Replace("{conf}", conf), "text/html; charset=utf-8");
             }
         }
     }

@@ -390,9 +390,6 @@
       </div>
       <div class="topbar-divider"></div>
       <nav class="topbar-app-nav" aria-label="Lampac pages">
-        <a href="/adminpanel">Admin</a>
-        <a href="/stats">Stats</a>
-        <a href="/weblog">Weblog</a>
         <a href="/kit" aria-current="page">Kit</a>
       </nav>
       <div class="topbar-spacer"></div>
@@ -408,7 +405,9 @@
       <div class="auth-card">
         <h1>Вход в Kit</h1>
         <p class="lead">Введите AesGcm-ключ профиля. Он хранится в cookie и используется для шифрования ваших привязок
-          в <code style="font-family:var(--font-mono);font-size:0.65rem;background:var(--surface-3);padding:1px 6px;border-radius:4px">database/kit</code>.</p>
+          в <code
+            style="font-family:var(--font-mono);font-size:0.65rem;background:var(--surface-3);padding:1px 6px;border-radius:4px">database/kit</code>.
+        </p>
         <form class="auth-form" method="post" action="/kit" id="form">
           <div class="auth-field">
             <label for="aesGcmKey">AesGcm ключ</label>

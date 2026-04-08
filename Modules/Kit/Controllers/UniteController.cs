@@ -26,6 +26,9 @@ namespace KitMod.Controllers
             string tempkey = UnicTo.Code(5).ToLower();
             memoryCache.Set($"kit:tempkey:{tempkey}", aesGcmKey, DateTime.Now.AddMinutes(20));
 
+            string lampacBase = CoreInit.Host(HttpContext);
+            string pluginUrl = $"{lampacBase}/u/{tempkey}";
+
             string html = System.IO.File.ReadAllText($"{ModInit.folder_mod}/html/unite.html");
 
             html = html.Replace("{content}", $@"Добавьте плагин на устройство которое хотите привязать
@@ -35,10 +38,10 @@ namespace KitMod.Controllers
 <br><br>
 <b>Ваша ссылка (плагин):</b>
 <br>
-http://127.0.0.1:9118/u/{tempkey}
+{pluginUrl}
 
 <br><br>
-Настройки > Расширения > Добавить плагин > http://127.0.0.1:9118/u/{tempkey}<br>
+Настройки > Расширения > Добавить плагин > {pluginUrl}<br>
 Если статус плагина 200 > Удалить > привязка завершена");
 
             return Content(html, "text/html; charset=utf-8");

@@ -375,6 +375,7 @@
     .toolbar {
       display: flex;
       flex-wrap: wrap;
+      align-items: center;
       gap: var(--sp-2);
       margin-top: var(--sp-4);
     }
@@ -402,6 +403,19 @@
     .btn-primary:hover {
       background: var(--accent-soft);
       border-color: var(--accent-soft);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .btn-ghost {
+      border-color: var(--border);
+      background: var(--surface-2);
+      color: var(--text-muted);
+    }
+
+    .btn-ghost:hover {
+      color: var(--text);
+      background: var(--surface-3);
       transform: translateY(-1px);
       box-shadow: var(--shadow-sm);
     }
@@ -499,9 +513,6 @@
       </div>
       <div class="topbar-divider"></div>
       <nav class="topbar-app-nav" aria-label="Lampac pages">
-        <a href="/adminpanel">Admin</a>
-        <a href="/stats">Stats</a>
-        <a href="/weblog">Weblog</a>
         <a href="/kit" aria-current="page">Kit</a>
       </nav>
       <div class="topbar-spacer"></div>
@@ -517,7 +528,8 @@
       <div class="kit-inner">
         <div class="panel-header">
           <h1>Настройки Kit</h1>
-          <p>Привязка онлайн-сервисов к вашему зашифрованному профилю и ручное редактирование JSON. Сохранение отправляет
+          <p>Привязка онлайн-сервисов к вашему зашифрованному профилю и ручное редактирование JSON. Сохранение
+            отправляет
             данные на <code>/kit</code> методом POST.</p>
         </div>
 
@@ -576,6 +588,7 @@
               <label class="field-label" for="value">Содержимое профиля</label>
               <textarea id="value" name="value" class="code" rows="24" spellcheck="false">{conf}</textarea>
               <div class="toolbar">
+                <button type="button" class="btn btn-ghost" id="validateBtn">Проверить JSON</button>
                 <button type="submit" class="btn btn-primary">Сохранить</button>
               </div>
             </form>
@@ -634,6 +647,50 @@
         c.appendChild(t);
         setTimeout(function () { t.remove(); }, kind === 'err' ? 7000 : 4000);
       }
+
+      function normalizeEditorDefault() {
+        var ta = $('#value');
+        if (!ta) return;
+        if (!ta.value.trim())
+          ta.value = JSON.stringify({}, null, 2);
+      }
+
+      function validateKitJson() {
+        var json = $('#value').value;
+        try {
+          JSON.parse(json);
+        } catch (err) {
+          toast('Синтаксис JSON: ' + err.message, 'err');
+          return;
+        }
+        var formData = new FormData();
+        formData.append('json', json);
+        formData.append('validateOnly', '1');
+        fetch('/kit', { method: 'POST', body: formData, credentials: 'same-origin' })
+          .then(function (res) {
+            return res.text().then(function (text) {
+              try {
+                return JSON.parse(text);
+              } catch (e) {
+                throw new Error(text || ('HTTP ' + res.status));
+              }
+            });
+          })
+          .then(function (data) {
+            if (data && data.error)
+              toast('Структура конфига: ' + (data.ex || 'ошибка'), 'err');
+            else if (data && data.ok)
+              toast('JSON корректен, структура CoreInit принята', 'ok');
+            else
+              toast('Неожиданный ответ при проверке', 'err');
+          })
+          .catch(function (err) {
+            toast(err.message || 'Проверка не удалась', 'err');
+          });
+      }
+
+      normalizeEditorDefault();
+      $('#validateBtn').addEventListener('click', validateKitJson);
 
       $('#form').addEventListener('submit', function (e) {
         e.preventDefault();
