@@ -14,4 +14,10 @@
     <ProjectReference Include="..\..\Shared\Shared.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="html\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

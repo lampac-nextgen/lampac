@@ -1,168 +1,661 @@
 <!DOCTYPE html>
-<html>
+<html lang="ru" data-theme="dark">
+
 <head>
-    <title>Редактор настроек</title>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0c0e12" id="metaTheme">
+  <title>Kit — настройки</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+    rel="stylesheet">
+  <script>
+    (function () {
+      try {
+        var t = localStorage.getItem('lampac-theme');
+        var dark = t === 'light' ? false : t === 'dark' ? true : window.matchMedia('(prefers-color-scheme: dark)').matches;
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+      } catch (e) { }
+    })();
+  </script>
+  <style>
+    *,
+    *::before,
+    *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    :root {
+      --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+      --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Consolas, monospace;
+      --text-xs: 0.6875rem;
+      --text-sm: 0.8125rem;
+      --text-base: 0.875rem;
+      --text-lg: 1rem;
+      --sp-2: 0.5rem;
+      --sp-3: 0.75rem;
+      --sp-4: 1rem;
+      --sp-5: 1.25rem;
+      --sp-6: 1.5rem;
+      --sp-8: 2rem;
+      --r-md: 8px;
+      --r-lg: 12px;
+      --r-xl: 16px;
+      --ease: cubic-bezier(0.16, 1, 0.3, 1);
+      --dur: 180ms;
+    }
+
+    [data-theme="dark"] {
+      --bg: #0c0e12;
+      --surface: #13161d;
+      --surface-2: #1a1e28;
+      --surface-3: #222733;
+      --border: #2a3040;
+      --border-subtle: rgba(255, 255, 255, 0.06);
+      --text: #e2e6ef;
+      --text-muted: #7c849a;
+      --text-faint: #4d5568;
+      --accent: #3ec9d1;
+      --accent-soft: #2ea8b0;
+      --accent-dim: rgba(62, 201, 209, 0.12);
+      --ok: #4ade80;
+      --ok-dim: rgba(74, 222, 128, 0.12);
+      --err: #f87171;
+      --err-dim: rgba(248, 113, 113, 0.12);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+      --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.45);
+    }
+
+    [data-theme="light"] {
+      --bg: #f4f5f8;
+      --surface: #ffffff;
+      --surface-2: #f0f1f5;
+      --surface-3: #e8eaf0;
+      --border: #d4d8e3;
+      --border-subtle: rgba(0, 0, 0, 0.06);
+      --text: #1a1e28;
+      --text-muted: #6b7280;
+      --text-faint: #9ca3af;
+      --accent: #0d9499;
+      --accent-soft: #0b7d82;
+      --accent-dim: rgba(13, 148, 153, 0.1);
+      --ok: #16a34a;
+      --ok-dim: rgba(22, 163, 74, 0.1);
+      --err: #dc2626;
+      --err-dim: rgba(220, 38, 38, 0.1);
+      --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+      --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
+    }
+
+    body {
+      font-family: var(--font-body);
+      font-size: var(--text-base);
+      color: var(--text);
+      background: var(--bg);
+      line-height: 1.5;
+      -webkit-font-smoothing: antialiased;
+      min-height: 100dvh;
+    }
+
+    .kit-app {
+      display: flex;
+      flex-direction: column;
+      min-height: 100dvh;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-4);
+      padding: var(--sp-3) var(--sp-6);
+      min-height: 52px;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
+      flex-wrap: wrap;
+    }
+
+    .topbar-logo {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+      font-weight: 700;
+      font-size: var(--text-lg);
+      letter-spacing: -0.02em;
+      color: var(--text);
+      white-space: nowrap;
+    }
+
+    .topbar-logo span {
+      font-weight: 400;
+      color: var(--text-muted);
+      margin-left: 2px;
+    }
+
+    .topbar-divider {
+      width: 1px;
+      height: 24px;
+      background: var(--border);
+    }
+
+    .topbar-app-nav {
+      display: flex;
+      align-items: center;
+      gap: var(--sp-2);
+    }
+
+    .topbar-app-nav a {
+      font: inherit;
+      font-size: var(--text-xs);
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: var(--r-md);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text-muted);
+      text-decoration: none;
+      white-space: nowrap;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 34px;
+      transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease);
+    }
+
+    .topbar-app-nav a:hover {
+      color: var(--text);
+      background: var(--surface-3);
+    }
+
+    .topbar-app-nav a[aria-current="page"] {
+      background: var(--surface);
+      color: var(--accent);
+      border-color: var(--accent);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .topbar-spacer {
+      flex: 1;
+      min-width: var(--sp-2);
+    }
+
+    .btn-icon {
+      width: 34px;
+      height: 34px;
+      padding: 0;
+      border: 1px solid var(--border);
+      border-radius: var(--r-md);
+      background: var(--surface-2);
+      color: var(--text-muted);
+      cursor: pointer;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      transition: all var(--dur) var(--ease);
+    }
+
+    .btn-icon:hover {
+      color: var(--text);
+      background: var(--surface-3);
+    }
+
+    .btn-icon svg {
+      width: 16px;
+      height: 16px;
+    }
+
+    .kit-main {
+      flex: 1;
+      overflow-y: auto;
+      padding: var(--sp-5) var(--sp-4) var(--sp-8);
+    }
+
+    .kit-inner {
+      max-width: 920px;
+      margin: 0 auto;
+    }
+
+    .panel-header h1 {
+      font-size: 1.125rem;
+      font-weight: 700;
+      letter-spacing: -0.01em;
+      margin-bottom: var(--sp-2);
+    }
+
+    .panel-header p {
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      max-width: 640px;
+      line-height: 1.6;
+      margin-bottom: var(--sp-6);
+    }
+
+    details.section-group {
+      border: 1px solid var(--border);
+      border-radius: var(--r-xl);
+      background: var(--surface);
+      margin-bottom: var(--sp-4);
+      overflow: hidden;
+    }
+
+    details.section-group[open] {
+      box-shadow: var(--shadow-sm);
+    }
+
+    details.section-group>summary {
+      padding: var(--sp-4) var(--sp-5);
+      font-weight: 600;
+      cursor: pointer;
+      list-style: none;
+      display: flex;
+      align-items: center;
+      gap: var(--sp-3);
+      transition: background var(--dur) var(--ease);
+      user-select: none;
+      font-size: var(--text-base);
+    }
+
+    details.section-group>summary:hover {
+      background: var(--surface-2);
+    }
+
+    details.section-group>summary::-webkit-details-marker {
+      display: none;
+    }
+
+    .chevron {
+      width: 16px;
+      height: 16px;
+      color: var(--text-faint);
+      flex-shrink: 0;
+      transition: transform var(--dur) var(--ease), color var(--dur) var(--ease);
+    }
+
+    details.section-group[open]>summary .chevron {
+      transform: rotate(90deg);
+      color: var(--accent);
+    }
+
+    .section-body {
+      padding: 0 var(--sp-5) var(--sp-5);
+      border-top: 1px solid var(--border-subtle);
+    }
+
+    .bind-links {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-2);
+      padding-top: var(--sp-4);
+    }
+
+    .bind-links a {
+      font-size: var(--text-xs);
+      font-weight: 600;
+      padding: 6px 12px;
+      border-radius: var(--r-md);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--accent);
+      text-decoration: none;
+      transition: background var(--dur) var(--ease), border-color var(--dur) var(--ease);
+    }
+
+    .bind-links a:hover {
+      background: var(--accent-dim);
+      border-color: var(--accent);
+    }
+
+    .unite-row {
+      padding-top: var(--sp-4);
+    }
+
+    .unite-row a {
+      color: var(--accent);
+      text-decoration: none;
+      font-family: var(--font-mono);
+      font-size: var(--text-xs);
+      word-break: break-all;
+    }
+
+    .unite-row a:hover {
+      text-decoration: underline;
+    }
+
+    .badge-warn {
+      display: inline-block;
+      margin-left: var(--sp-2);
+      font-size: var(--text-xs);
+      font-weight: 600;
+      padding: 2px 8px;
+      border-radius: 999px;
+      background: var(--err-dim);
+      color: var(--err);
+    }
+
+    label.field-label {
+      display: block;
+      font-size: var(--text-sm);
+      font-weight: 600;
+      margin-bottom: var(--sp-2);
+      color: var(--text);
+    }
+
+    textarea.code {
+      width: 100%;
+      min-height: 320px;
+      font-family: var(--font-mono);
+      font-size: var(--text-sm);
+      line-height: 1.5;
+      padding: var(--sp-4);
+      border-radius: var(--r-lg);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
+      color: var(--text);
+      resize: vertical;
+      tab-size: 2;
+      transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
+    }
+
+    [data-theme="light"] textarea.code {
+      background: var(--surface);
+    }
+
+    textarea.code:focus {
+      outline: none;
+      border-color: var(--accent);
+      box-shadow: 0 0 0 3px var(--accent-dim);
+    }
+
+    .toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-2);
+      margin-top: var(--sp-4);
+    }
+
+    .btn {
+      font: inherit;
+      font-size: var(--text-xs);
+      font-weight: 600;
+      padding: 8px 14px;
+      border-radius: var(--r-md);
+      border: 1px solid var(--accent);
+      cursor: pointer;
+      transition: all var(--dur) var(--ease);
+      display: inline-flex;
+      align-items: center;
+      gap: var(--sp-2);
+    }
+
+    .btn-primary {
+      background: var(--accent);
+      color: #fff;
+      border-color: var(--accent);
+    }
+
+    .btn-primary:hover {
+      background: var(--accent-soft);
+      border-color: var(--accent-soft);
+      transform: translateY(-1px);
+      box-shadow: var(--shadow-sm);
+    }
+
+    .hint-block {
+      margin-top: var(--sp-5);
+      font-size: var(--text-xs);
+      color: var(--text-muted);
+      line-height: 1.7;
+      padding: var(--sp-4);
+      border-radius: var(--r-lg);
+      background: var(--surface-2);
+      border: 1px solid var(--border-subtle);
+    }
+
+    .hint-block code {
+      font-family: var(--font-mono);
+      font-size: 0.625rem;
+      background: var(--surface-3);
+      padding: 1px 5px;
+      border-radius: 3px;
+    }
+
+    .toast-container {
+      position: fixed;
+      bottom: 24px;
+      right: 24px;
+      z-index: 100;
+      display: flex;
+      flex-direction: column;
+      gap: var(--sp-2);
+      max-width: min(420px, calc(100vw - 48px));
+    }
+
+    .toast {
+      padding: var(--sp-3) var(--sp-4);
+      border-radius: var(--r-lg);
+      font-size: var(--text-sm);
+      font-weight: 500;
+      box-shadow: var(--shadow-lg);
+      animation: toastIn 240ms var(--ease);
+    }
+
+    .toast-ok {
+      background: var(--ok-dim);
+      color: var(--ok);
+      border: 1px solid rgba(74, 222, 128, 0.2);
+    }
+
+    .toast-err {
+      background: var(--err-dim);
+      color: var(--err);
+      border: 1px solid rgba(248, 113, 113, 0.2);
+    }
+
+    @keyframes toastIn {
+      from {
+        opacity: 0;
+        transform: translateY(8px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    @media (max-width: 640px) {
+      .topbar-logo span {
+        display: none;
+      }
+
+      .topbar-app-nav {
+        order: 10;
+        flex: 1 1 100%;
+        overflow-x: auto;
+        padding-top: var(--sp-2);
+        border-top: 1px solid var(--border-subtle);
+      }
+    }
+  </style>
 </head>
+
 <body>
-    <style type="text/css">
-        * {
-            box-sizing: border-box;
-            outline: none;
-            margin: 0;
-            padding: 0;
-        }
+  <div class="kit-app">
+    <header class="topbar">
+      <div class="topbar-logo">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+          <rect x="2" y="2" width="24" height="24" rx="6" stroke="currentColor" stroke-width="1.5" fill="none" />
+          <rect x="7" y="16" width="3" height="6" rx="1" fill="var(--accent)" />
+          <rect x="12.5" y="11" width="3" height="11" rx="1" fill="var(--accent)" opacity="0.7" />
+          <rect x="18" y="6" width="3" height="16" rx="1" fill="var(--accent)" opacity="0.45" />
+        </svg>
+        Lampac <span>Kit</span>
+      </div>
+      <div class="topbar-divider"></div>
+      <nav class="topbar-app-nav" aria-label="Lampac pages">
+        <a href="/adminpanel">Admin</a>
+        <a href="/stats">Stats</a>
+        <a href="/weblog">Weblog</a>
+        <a href="/kit" aria-current="page">Kit</a>
+      </nav>
+      <div class="topbar-spacer"></div>
+      <button type="button" class="btn-icon" id="themeBtn" title="Сменить тему (Alt+T)" aria-label="Сменить тему">
+        <svg id="themeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+          stroke-linecap="round">
+          <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+        </svg>
+      </button>
+    </header>
 
-        body {
-            padding: 20px;
-            font-family: sans-serif;
-            background-color: #fafafa;
-            color: #ffffff;
-            min-height: 100vh;
-        }
-
-        @media (min-width: 768px) {
-            body {
-                padding: 40px;
-            }
-        }
-
-        .container {
-            max-width: 1200px;
-            margin: 0 auto;
-            width: 100%;
-        }
-
-        label {
-            display: block;
-            font-weight: 600;
-            margin-bottom: 8px;
-            color: #585454;
-            font-size: 19px;
-        }
-
-        input, textarea, select {
-            width: 100%;
-            padding: 12px;
-            background-color: #fdfdfd;
-            border: 1px solid #dbdbdb;
-            color: #4e4b4b;
-            border-radius: 4px;
-            font-size: 16px;
-        }
-
-            textarea:focus, input:focus {
-                border-color: #4CAF50;
-            }
-
-        button {
-            padding: 12px 24px;
-            background-color: #8bc34a;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            transition: background-color 0.3s;
-        }
-
-            button:hover {
-                background-color: #45a049;
-                color: #fff
-            }
-
-        form > * + * {
-            margin-top: 30px;
-        }
-
-        .share {
-            font-size: 24px;
-            margin-bottom: 40px;
-        }
-
-            .share a {
-                color: #64B5F6;
-                text-decoration: none;
-                margin: 0 5px;
-                transition: color 0.3s;
-            }
-
-                .share a:hover {
-                    color: #90CAF9;
-                }
-
-        @media (max-width: 480px) {
-            .share {
-                font-size: 18px;
-            }
-
-            textarea {
-                height: 300px;
-            }
-        }
-    </style>
-    <div class="container">
-        <div class="share" style="color: #999; margin-bottom: 30px;">
-            <label>
-                Чтобы привязать свой аккаунт нажмите на нужный сервис
-            </label>
-            <a href="/bind/filmix" style="margin-left: 0px;">Filmix</a> * <a href="/bind/kinopub">KinoPub</a> * <a href="/bind/rezka">HDRezka</a> * <a href="/bind/vokino">VoKino</a> * <a href="/bind/getstv">GetsTV</a> * <a href="/bind/iptvonline">iptv.online</a>
+    <main class="kit-main">
+      <div class="kit-inner">
+        <div class="panel-header">
+          <h1>Настройки Kit</h1>
+          <p>Привязка онлайн-сервисов к вашему зашифрованному профилю и ручное редактирование JSON. Сохранение отправляет
+            данные на <code>/kit</code> методом POST.</p>
         </div>
-        <div class="share">
-            <label>
-                Привязка устройства к текущим настройкам
-            </label>
-            <a href="/kit/unite" target="_blank" style="margin-left: 0px;">https://127.0.0.1:9118/kit/unite</a> <span style="color: #f44336; font-size: 22px; "> &lt; инструкция</span>
-        </div>
-        <form method="post" action="" id="form">
-            <div style="margin-top: 65px;">
-                <label>Ручная настройка</label>
-                <textarea id="value" name="value" rows="30">{conf}</textarea>
+
+        <div class="toast-container" id="toastContainer"></div>
+
+        <details class="section-group" open>
+          <summary>
+            <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            Привязка сервисов
+          </summary>
+          <div class="section-body">
+            <p style="font-size:var(--text-xs);color:var(--text-muted);margin-bottom:var(--sp-3)">Откройте нужный
+              сервис (в той же сессии браузера, где вы вошли в Kit):</p>
+            <div class="bind-links">
+              <a href="/bind/filmix">Filmix</a>
+              <a href="/bind/kinopub">KinoPub</a>
+              <a href="/bind/rezka">HDRezka</a>
+              <a href="/bind/vokino">VoKino</a>
+              <a href="/bind/getstv">GetsTV</a>
+              <a href="/bind/iptvonline">iptv.online</a>
             </div>
-            <button type="submit">Сохранить</button>
-        </form>
-        <div class="params" style="margin-top: 5rem; line-height: 2; color: black;">
-            enable - true (включить источник) / false (отключить источник)<br>
-            corseu - true (включить прокси) / false (отключить прокси)<br>
-            host - адрес зеркала, api для источника
-            <br><br>
-            scheme - http / https<br>
-            pro/premium - true (аккаунт с подпиской) / false (бесплатный)<br>
-            hls - true (для современных тв) / false (видео в формате mp4)<br>
-            filetype - hls (рекомендуется) / hls4 (для современных тв) / mp4
-        </div>
-    </div>
-    <script type="text/javascript">
-        document.getElementById('form').addEventListener("submit", (e) => {
-            let json = document.getElementById('value').value
+          </div>
+        </details>
 
-            e.preventDefault()
+        <details class="section-group" open>
+          <summary>
+            <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            Привязка другого устройства
+          </summary>
+          <div class="section-body">
+            <div class="unite-row">
+              <a href="/kit/unite" target="_blank" rel="noopener">/kit/unite</a>
+              <span class="badge-warn">инструкция</span>
+              <p style="margin-top:var(--sp-3);font-size:var(--text-xs);color:var(--text-muted)">Создаёт временную
+                ссылку-плагин для передачи ключа в Lampa на другом устройстве.</p>
+            </div>
+          </div>
+        </details>
 
-            try {
-                JSON.parse(json)
+        <details class="section-group" open>
+          <summary>
+            <svg class="chevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"
+              stroke-linecap="round">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+            Ручная настройка (JSON)
+          </summary>
+          <div class="section-body">
+            <form id="form">
+              <label class="field-label" for="value">Содержимое профиля</label>
+              <textarea id="value" name="value" class="code" rows="24" spellcheck="false">{conf}</textarea>
+              <div class="toolbar">
+                <button type="submit" class="btn btn-primary">Сохранить</button>
+              </div>
+            </form>
+            <div class="hint-block">
+              <strong style="color:var(--text)">Подсказки по полям</strong><br><br>
+              <code>enable</code> — true (включить источник) / false (отключить)<br>
+              <code>corseu</code> — true (прокси) / false (без прокси)<br>
+              <code>host</code> — зеркало или API источника<br>
+              <code>scheme</code> — http / https<br>
+              <code>pro</code> / <code>premium</code> — подписка<br>
+              <code>hls</code> — true (для современных ТВ) / false (mp4)<br>
+              <code>filetype</code> — hls / hls4 / mp4
+            </div>
+          </div>
+        </details>
+      </div>
+    </main>
+  </div>
 
-                let formData = new FormData()
-                formData.append('json', json)
+  <script>
+    (function () {
+      var LAMPAC_THEME_STORAGE_KEY = 'lampac-theme';
+      function $(s) { return document.querySelector(s); }
 
-                fetch('/kit', {
-                    method: "POST",
-                    body: formData
-                })
-                    .then((response) => {
-                        if (response.ok) return response.text();
+      function setTheme(dark) {
+        document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+        var meta = $('#metaTheme');
+        if (meta) meta.setAttribute('content', dark ? '#0c0e12' : '#f4f5f8');
+        try { localStorage.setItem(LAMPAC_THEME_STORAGE_KEY, dark ? 'dark' : 'light'); } catch (e) { }
+        var icon = $('#themeIcon');
+        if (!icon) return;
+        if (dark) {
+          icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
+        } else {
+          icon.innerHTML = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
+        }
+      }
+      setTheme(document.documentElement.getAttribute('data-theme') === 'dark');
+      $('#themeBtn').addEventListener('click', function () {
+        var d = document.documentElement.getAttribute('data-theme') === 'dark';
+        setTheme(!d);
+      });
+      document.addEventListener('keydown', function (e) {
+        if (e.altKey && (e.key === 't' || e.key === 'T')) {
+          e.preventDefault();
+          var d = document.documentElement.getAttribute('data-theme') === 'dark';
+          setTheme(!d);
+        }
+      });
 
-                        throw new Error('Не удалось сохранить настройки');
-                    })
-                    .then(() => {
-                        alert('Сохранено')
-                    })
-                    .catch((e) => {
-                        alert(e.message)
-                    })
-            }
-            catch (e) {
-                alert('Ошибка: ' + e.message)
-            }
-        })
-    </script>
+      function toast(text, kind) {
+        var c = $('#toastContainer');
+        var t = document.createElement('div');
+        t.className = 'toast toast-' + kind;
+        t.textContent = text;
+        c.appendChild(t);
+        setTimeout(function () { t.remove(); }, kind === 'err' ? 7000 : 4000);
+      }
+
+      $('#form').addEventListener('submit', function (e) {
+        e.preventDefault();
+        var json = $('#value').value;
+        try {
+          JSON.parse(json);
+        } catch (err) {
+          toast('Ошибка JSON: ' + err.message, 'err');
+          return;
+        }
+        var formData = new FormData();
+        formData.append('json', json);
+        fetch('/kit', { method: 'POST', body: formData, credentials: 'same-origin' })
+          .then(function (res) {
+            if (res.ok) return res.text();
+            throw new Error('Не удалось сохранить настройки');
+          })
+          .then(function () { toast('Сохранено', 'ok'); })
+          .catch(function (err) { toast(err.message, 'err'); });
+      });
+    })();
+  </script>
 </body>
+
 </html>

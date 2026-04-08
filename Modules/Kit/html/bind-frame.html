@@ -5,11 +5,11 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0c0e12" id="metaTheme">
-  <title>Kit — Lampac</title>
+  <title>__KIT_TITLE__</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link
-    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
     rel="stylesheet">
   <script>
     (function () {
@@ -36,13 +36,17 @@
       --text-sm: 0.8125rem;
       --text-base: 0.875rem;
       --text-lg: 1rem;
+      --text-xl: 1.25rem;
       --sp-1: 0.25rem;
       --sp-2: 0.5rem;
       --sp-3: 0.75rem;
       --sp-4: 1rem;
       --sp-5: 1.25rem;
       --sp-6: 1.5rem;
+      --sp-8: 2rem;
+      --r-sm: 6px;
       --r-md: 8px;
+      --r-lg: 12px;
       --r-xl: 16px;
       --ease: cubic-bezier(0.16, 1, 0.3, 1);
       --dur: 180ms;
@@ -61,9 +65,10 @@
       --accent: #3ec9d1;
       --accent-soft: #2ea8b0;
       --accent-dim: rgba(62, 201, 209, 0.12);
+      --accent-hover: rgba(62, 201, 209, 0.22);
       --err: #f87171;
-      --err-dim: rgba(248, 113, 113, 0.12);
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+      --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
       --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.45);
     }
 
@@ -80,9 +85,10 @@
       --accent: #0d9499;
       --accent-soft: #0b7d82;
       --accent-dim: rgba(13, 148, 153, 0.1);
+      --accent-hover: rgba(13, 148, 153, 0.18);
       --err: #dc2626;
-      --err-dim: rgba(220, 38, 38, 0.1);
       --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+      --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
       --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12);
     }
 
@@ -98,6 +104,7 @@
       background: var(--bg);
       line-height: 1.5;
       -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
     }
 
     .kit-app {
@@ -114,6 +121,7 @@
       min-height: 52px;
       background: var(--surface);
       border-bottom: 1px solid var(--border);
+      flex-shrink: 0;
       flex-wrap: wrap;
     }
 
@@ -125,6 +133,7 @@
       font-size: var(--text-lg);
       letter-spacing: -0.02em;
       color: var(--text);
+      flex-shrink: 0;
       white-space: nowrap;
     }
 
@@ -163,19 +172,12 @@
       align-items: center;
       justify-content: center;
       min-height: 34px;
-      transition: background var(--dur) var(--ease), color var(--dur) var(--ease);
+      transition: background var(--dur) var(--ease), color var(--dur) var(--ease), border-color var(--dur) var(--ease);
     }
 
     .topbar-app-nav a:hover {
       color: var(--text);
       background: var(--surface-3);
-    }
-
-    .topbar-app-nav a[aria-current="page"] {
-      background: var(--surface);
-      color: var(--accent);
-      border-color: var(--accent);
-      box-shadow: var(--shadow-sm);
     }
 
     .topbar-spacer {
@@ -196,6 +198,7 @@
       align-items: center;
       justify-content: center;
       transition: all var(--dur) var(--ease);
+      flex-shrink: 0;
     }
 
     .btn-icon:hover {
@@ -208,26 +211,26 @@
       height: 16px;
     }
 
-    .auth-main {
+    .kit-main {
       flex: 1;
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       justify-content: center;
       padding: var(--sp-6) var(--sp-4);
     }
 
-    .auth-card {
+    .kit-card {
       width: 100%;
-      max-width: 440px;
+      max-width: 560px;
       padding: var(--sp-6);
       background: var(--surface);
       border: 1px solid var(--border);
       border-radius: var(--r-xl);
       box-shadow: var(--shadow-lg);
-      animation: authIn 280ms var(--ease);
+      animation: kitIn 280ms var(--ease);
     }
 
-    @keyframes authIn {
+    @keyframes kitIn {
       from {
         opacity: 0;
         transform: translateY(6px);
@@ -239,35 +242,43 @@
       }
     }
 
-    .auth-card h1 {
+    .bind-body .title {
       font-size: var(--text-lg);
       font-weight: 700;
+      margin-bottom: var(--sp-4);
       letter-spacing: -0.01em;
-      margin-bottom: var(--sp-1);
     }
 
-    .auth-card .lead {
-      font-size: var(--text-xs);
-      color: var(--text-muted);
-      margin-bottom: var(--sp-5);
-      line-height: 1.6;
+    .bind-body .steps {
+      margin: var(--sp-5) 0;
     }
 
-    .auth-form {
-      display: flex;
-      flex-direction: column;
-      gap: var(--sp-4);
+    .bind-body .step {
+      margin-bottom: var(--sp-4);
+      font-size: var(--text-sm);
+      color: var(--text);
     }
 
-    .auth-field label {
-      display: block;
-      font-size: var(--text-xs);
-      font-weight: 500;
-      color: var(--text-muted);
-      margin-bottom: var(--sp-2);
+    .bind-body .code {
+      font-family: var(--font-mono);
+      font-size: var(--text-xl);
+      font-weight: 600;
+      text-align: center;
+      padding: var(--sp-4);
+      margin: var(--sp-3) 0;
+      background: var(--surface-2);
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      color: var(--accent);
+      word-break: break-all;
     }
 
-    .auth-field input[type="text"] {
+    .bind-body .form-group {
+      margin-bottom: var(--sp-4);
+    }
+
+    .bind-body input[type='text'],
+    .bind-body input[type='password'] {
       font: inherit;
       font-size: var(--text-sm);
       width: 100%;
@@ -279,17 +290,18 @@
       transition: border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease);
     }
 
-    [data-theme="light"] .auth-field input[type="text"] {
+    [data-theme="light"] .bind-body input[type='text'],
+    [data-theme="light"] .bind-body input[type='password'] {
       background: var(--surface);
     }
 
-    .auth-field input:focus {
+    .bind-body input:focus {
       outline: none;
       border-color: var(--accent);
       box-shadow: 0 0 0 3px var(--accent-dim);
     }
 
-    .auth-field input::placeholder {
+    .bind-body input::placeholder {
       color: var(--text-faint);
     }
 
@@ -306,7 +318,7 @@
       align-items: center;
       justify-content: center;
       gap: var(--sp-2);
-      width: 100%;
+      text-decoration: none;
     }
 
     .btn-primary {
@@ -322,42 +334,42 @@
       box-shadow: var(--shadow-sm);
     }
 
-    .key-hint {
-      margin-top: var(--sp-5);
-      padding-top: var(--sp-5);
-      border-top: 1px solid var(--border-subtle);
+    .btn-block {
+      width: 100%;
+      box-sizing: border-box;
+      margin-top: var(--sp-4);
     }
 
-    .key-hint p {
-      font-size: var(--text-xs);
-      color: var(--text-muted);
-      margin-bottom: var(--sp-2);
+    .bind-body a.link {
+      color: var(--accent);
+      text-decoration: none;
     }
 
-    .key-box {
+    .bind-body a.link:hover {
+      text-decoration: underline;
+    }
+
+    .kit-msg {
+      font-size: var(--text-sm);
+      line-height: 1.6;
+    }
+
+    .kit-msg-err {
+      color: var(--err);
+    }
+
+    .kit-pre {
+      margin-top: var(--sp-4);
+      padding: var(--sp-4);
+      border-radius: var(--r-lg);
+      border: 1px solid var(--border);
+      background: var(--surface-2);
       font-family: var(--font-mono);
       font-size: var(--text-xs);
-      padding: var(--sp-3);
-      border-radius: var(--r-md);
-      background: var(--surface-2);
-      border: 1px solid var(--border);
-      word-break: break-all;
-      color: var(--text);
-      line-height: 1.5;
-    }
-
-    .key-warn {
-      margin-top: var(--sp-3);
-      font-size: var(--text-xs);
-      color: var(--err);
-      padding: var(--sp-3);
-      border-radius: var(--r-md);
-      background: var(--err-dim);
-      border: 1px solid rgba(248, 113, 113, 0.2);
-    }
-
-    [data-theme="light"] .key-warn {
-      border-color: rgba(220, 38, 38, 0.2);
+      overflow: auto;
+      max-height: 60vh;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
 
     @media (max-width: 640px) {
@@ -393,7 +405,7 @@
         <a href="/adminpanel">Admin</a>
         <a href="/stats">Stats</a>
         <a href="/weblog">Weblog</a>
-        <a href="/kit" aria-current="page">Kit</a>
+        <a href="/kit">Kit</a>
       </nav>
       <div class="topbar-spacer"></div>
       <button type="button" class="btn-icon" id="themeBtn" title="Сменить тему (Alt+T)" aria-label="Сменить тему">
@@ -403,30 +415,12 @@
         </svg>
       </button>
     </header>
-
-    <main class="auth-main">
-      <div class="auth-card">
-        <h1>Вход в Kit</h1>
-        <p class="lead">Введите AesGcm-ключ профиля. Он хранится в cookie и используется для шифрования ваших привязок
-          в <code style="font-family:var(--font-mono);font-size:0.65rem;background:var(--surface-3);padding:1px 6px;border-radius:4px">database/kit</code>.</p>
-        <form class="auth-form" method="post" action="/kit" id="form">
-          <div class="auth-field">
-            <label for="aesGcmKey">AesGcm ключ</label>
-            <input type="text" id="aesGcmKey" name="aesGcmKey" placeholder="Ключ" required autocomplete="off"
-              spellcheck="false" />
-          </div>
-          <button type="submit" class="btn btn-primary">Войти</button>
-        </form>
-        <div class="key-hint">
-          <p>Если ключа ещё нет, можно использовать сгенерированный:</p>
-          <div class="key-box">{randomAesGcmKey}</div>
-          <div class="key-warn"><strong>Внимание:</strong> ключ — уникальный идентификатор. Сохраните его в надёжном
-            месте; без него данные не расшифровать.</div>
-        </div>
+    <main class="kit-main">
+      <div class="kit-card bind-body">
+        __KIT_BODY__
       </div>
     </main>
   </div>
-
   <script>
     (function () {
       var LAMPAC_THEME_STORAGE_KEY = 'lampac-theme';
@@ -436,15 +430,15 @@
         var meta = $('#metaTheme');
         if (meta) meta.setAttribute('content', dark ? '#0c0e12' : '#f4f5f8');
         try { localStorage.setItem(LAMPAC_THEME_STORAGE_KEY, dark ? 'dark' : 'light'); } catch (e) { }
+        var d = dark;
         var icon = $('#themeIcon');
         if (!icon) return;
-        if (dark) {
+        if (d) {
           icon.innerHTML = '<path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>';
         } else {
           icon.innerHTML = '<circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/>';
         }
       }
-      setTheme(document.documentElement.getAttribute('data-theme') === 'dark');
       $('#themeBtn').addEventListener('click', function () {
         var d = document.documentElement.getAttribute('data-theme') === 'dark';
         setTheme(!d);
@@ -456,6 +450,7 @@
           setTheme(!d);
         }
       });
+      setTheme(document.documentElement.getAttribute('data-theme') === 'dark');
     })();
   </script>
 </body>

@@ -11,6 +11,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -49,145 +50,23 @@ namespace KitMod.Controllers
         #endregion
 
         #region renderHtml
+        string LoadBindFrame(string title, string body)
+        {
+            string frame = IO.File.ReadAllText($"{ModInit.folder_mod}/html/bind-frame.html");
+            return frame
+                .Replace("__KIT_TITLE__", WebUtility.HtmlEncode(title))
+                .Replace("__KIT_BODY__", body);
+        }
+
         ContentResult renderHtml(string title, string body)
         {
-            return Content(@"<!DOCTYPE html>
-<html>
-<head>
-    <title>" + title + @"</title>
-    <meta name='viewport' content='width=device-width, initial-scale=1.0'>
-    <meta charset='utf-8'>
-    <style>
-        * {
-            box-sizing: border-box;
-            margin: 0;
-            padding: 0;
+            return Content(LoadBindFrame(title, body), "text/html; charset=utf-8");
         }
 
-        body {
-            background-color: #fafafa;
-            color: #ffffff;
-            font-family: sans-serif;
-            line-height: 1.6;
-            padding: 20px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-        }
-
-        .container {
-            background-color: #fdfdfd;
-            padding: 30px;
-            border-radius: 8px;
-            max-width: 600px;
-            width: 100%;
-            box-shadow: 0 18px 24px rgb(175 175 175 / 30%);
-            color: #000;
-        }
-
-        .steps {
-            margin: 20px 0;
-        }
-
-        .step {
-            margin-bottom: 20px;
-            font-size: 18px;
-        }
-
-        .title {
-            margin-bottom: 20px;
-            font-size: 18px;
-        }
-
-        .code {
-            background-color: #ffffff;
-            padding: 15px;
-            border-radius: 4px;
-            font-size: 24px;
-            font-weight: bold;
-            text-align: center;
-            margin: 10px 0;
-            border: 1px solid #eaeaea;
-            color: #4caf50;
-        }
-
-        a {
-            color: #64B5F6;
-            text-decoration: none;
-            transition: color 0.3s;
-        }
-
-        a:hover {
-            color: #90CAF9;
-        }
-
-        .button {
-            display: inline-block;
-            background-color: #8bc34a;
-            color: white;
-            padding: 12px 24px;
-            border-radius: 4px;
-            text-decoration: none;
-            margin-top: 20px;
-            transition: background-color 0.3s;
-            border: none;
-            font-size: 16px;
-            cursor: pointer;
-            width: 100%;
-            text-align: center;
-        }
-
-        .button:hover {
-            background-color: #45a049;
-            color: #fff
-        }
-
-        .form-group {
-            margin-bottom: 15px;
-        }
-
-        input[type='text'] {
-            background-color: #ffffff;
-            border: 1px solid #dbdbdb;
-            color: #4e4b4b;
-            padding: 12px;
-            border-radius: 4px;
-            width: 100%;
-            margin-bottom: 10px;
-            font-size: 16px;
-        }
-
-        input[type='text']:focus {
-            border-color: #4CAF50;
-            outline: none;
-        }
-
-        @media (max-width: 480px) {
-            body {
-                padding: 15px;
-            }
-
-            .container {
-                padding: 20px;
-            }
-
-            .step {
-                font-size: 16px;
-            }
-
-            .code {
-                font-size: 20px;
-            }
-        }
-    </style>
-</head>
-<body>
-    <div class='container'>
-        " + body + @"
-    </div>
-</body>
-</html>", "text/html; charset=utf-8");
+        ContentResult renderMessage(string title, string message, bool error = true)
+        {
+            string cls = error ? "kit-msg kit-msg-err" : "kit-msg";
+            return renderHtml(title, "<p class='" + cls + "'>" + WebUtility.HtmlEncode(message) + "</p>");
         }
         #endregion
 
@@ -232,25 +111,25 @@ namespace KitMod.Controllers
 
             (string aesGcmKey, string filePath) = userInfo();
             if (string.IsNullOrEmpty(aesGcmKey))
-                return Content("ошибка, отсутствует параметр aesGcmKey", "text/html; charset=utf-8");
+                return renderMessage("Ошибка", "Отсутствует параметр aesGcmKey. Откройте /kit и войдите снова.");
 
             if (string.IsNullOrEmpty(filmix_token))
             {
                 var token_request = await Http.Get<JObject>($"{filmix.host}/api/v2/token_request?user_dev_apk=2.2.13&user_dev_id={UnicTo.Code(16)}&user_dev_name=Xiaomi&user_dev_os=12&user_dev_vendor=Xiaomi&user_dev_token=", timeoutSeconds: 10);
 
                 if (token_request == null)
-                    return Content($"{filmix.host} недоступен, повторите попытку позже", "text/html; charset=utf-8");
+                    return renderMessage("Filmix", $"{filmix.host} недоступен, повторите попытку позже.");
 
                 string body = $@"<div class='steps'>
                     <div class='step'>
-                        1. Откройте <a href='https://filmix.my/consoles' target='_blank'>https://filmix.my/consoles</a>
+                        1. Откройте <a href='https://filmix.my/consoles' target='_blank' class='link'>https://filmix.my/consoles</a>
                     </div>
                     <div class='step'>
                         2. Добавьте идентификатор устройства
                         <div class='code'>{token_request.Value<string>("user_code")}</div>
                     </div>
                 </div>
-                <a href='/bind/filmix?filmix_token={token_request.Value<string>("code")}' class='button'>
+                <a href='/bind/filmix?filmix_token={token_request.Value<string>("code")}' class='btn btn-primary btn-block'>
                     завершить привязку устройства
                 </a>";
 
@@ -263,7 +142,7 @@ namespace KitMod.Controllers
                 if (root != null)
                 {
                     if (!root.ContainsKey("user_data"))
-                        return Content($"Указанный токен {filmix_token} не найден", "text/html; charset=utf-8");
+                        return renderMessage("Filmix", $"Указанный токен не найден или устарел.");
 
                     var user_data = root["user_data"];
                     if (user_data != null)
@@ -298,19 +177,19 @@ namespace KitMod.Controllers
 
             (string aesGcmKey, string filePath) = userInfo();
             if (string.IsNullOrEmpty(aesGcmKey))
-                return Content("ошибка, отсутствует параметр aesGcmKey", "text/html; charset=utf-8");
+                return renderMessage("Ошибка", "Отсутствует параметр aesGcmKey. Откройте /kit и войдите снова.");
 
             if (string.IsNullOrWhiteSpace(login) || string.IsNullOrWhiteSpace(pass))
             {
-                string body = $@"<div class='title'>Введите данные аккаунта <a href='https://vokino.pro' target='_blank'>vokino.pro</a></div>
+                string body = $@"<div class='title'>Введите данные аккаунта <a href='https://vokino.pro' target='_blank' class='link'>vokino.pro</a></div>
                     <form method='get' action='/bind/vokino'>
                         <div class='form-group'>
                             <input type='text' name='login' placeholder='Email' required>
                         </div>
                         <div class='form-group'>
-                            <input type='text' name='pass' placeholder='Пароль' required>
+                            <input type='password' name='pass' placeholder='Пароль' required>
                         </div>
-                        <button type='submit' class='button'>Добавить устройство</button>
+                        <button type='submit' class='btn btn-primary btn-block'>Добавить устройство</button>
                     </form>";
 
                 return renderHtml("Привязка VoKino", body);
@@ -321,11 +200,11 @@ namespace KitMod.Controllers
                 var token_request = await Http.Get<JObject>($"{vokino.host}/v2/auth?email={HttpUtility.UrlEncode(login)}&passwd={HttpUtility.UrlEncode(pass)}&deviceid={deviceid}", timeoutSeconds: 10, headers: HeadersModel.Init(("user-agent", "lampac")));
 
                 if (token_request == null)
-                    return Content($"{vokino.host} недоступен, повторите попытку позже", "text/html; charset=utf-8");
+                    return renderMessage("VoKino", $"{vokino.host} недоступен, повторите попытку позже.");
 
                 string authToken = token_request.Value<string>("authToken");
                 if (string.IsNullOrEmpty(authToken))
-                    return Content(token_request.Value<string>("error") ?? "Не удалось получить токен", "text/html; charset=utf-8");
+                    return renderMessage("VoKino", token_request.Value<string>("error") ?? "Не удалось получить токен.");
 
                 var bwaconf = loadconf(aesGcmKey, filePath);
 
@@ -362,24 +241,24 @@ namespace KitMod.Controllers
 
             (string aesGcmKey, string filePath) = userInfo();
             if (string.IsNullOrEmpty(aesGcmKey))
-                return Content("ошибка, отсутствует параметр aesGcmKey", "text/html; charset=utf-8");
+                return renderMessage("Ошибка", "Отсутствует параметр aesGcmKey. Откройте /kit и войдите снова.");
 
             if (string.IsNullOrWhiteSpace(code))
             {
                 var token_request = await Http.Post<JObject>($"{KinoPub.host}/oauth2/device?grant_type=device_code&client_id=xbmc&client_secret=cgg3gtifu46urtfp2zp1nqtba0k2ezxh", "", timeoutSeconds: 10);
                 if (token_request == null || string.IsNullOrWhiteSpace(token_request.Value<string>("user_code")))
-                    return Content("api.srvkp.com недоступен, повторите попытку позже", "text/html; charset=utf-8");
+                    return renderMessage("KinoPub", "api.srvkp.com недоступен, повторите попытку позже.");
 
                 string body = $@"<div class='steps'>
                     <div class='step'>
-                        1. Откройте <a href='https://kino.pub/device' target='_blank'>https://kino.pub/device</a>
+                        1. Откройте <a href='https://kino.pub/device' target='_blank' class='link'>https://kino.pub/device</a>
                     </div>
                     <div class='step'>
                         2. Введите код устройства
                         <div class='code'>{token_request.Value<string>("user_code")}</div>
                     </div>
                 </div>
-                <a href='/bind/kinopub?code={token_request.Value<string>("code")}' class='button'>
+                <a href='/bind/kinopub?code={token_request.Value<string>("code")}' class='btn btn-primary btn-block'>
                     завершить привязку устройства
                 </a>";
 
@@ -390,10 +269,10 @@ namespace KitMod.Controllers
                 var device_token = await Http.Post<JObject>($"{KinoPub.host}/oauth2/device?grant_type=device_token&client_id=xbmc&client_secret=cgg3gtifu46urtfp2zp1nqtba0k2ezxh&code={code}", "");
 
                 if (device_token == null)
-                    return Content($"{KinoPub.host} недоступен, повторите попытку позже", "text/html; charset=utf-8");
+                    return renderMessage("KinoPub", $"{KinoPub.host} недоступен, повторите попытку позже.");
 
                 if (string.IsNullOrWhiteSpace(device_token.Value<string>("access_token")))
-                    return Content($"Указанный токен {device_token.Value<string>("access_token")} не найден", "text/html; charset=utf-8");
+                    return renderMessage("KinoPub", "Токен доступа не получен. Подтвердите устройство на kino.pub и нажмите кнопку завершения снова.");
 
                 var bwaconf = loadconf(aesGcmKey, filePath);
 
@@ -419,19 +298,19 @@ namespace KitMod.Controllers
 
             (string aesGcmKey, string filePath) = userInfo();
             if (string.IsNullOrEmpty(aesGcmKey))
-                return Content("ошибка, отсутствует параметр aesGcmKey", "text/html; charset=utf-8");
+                return renderMessage("Ошибка", "Отсутствует параметр aesGcmKey. Откройте /kit и войдите снова.");
 
             if (string.IsNullOrWhiteSpace(login) || string.IsNullOrWhiteSpace(pass))
             {
-                string body = $@"<div class='title'>Введите данные PREMUIM аккаунта <a href='{siteConf.Rezka.host}' target='_blank'>HDRezka</a></div>
+                string body = $@"<div class='title'>Введите данные PREMUIM аккаунта <a href='{siteConf.Rezka.host}' target='_blank' class='link'>HDRezka</a></div>
                     <form method='get' action='/bind/rezka'>
                         <div class='form-group'>
                             <input type='text' name='login' placeholder='Email' required>
                         </div>
                         <div class='form-group'>
-                            <input type='text' name='pass' placeholder='Пароль' required>
+                            <input type='password' name='pass' placeholder='Пароль' required>
                         </div>
-                        <button type='submit' class='button'>Привязать устройство</button>
+                        <button type='submit' class='btn btn-primary btn-block'>Привязать устройство</button>
                     </form>";
 
                 return renderHtml("Привязка HDRezka", body);
@@ -440,7 +319,7 @@ namespace KitMod.Controllers
             {
                 string cookie = await getCookieRezka(login, pass);
                 if (string.IsNullOrEmpty(cookie))
-                    return Content("Ошибка авторизации, повторите попытку позже", "text/html; charset=utf-8");
+                    return renderMessage("HDRezka", "Ошибка авторизации, повторите попытку позже.");
 
                 bool premium = false;
                 string rezka_main = await Http.Get(siteConf.Rezka.host, cookie: cookie, timeoutSeconds: 10);
@@ -494,19 +373,19 @@ namespace KitMod.Controllers
 
             (string aesGcmKey, string filePath) = userInfo();
             if (string.IsNullOrEmpty(aesGcmKey))
-                return Content("ошибка, отсутствует параметр aesGcmKey", "text/html; charset=utf-8");
+                return renderMessage("Ошибка", "Отсутствует параметр aesGcmKey. Откройте /kit и войдите снова.");
 
             if (string.IsNullOrWhiteSpace(login) || string.IsNullOrWhiteSpace(pass))
             {
-                string body = $@"<div class='title'>Введите данные аккаунта <a href='https://getstv.com/user' target='_blank'>getstv.com</a></div>
+                string body = $@"<div class='title'>Введите данные аккаунта <a href='https://getstv.com/user' target='_blank' class='link'>getstv.com</a></div>
                     <form method='get' action='/bind/getstv'>
                         <div class='form-group'>
                             <input type='text' name='login' placeholder='Email' required>
                         </div>
                         <div class='form-group'>
-                            <input type='text' name='pass' placeholder='Пароль' required>
+                            <input type='password' name='pass' placeholder='Пароль' required>
                         </div>
-                        <button type='submit' class='button'>Добавить устройство</button>
+                        <button type='submit' class='btn btn-primary btn-block'>Добавить устройство</button>
                     </form>";
 
                 return renderHtml("Привязка GetsTV", body);
@@ -517,11 +396,11 @@ namespace KitMod.Controllers
                 var result = await Http.Post<JObject>($"{siteConf.GetsTV.host}/api/login", new System.Net.Http.StringContent(postdata, Encoding.UTF8, "application/json"), headers: httpHeaders(siteConf.GetsTV));
 
                 if (result == null)
-                    return ContentTo($"{siteConf.GetsTV.host} недоступен, повторите попытку позже");
+                    return renderMessage("GetsTV", $"{siteConf.GetsTV.host} недоступен, повторите попытку позже.");
 
                 string token = result.Value<string>("token");
                 if (string.IsNullOrEmpty(token))
-                    return ContentTo(JsonConvert.SerializeObject(result, Formatting.Indented));
+                    return renderHtml("GetsTV", "<p class='kit-msg kit-msg-err'>Не удалось получить токен. Ответ сервера:</p><pre class='kit-pre'>" + WebUtility.HtmlEncode(JsonConvert.SerializeObject(result, Formatting.Indented)) + "</pre>");
 
                 var bwaconf = loadconf(aesGcmKey, filePath);
 
@@ -545,11 +424,11 @@ namespace KitMod.Controllers
         {
             (string aesGcmKey, string filePath) = userInfo();
             if (string.IsNullOrEmpty(aesGcmKey))
-                return Content("ошибка, отсутствует параметр aesGcmKey", "text/html; charset=utf-8");
+                return renderMessage("Ошибка", "Отсутствует параметр aesGcmKey. Откройте /kit и войдите снова.");
 
             if (string.IsNullOrWhiteSpace(login) || string.IsNullOrWhiteSpace(pass))
             {
-                string body = $@"<div class='title'>Введите данные <a href='https://iptv.online/ru/dealers/api' target='_blank'>https://iptv.online/ru/dealers/api</a></div>
+                string body = $@"<div class='title'>Введите данные <a href='https://iptv.online/ru/dealers/api' target='_blank' class='link'>iptv.online (API дилера)</a></div>
                     <form method='get' action='/bind/iptvonline'>
                         <div class='form-group'>
                             <input type='text' name='login' placeholder='X-API-KEY' required>
@@ -557,7 +436,7 @@ namespace KitMod.Controllers
                         <div class='form-group'>
                             <input type='text' name='pass' placeholder='X-API-ID' required>
                         </div>
-                        <button type='submit' class='button'>Добавить устройство</button>
+                        <button type='submit' class='btn btn-primary btn-block'>Добавить устройство</button>
                     </form>";
 
                 return renderHtml("Привязка iptv.online", body);
