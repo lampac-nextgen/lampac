@@ -51,6 +51,9 @@ namespace Core.Controllers
         [Route("/stats/gc")]
         public ActionResult GcMemory()
         {
+            if (!openstat.enable)
+                return NotFound();
+
             var proc = Process.GetCurrentProcess();
             var gc = GC.GetGCMemoryInfo();
 
