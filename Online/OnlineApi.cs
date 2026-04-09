@@ -404,10 +404,10 @@ namespace Online.Controllers
         [Route("lite/withsearch")]
         public ActionResult WithSearch()
         {
-            if (ModInit.conf.with_search == null)
+            if (CoreInit.conf.online.with_search == null)
                 return ContentTo("[]");
 
-            return Json(ModInit.conf.with_search);
+            return Json(CoreInit.conf.online.with_search);
         }
         #endregion
 
