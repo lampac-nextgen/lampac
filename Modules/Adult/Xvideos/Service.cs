@@ -82,11 +82,8 @@ namespace Xvideos
                     img = Regex.Replace(img, "/videos/thumbs([0-9]+)/", "/videos/thumbs$1lll/");
                     img = Regex.Replace(img, "THUMBNUM", "1", RegexOptions.IgnoreCase);
 
-                    // https://cdn77-pic.xvideos-cdn.com/videos/thumbs169ll/5a/6d/4f/5a6d4f718214eebf73225ec96b670f62-2/5a6d4f718214eebf73225ec96b670f62.27.jpg
-                    // https://cdn77-pic.xvideos-cdn.com/videos/videopreview/5a/6d/4f/5a6d4f718214eebf73225ec96b670f62_169.mp4
-                    string preview = Regex.Replace(img, "/thumbs[^/]+/", "/videopreview/") ?? string.Empty;
-                    preview = Regex.Replace(preview, "/[^/]+$", "");
-                    preview = Regex.Replace(preview, "-[0-9]+$", "");
+                    string preview = Regex.Replace(img, "/thumbs[^/]+/", "/") ?? string.Empty;  
+                    preview = Regex.Replace(preview, "/[^/]+$", "/3/preview.mp4");
 
                     img = img.Replace("thumbs169l/", "thumbs169lll/").Replace("thumbs169ll/", "thumbs169lll/");
 
@@ -102,7 +99,7 @@ namespace Xvideos
                         name = g[2].Value,
                         video = $"{route}?uri={g[1].Value}",
                         picture = img,
-                        preview = preview + "_169.mp4",
+                        preview = preview,
                         quality = row.Match("<span class=\"video-hd-mark\">([^<]+)</span>"),
                         time = row.Match("<span class=\"duration\">([^<]+)</span>", trim: true),
                         json = true,
