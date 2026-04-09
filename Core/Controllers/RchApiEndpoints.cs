@@ -2,6 +2,8 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
+using Shared;
+using Shared.Models.Base;
 using Shared.Services;
 using Shared.Services.Pools;
 using System.IO.Compression;
@@ -15,15 +17,19 @@ namespace Core.Endpoints
 
         public static void MapRchApi(this IEndpointRouteBuilder endpoints)
         {
-            endpoints.MapPost("rch/result", WriteResult)
+            var rchGroup = endpoints.MapGroup("rch");
+
+            rchGroup.MapPost("result", WriteResult)
                 .AllowAnonymous()
                 .WithMetadata(new RequestSizeLimitAttribute(maxRequestSize));
 
-            endpoints.MapPost("rch/gzresult", WriteZipResult)
+            rchGroup.MapPost("gzresult", WriteZipResult)
                 .AllowAnonymous()
                 .WithMetadata(new RequestSizeLimitAttribute(maxRequestSize));
+
+            rchGroup.MapGet("check/connected", СheckСonnected)
+                .AllowAnonymous();
         }
-
 
         static async Task<IResult> WriteResult(HttpContext context, [FromQuery] string id)
         {
@@ -93,6 +99,20 @@ namespace Core.Endpoints
             }
 
             return Results.BadRequest(400);
+        }
+
+        static IResult СheckСonnected(HttpContext context)
+        {
+            var requestInfo = context.Features.Get<RequestModel>();
+            var host = CoreInit.Host(context);
+
+            var rch = new RchClient(context, host, new BaseSettings() { rhub = true }, requestInfo);
+
+            if (rch.IsNotConnected())
+                return Results.Content(rch.connectionMsg);
+
+            var info = rch.InfoConnected() ?? new RchClientInfo();
+            return Results.Json(new { info.apkVersion, info.rchtype });
         }
     }
 }
