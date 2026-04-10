@@ -15,7 +15,7 @@ namespace Mirage
 
         public List<ModuleOnlineItem> Invoke(HttpContext httpContext, RequestModel requestInfo, string host, OnlineEventsModel args)
         {
-            if (PlaywrightBrowser.Status == PlaywrightStatus.disabled)
+            if (Chromium.Status == PlaywrightStatus.disabled)
                 return null;
 
             return new List<ModuleOnlineItem>()
@@ -39,7 +39,7 @@ namespace Mirage
 
         void updateConf()
         {
-            conf = ModuleInvoke.Init("Mirage", new ModuleConf("Mirage", "https://api.apbugall.org", "https://torso-as.stloadi.live", "d94156979ccf2d072540fce92eabe9", "", true, true)
+            conf = ModuleInvoke.Init("Mirage", new ModuleConf("Mirage", "https://api.apbugall.org", "https://aport-as.allarknow.online", "22c8122334d050de1bfc97bd08aa5e", "", true, true)
             {
                 enable = false,
                 displayindex = 510,

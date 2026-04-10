@@ -466,7 +466,8 @@ namespace Shared.PlaywrightCore
                     else
                     {
                         stats_newcontext++;
-                        page = await browser.NewPageAsync().ConfigureAwait(false);
+                        var kpc = await browser.NewContextAsync(baseContextOptions);
+                        page = await kpc.NewPageAsync();
                     }
                     #endregion
 
