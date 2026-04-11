@@ -17,6 +17,7 @@
     <Project Path="Modules/TorrServer/TorrServer.csproj" />
     <Project Path="Modules/Tracks/Tracks.csproj" />
     <Project Path="Modules/Transcoding/Transcoding.csproj" />
+    <Project Path="Modules/WatchTogether/WatchTogether.csproj" />
     <Project Path="Modules/WebLog/WebLog.csproj" />
   </Folder>
   <Folder Name="/Modules/Adult/">

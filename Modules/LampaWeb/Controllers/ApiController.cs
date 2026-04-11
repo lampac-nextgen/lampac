@@ -336,6 +336,9 @@ namespace LampaWeb.Controllers
             if (ModInit.conf.initPlugins.online)
                 plugins.Add(new("{localhost}/online.js", 1, "Онлайн", "lampac"));
 
+            if (ModInit.conf.initPlugins.watch_together)
+                plugins.Add(new("{localhost}/watchtogether.js", 1, "Watch Together", "lampac"));
+                
             if (ModInit.conf.initPlugins.catalog)
                 plugins.Add(new("{localhost}/catalog.js", 1, "Альтернативные источники каталога", "lampac"));
 
@@ -481,6 +484,9 @@ namespace LampaWeb.Controllers
             if (ModInit.conf.initPlugins.online)
                 send("online", true);
 
+            if (ModInit.conf.initPlugins.watch_together)
+                send("watchtogether", true);
+            
             if (adult && ModInit.conf.initPlugins.sisi)
             {
                 send("sisi", true);
