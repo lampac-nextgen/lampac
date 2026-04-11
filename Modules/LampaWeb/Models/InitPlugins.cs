@@ -26,11 +26,12 @@
 
         public bool backup { get; set; }
 
-
         public bool sync { get; set; }
 
         public bool bookmark { get; set; }
 
         public bool timecode { get; set; }
+
+        public bool watch_together { get; set; }
     }
 }
