@@ -9,10 +9,10 @@ using System.Threading.Tasks;
 
 namespace WatchTogether
 {
-    [AllowAnonymous]
     [Route("watchtogether")]
     public class WatchTogetherController : BaseController
     {   
+        [AllowAnonymous]
         [HttpGet]
         [Route("/watchtogether.js")]
         [Route("/watchtogether/js/{token}")]
@@ -41,9 +41,6 @@ namespace WatchTogether
         [Route("/watchtogether/create")]
         public async Task<ActionResult> CreateRoom([FromQuery] string title, [FromQuery] int tmdb_id, [FromQuery] string source, [FromQuery] string type)
         {
-            if (CoreInit.conf.accsdb.enable && requestInfo.user == null)
-                return Unauthorized(new { error = "Unauthorized" });
-
             string id = GenerateRoomId();
             await using (var db = SqlContext.Create())
             {
@@ -72,9 +69,6 @@ namespace WatchTogether
         [Route("/watchtogether/info")]
         public async Task<ActionResult> GetRoomInfo([FromQuery] string id)
         {
-            if (CoreInit.conf.accsdb.enable && requestInfo.user == null)
-                return Unauthorized(new { error = "Unauthorized" });
-
             if (string.IsNullOrEmpty(id))
                 return BadRequest("id required");
 
