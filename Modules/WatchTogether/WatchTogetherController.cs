@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Shared;
 using System;
+using System.IO;
 using System.Linq;
 using System.Threading.Tasks;
 
@@ -15,22 +16,17 @@ namespace WatchTogether
         [AllowAnonymous]
         [HttpGet]
         [Route("/watchtogether.js")]
-        [Route("/watchtogether/js/{token}")]
-        public ActionResult GetPlugin(string token = null)
+        public ActionResult GetPlugin()
         {
             string memKey = "watchtogether:plugin.js";
-            if (!memoryCache.TryGetValue(memKey, out string js))
+            if (!memoryCache.TryGetValue(memKey, out string rawJs))
             {
-                js = System.IO.File.ReadAllText($"{ModInit.modpath}/plugin.js");
-                memoryCache.Set(memKey, js, TimeSpan.FromMinutes(10));
+                rawJs = System.IO.File.ReadAllText(Path.Combine(ModInit.modpath, "plugin.js"));
+                memoryCache.Set(memKey, rawJs, TimeSpan.FromMinutes(10));
             }
             
+            string js = rawJs;
             js = js.Replace("{localhost}", this.host);
-
-            if (!string.IsNullOrEmpty(token))
-                js = js.Replace("{token}", System.Web.HttpUtility.UrlEncode(token));
-            else
-                js = js.Replace("{token}", "");
 
             return Content(js, "application/javascript; charset=utf-8");
         }

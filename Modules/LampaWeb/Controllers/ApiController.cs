@@ -485,7 +485,7 @@ namespace LampaWeb.Controllers
                 send("online", true);
 
             if (ModInit.conf.initPlugins.watch_together)
-                send("watchtogether", true);
+                send("watchtogether", false);
             
             if (adult && ModInit.conf.initPlugins.sisi)
             {

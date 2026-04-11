@@ -43,10 +43,6 @@
             var uid = Lampa.Storage.get('lampac_unic_id', '');
             if (uid) url = Lampa.Utils.addUrlComponent(url, 'uid=' + encodeURIComponent(uid));
         }
-        if (url.indexOf('token=') == -1) {
-            var token = '{token}';
-            if (token !== '' && token.indexOf('{') === -1) url = Lampa.Utils.addUrlComponent(url, 'token=' + token);
-        }
         return url;
     }
 
