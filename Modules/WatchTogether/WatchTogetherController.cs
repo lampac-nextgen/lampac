@@ -18,8 +18,6 @@ namespace WatchTogether
         [Route("/watchtogether/js/{token}")]
         public ActionResult GetPlugin(string token = null)
         {
-            string host = $"{Request.Scheme}://{Request.Host.Value}";
-            
             string memKey = "watchtogether:plugin.js";
             if (!memoryCache.TryGetValue(memKey, out string js))
             {
@@ -27,7 +25,7 @@ namespace WatchTogether
                 memoryCache.Set(memKey, js, TimeSpan.FromMinutes(10));
             }
             
-            js = js.Replace("{localhost}", host);
+            js = js.Replace("{localhost}", this.host);
 
             if (!string.IsNullOrEmpty(token))
                 js = js.Replace("{token}", System.Web.HttpUtility.UrlEncode(token));
