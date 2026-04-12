@@ -18,7 +18,7 @@ namespace Rezka
     {
         RezkaInvoke oninvk;
 
-        public RezkaController() : base(ModInit.conf.Rezka)
+        public RezkaController() : base(ModInit.conf)
         {
             loadKitInitialization = (j, i, c) =>
             {
@@ -51,17 +51,12 @@ namespace Rezka
                 if (rch?.enable == true && cookieRhub != null)
                     headers.Add(new HeadersModel("Cookie", cookieRhub));
 
-                if (init.xapp)
-                    headers.Add(new HeadersModel("X-App-Hdrezka-App", "1"));
-
-                if (init.xrealip)
-                    headers.Add(new HeadersModel("realip", requestInfo.IP));
-
                 oninvk = new RezkaInvoke
                 (
                     host,
                     "lite/rezka",
                     init,
+                    cookie,
                     cookie != null || cookieRhub != null,
                     headers,
                     httpHydra,
@@ -79,9 +74,6 @@ namespace Rezka
                 return badInitMsg;
 
             #region Initialization
-            if (init.premium || ModInit.conf.RezkaPrem.enable)
-                return ShowError("Замените Rezka на RezkaPrem в init.conf");
-
             if (string.IsNullOrWhiteSpace(href) && string.IsNullOrWhiteSpace(title))
                 return OnError();
 
@@ -93,14 +85,14 @@ namespace Rezka
                 if (rch.enable)
                 {
                     if (rch.IsNotSupportRchAccess("web", out string rch_error))
-                        return ShowError($"Нужен HDRezka Premium<br>{init.host}/payments/");
+                        return ShowError("На данном устройстве недоступно");
 
                     if (requestInfo.Country == "RU")
                     {
                         if (rch.InfoConnected()?.rchtype != "apk")
-                            return ShowError($"Нужен HDRezka Premium<br>{init.host}/payments/");
+                            return ShowError("На даном устровстве недоступно");
 
-                        if (await getCookie() == null)
+                        if (string.IsNullOrWhiteSpace(init.cookie))
                             return ShowError("Укажите логин/пароль или cookie");
                     }
                 }
@@ -119,7 +111,7 @@ namespace Rezka
 
             if (string.IsNullOrEmpty(href))
             {
-                var search = await InvokeCacheResult<SearchModel>($"rezka:search:{title}:{original_title}:{clarification}:{year}", 40, textJson: true, onget: async e =>
+                var search = await InvokeCacheResult<SearchModel>($"rezka:search:{title}:{original_title}:{clarification}:{year}", 240, textJson: true, onget: async e =>
                 {
                     var content = await oninvk.Search(title, original_title, clarification, year);
 
@@ -168,7 +160,7 @@ namespace Rezka
             }
             #endregion
 
-            var cache = await InvokeCacheResult($"rezka:{href}", 10,
+            var cache = await InvokeCacheResult($"rezka:{href}:{init.login}:{init.cookie}", 10,
                 () => oninvk.Embed(href, search_uri),
                 textJson: true
             );
@@ -201,7 +193,7 @@ namespace Rezka
             if (root == null)
                 return OnError();
 
-            var cache = await InvokeCache($"rezka:{href}", 20,
+            var cache = await InvokeCache($"rezka:{href}:{init.login}:{init.cookie}", 20,
                 () => oninvk.Embed(href, null),
                 textJson: true
             );
@@ -239,8 +231,6 @@ namespace Rezka
                     return ContentTo(rch.connectionMsg);
             }
 
-            string realip = (init.xrealip && init.corseu) ? requestInfo.IP : "";
-
             MovieModel md = null;
 
             /// ajax = true (get_cdn_series)
@@ -249,7 +239,7 @@ namespace Rezka
 
             if (init.ajax != null && init.ajax.Value == false && !string.IsNullOrEmpty(voice))
             {
-                md = await InvokeCache(ipkey($"rezka:movie:{voice}:{realip}:{init.cookie}"), 20,
+                md = await InvokeCache(ipkey($"rezka:movie:{voice}:{init.login}:{init.cookie}"), 20,
                     () => oninvk.Movie(voice),
                     textJson: true
                 );
@@ -257,7 +247,7 @@ namespace Rezka
 
             if (md == null && init.ajax != null)
             {
-                md = await InvokeCache(ipkey($"rezka:view:get_cdn_series:{id}:{t}:{director}:{s}:{e}:{realip}:{init.cookie}"), 20,
+                md = await InvokeCache(ipkey($"rezka:view:get_cdn_series:{id}:{t}:{director}:{s}:{e}:{init.login}:{init.cookie}"), 20,
                     () => oninvk.Movie(id, t, director, s, e, favs),
                     textJson: true
                 );
@@ -295,9 +285,6 @@ namespace Rezka
             {
                 var container = new CookieContainer();
 
-                if (coks != string.Empty && !coks.Contains("hdmbbs"))
-                    coks = $"hdmbbs=1; {coks}";
-
                 if (!coks.Contains("dle_user_taken"))
                     coks = $"dle_user_taken=1; {coks}";
 
@@ -316,29 +303,15 @@ namespace Rezka
                     if (name.StartsWith("_ym_"))
                         continue;
 
-                    if (name == "hdmbbs")
+                    container.Add(new Cookie()
                     {
-                        container.Add(new Cookie()
-                        {
-                            Path = "/",
-                            Expires = DateTime.Today.AddYears(1),
-                            Domain = domain,
-                            Name = name,
-                            Value = value
-                        });
-                    }
-                    else
-                    {
-                        container.Add(new Cookie()
-                        {
-                            Path = "/",
-                            Expires = name == "PHPSESSID" ? default : DateTime.Today.AddYears(1),
-                            Domain = $".{domain}",
-                            Name = name,
-                            Value = value,
-                            HttpOnly = true
-                        });
-                    }
+                        Path = "/",
+                        Expires = name == "PHPSESSID" ? default : DateTime.Today.AddYears(1),
+                        Domain = $".{domain}",
+                        Name = name,
+                        Value = value,
+                        HttpOnly = true
+                    });
                 }
 
                 cookieContainer[keyCookie] = container;
@@ -426,7 +399,7 @@ namespace Rezka
                     }
                 }
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 Serilog.Log.Error(ex, "{Class} {CatchId}", "Rezka", "id_lt5af0qc");
             }

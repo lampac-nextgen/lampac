@@ -24,12 +24,6 @@ namespace Rezka
 
         public bool forceua { get; set; }
 
-        public bool xrealip { get; set; }
-
-        public bool xapp { get; set; }
-
-        public string version { get; set; } = "NextGen";
-
         public bool? ajax { get; set; }
 
 

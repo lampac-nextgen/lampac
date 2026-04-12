@@ -12,14 +12,13 @@ namespace Rezka
 {
     public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
     {
-        public static ModuleConf conf;
+        public static RezkaSettings conf;
 
         public List<ModuleOnlineItem> Invoke(HttpContext httpContext, RequestModel requestInfo, string host, OnlineEventsModel args)
         {
             return new List<ModuleOnlineItem>()
             {
-                new(conf.RezkaPrem, "rhsprem", "HDRezka"),
-                new(conf.Rezka)
+                new(conf)
             };
         }
 
@@ -27,15 +26,13 @@ namespace Rezka
         {
             return new List<ModuleOnlineSpiderItem>()
             {
-                new(conf.RezkaPrem, "rhsprem"),
-                new(conf.Rezka)
+                new(conf)
             };
         }
 
         public void Loaded(InitspaceModel baseconf)
         {
             CoreInit.conf.online.with_search.Add("rezka");
-            CoreInit.conf.online.with_search.Add("rhsprem");
 
             updateConf();
             EventListener.UpdateInitFile += updateConf;
@@ -50,14 +47,24 @@ namespace Rezka
 
         void updateConf()
         {
-            conf = ModuleInvoke.DeserializeInit(new ModuleConf());
+            conf = ModuleInvoke.Init("Rezka", new RezkaSettings("Rezka", "https://hdrezka.me")
+            {
+                displayindex = 330,
+                streamproxy = true,
+                stream_access = "apk,cors,web",
+                ajax = true,
+                reserve = true,
+                hls = true,
+                scheme = "http",
+                headers = Http.defaultUaHeaders
+            });
         }
 
         string onlineApiQuality(EventOnlineApiQuality e)
         {
             if (e.balanser == "rezka" && e.kitconf != null)
             {
-                bool premium = conf.Rezka.premium;
+                bool premium = conf.premium;
 
                 if (e.kitconf.TryGetValue("Rezka", out JToken kit))
                 {
@@ -71,7 +78,7 @@ namespace Rezka
             {
                 return e.balanser switch
                 {
-                    "rhsprem" => " ~ 2160p",
+                    "rezka" => conf.premium ? " ~ 2160p" : " ~ 720p",
                     _ => null
                 };
             }

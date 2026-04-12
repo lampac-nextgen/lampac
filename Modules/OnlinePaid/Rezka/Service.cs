@@ -8,6 +8,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -28,16 +29,18 @@ namespace Rezka
         List<HeadersModel> defaultHeaders;
         Func<string, string> onstreamfile;
         bool safety = false;
+        CookieContainer cookieContainer;
 
         public string requestlog = string.Empty;
 
         static readonly ConcurrentDictionary<long, string> basereferer = new();
 
-        public RezkaInvoke(string host, string route, RezkaSettings init, bool safety, List<HeadersModel> defaultHeaders, HttpHydra httpHydra, Func<string, string> onstreamfile)
+        public RezkaInvoke(string host, string route, RezkaSettings init, CookieContainer cookieContainer, bool safety, List<HeadersModel> defaultHeaders, HttpHydra httpHydra, Func<string, string> onstreamfile)
         {
             this.host = host != null ? $"{host}/" : null;
             this.route = route;
             this.init = init;
+            this.cookieContainer = cookieContainer;
             this.safety = safety;
             apihost = init.host;
             scheme = init.scheme;
@@ -47,19 +50,6 @@ namespace Rezka
             usehls = init.hls;
             usereserve = init.reserve;
             userprem = init.premium;
-
-            if (apihost.Contains("="))
-            {
-                char[] buffer = apihost.ToCharArray();
-                for (int i = 0; i < buffer.Length; i++)
-                {
-                    char letter = buffer[i];
-                    letter = (char)(letter - 3);
-                    buffer[i] = letter;
-                }
-
-                apihost = new string(buffer);
-            }
         }
         #endregion
 
@@ -82,13 +72,11 @@ namespace Rezka
                 ("referer", $"{apihost}/")
             );
 
-            var newheaders = init.premium
-                ? defaultHeaders
-                : HeadersModel.Join(base_headers, defaultHeaders);
+            var newheaders = HeadersModel.Join(base_headers, defaultHeaders);
 
             result.search_uri = $"{apihost}/search/?do=search&subaction=search&q={HttpUtility.UrlEncode(clarification == 1 ? title : (original_title ?? title))}";
 
-            await httpHydra.GetSpan(result.search_uri, statusCodeOK: false, safety: safety, newheaders: newheaders, spanAction: search =>
+            await httpHydra.GetSpan(result.search_uri, statusCodeOK: false, safety: safety, newheaders: newheaders, cookieContainer: cookieContainer, spanAction: search =>
             {
                 if (search.Contains("class=\"error-code\"", StringComparison.OrdinalIgnoreCase) && search.Contains("ошибка доступа", StringComparison.OrdinalIgnoreCase))
                 {
@@ -200,9 +188,7 @@ namespace Rezka
             if (!string.IsNullOrEmpty(search_uri))
                 base_headers.Add(new HeadersModel("referer", search_uri));
 
-            var newheaders = init.premium
-                ? defaultHeaders
-                : HeadersModel.Join(base_headers, defaultHeaders);
+            var newheaders = HeadersModel.Join(base_headers, defaultHeaders);
 
             result.id = Regex.Match(href, "/([0-9]+)-[^/]+\\.html").Groups[1].Value;
             if (long.TryParse(result.id, out long id) && id > 0)
@@ -210,7 +196,7 @@ namespace Rezka
 
             bool IsTrailer = false;
 
-            await httpHydra.GetSpan(href, safety: safety, newheaders: newheaders, spanAction: html =>
+            await httpHydra.GetSpan(href, safety: safety, cookieContainer: cookieContainer, newheaders: newheaders, spanAction: html =>
             {
                 IsTrailer = html.Contains("Ожидаем фильм в хорошем качестве", StringComparison.OrdinalIgnoreCase);
 
@@ -253,60 +239,6 @@ namespace Rezka
 
             return result;
         }
-        #endregion
-
-        #region EmbedID
-        //async public Task<EmbedModel> EmbedID(long kinopoisk_id, string imdb_id)
-        //{
-        //    string search = await onpost($"{apihost}/engine/ajax/search.php", "q=%2B" + (!string.IsNullOrEmpty(imdb_id) ? imdb_id : kinopoisk_id.ToString()), null);
-        //    if (search == null)
-        //    {
-        //        return null;
-        //    }
-
-        //    string link = null;
-        //    var result = new EmbedModel();
-
-        //    var rx = Rx.Split("<li>", search, 1);
-
-        //    foreach (var row in rx.Rows())
-        //    {
-        //        string href = row.Match("href=\"(https?://[^\"]+)\"");
-        //        string name = row.Match("<span class=\"enty\">([^<]+)</span>");
-        //        string year = row.Match(", ([0-9]{4})(\\)| -)");
-
-        //        if (string.IsNullOrEmpty(href) || string.IsNullOrEmpty(name))
-        //            continue;
-
-        //        if (result.similar == null)
-        //            result.similar = new List<SimilarModel>(rx.Count);
-
-        //        result.similar.Add(new SimilarModel(name, year, href, null));
-        //        link = href;
-        //    }
-
-        //    if (result?.similar != null && result.similar.Count > 1)
-        //        return result;
-
-        //    if (string.IsNullOrEmpty(link))
-        //    {
-        //        if (search.Contains("b-search__section_title"))
-        //            return new EmbedModel() { IsEmpty = true };
-
-        //        return null;
-        //    }
-
-        //    result!.id = Regex.Match(link, "/([0-9]+)-[^/]+\\.html").Groups[1].Value;
-        //    result.content = await onget(link, null);
-
-        //    if (result.content == null || string.IsNullOrEmpty(result.id))
-        //    {
-        //        if (result.content == null)
-        //        return null;
-        //    }
-
-        //    return result;
-        //}
         #endregion
 
         #region Tpl
@@ -504,14 +436,12 @@ namespace Rezka
             if (basereferer.TryGetValue(id, out string referer) && !string.IsNullOrEmpty(referer))
                 base_headers.Add(new HeadersModel("referer", referer));
 
-            var newheaders = init.premium
-                ? defaultHeaders
-                : HeadersModel.Join(base_headers, defaultHeaders);
+            var newheaders = HeadersModel.Join(base_headers, defaultHeaders);
 
             string uri = $"{apihost}/ajax/get_cdn_series/?t={((DateTimeOffset)DateTime.Now).ToUnixTimeSeconds()}{Random.Shared.Next(101, 999)}";
             string data = $"id={id}&translator_id={t}&action=get_episodes";
 
-            var root = await httpHydra.Post<Episodes>(uri, data, safety: safety, newheaders: newheaders, textJson: true);
+            var root = await httpHydra.Post<Episodes>(uri, data, safety: safety, cookieContainer: cookieContainer, newheaders: newheaders, textJson: true);
             if (root == null)
                 return null;
 
@@ -644,22 +574,16 @@ namespace Rezka
             if (basereferer.TryGetValue(id, out string referer) && !string.IsNullOrEmpty(referer))
                 base_headers.Add(new HeadersModel("referer", referer));
 
-            var newheaders = init.premium
-                ? defaultHeaders
-                : HeadersModel.Join(base_headers, defaultHeaders);
+            var newheaders = HeadersModel.Join(base_headers, defaultHeaders);
 
-            var root = await httpHydra.Post<Dictionary<string, object>>(uri, data, safety: safety, newheaders: newheaders);
+            var root = await httpHydra.Post<Dictionary<string, object>>(uri, data, safety: safety, cookieContainer: cookieContainer, newheaders: newheaders);
 
             if (root == null)
-            {
                 return null;
-            }
 
             string url = root.ContainsKey("url") ? root["url"]?.ToString() : null;
             if (string.IsNullOrEmpty(url) || url.Contains("false", StringComparison.OrdinalIgnoreCase))
-            {
                 return null;
-            }
 
             var links = getStreamLink(url);
             if (links.Count == 0)
@@ -671,7 +595,7 @@ namespace Rezka
             {
                 subtitlehtml = root?["subtitle"]?.ToString();
             }
-            catch (System.Exception ex)
+            catch (Exception ex)
             {
                 Log.Error(ex, "CatchId={CatchId}", "id_0jizyv93");
             }
@@ -693,14 +617,12 @@ namespace Rezka
                 ("upgrade-insecure-requests", "1")
             );
 
-            var newheaders = init.premium
-                ? defaultHeaders
-                : HeadersModel.Join(base_headers, defaultHeaders);
+            var newheaders = HeadersModel.Join(base_headers, defaultHeaders);
 
             List<ApiModel> links = null;
             string subtitlehtml = null;
 
-            await httpHydra.GetSpan($"{apihost}/{href}", safety: safety, newheaders: newheaders, spanAction: html =>
+            await httpHydra.GetSpan($"{apihost}/{href}", safety: safety, cookieContainer: cookieContainer, newheaders: newheaders, spanAction: html =>
             {
                 string url = Rx.Match(html, "\"streams\"\\s*:\\s*\"(.*?)\"\\s*,");
                 if (string.IsNullOrEmpty(url) || url.Contains("false", StringComparison.OrdinalIgnoreCase))
