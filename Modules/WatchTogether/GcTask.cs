@@ -1,8 +1,6 @@
-using Microsoft.EntityFrameworkCore;
 using System;
 using System.Linq;
 using System.Threading;
-using System.Threading.Tasks;
 
 namespace WatchTogether
 {
@@ -20,29 +18,26 @@ namespace WatchTogether
             _timer?.Dispose();
         }
 
-        private static async void DoWork(object state)
+        private static void DoWork(object state)
         {
             try
             {
-                await using (var db = SqlContext.Create())
+                var oldLimit = DateTime.UtcNow.AddHours(-12);
+                var emptyLimit = DateTime.UtcNow.AddHours(-1);
+
+                var garbageRooms = RoomDb.Rooms.Values.Where(r =>
+                    r.update_time < oldLimit ||
+                    (r.create_time < emptyLimit && !RoomDb.Members.Values.Any(m => m.room_id == r.id))
+                ).Select(r => r.id).ToList();
+
+                foreach (var roomId in garbageRooms)
                 {
-                    var oldLimit = DateTime.UtcNow.AddHours(-12);
-                    var emptyLimit = DateTime.UtcNow.AddHours(-1);
+                    RoomDb.Rooms.TryRemove(roomId, out _);
 
-                    var garbageRooms = await db.Rooms.Where(r =>
-                        r.update_time < oldLimit ||
-                        (r.create_time < emptyLimit && !db.RoomMembers.Any(m => m.room_id == r.id))
-                    ).ToListAsync();
-
-                    if (garbageRooms.Any())
+                    var membersToRemove = RoomDb.Members.Where(m => m.Value.room_id == roomId).Select(m => m.Key).ToList();
+                    foreach (var connId in membersToRemove)
                     {
-                        foreach (var r in garbageRooms)
-                        {
-                            var members = await db.RoomMembers.Where(m => m.room_id == r.id).ToListAsync();
-                            db.RoomMembers.RemoveRange(members);
-                        }
-                        db.Rooms.RemoveRange(garbageRooms);
-                        await db.SaveChangesAsync();
+                        RoomDb.Members.TryRemove(connId, out _);
                     }
                 }
             }

@@ -1,12 +1,10 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Shared;
 using System;
 using System.IO;
 using System.Linq;
-using System.Threading.Tasks;
 
 namespace WatchTogether
 {
@@ -33,45 +31,38 @@ namespace WatchTogether
 
         [HttpGet]
         [Route("/watchtogether/create")]
-        public async Task<ActionResult> CreateRoom([FromQuery] string title, [FromQuery] int tmdb_id, [FromQuery] string source, [FromQuery] string type)
+        public ActionResult CreateRoom([FromQuery] string title, [FromQuery] int tmdb_id, [FromQuery] string source, [FromQuery] string type)
         {
             string id = GenerateRoomId();
-            await using (var db = SqlContext.Create())
+            var room = new RoomModel
             {
-                var room = new RoomModel
-                {
-                    id = id,
-                    title = title ?? string.Empty,
-                    tmdb_id = tmdb_id,
-                    source = string.IsNullOrEmpty(source) ? "tmdb" : source,
-                    type = string.IsNullOrEmpty(type) ? "movie" : type,
-                    state = "playing",
-                    position = 0,
-                    season = 1,
-                    episode = 1,
-                    create_time = DateTime.UtcNow,
-                    update_time = DateTime.UtcNow
-                };
-                await db.Rooms.AddAsync(room);
-                await db.SaveChangesAsync();
-            }
+                id = id,
+                title = title ?? string.Empty,
+                tmdb_id = tmdb_id,
+                source = string.IsNullOrEmpty(source) ? "tmdb" : source,
+                type = string.IsNullOrEmpty(type) ? "movie" : type,
+                state = "playing",
+                position = 0,
+                season = 1,
+                episode = 1,
+                create_time = DateTime.UtcNow,
+                update_time = DateTime.UtcNow
+            };
+            
+            RoomDb.Rooms.TryAdd(id, room);
 
             return new JsonResult(new { id = id });
         }
 
         [HttpGet]
         [Route("/watchtogether/info")]
-        public async Task<ActionResult> GetRoomInfo([FromQuery] string id)
+        public ActionResult GetRoomInfo([FromQuery] string id)
         {
             if (string.IsNullOrEmpty(id))
                 return BadRequest("id required");
 
-            await using (var db = SqlContext.Create())
+            if (RoomDb.Rooms.TryGetValue(id, out var room))
             {
-                var room = await db.Rooms.FirstOrDefaultAsync(r => r.id == id);
-                if (room == null)
-                    return NotFound(new { error = "Room not found" });
-
                 return new JsonResult(new
                 {
                     id = room.id,
@@ -85,14 +76,15 @@ namespace WatchTogether
                     episode = room.episode
                 });
             }
+
+            return NotFound(new { error = "Room not found" });
         }
 
         private string GenerateRoomId()
         {
             const string chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
             var random = new Random();
-            return new string(Enumerable.Repeat(chars, 6)
-                .Select(s => s[random.Next(s.Length)]).ToArray());
+            return new string(Enumerable.Repeat(chars, 6).Select(s => s[random.Next(s.Length)]).ToArray());
         }
     }
 }
