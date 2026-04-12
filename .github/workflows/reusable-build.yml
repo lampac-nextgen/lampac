@@ -81,7 +81,7 @@ jobs:
             --verbosity minimal
 
       - name: Upload artifact Lampac NextGen
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: lampac-nextgen
           path: publish/

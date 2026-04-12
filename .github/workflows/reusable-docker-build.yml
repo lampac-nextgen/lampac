@@ -187,7 +187,7 @@ jobs:
           output-file: sbom.${{ inputs.syft_format == 'spdx-json' && 'spdx.json' || 'json' }}
 
       - if: ${{ inputs.generate_syft_sbom && inputs.push }}
-        uses: actions/upload-artifact@v7.0.0
+        uses: actions/upload-artifact@v7.0.1
         with:
           name: sbom-${{ github.sha }}
           path: sbom.${{ inputs.syft_format == 'spdx-json' && 'spdx.json' || 'json' }}
