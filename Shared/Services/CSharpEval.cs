@@ -118,7 +118,7 @@ namespace Shared.Services
 
                 if (Directory.Exists(path))
                 {
-                    StringBuilder sumhash = new();
+                    var sumhash = new StringBuilder("12042026");
 
                     #region syntaxTree
                     var syntaxTree = new List<SyntaxTree>();
