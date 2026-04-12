@@ -10,6 +10,8 @@ namespace TorrServer
 
         public string defaultPasswd { get; set; }
 
+        public int tsport { get; set; }
+
         public int group { get; set; }
 
         public bool checkfile { get; set; }

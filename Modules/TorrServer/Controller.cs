@@ -27,12 +27,12 @@ namespace TorrServer
         private static readonly HttpClient httpClient = new HttpClient(new SocketsHttpHandler
         {
             AllowAutoRedirect = true,
-            AutomaticDecompression = DecompressionMethods.Brotli | DecompressionMethods.GZip | DecompressionMethods.Deflate,
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
             SslOptions = { RemoteCertificateValidationCallback = (sender, cert, chain, sslPolicyErrors) => true },
             MaxConnectionsPerServer = 100
         })
         {
-            BaseAddress = new Uri($"http://{CoreInit.conf.listen.localhost}:{ModInit.tsport}"),
+            BaseAddress = new Uri($"http://{CoreInit.conf.listen.localhost}:{ModInit.conf.tsport}"),
             DefaultRequestHeaders =
             {
                 Authorization = new AuthenticationHeaderValue("Basic", CrypTo.Base64($"ts:{ModInit.tspass}")),
@@ -187,7 +187,7 @@ namespace TorrServer
         async public Task TorAPI(AccsUser user = null)
         {
             string pathRequest = Regex.Replace(HttpContext.Request.Path.Value, "^/ts", "");
-            string servUri = $"http://{CoreInit.conf.listen.localhost}:{ModInit.tsport}{pathRequest + HttpContext.Request.QueryString.Value}";
+            string servUri = $"http://{CoreInit.conf.listen.localhost}:{ModInit.conf.tsport}{pathRequest + HttpContext.Request.QueryString.Value}";
 
             using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted))
             {

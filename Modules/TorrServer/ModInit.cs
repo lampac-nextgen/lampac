@@ -24,8 +24,6 @@ namespace TorrServer
 
         static bool IsShutdown;
 
-        public static int tsport = 9080;
-
         public static string tspass = CrypTo.md5(DateTime.Now.ToBinary().ToString());
 
         public static string homedir;
@@ -174,7 +172,7 @@ namespace TorrServer
                         tsprocess.StartInfo.RedirectStandardOutput = true;
                         tsprocess.StartInfo.RedirectStandardError = true;
                         tsprocess.StartInfo.FileName = tspath;
-                        tsprocess.StartInfo.Arguments = $"--httpauth -p {tsport} -d \"{homedir}\"";
+                        tsprocess.StartInfo.Arguments = $"--httpauth -p {conf.tsport} -d \"{homedir}\"";
 
                         tsprocess.Start();
 
@@ -217,6 +215,7 @@ namespace TorrServer
         {
             conf = ModuleInvoke.Init("TorrServer", new ModuleConf()
             {
+                tsport = 9080,
                 releases = "MatriX.135",
                 defaultPasswd = "ts",
                 checkfile = true,
