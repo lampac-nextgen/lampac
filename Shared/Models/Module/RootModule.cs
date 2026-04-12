@@ -17,6 +17,8 @@ namespace Shared.Models.Module
 
         public string[] syntaxPaths { get; set; }
 
+        public string[] tree { get; set; }
+
 
         public Assembly assembly { get; set; }
 

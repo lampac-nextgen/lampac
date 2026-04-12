@@ -126,16 +126,9 @@ namespace Shared.Services
 
                     List<string> syntaxPaths = new();
 
-                    foreach (string csfile in Directory.GetFiles(path, "*.cs", SearchOption.AllDirectories))
+                    if (mod.tree != null && mod.tree.Length > 0)
                     {
-                        string _file = csfile.Replace("\\", "/").Replace(path.Replace("\\", "/"), "").Replace(AppContext.BaseDirectory.Replace("\\", "/"), "");
-                        if (!Regex.IsMatch(_file, "(\\.vs|bin|obj|Properties)/", RegexOptions.IgnoreCase))
-                            syntaxPaths.Add(csfile);
-                    }
-
-                    if (mod.syntaxPaths != null)
-                    {
-                        foreach (string sp in mod.syntaxPaths)
+                        foreach (string sp in mod.tree)
                         {
                             string cspath = Path.GetFullPath(Path.Combine(path, sp));
 
@@ -145,6 +138,31 @@ namespace Shared.Services
                             {
                                 foreach (string csfile in Directory.GetFiles(cspath, "*.cs", SearchOption.AllDirectories))
                                     syntaxPaths.Add(csfile);
+                            }
+                        }
+                    }
+                    else
+                    {
+                        foreach (string csfile in Directory.GetFiles(path, "*.cs", SearchOption.AllDirectories))
+                        {
+                            string _file = csfile.Replace("\\", "/").Replace(path.Replace("\\", "/"), "").Replace(AppContext.BaseDirectory.Replace("\\", "/"), "");
+                            if (!Regex.IsMatch(_file, "(\\.vs|bin|obj|Properties)/", RegexOptions.IgnoreCase))
+                                syntaxPaths.Add(csfile);
+                        }
+
+                        if (mod.syntaxPaths != null)
+                        {
+                            foreach (string sp in mod.syntaxPaths)
+                            {
+                                string cspath = Path.GetFullPath(Path.Combine(path, sp));
+
+                                if (sp.EndsWith(".cs"))
+                                    syntaxPaths.Add(cspath);
+                                else
+                                {
+                                    foreach (string csfile in Directory.GetFiles(cspath, "*.cs", SearchOption.AllDirectories))
+                                        syntaxPaths.Add(csfile);
+                                }
                             }
                         }
                     }
