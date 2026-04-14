@@ -8,9 +8,12 @@ using Newtonsoft.Json.Linq;
 using Shared;
 using Shared.Models.Events;
 using Shared.Services;
+using Shared.Services.Utilities;
 using System;
 using System.Collections.Generic;
+using System.IO.Compression;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Web;
@@ -303,6 +306,69 @@ namespace LampaWeb.Controllers
 
             return ContentTo(msx);
         }
+        #endregion
+
+        #region Widgets
+        [HttpGet]
+        [AllowAnonymous]
+        [Route("samsung.wgt")]
+        public ActionResult SamsWgt(string overwritehost)
+        {
+            string wgt = $"data/{CrypTo.md5(overwritehost ?? host + "v3")}.wgt";
+            if (IO.File.Exists(wgt))
+                return File(IO.File.OpenRead(wgt), "application/octet-stream");
+
+            var widgetDirectory = $"{ModInit.modpath}/widgets/samsung";
+
+            string index = IO.File.ReadAllText($"{widgetDirectory}/index.html");
+            IO.File.WriteAllText($"{widgetDirectory}/publish/index.html", index.Replace("{localhost}", overwritehost ?? host));
+
+            string loader = IO.File.ReadAllText($"{widgetDirectory}/loader.js");
+            IO.File.WriteAllText($"{widgetDirectory}/publish/loader.js", loader.Replace("{localhost}", overwritehost ?? host));
+            string app = IO.File.ReadAllText($"{widgetDirectory}/app.js");
+            IO.File.WriteAllText($"{widgetDirectory}/publish/app.js", app.Replace("{localhost}", overwritehost ?? host));
+
+            IO.File.Copy($"{widgetDirectory}/icon.png", $"{widgetDirectory}/publish/icon.png", overwrite: true);
+            IO.File.Copy($"{widgetDirectory}/logo_appname_fg.png", $"{widgetDirectory}/publish/logo_appname_fg.png", overwrite: true);
+            IO.File.Copy($"{widgetDirectory}/config.xml", $"{widgetDirectory}/publish/config.xml", overwrite: true);
+
+            string gethash(string file)
+            {
+                using (SHA512 sha = SHA512.Create())
+                {
+                    return Convert.ToBase64String(sha.ComputeHash(IO.File.ReadAllBytes(file)));
+                }
+            }
+
+            string indexhashsha512 = gethash($"{widgetDirectory}/publish/index.html");
+            string loaderhashsha512 = gethash($"{widgetDirectory}/publish/loader.js");
+            string apphashsha512 = gethash($"{widgetDirectory}/publish/app.js");
+            string confighashsha512 = gethash($"{widgetDirectory}/publish/config.xml");
+            string iconhashsha512 = gethash($"{widgetDirectory}/publish/icon.png");
+            string logohashsha512 = gethash($"{widgetDirectory}/publish/logo_appname_fg.png");
+
+            string author_sigxml = IO.File.ReadAllText($"{widgetDirectory}/author-signature.xml");
+            author_sigxml = author_sigxml
+                .Replace("loaderhashsha512", loaderhashsha512)
+                .Replace("apphashsha512", apphashsha512)
+                .Replace("iconhashsha512", iconhashsha512)
+                .Replace("logohashsha512", logohashsha512)
+                .Replace("confighashsha512", confighashsha512)
+                .Replace("indexhashsha512", indexhashsha512);
+
+            IO.File.WriteAllText($"{widgetDirectory}/publish/author-signature.xml", author_sigxml);
+
+            string authorsignaturehashsha512 = gethash($"{widgetDirectory}/publish/author-signature.xml");
+            string sigxml1 = IO.File.ReadAllText($"{widgetDirectory}/signature1.xml");
+            sigxml1 = sigxml1.Replace("loaderhashsha512", loaderhashsha512).Replace("apphashsha512", apphashsha512)
+                             .Replace("confighashsha512", confighashsha512).Replace("authorsignaturehashsha512", authorsignaturehashsha512)
+                             .Replace("iconhashsha512", iconhashsha512).Replace("logohashsha512", logohashsha512).Replace("indexhashsha512", indexhashsha512);
+            IO.File.WriteAllText($"{widgetDirectory}/publish/signature1.xml", sigxml1);
+            ZipFile.CreateFromDirectory($"{widgetDirectory}/publish/", wgt);
+
+            return File(IO.File.OpenRead(wgt), "application/octet-stream");
+        }
+
         #endregion
 
         #region lampainit.js
