@@ -361,7 +361,10 @@
     }
 
     setInterval(function () {
-        if (!inRoom) return;
+        if (!inRoom) {
+            $('.wt-room-badge').remove();
+            return;
+        }
 
         var vid = getVideo();
 
