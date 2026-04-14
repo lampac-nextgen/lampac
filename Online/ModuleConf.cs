@@ -17,6 +17,8 @@ namespace Online
 
         public bool showquality { get; set; }
 
+        public bool showExtraTitle { get; set; }
+
         public string apn { get; set; }
 
         public Dictionary<string, string> appReplace { get; set; }

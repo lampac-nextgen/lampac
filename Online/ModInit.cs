@@ -54,6 +54,7 @@ namespace Online
                 version = CoreInit.conf.online.version,
                 btn_priority_forced = CoreInit.conf.online.btn_priority_forced,
                 showquality = true,
+                showExtraTitle = true,
                 limit_map = new List<WafLimitRootMap>
                 {
                     new("^/lite/", new WafLimitMap { limit = 10, second = 1 }),

@@ -672,6 +672,7 @@ namespace Online
                     return;
 
                 string displayname = init.displayname ?? name ?? init.plugin;
+                string extraTitle = ModInit.conf.showExtraTitle && !string.IsNullOrEmpty(arg_title) ? arg_title : string.Empty;
 
                 if (string.IsNullOrEmpty(url))
                 {
@@ -687,7 +688,7 @@ namespace Online
                         url += (url.Contains("?") ? "&" : "?") + "clarification=1";
                 }
 
-                online.Add(($"{displayname}{arg_title}", url, (plugin ?? init.plugin ?? name).ToLower(), init.displayindex > 0 ? init.displayindex : online.Count));
+                online.Add(($"{displayname}{extraTitle}", url, (plugin ?? init.plugin ?? name).ToLower(), init.displayindex > 0 ? init.displayindex : online.Count));
             }
             #endregion
 
