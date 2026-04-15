@@ -100,6 +100,7 @@
     <Project Path="Modules/OnlineRUS/VideoDB/VideoDB.csproj" />
     <Project Path="Modules/OnlineRUS/Videoseed/Videoseed.csproj" />
     <Project Path="Modules/OnlineRUS/VkMovie/VkMovie.csproj" />
+    <Project Path="Modules/OnlineRUS/Zetflix/Zetflix.csproj" />
     <Project Path="Modules/OnlineRUS/ZetflixDB/ZetflixDB.csproj" />
   </Folder>
   <Folder Name="/Modules/OnlineUKR/">
