@@ -250,6 +250,17 @@
         return vid;
     }
 
+    function copyRoomId() {
+        if (!currentRoomId) return;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+            navigator.clipboard.writeText(currentRoomId).then(function () {
+                Lampa.Noty.show(T.copied(currentRoomId));
+            }).catch(function (err) {
+                console.error('[WT] Copy failed', err);
+            });
+        }
+    }
+
     function updateRoomUI(count) {
         if (!inRoom || !currentRoomId) return;
         var nameContainer = $('.player-info__name, .player-panel__name');
@@ -257,7 +268,9 @@
         if (count !== undefined) currentRoomMemberCount = count;
 
         if (nameContainer.length && !$('.wt-room-badge').length) {
-            nameContainer.after('<div class="wt-room-badge" style="display:inline-block; margin-left: 15px; padding: 4px 12px; background: rgba(255,255,255,0.15); border-radius: 6px; font-size: 0.85em; color: #fff;"></div>');
+            var badge = $('<div class="wt-room-badge" style="display:inline-block; margin-left: 15px; padding: 4px 12px; background: rgba(255,255,255,0.15); border-radius: 6px; font-size: 0.85em; color: #fff; cursor: pointer;"></div>');
+            badge.on('click hover:enter', copyRoomId);
+            nameContainer.after(badge);
         }
 
         if ($('.wt-room-badge').length) {
