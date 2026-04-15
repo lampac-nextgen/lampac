@@ -41,24 +41,30 @@ namespace Shared.Services
         #region defaultHeaders / UserAgent
         public static readonly Dictionary<string, string> defaultUaHeaders = new Dictionary<string, string>()
         {
+            ["sec-ch-ua"] = "\"Chromium\";v=\"146\", \"Not-A.Brand\";v=\"24\", \"Google Chrome\";v=\"146\"",
             ["sec-ch-ua-mobile"] = "?0",
             ["sec-ch-ua-platform"] = "\"Windows\"",
-            ["sec-ch-ua"] = "\"Chromium\";v=\"146\", \"Not-A.Brand\";v=\"24\", \"Google Chrome\";v=\"146\"",
             ["user-agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
         };
 
         public static readonly Dictionary<string, string> defaultCommonHeaders = new Dictionary<string, string>()
         {
+            ["pragma"] = "no-cache",
             ["cache-control"] = "no-cache",
             ["dnt"] = "1",
-            ["pragma"] = "no-cache",
-            ["priority"] = "u=0, i"
+            //["priority"] = "u=0, i"
         };
 
-        public static readonly Dictionary<string, string> defaultFullHeaders = defaultUaHeaders.Concat(defaultCommonHeaders).ToDictionary(
-            kv => kv.Key,
-            kv => kv.Value
-        );
+        public static readonly Dictionary<string, string> defaultFullHeaders = new Dictionary<string, string>()
+        {
+            ["pragma"] = "no-cache",
+            ["cache-control"] = "no-cache",
+            ["sec-ch-ua"] = "\"Chromium\";v=\"146\", \"Not-A.Brand\";v=\"24\", \"Google Chrome\";v=\"146\"",
+            ["sec-ch-ua-mobile"] = "?0",
+            ["sec-ch-ua-platform"] = "\"Windows\"",
+            ["dnt"] = "1",
+            ["user-agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+        };
 
         public static string UserAgent => defaultUaHeaders["user-agent"];
         #endregion
