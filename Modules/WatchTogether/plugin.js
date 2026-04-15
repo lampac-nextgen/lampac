@@ -9,6 +9,53 @@
 
     console.log('[WT] Plugin initialization started.');
 
+    var _rawLang = (Lampa.Storage.get('language') || 'en').toLowerCase();
+    var i18n = {
+        ru: {
+            create_fail: 'Не удалось создать комнату WatchTogether',
+            create_err: 'Ошибка сервера при создании комнаты',
+            no_movie_id: 'Ошибка: сервер не вернул ID фильма',
+            room_not_found: function (id) { return 'Комната ' + id + ' не найдена'; },
+            join_err: 'Ошибка сервера при получении данных комнаты',
+            joined_room: function (id) { return 'Вы вошли в комнату: ' + id; },
+            input_title: 'ID Комнаты',
+            badge_room: 'Комната',
+            badge_viewers: 'Зрителей',
+            kicked: 'Вы вошли в эту комнату с другого устройства.',
+            copied: function (id) { return 'ID комнаты скопирован: ' + id; },
+            click_to_copy: 'Нажмите чтобы скопировать'
+        },
+        en: {
+            create_fail: 'Failed to create WatchTogether room',
+            create_err: 'Server error while creating room',
+            no_movie_id: 'Error: server did not return movie ID',
+            room_not_found: function (id) { return 'Room ' + id + ' not found'; },
+            join_err: 'Server error while fetching room data',
+            joined_room: function (id) { return 'You joined room: ' + id; },
+            input_title: 'Room ID',
+            badge_room: 'Room',
+            badge_viewers: 'Viewers',
+            kicked: 'You joined this room from another device.',
+            copied: function (id) { return 'Room ID copied: ' + id; },
+            click_to_copy: 'Click to copy'
+        },
+        uk: {
+            create_fail: 'Не вдалося створити кімнату WatchTogether',
+            create_err: 'Помилка сервера під час створення кімнати',
+            no_movie_id: 'Помилка: сервер не повернув ID фільму',
+            room_not_found: function (id) { return 'Кімнату ' + id + ' не знайдено'; },
+            join_err: 'Помилка сервера під час отримання даних кімнати',
+            joined_room: function (id) { return 'Ви увійшли до кімнати: ' + id; },
+            input_title: 'ID Кімнати',
+            badge_room: 'Кімната',
+            badge_viewers: 'Глядачів',
+            kicked: 'Ви увійшли до цієї кімнати з іншого пристрою.',
+            copied: function (id) { return 'ID кімнати скопійовано: ' + id; },
+            click_to_copy: 'Натисніть щоб скопіювати'
+        }
+    };
+    var T = i18n[_rawLang] || i18n['en'];
+
     var unic_id = Lampa.Storage.get('lampac_unic_id', '');
     if (!unic_id) {
         unic_id = Lampa.Utils.uid(8).toLowerCase();
@@ -72,11 +119,11 @@
             if (res && res.id) {
                 joinRoom(res.id, card);
             } else {
-                Lampa.Noty.show('Не удалось создать комнату WatchTogether');
+                Lampa.Noty.show(T.create_fail);
             }
         }, function (a, c) {
             console.error('[WT] createRoom Network Error:', a, c);
-            Lampa.Noty.show('Ошибка сервера при создании комнаты');
+            Lampa.Noty.show(T.create_err);
         });
     }
 
@@ -136,14 +183,14 @@
                     });
                 }
                 else {
-                    Lampa.Noty.show('Ошибка: сервер не вернул ID фильма');
+                    Lampa.Noty.show(T.no_movie_id);
                 }
             } else {
-                Lampa.Noty.show('Комната ' + roomId + ' не найдена');
+                Lampa.Noty.show(T.room_not_found(roomId));
             }
         }, function (a, c) {
             console.error('[WT] joinRoom Network Error:', a, c);
-            Lampa.Noty.show('Ошибка сервера при получении данных комнаты');
+            Lampa.Noty.show(T.join_err);
         });
     }
 
@@ -156,7 +203,7 @@
         targetInitialState = { state: state || 'paused', position: position || 0 };
         console.log('[WT] Initial Sync Lock ENGAGED. Target:', targetInitialState);
 
-        Lampa.Noty.show('Вы вошли в комнату: ' + roomId);
+        Lampa.Noty.show(T.joined_room(roomId));
 
         if (ws && ws.readyState === 1) {
             ws.send(JSON.stringify({
@@ -182,7 +229,7 @@
 
     function showJoinMenu() {
         Lampa.Input.edit({
-            title: 'ID Комнаты',
+            title: T.input_title,
             value: '',
             free: true,
             nosave: true
@@ -214,7 +261,7 @@
         }
 
         if ($('.wt-room-badge').length) {
-            $('.wt-room-badge').html('Комната: <b style="color:#00e676;">' + currentRoomId + '</b> | Зрителей: <b>' + currentRoomMemberCount + '</b>');
+            $('.wt-room-badge').html(T.badge_room + ': <b style="color:#00e676;" title="' + T.click_to_copy + '">' + currentRoomId + '</b> | ' + T.badge_viewers + ': <b>' + currentRoomMemberCount + '</b>');
         }
     }
 
@@ -311,7 +358,7 @@
                 if (data.method == 'watchtogether_members') {
                     updateRoomUI(data.args[0]);
                 } else if (data.method == 'watchtogether_kicked') {
-                    Lampa.Noty.show('Вы вошли в эту комнату с другого устройства.');
+                    Lampa.Noty.show(T.kicked);
                     inRoom = false;
                     currentRoomId = null;
                 } else if (data.method == 'watchtogether_sync_update') {
