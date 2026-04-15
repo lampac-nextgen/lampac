@@ -279,33 +279,46 @@
     }
 
     function applySync(vid, state, position) {
-        if (vid.currentTime !== undefined) {
-            var diff = Math.abs(vid.currentTime - position);
-            console.log('[WT] Adjusting sync. Server State:', state, '| Server Pos:', position, '| Local Pos:', vid.currentTime, '| Diff:', diff);
+        if (vid.currentTime === undefined) return;
 
-            if (diff > 3) {
-                expectedState.seek = position;
-                vid.currentTime = position;
-                console.log('[WT] Seeked local video to', position);
+        var diff = vid.currentTime - position;
+        var absDiff = Math.abs(diff);
+
+        console.log('[WT] Sync. State:', state, '| Server Pos:', position, '| Local Pos:', vid.currentTime, '| Diff:', diff);
+
+        if (absDiff > 5) {
+            expectedState.seek = position;
+            vid.currentTime = position;
+            console.log('[WT] Hard seeked local video to', position);
+        } else if (absDiff > 1) {
+            var rate = diff > 0 ? 0.92 : 1.08;
+            vid.playbackRate = rate;
+            var correctionMs = (absDiff / 0.08) * 1000;
+            console.log('[WT] Soft rate correction:', rate, 'for', Math.round(correctionMs), 'ms');
+            if (vid._wt_rate_timeout) clearTimeout(vid._wt_rate_timeout);
+            vid._wt_rate_timeout = setTimeout(function () {
+                vid._wt_rate_timeout = null;
+                if (vid.playbackRate !== 1) vid.playbackRate = 1;
+            }, Math.min(correctionMs, 12000));
+        }
+
+        if (state === 'playing' && vid.paused) {
+            expectedState.play = true;
+            console.log('[WT] Forcing play via Lampa API...');
+            if (typeof Lampa.PlayerVideo !== 'undefined' && Lampa.PlayerVideo.play) {
+                Lampa.PlayerVideo.play();
+            } else {
+                var playPromise = vid.play();
+                if (playPromise !== undefined) playPromise.catch(function (err) { });
             }
-
-            if (state === 'playing' && vid.paused) {
-                expectedState.play = true;
-                console.log('[WT] Forcing play via Lampa API...');
-                if (typeof Lampa.PlayerVideo !== 'undefined' && Lampa.PlayerVideo.play) {
-                    Lampa.PlayerVideo.play();
-                } else {
-                    var playPromise = vid.play();
-                    if (playPromise !== undefined) playPromise.catch(function (err) { });
-                }
-            } else if (state === 'paused' && !vid.paused) {
-                expectedState.pause = true;
-                console.log('[WT] Forcing pause via Lampa API...');
-                if (typeof Lampa.PlayerVideo !== 'undefined' && Lampa.PlayerVideo.pause) {
-                    Lampa.PlayerVideo.pause();
-                } else {
-                    vid.pause();
-                }
+        } else if (state === 'paused' && !vid.paused) {
+            expectedState.pause = true;
+            vid.playbackRate = 1;
+            console.log('[WT] Forcing pause via Lampa API...');
+            if (typeof Lampa.PlayerVideo !== 'undefined' && Lampa.PlayerVideo.pause) {
+                Lampa.PlayerVideo.pause();
+            } else {
+                vid.pause();
             }
         }
     }
@@ -503,6 +516,9 @@
                 });
 
                 vid.addEventListener('pause', function () {
+                    if (vid._wt_rate_timeout) { clearTimeout(vid._wt_rate_timeout); vid._wt_rate_timeout = null; }
+                    vid.playbackRate = 1;
+
                     if (initialSyncLock) return;
 
                     var wasExpected = expectedState.pause;
@@ -516,6 +532,11 @@
                 });
 
                 vid.addEventListener('seeked', function () {
+                    if (!isSystemSyncing) {
+                        if (vid._wt_rate_timeout) { clearTimeout(vid._wt_rate_timeout); vid._wt_rate_timeout = null; }
+                        vid.playbackRate = 1;
+                    }
+
                     if (initialSyncLock) {
                         console.log('[WT] Blocking Lampa Local Seek. Restoring server position.');
                         if (targetInitialState && Math.abs(vid.currentTime - targetInitialState.position) > 2) {
@@ -568,7 +589,11 @@
             }
 
             var vidToUnhook = getVideo();
-            if (vidToUnhook) vidToUnhook._wt_hooked = false;
+            if (vidToUnhook) {
+                vidToUnhook._wt_hooked = false;
+                if (vidToUnhook._wt_rate_timeout) { clearTimeout(vidToUnhook._wt_rate_timeout); vidToUnhook._wt_rate_timeout = null; }
+                vidToUnhook.playbackRate = 1;
+            }
 
             expectedState.play = false;
             expectedState.pause = false;
