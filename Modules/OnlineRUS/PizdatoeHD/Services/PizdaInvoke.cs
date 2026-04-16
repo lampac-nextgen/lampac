@@ -1,6 +1,5 @@
 using Newtonsoft.Json;
 using Shared.Models.Base;
-using Shared.Models.Online.Settings;
 using Shared.Models.Templates;
 using Shared.Services.Pools;
 using Shared.Services.RxEnumerate;
@@ -17,21 +16,18 @@ namespace PizdatoeHD
     public class PizdaInvoke
     {
         #region PizdaInvoke
-        OnlinesSettings init;
-        string host, scheme, route;
-        bool usehls, userprem, usereserve;
+        ModuleConf init;
+        string host, route;
         Func<string, string> onstreamfile;
 
         static readonly Serilog.ILogger Log = Serilog.Log.ForContext<PizdaInvoke>();
 
-        public PizdaInvoke(string host, string route, OnlinesSettings init, Func<string, string> onstreamfile)
+        public PizdaInvoke(string host, string route, ModuleConf init, Func<string, string> onstreamfile)
         {
             this.host = host != null ? $"{host}/" : null;
             this.route = route;
             this.init = init;
-            scheme = init.scheme;
             this.onstreamfile = onstreamfile;
-            usehls = init.hls;
         }
         #endregion
 
@@ -125,9 +121,9 @@ namespace PizdatoeHD
         #endregion
 
         #region Embed
-        public Model Embed(string href, string html)
+        public RootObject Embed(string href, string html)
         {
-            var result = new Model();
+            var result = new RootObject();
 
             bool IsTrailer = html.Contains("Ожидаем фильм в хорошем качестве", StringComparison.OrdinalIgnoreCase);
 
@@ -165,7 +161,7 @@ namespace PizdatoeHD
             if (string.IsNullOrEmpty(result.content))
             {
                 return IsTrailer
-                    ? new Model() { IsEmpty = true, content = "Ожидаем фильм в хорошем качестве..." }
+                    ? new RootObject() { IsEmpty = true, content = "Ожидаем фильм в хорошем качестве..." }
                     : null;
             }
 
@@ -236,7 +232,7 @@ namespace PizdatoeHD
         public string Movie(MovieModel md, string title, string original_title, bool play, VastConf vast = null)
         {
             if (play)
-                return onstreamfile(md.links[0].stream_url!);
+                return onstreamfile(md.links[0].stream_url);
 
             #region subtitles
             var subtitles = new SubtitleTpl();
@@ -263,9 +259,9 @@ namespace PizdatoeHD
 
             var streamquality = new StreamQualityTpl();
             foreach (var l in md.links)
-                streamquality.Append(onstreamfile(l.stream_url!), l.title);
+                streamquality.Append(onstreamfile(l.stream_url), l.title);
 
-            return VideoTpl.ToJson("play", onstreamfile(md.links[0].stream_url!), (title ?? original_title ?? "auto"),
+            return VideoTpl.ToJson("play", onstreamfile(md.links[0].stream_url), (title ?? original_title ?? "auto"),
                 streamquality: streamquality,
                 subtitles: subtitles,
                 vast: vast,
@@ -276,7 +272,7 @@ namespace PizdatoeHD
 
 
         #region Tpl
-        public ITplResult Tpl(Model result, string args, string title, string original_title, string href, string t, int s, bool rjson = false)
+        public ITplResult Tpl(RootObject result, string args, string title, string original_title, string href, string t, int s, bool rjson = false)
         {
             if (result == null || result.IsEmpty || result.content == null)
                 return default;
@@ -315,7 +311,6 @@ namespace PizdatoeHD
 
                             link += $"&voice={HttpUtility.UrlEncode(voice_href)}";
 
-                            #region voice
                             string voice = match.Groups["voice"].Value.Trim();
 
                             if (!string.IsNullOrEmpty(match.Groups["imgname"].Value) && !voice.ToLower().Contains(match.Groups["imgname"].Value.ToLowerAndTrim()))
@@ -323,12 +318,8 @@ namespace PizdatoeHD
 
                             if (voice == "-" || string.IsNullOrEmpty(voice))
                                 voice = "Оригинал";
-                            #endregion
 
-                            if (match.Groups[2].Value.Contains("data-director=\"1\""))
-                                link += "&director=1";
-
-                            string stream = usehls ? $"{link.Replace("/movie", "/movie.m3u8")}&play=true" : $"{link}&play=true";
+                            string stream = init.hls ? $"{link.Replace("/movie", "/movie.m3u8")}&play=true" : $"{link}&play=true";
                             stream += args;
 
                             mtpl.Append(voice, link, "call", stream);
@@ -366,7 +357,7 @@ namespace PizdatoeHD
                     var match = new Regex("<[a-z]+ [^>]+ data-translator_id=\"(?<translator>[0-9]+)\"([^>]+)?>(?<name>[^<]+)(<img title=\"(?<imgname>[^\"]+)\" [^>]+/>)?").Match(result.content);
                     while (match.Success)
                     {
-                        if (!userprem && match.Groups[0].Value.Contains("prem_translator"))
+                        if (!init.premium && match.Groups[0].Value.Contains("prem_translator"))
                         {
                             match = match.NextMatch();
                             continue;
@@ -425,7 +416,7 @@ namespace PizdatoeHD
 
                             string link = host + $"{route}/movie?title={enc_title}&original_title={enc_original_title}&href={enc_href}&voice={HttpUtility.UrlEncode(voice_href)}&t={selectVoice}&s={s}&e={m.Groups["episode"].Value}";
 
-                            string stream = usehls ? $"{link.Replace("/movie", "/movie.m3u8")}&play=true" : $"{link}&play=true";
+                            string stream = init.hls ? $"{link.Replace("/movie", "/movie.m3u8")}&play=true" : $"{link}&play=true";
                             stream += args;
 
                             etpl.Append(m.Groups["name"].Value, title ?? original_title, sArhc, m.Groups["episode"].Value, link, "call", streamlink: stream);
@@ -519,43 +510,24 @@ namespace PizdatoeHD
                 if (!qline.Contains(".mp4") && !qline.Contains(".m3u8"))
                     return null;
 
-                if (usereserve && qline.Contains(" or "))
+                string link = Regex.Match(qline, "(https?://[^\\[\n\r, ]+)").Groups[1].Value;
+                if (string.IsNullOrEmpty(link))
+                    return null;
+
+                if (init.hls)
                 {
-                    return string.Join(" or ", qline.Split(" or ").Select(i =>
-                    {
-                        string l = Regex.Match(i, "(https?://[^\\[\n\r, ]+)").Groups[1].Value;
-                        if (usehls)
-                        {
-                            if (l.EndsWith(".m3u8"))
-                                return l;
+                    if (link.EndsWith(".m3u8"))
+                        return link;
 
-                            return l + ":hls:manifest.m3u8";
-                        }
-
-                        return l.Replace(":hls:manifest.m3u8", "");
-                    }));
+                    return link + ":hls:manifest.m3u8";
                 }
-                else
-                {
-                    string link = Regex.Match(qline, "(https?://[^\\[\n\r, ]+)").Groups[1].Value;
-                    if (string.IsNullOrEmpty(link))
-                        return null;
 
-                    if (usehls)
-                    {
-                        if (link.EndsWith(".m3u8"))
-                            return link;
-
-                        return link + ":hls:manifest.m3u8";
-                    }
-
-                    return link.Replace(":hls:manifest.m3u8", "");
-                }
+                return link.Replace(":hls:manifest.m3u8", "");
             }
             #endregion
 
             #region Максимально доступное
-            var qualities = userprem
+            var qualities = init.premium
                 ? new List<string> { "2160p", "1440p", "1080p Ultra", "1080p", "720p", "480p" }
                 : new List<string> { "1080p", "720p", "480p" };
 
@@ -572,7 +544,7 @@ namespace PizdatoeHD
                         link = getLink("2K") ?? getLink(q);
                         break;
                     case "1080p":
-                        link = userprem ? (getLink(q) ?? getLink("1080p Ultra")) : getLink(q);
+                        link = init.premium ? (getLink(q) ?? getLink("1080p Ultra")) : getLink(q);
                         break;
                     default:
                         link = getLink(q);
@@ -582,7 +554,7 @@ namespace PizdatoeHD
                 if (string.IsNullOrEmpty(link))
                     continue;
 
-                if (scheme == "http")
+                if (init.scheme == "http")
                     link = link.Replace("https:", "http:");
 
                 string realq = q;

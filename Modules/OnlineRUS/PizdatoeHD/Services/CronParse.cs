@@ -61,7 +61,7 @@ namespace PizdatoeHD
                 {
                 reset:
                     string idproxy = proxyids[Interlocked.Increment(ref curentproxy) - 1];
-                    
+
                     Console.WriteLine("\n");
                     Console.WriteLine(i);
                     Console.WriteLine(idproxy);
@@ -129,6 +129,9 @@ namespace PizdatoeHD
                     m = m.NextMatch();
                     continue;
                 }
+
+                if (proxy == null)
+                    await Task.Delay(5000);
 
                 string news = proxy != null
                     ? await Http.Get($"{ModInit.conf.host}/{link}", proxy: proxy, timeoutSeconds: 10)

@@ -6,14 +6,17 @@ using Shared.Models;
 using Shared.Models.Base;
 using Shared.Models.Templates;
 using Shared.PlaywrightCore;
+using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web;
+using BrowserCookie = Microsoft.Playwright.Cookie;
 
 namespace PizdatoeHD
 {
-    public class PizdatoeHDController : BaseOnlineController
+    public class PizdatoeHDController : BaseOnlineController<ModuleConf>
     {
         PizdaInvoke oninvk;
 
@@ -30,7 +33,6 @@ namespace PizdatoeHD
                 );
             };
         }
-
 
         [HttpGet]
         [Route("lite/pizdatoehd")]
@@ -156,7 +158,7 @@ namespace PizdatoeHD
             #endregion
 
             #region news
-            var cache = await InvokeCacheResult<Model>($"pizdatoehd:{href}", 15, async e =>
+            var cache = await InvokeCacheResult<RootObject>($"pizdatoehd:{href}", 15, async e =>
             {
                 try
                 {
@@ -205,7 +207,7 @@ namespace PizdatoeHD
         [HttpGet]
         [Route("lite/pizdatoehd/movie")]
         [Route("lite/pizdatoehd/movie.m3u8")]
-        async public Task<ActionResult> Movie(string title, string original_title, string href, string voice, int director, int t, int s = -1, int e = -1, bool play = false)
+        async public Task<ActionResult> Movie(string title, string original_title, string href, string voice, int t, int s = -1, int e = -1, bool play = false)
         {
             if (await IsRequestBlocked(rch: false))
                 return badInitMsg;
@@ -219,6 +221,30 @@ namespace PizdatoeHD
                         var page = await browser.NewPageAsync(init.plugin, init.headers, proxy: proxy_data, imitationHuman: true).ConfigureAwait(false);
                         if (page == null)
                             return result.Fail("page");
+
+                        if (!string.IsNullOrEmpty(init.cookie))
+                        {
+                            var excookie = DateTimeOffset.UtcNow.AddYears(1).ToUnixTimeSeconds();
+
+                            var cookies = new List<BrowserCookie>();
+                            foreach (string line in init.cookie.Split(";"))
+                            {
+                                if (string.IsNullOrEmpty(line) || !line.Contains("dle_user_id") || !line.Contains("dle_password"))
+                                    continue;
+
+                                cookies.Add(new BrowserCookie()
+                                {
+                                    Domain = "." + Regex.Replace(init.host, "^https?://", ""),
+                                    Expires = excookie,
+                                    Path = "/",
+                                    HttpOnly = true,
+                                    Name = line.Split("=")[0].Trim(),
+                                    Value = line.Split("=")[1].Trim()
+                                });
+                            }
+
+                            await page.Context.AddCookiesAsync(cookies);
+                        }
 
                         if (string.IsNullOrEmpty(voice))
                         {
@@ -283,7 +309,6 @@ namespace PizdatoeHD
                 return RedirectToPlay(result);
 
             return ContentTo(result);
-
         }
         #endregion
     }

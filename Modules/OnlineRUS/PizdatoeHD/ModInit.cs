@@ -5,7 +5,6 @@ using Shared.Models.Base;
 using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
-using Shared.Models.Online.Settings;
 using Shared.PlaywrightCore;
 using Shared.Services;
 using System;
@@ -20,7 +19,7 @@ namespace PizdatoeHD
     {
         public static ConcurrentDictionary<string, DbModel> PizdatoeDb = null;
 
-        public static OnlinesSettings conf;
+        public static ModuleConf conf;
         static Timer timer;
 
         public List<ModuleOnlineItem> Invoke(HttpContext httpContext, RequestModel requestInfo, string host, OnlineEventsModel args)
@@ -54,7 +53,7 @@ namespace PizdatoeHD
             EventListener.OnlineApiQuality += onlineApiQuality;
 
             PizdatoeDb = JsonConvert.DeserializeObject<ConcurrentDictionary<string, DbModel>>(File.ReadAllText("data/PizdatoeDb.json"));
-            timer = new Timer(CronParse.Pizda, null, TimeSpan.FromMinutes(20), TimeSpan.FromMinutes(Random.Shared.Next(8, 20)));
+            timer = new Timer(CronParse.Pizda, null, TimeSpan.FromMinutes(20), TimeSpan.FromMinutes(Random.Shared.Next(10, 30)));
             
             //CronParse.PizdaBobra();
         }
@@ -70,8 +69,9 @@ namespace PizdatoeHD
 
         void updateConf()
         {
-            conf = ModuleInvoke.Init("PizdatoeHD", new OnlinesSettings("pizdatoehd", "https://rezka.ag")
+            conf = ModuleInvoke.Init("PizdatoeHD", new ModuleConf("pizdatoehd", "https://rezka.ag")
             {
+                kit = false,
                 displayindex = 331,
                 hls = true,
                 streamproxy = true,
