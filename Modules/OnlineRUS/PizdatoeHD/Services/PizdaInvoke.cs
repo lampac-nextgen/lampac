@@ -180,7 +180,7 @@ namespace PizdatoeHD
 
             try
             {
-                root = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
+               root = JsonConvert.DeserializeObject<Dictionary<string, object>>(json);
             }
             catch { }
 
@@ -276,7 +276,7 @@ namespace PizdatoeHD
 
 
         #region Tpl
-        public ITplResult Tpl(Model result, string args, string title, string original_title, int s, string href, bool rjson = false)
+        public ITplResult Tpl(Model result, string args, string title, string original_title, string href, string t, int s, bool rjson = false)
         {
             if (result == null || result.IsEmpty || result.content == null)
                 return default;
@@ -356,6 +356,8 @@ namespace PizdatoeHD
             }
             else
             {
+                string selectVoice = string.IsNullOrEmpty(t) ? result.trs : t;
+
                 #region Перевод
                 var vtpl = new VoiceTpl();
 
@@ -375,16 +377,14 @@ namespace PizdatoeHD
                             name += $" ({match.Groups["imgname"].Value})";
 
                         string voice_href = Regex.Match(match.Groups[0].Value, "href=\"(https?://[^/]+)?/([^\"]+)\"").Groups[2].Value;
-                        if (string.IsNullOrEmpty(voice_href))
-                        {
-                            match = match.NextMatch();
-                            continue;
-                        }
-
                         string voice = HttpUtility.UrlEncode(voice_href);
+
+                        if (string.IsNullOrEmpty(voice))
+                            voice = enc_href;
+
                         string link = host + $"{route}?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&href={voice}&t={match.Groups["translator"].Value}";
 
-                        vtpl.Append(name, match.Groups["translator"].Value == result.trs, link);
+                        vtpl.Append(name, match.Groups["translator"].Value == selectVoice, link);
 
                         match = match.NextMatch();
                     }
@@ -408,7 +408,7 @@ namespace PizdatoeHD
                         if (!string.IsNullOrEmpty(m.Groups["season"].Value) && !eshash.Contains(sname))
                         {
                             eshash.Add(sname);
-                            string link = host + $"{route}?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&href={enc_href}&t={result.trs}&s={m.Groups["season"].Value}";
+                            string link = host + $"{route}?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&href={enc_href}&t={selectVoice}&s={m.Groups["season"].Value}";
 
                             tpl.Append(sname, link, m.Groups["season"].Value);
                         }
@@ -422,7 +422,8 @@ namespace PizdatoeHD
                             eshash.Add(m.Groups["name"].Value);
 
                             string voice_href = Regex.Match(m.Groups[0].Value, "href=\"(https?://[^/]+)?/([^\"]+)\"").Groups[2].Value;
-                            string link = host + $"{route}/movie?title={enc_title}&original_title={enc_original_title}&href={enc_href}&voice={HttpUtility.UrlEncode(voice_href)}&t={result.trs}&s={s}&e={m.Groups["episode"].Value}";
+
+                            string link = host + $"{route}/movie?title={enc_title}&original_title={enc_original_title}&href={enc_href}&voice={HttpUtility.UrlEncode(voice_href)}&t={selectVoice}&s={s}&e={m.Groups["episode"].Value}";
 
                             string stream = usehls ? $"{link.Replace("/movie", "/movie.m3u8")}&play=true" : $"{link}&play=true";
                             stream += args;

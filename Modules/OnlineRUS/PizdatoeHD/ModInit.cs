@@ -54,8 +54,8 @@ namespace PizdatoeHD
             EventListener.OnlineApiQuality += onlineApiQuality;
 
             PizdatoeDb = JsonConvert.DeserializeObject<ConcurrentDictionary<string, DbModel>>(File.ReadAllText("data/PizdatoeDb.json"));
-            timer = new Timer(CronParse.Pizda, null, TimeSpan.FromMinutes(10), TimeSpan.FromMinutes(20));
-
+            timer = new Timer(CronParse.Pizda, null, TimeSpan.FromMinutes(20), TimeSpan.FromMinutes(Random.Shared.Next(8, 20)));
+            
             //CronParse.PizdaBobra();
         }
 
@@ -77,11 +77,9 @@ namespace PizdatoeHD
                 streamproxy = true,
                 stream_access = "apk,cors,web",
                 headers_stream = HeadersModel.Init(
-                    ("accept", "*/*"),
-                    ("cache-control", "no-cache"),
-                    ("dnt", "1"),
+                    ("accept-encoding", "gzip, deflate, br, zstd"),
+                    ("connection", "keep-alive"),
                     ("origin", "https://rezka.ag"),
-                    ("pragma", "no-cache"),
                     ("referer", "https://rezka.ag/"),
                     ("sec-fetch-dest", "empty"),
                     ("sec-fetch-mode", "cors"),

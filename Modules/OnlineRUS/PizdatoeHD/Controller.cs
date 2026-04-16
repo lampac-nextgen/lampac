@@ -34,7 +34,7 @@ namespace PizdatoeHD
 
         [HttpGet]
         [Route("lite/pizdatoehd")]
-        async public Task<ActionResult> Index(string imdb_id, long kinopoisk_id, string title, string original_title, int clarification, int year, int s = -1, string href = null, bool rjson = false, bool similar = false)
+        async public Task<ActionResult> Index(string imdb_id, long kinopoisk_id, string title, string original_title, int clarification, int year, string href, string t, int s = -1, bool rjson = false, bool similar = false)
         {
             if (await IsRequestBlocked(rch: false))
                 return badInitMsg;
@@ -197,7 +197,7 @@ namespace PizdatoeHD
                 return ShowError(cache.Value.content);
 
             return ContentTpl(cache,
-                () => oninvk.Tpl(cache.Value, accsArgs(string.Empty), title, original_title, s, href, rjson)
+                () => oninvk.Tpl(cache.Value, accsArgs(string.Empty), title, original_title, href, t, s, rjson)
             );
         }
 

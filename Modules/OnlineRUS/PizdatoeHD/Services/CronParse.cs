@@ -1,4 +1,5 @@
 ﻿using Newtonsoft.Json;
+using Shared.PlaywrightCore;
 using Shared.Services;
 using Shared.Services.Utilities;
 using System;
@@ -19,12 +20,13 @@ namespace PizdatoeHD
 
         async public static void Pizda(object state)
         {
-            if (Interlocked.Exchange(ref _updating, 1) == 1 || !ModInit.conf.enable)
+            if (Interlocked.Exchange(ref _updating, 1) == 1)
                 return;
 
             try
             {
-                await Parse(1, null);
+                if (PlaywrightBrowser.Status != PlaywrightStatus.disabled && ModInit.conf.enable)
+                    await Parse(1, null);
             }
             catch (Exception ex)
             {
@@ -59,7 +61,7 @@ namespace PizdatoeHD
                 {
                 reset:
                     string idproxy = proxyids[Interlocked.Increment(ref curentproxy) - 1];
-
+                    
                     Console.WriteLine("\n");
                     Console.WriteLine(i);
                     Console.WriteLine(idproxy);
@@ -109,7 +111,10 @@ namespace PizdatoeHD
 
         async static Task<bool> Parse(int page, WebProxy proxy)
         {
-            string mainHtml = await Http.Get($"{ModInit.conf.host}/page/{page}/", proxy: proxy, timeoutSeconds: 4);
+            string mainHtml = proxy != null
+                ? await Http.Get($"{ModInit.conf.host}/page/{page}/", proxy: proxy, timeoutSeconds: 4)
+                : await PlaywrightBrowser.Get(ModInit.conf, $"{ModInit.conf.host}/page/{page}/");
+
             if (mainHtml == null || !mainHtml.Contains("class=\"b-content__inline_item\""))
                 return default;
 
@@ -125,7 +130,10 @@ namespace PizdatoeHD
                     continue;
                 }
 
-                string news = await Http.Get($"{ModInit.conf.host}/{link}", proxy: proxy, timeoutSeconds: 10);
+                string news = proxy != null
+                    ? await Http.Get($"{ModInit.conf.host}/{link}", proxy: proxy, timeoutSeconds: 10)
+                    : await PlaywrightBrowser.Get(ModInit.conf, $"{ModInit.conf.host}/{link}");
+
                 if (news != null)
                 {
                     string name = Regex.Match(news, "itemprop=\"name\">([^<]+)").Groups[1].Value.Trim();
