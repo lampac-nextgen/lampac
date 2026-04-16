@@ -29,9 +29,9 @@ namespace Shared.Services
             => Encrypt(uri, null, verifyip: false, ex: ex, plugin: plugin, IsProxyImg: IsProxyImg);
 
         public static string Encrypt(string uri, ProxyLinkModel p, bool forceMd5 = false)
-            => Encrypt(uri, p.reqip, p.headers, p.proxy, p.plugin, p.verifyip, forceMd5: p.md5 || forceMd5);
+            => Encrypt(uri, p.reqip, p.headers, p.proxy, p.plugin, p.verifyip, forceMd5: p.md5 || forceMd5, userdata: p.userdata);
 
-        public static string Encrypt(string uri, string reqip, List<HeadersModel> headers = null, WebProxy proxy = null, string plugin = null, bool verifyip = true, DateTime ex = default, bool forceMd5 = false, bool IsProxyImg = false)
+        public static string Encrypt(string uri, string reqip, List<HeadersModel> headers = null, WebProxy proxy = null, string plugin = null, bool verifyip = true, DateTime ex = default, bool forceMd5 = false, bool IsProxyImg = false, object userdata = null)
         {
             if (string.IsNullOrWhiteSpace(uri))
                 return string.Empty;
@@ -45,7 +45,7 @@ namespace Shared.Services
             {
                 return SerializePayload(hash, IsProxyImg, uri_clear, plugin, null, false, default, null);
             }
-            else if (!forceMd5 && proxy == null && !uri_clear.Contains(" or "))
+            else if (!forceMd5 && proxy == null && userdata == null && !uri_clear.Contains(" or "))
             {
                 if (verifyip && CoreInit.conf.serverproxy.verifyip)
                 {
@@ -63,7 +63,7 @@ namespace Shared.Services
 
                 string link = hash.ToString();
 
-                var md = new ProxyLinkModel(verifyip ? reqip : null, headers, proxy, uri_clear, plugin, verifyip, ex: ex)
+                var md = new ProxyLinkModel(verifyip ? reqip : null, headers, proxy, uri_clear, plugin, verifyip, ex, userdata)
                 {
                     md5 = true
                 };
@@ -335,6 +335,8 @@ namespace Shared.Services
                                 var root = JsonSerializer.Deserialize(dest.Slice(0, plainLen), ProxyLinkJsonContext.Default.AesPayload);
                                 if (root == null)
                                     return null;
+
+                                //Console.WriteLine(JsonSerializer.Serialize(root));
 
                                 if (root.v)
                                 {

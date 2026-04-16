@@ -69,6 +69,8 @@ namespace Spectre
 
                     lastreq = DateTime.Now;
 
+                    //Console.WriteLine(e.decryptLink.userdata);
+
                     string segId = Regex.Match(e.requestMessage.RequestUri.ToString(), "/seg-([0-9]+)-").Groups[1].Value;
                     int seg = int.TryParse(segId, out int s) ? s : 0;
 
@@ -385,10 +387,12 @@ namespace Spectre
             if (hls == null)
                 return OnError();
 
-            if (play)
-                return Redirect(HostStreamProxy(hls));
+            string target = HostStreamProxy(hls/*, userdata: "test userdata"*/);
 
-            return ContentTo(VideoTpl.ToJson("play", HostStreamProxy(hls), "auto",
+            if (play)
+                return Redirect(target);
+
+            return ContentTo(VideoTpl.ToJson("play", target, "auto",
                 vast: init.vast,
                 hls_manifest_timeout: (int)TimeSpan.FromSeconds(30).TotalMilliseconds
             ));
@@ -568,7 +572,7 @@ namespace Spectre
 
                     try
                     {
-                        _ = ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+                        _= ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
                         ws = null;
                     }
                     catch { }
@@ -707,7 +711,7 @@ namespace Spectre
             {
                 ws = new ClientWebSocket();
                 ws.Options.SetRequestHeader("User-Agent", Http.UserAgent);
-
+                
                 wscts = new CancellationTokenSource();
 
                 await ws.ConnectAsync(new Uri(wsUri), wscts.Token);

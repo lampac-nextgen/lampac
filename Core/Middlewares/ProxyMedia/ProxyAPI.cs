@@ -217,7 +217,7 @@ namespace Core.Middlewares
                             {
                                 if (EventListener.ProxyApiCreateHttpRequest != null)
                                 {
-                                    var em = new EventProxyApiCreateHttpRequest(decryptLink.plugin, httpContext.Request, decryptLink.headers, new Uri(servUri), requestor);
+                                    var em = new EventProxyApiCreateHttpRequest(decryptLink, decryptLink.plugin, httpContext.Request, decryptLink.headers, new Uri(servUri), requestor);
                                     await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
                                 }
 
@@ -251,7 +251,7 @@ namespace Core.Middlewares
                     {
                         if (EventListener.ProxyApiCreateHttpRequest != null)
                         {
-                            var em = new EventProxyApiCreateHttpRequest(decryptLink.plugin, httpContext.Request, decryptLink.headers, new Uri(servUri), request);
+                            var em = new EventProxyApiCreateHttpRequest(decryptLink, decryptLink.plugin, httpContext.Request, decryptLink.headers, new Uri(servUri), request);
                             await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
                         }
 

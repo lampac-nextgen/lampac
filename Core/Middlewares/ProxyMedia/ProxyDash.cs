@@ -26,7 +26,7 @@ namespace Core.Middlewares
             {
                 if (EventListener.ProxyApiCreateHttpRequest != null)
                 {
-                    var em = new EventProxyApiCreateHttpRequest(decryptLink.plugin, httpContext.Request, decryptLink.headers, uri, request);
+                    var em = new EventProxyApiCreateHttpRequest(decryptLink, decryptLink.plugin, httpContext.Request, decryptLink.headers, uri, request);
                     await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
                 }
 

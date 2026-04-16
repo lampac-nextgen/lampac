@@ -42,7 +42,7 @@ namespace Shared.Models.Events
 
     public record EventPlaywrightHttpResponse(string url, string method, int status, Dictionary<string, string> requestHeaders, Dictionary<string, string> responseHeaders, string result, string error);
 
-    public record EventProxyApiCreateHttpRequest(string plugin, HttpRequest request, List<HeadersModel> headers, Uri uri, HttpRequestMessage requestMessage);
+    public record EventProxyApiCreateHttpRequest(ProxyLinkModel decryptLink, string plugin, HttpRequest request, List<HeadersModel> headers, Uri uri, HttpRequestMessage requestMessage);
 
     public record EventProxyApiCacheStream(HttpContext httpContext, ProxyLinkModel decryptLink);
 

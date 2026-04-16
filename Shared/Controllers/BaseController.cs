@@ -331,7 +331,7 @@ namespace Shared
         #endregion
 
         #region HostStreamProxy
-        public string HostStreamProxy(BaseSettings conf, string uri, List<HeadersModel> headers = null, WebProxy proxy = null, bool force_streamproxy = false, RchClient rch = null, bool forceMd5 = false)
+        public string HostStreamProxy(BaseSettings conf, string uri, List<HeadersModel> headers = null, WebProxy proxy = null, bool force_streamproxy = false, RchClient rch = null, bool forceMd5 = false, object userdata = null)
         {
             if (!CoreInit.conf.serverproxy.enable || string.IsNullOrEmpty(uri) || conf == null)
             {
@@ -398,7 +398,7 @@ namespace Shared
                 if (headers == null && conf.headers_stream != null && conf.headers_stream.Count > 0)
                     headers = HeadersModel.Init(conf.headers_stream);
 
-                uri = ProxyLink.Encrypt(uri, requestInfo.IP, httpHeaders(conf.host ?? conf.apihost, headers), conf != null && conf.useproxystream ? proxy : null, conf?.plugin, forceMd5: forceMd5);
+                uri = ProxyLink.Encrypt(uri, requestInfo.IP, httpHeaders(conf.host ?? conf.apihost, headers), conf != null && conf.useproxystream ? proxy : null, conf?.plugin, forceMd5: forceMd5, userdata: userdata);
 
                 return $"{host}/proxy/{uri}";
             }
@@ -406,7 +406,7 @@ namespace Shared
             if (conf.url_reserve && !uri.Contains(" or ") && !uri.Contains("/proxy/") &&
                 !Regex.IsMatch(HttpContext.Request.QueryString.Value, "&play=true", RegexOptions.IgnoreCase))
             {
-                string url_reserve = ProxyLink.Encrypt(uri, requestInfo.IP, httpHeaders(conf.host ?? conf.apihost, headers), conf != null && conf.useproxystream ? proxy : null, conf?.plugin, forceMd5: forceMd5);
+                string url_reserve = ProxyLink.Encrypt(uri, requestInfo.IP, httpHeaders(conf.host ?? conf.apihost, headers), conf != null && conf.useproxystream ? proxy : null, conf?.plugin, forceMd5: forceMd5, userdata: userdata);
 
                 uri += $" or {host}/proxy/{url_reserve}";
             }

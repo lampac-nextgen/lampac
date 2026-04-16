@@ -416,8 +416,8 @@ namespace Shared
         #endregion
 
         #region HostStreamProxy
-        public string HostStreamProxy(string uri, List<HeadersModel> headers = null, bool force_streamproxy = false, bool forceMd5 = false)
-            => HostStreamProxy(init, uri, headers, proxy, force_streamproxy, rch, forceMd5);
+        public string HostStreamProxy(string uri, List<HeadersModel> headers = null, bool force_streamproxy = false, bool forceMd5 = false, object userdata = null)
+            => HostStreamProxy(init, uri, headers, proxy, force_streamproxy, rch, forceMd5, userdata);
         #endregion
 
         #region InvkSemaphore
