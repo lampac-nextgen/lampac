@@ -189,7 +189,9 @@
   "sisi": {
     "lgbt": false,
     "spider": false,
-    "NextHUB": true,
+    "NextHUB": {
+      "sites_enabled": "pornhub,beeg"
+    },
     "history": {
       "enable": false
     }
@@ -201,12 +203,69 @@
 | --- | --- |
 | `lgbt` | Включать ли контент соответствующей тематики в результатах. |
 | `spider` | Использовать ли агрегацию нескольких источников. |
-| `NextHUB` | Включить интеграцию с модулем NextHUB (YAML-каталог 18+ сайтов). |
+| `NextHUB.sites_enabled` | Разрешает загружать из папки `sites/` только те YAML-конфиги, в именах которых содержатся указанные слова (через запятую). Если удалить строку, будут загружены все 18+ провайдеры. |
 | `history.enable` | Включить ведение локальной истории просмотров в SQLite. |
 
 ---
 
-## 8. Настройка провайдеров контента (VOD)
+## 8. Модуль LampaWeb (Встроенный интерфейс)
+
+Позволяет тонко настраивать плагины, которые будут загружены в интерфейсе Lampa "из коробки", когда пользователь обращается к `index.html` вашего хоста.
+
+```jsonc
+{
+  "LampaWeb": {
+    "initPlugins": {
+      "pirate_store": true,
+      "jacred": true,
+      "tmdbProxy": true,
+      "cubProxy": true,
+      "online": true,
+      "sisi": true,
+      "torrserver": true,
+      "timecode": true
+    }
+  }
+}
+```
+
+| Параметр | Описание |
+| --- | --- |
+| `pirate_store` | Загружать базовый магазин Lampa. |
+| `tmdbProxy` | Использовать ваш встроенный кеширующий сервер для получения постеров. |
+| `online` | Включает в клиенте VOD провайдеров. |
+| `sisi` | Включает 18+ контент. |
+
+---
+
+## 9. Авторизация через Telegram (Community Modules)
+
+Альтернатива встроенному `accsdb` с паролями. Позволяет пользователям входить на сервер через Telegram-бота.
+*(Требуется удалить `TelegramAuth` и `TelegramAuthBot` из `BaseModule.SkipModules`)*
+
+```jsonc
+{
+  "TelegramAuth": {
+    "enable": true,
+    "data_dir": "database/tgauth", // Папка БД
+    "mutations_api_secret": "ВАШ_ДЛИННЫЙ_УНИКАЛЬНЫЙ_СЕКРЕТ_123",
+    "owner_telegram_ids": [123456789], // Ваш ID в Telegram
+    "max_active_devices_per_user": 5 // Лимит устройств
+  },
+  "TelegramAuthBot": {
+    "enable": true,
+    "bot_token": "ТОКЕН_БОТА_ОТ_BOTFATHER",
+    "lampac_base_url": "http://127.0.0.1:9118", // Внутренний или внешний адрес сервера
+    "service_display_name": "Мой Lampac Bot",
+    "mutations_api_secret": "ВАШ_ДЛИННЫЙ_УНИКАЛЬНЫЙ_СЕКРЕТ_123", // Должен совпадать с TelegramAuth!
+    "notify_admins_on_pending_provision": true
+  }
+}
+```
+
+---
+
+## 10. Настройка провайдеров контента (VOD)
 
 Каждый провайдер настраивается в отдельном блоке, название которого совпадает с именем провайдера (с учетом регистра).
 
@@ -244,7 +303,7 @@
 
 ---
 
-## 9. Дополнительные технические настройки
+## 11. Дополнительные технические настройки
 
 - **Remote Client Hub (RCH)**
   ```jsonc
@@ -305,14 +364,35 @@
   }
   ```
 
+- **Cub Прокси (`cub`)**
+  ```jsonc
+  {
+    "cub": {
+      "scheme": "https",
+      "domain": "cub.red",
+      "api_key": "ВАШ_CUB_API_КЛЮЧ"
+    }
+  }
+  ```
+
 - **Прокси сервера (`serverproxy`)**
   ```jsonc
   {
     "serverproxy": {
       "verifyip": false,
       "image": {
-        "cache_time": 60
+        "cache_time": 60 // Время хранения кешированных изображений
       }
+    }
+  }
+  ```
+
+- **Статические файлы (`Staticache`)**
+  ```jsonc
+  {
+    "Staticache": {
+      "enable": true, // Включить кеширование статики
+      "max_mb": 100 // Максимальный размер папки статики в MB
     }
   }
   ```

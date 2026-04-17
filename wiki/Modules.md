@@ -52,7 +52,11 @@ Lampac NextGen построен по модульной системе. Боль
 
 2. **`manifest.json`**
    Каждый модуль в директориях `module/` или `mods/` имеет свой манифест. Если в нем прописано `"enable": false`, модуль не запустится.
-   Если вы используете Docker, вы можете создать папку на хосте, положить туда модифицированный `manifest.json` с `"enable": true` и смонтировать её в контейнер (в `/lampac/mods/ИмяМодуля`).
+   Например, если вы хотите включить **AdminPanel** (веб-админку) при использовании Docker:
+   - Скопируйте папку из исходников на хост: `cp -r Modules/AdminPanel lampac-docker/mods/AdminPanel`
+   - Измените в `lampac-docker/mods/AdminPanel/manifest.json` параметр `"enable"` на `true`.
+   - Добавьте в `docker-compose.yaml` (в раздел `volumes`):
+     `- ./lampac-docker/mods/AdminPanel:/lampac/mods/AdminPanel`
 
 ---
 
