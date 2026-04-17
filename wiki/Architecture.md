@@ -8,28 +8,46 @@
 
 ## Общая схема архитектуры
 
-```text
-┌─────────────────────────────────────────────────────────────────┐
-│  Core  (ASP.NET Core Web Host, порт 9118)                       │
-│  Program.cs → Startup.cs → Middleware Pipeline                  │
-├────────────────────┬────────────────────────────────────────────┤
-│  Shared (lib)      │  BaseController, CoreInit (конфиг),        │
-│                    │  модели, сервисы, Playwright, HTTP-пулы    │
-├────────────────────┴────────────────────────────────────────────┤
-│  Динамически загружаемые модули                                 │
-│  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌───────────────────┐     │
-│  │ Online  │ │  SISI   │ │ Catalog  │ │    LampaWeb       │     │
-│  │(VOD API)│ │ + Adult │ │(каталог) │ │(Lampa UI)         │     │
-│  └─────────┘ └─────────┘ └──────────┘ └───────────────────┘     │
-│  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌───────────────────┐     │
-│  │TorrServr│ │  DLNA   │ │  JacRed  │ │   Transcoding     │     │
-│  └─────────┘ └─────────┘ └──────────┘ └───────────────────┘     │
-│  ┌───────────────────────────────────────────────────────────┐  │
-│  │  Modules/OnlineRUS · OnlinePaid · OnlineAnime · OnlineENG │  │
-│  │  OnlineUKR · OnlineGEO  — по одному проекту на провайдера │  │
-│  │  Modules/Adult/* — платформы 18+ (маршруты /phub, /xnx…)  │  │
-│  └───────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
+```mermaid
+flowchart TD
+    subgraph Core ["Core (ASP.NET Core Web Host, порт 9118)"]
+        direction TB
+        C1["Program.cs → Startup.cs → Middleware Pipeline"]
+    end
+
+    subgraph Shared ["Shared (lib)"]
+        direction TB
+        S1["BaseController, CoreInit (конфиг),<br/>модели, сервисы, Playwright, HTTP-пулы"]
+    end
+
+    subgraph Modules ["Динамически загружаемые модули"]
+        direction TB
+
+        subgraph MainMods ["Основные"]
+            direction LR
+            M1["Online<br/>(VOD API)"]
+            M2["SISI<br/>(+ Adult)"]
+            M3["Catalog<br/>(каталог)"]
+            M4["LampaWeb<br/>(Lampa UI)"]
+        end
+
+        subgraph Extensions ["Расширения"]
+            direction LR
+            E1["TorrServer"]
+            E2["DLNA"]
+            E3["JacRed"]
+            E4["Transcoding"]
+        end
+
+        subgraph Providers ["Провайдеры контента (Каждый провайдер — отдельный проект)"]
+            direction TB
+            P1["Modules/OnlineRUS · OnlinePaid · OnlineAnime · OnlineENG<br/>OnlineUKR · OnlineGEO"]
+            P2["Modules/Adult/* — платформы 18+ (маршруты /phub, /xnx...)"]
+        end
+    end
+
+    Core --> Shared
+    Shared --> Modules
 ```
 
 ---
