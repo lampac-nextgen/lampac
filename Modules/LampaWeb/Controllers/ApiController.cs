@@ -474,7 +474,7 @@ namespace LampaWeb.Controllers
                 sb = sb.Replace("{jachost}", "jac.red");
 
             #region full_btn_priority_hash
-            string online_version = Regex.Match(FileCache.ReadAllText($"{ModInit.modpath}/plugins/online.js", "online.js"), "version: '([^']+)'").Groups[1].Value;
+            string online_version = Regex.Match(FileCache.ReadAllText(IO.Path.Combine(CoreInit.modules.FirstOrDefault(m => m.name == "Online")?.path ?? string.Empty, "plugin.js"), "online.js"), "version: '([^']+)'").Groups[1].Value;
 
             string LampaUtilshash(string input)
             {
