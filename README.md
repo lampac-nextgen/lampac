@@ -23,6 +23,9 @@
 - 🔌 **[API Эндпоинты](wiki/API.md)** — Документация по HTTP-маршрутам сервера.
 - 📚 **[Зависимости и структура](wiki/Dependencies.md)** — Используемые NuGet пакеты и подробное дерево файлов репозитория.
 
+## 🤖 AI-Документация (автоматически обновляется раз в неделю)
+[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/lampac-nextgen/lampac)
+
 ## 💬 Сообщество
 
 [Telegram Чат Lampac NextGen](https://t.me/LampacTalks/13998)
