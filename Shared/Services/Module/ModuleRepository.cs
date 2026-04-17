@@ -74,7 +74,7 @@ namespace Shared.Services
                             continue;
                         }
 
-                        bool missingModule = repository.Folders.Any(folder => !Directory.Exists(Path.Combine(Environment.CurrentDirectory, RepositoryDirectory, folder.ModuleName)));
+                        bool missingModule = repository.Folders.Any(folder => !Directory.Exists(GetRepositoryModulePath(repository, folder)));
                         string commitSha = GetLatestCommitSha(repository, state, ref stateChanged);
                         if (string.IsNullOrEmpty(commitSha))
                         {
@@ -916,7 +916,21 @@ namespace Shared.Services
                         continue;
                     }
 
-                    string destinationPath = Path.Combine(Environment.CurrentDirectory, RepositoryDirectory, repository.Owner, folder.ModuleName);
+                    string destinationPath = GetRepositoryModulePath(repository, folder);
+                    string legacyPath = Path.Combine(Environment.CurrentDirectory, RepositoryDirectory, repository.Owner, folder.ModuleName);
+
+                    if (!string.Equals(legacyPath, destinationPath, StringComparison.OrdinalIgnoreCase) && Directory.Exists(legacyPath))
+                    {
+                        try
+                        {
+                            Directory.Delete(legacyPath, true);
+                            Log($"Removed legacy module path '{legacyPath}'");
+                        }
+                        catch (Exception ex)
+                        {
+                            LogError(ex, $"Failed to remove legacy path '{legacyPath}'");
+                        }
+                    }
 
                     string existingManifestJson = null;
                     string existingManifestPath = Path.Combine(destinationPath, "manifest.json");
@@ -976,6 +990,21 @@ namespace Shared.Services
                 try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
                 Log($"Download and extract finished for {repository.Owner}/{repository.Name}");
             }
+        }
+
+        private static string GetRepositoryBasePath(RepositoryEntry repository)
+        {
+            return Path.Combine(
+                Environment.CurrentDirectory,
+                RepositoryDirectory,
+                repository.Owner,
+                repository.Name
+            );
+        }
+
+        private static string GetRepositoryModulePath(RepositoryEntry repository, RepositoryFolder folder)
+        {
+            return Path.Combine(GetRepositoryBasePath(repository), folder.ModuleName);
         }
 
         private static string MergeManifests(string existingJson, string newJson)

@@ -28,7 +28,7 @@
 1. Каталоги обрабатываются в порядке **`mods`**, затем **`module`**.
 2. Из подкаталога **`references/`** подгружаются готовые **`.dll`** как части приложения MVC.
 3. Собственные **`.dll`** в корне `mods/` / `module/` подключаются как сборки модулей.
-4. Папки с **`manifest.json`**: при необходимости компиляция **Roslyn** ([`CSharpEval.Compilation`](../Shared/Services/CSharpEval.cs)); учитываются **`BaseModule.SkipModules`**, **`LoadModules`**, флаг **`enable`** в манифесте.
+4. Папки с **`manifest.json`** (на любой вложенности): при необходимости компиляция **Roslyn** ([`CSharpEval.Compilation`](../Shared/Services/CSharpEval.cs)); учитываются **`BaseModule.SkipModules`**, **`LoadModules`**, флаг **`enable`** в манифесте. Для `LoadModules` поддержаны: точное имя модуля (`"KinoUkr"`), имя группы/папки верхнего уровня (`"OnlineUKR"` или имя репозитория вроде `"lampac-ukraine"`), маски (`"LME.*"`), а также `"*"` / `".*"` для загрузки всего.
 5. После сборки для каждого модуля вызывается **`IModuleConfigure.Configure`**.
 
 В **`Configure`** после старта приложения для каждого модуля вызывается **`IModuleLoaded.Loaded`**. Для модулей с **`dynamic: true`** в манифесте включается пересборка при изменении **`.cs`** (см. `WatchersDynamicModule` в `Startup.cs`).

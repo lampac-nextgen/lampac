@@ -333,7 +333,8 @@ RUNTIME_ID=linux-arm64 ./build.sh
   "BaseModule": {
     "ValidateRequest": true,    // валидация входящих запросов
     "BlockedBots": true,        // блокировка ботов
-    "SkipModules": []           // список отключённых модулей
+    "SkipModules": [],          // список отключённых модулей
+    "LoadModules": [".*"]       // whitelist: имя модуля, группа (OnlineUKR), маска (LME.*)
   },
 
   // Кеш
