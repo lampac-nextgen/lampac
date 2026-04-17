@@ -48,7 +48,7 @@ namespace Collaps
             if (await IsRequestBlocked(rch: true))
                 return badInitMsg;
 
-        rhubFallback:
+            rhubFallback:
             var cache = await InvokeCacheResult($"collaps:view:{imdb_id}:{kinopoisk_id}:{orid}", 20,
                 () => oninvk.Embed(imdb_id, kinopoisk_id, orid),
                 textJson: true
@@ -73,7 +73,7 @@ namespace Collaps
             if (await IsRequestBlocked(rch: true))
                 return badInitMsg;
 
-        rhubFallback:
+            rhubFallback:
             var cache = await InvokeCacheResult<List<ResultSearch>>($"collaps:search:{title}", 40, textJson: true, onget: async e =>
             {
                 string uri = $"{init.apihost}/list?token={init.token}&name={HttpUtility.UrlEncode(title)}";
