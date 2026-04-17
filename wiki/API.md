@@ -13,6 +13,9 @@ Lampac NextGen предоставляет HTTP API для взаимодейст
 | `GET` | `/api/headers` | Показывает HTTP-заголовки текущего запроса (полезно для отладки прокси). |
 | `GET` | `/api/geo[?ip=]` | Возвращает гео-данные по IP-адресу (определяется через встроенную БД MaxMind GeoLite2). |
 | `GET` | `/api/chromium/ping` | Проверка доступности headless браузера Chromium (ответ `pong`). |
+| `POST` | `/rch/result?id=` | Эндпоинт Remote Client Hub для записи результата ответа (до 10 МБ). |
+| `POST` | `/rch/gzresult?id=`| То же, что и выше, но для Gzip сжатых ответов. |
+| `WS`  | `/ws` | Эндпоинт NativeWebSocket для push-уведомлений RCH. |
 
 ## 2. Статистика (Diagnostic Stats)
 **Внимание:** Для работы этих эндпоинтов в `init.conf` должен быть включен параметр `openstat.enable: true`. Иначе они вернут ошибку 404.

@@ -246,6 +246,17 @@
 
 ## 9. Дополнительные технические настройки
 
+- **Remote Client Hub (RCH)**
+  ```jsonc
+  {
+    "rch": {
+      "enable": false,
+      "requiredConnected": 1
+    }
+  }
+  ```
+  *WebSocket-реле для клиентов за NAT. Позволяет устройствам связываться друг с другом через ваш сервер.*
+
 - **Кеш (`cache`)**
   ```jsonc
   {
@@ -269,7 +280,39 @@
   {
     "GC": {
       "Concurrent": true,
-      "HighMemoryPercent": 90 // Порог использования памяти до агрессивной сборки
+      "ConserveMemory": 0,
+      "HighMemoryPercent": 90, // Порог использования памяти до агрессивной сборки
+      "RetainVM": false
+    }
+  }
+  ```
+
+- **Kit (Шифрование)**
+  ```jsonc
+  {
+    "kit": {
+      "aesgcmkeyName": "" // Имя ключа для шифрования потоков
+    }
+  }
+  ```
+
+- **TMDB Прокси (`tmdb`)**
+  ```jsonc
+  {
+    "tmdb": {
+      "cache_img": 60 // Время кеширования изображений с TMDB в минутах
+    }
+  }
+  ```
+
+- **Прокси сервера (`serverproxy`)**
+  ```jsonc
+  {
+    "serverproxy": {
+      "verifyip": false,
+      "image": {
+        "cache_time": 60
+      }
     }
   }
   ```
