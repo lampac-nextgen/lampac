@@ -149,20 +149,20 @@ namespace Shared.Services
                             if (!Regex.IsMatch(_file, "(\\.vs|bin|obj|Properties)/", RegexOptions.IgnoreCase))
                                 syntaxPaths.Add(csfile);
                         }
+                    }
 
-                        if (mod.syntaxPaths != null)
+                    if (mod.syntaxPaths != null)
+                    {
+                        foreach (string sp in mod.syntaxPaths)
                         {
-                            foreach (string sp in mod.syntaxPaths)
-                            {
-                                string cspath = Path.GetFullPath(Path.Combine(path, sp));
+                            string cspath = Path.GetFullPath(Path.Combine(path, sp));
 
-                                if (sp.EndsWith(".cs"))
-                                    syntaxPaths.Add(cspath);
-                                else
-                                {
-                                    foreach (string csfile in Directory.GetFiles(cspath, "*.cs", SearchOption.AllDirectories))
-                                        syntaxPaths.Add(csfile);
-                                }
+                            if (sp.EndsWith(".cs"))
+                                syntaxPaths.Add(cspath);
+                            else
+                            {
+                                foreach (string csfile in Directory.GetFiles(cspath, "*.cs", SearchOption.AllDirectories))
+                                    syntaxPaths.Add(csfile);
                             }
                         }
                     }

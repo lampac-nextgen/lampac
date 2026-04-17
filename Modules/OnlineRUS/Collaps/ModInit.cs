@@ -48,7 +48,7 @@ namespace Collaps
 
         void updateConf()
         {
-            conf = ModuleInvoke.Init("Collaps", new ModuleConf("Collaps", "https://api.luxembd.ws", streamproxy: true, two: false)
+            conf = ModuleInvoke.Init("Collaps", new ModuleConf("Collaps", "https://api.luxembd.ws", streamproxy: true)
             {
                 displayindex = 555,
                 rch_access = "apk",

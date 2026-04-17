@@ -11,7 +11,6 @@ using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -20,28 +19,12 @@ namespace Core.Middlewares
     public partial class ProxyAPI
     {
         #region static
-        static readonly HttpClientHandler baseHandler = new HttpClientHandler()
-        {
-            AutomaticDecompression = DecompressionMethods.Brotli | DecompressionMethods.GZip | DecompressionMethods.Deflate,
-            AllowAutoRedirect = false,
-            UseProxy = false,
-            ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
-        };
-
         static readonly ConcurrentDictionary<string, Dictionary<string, string[]>> cacheDefaultRequestHeaders = new();
-        static readonly Regex rexM3u = new Regex("(https?://[^\n\r\"\\# ]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-        static readonly Regex rexUri = new Regex("(URI=\")([^\"]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
 
         static CacheFileWatcher fileWatcher;
 
         public static int Stat_ContCacheFiles
             => fileWatcher.FilesCount;
-
-        static async Task InvokeProxyApiCreateHttpRequestHandlers(EventProxyApiCreateHttpRequest eventArgs)
-        {
-            foreach (Func<EventProxyApiCreateHttpRequest, Task> handler in EventListener.ProxyApiCreateHttpRequest.GetInvocationList())
-                await handler(eventArgs).ConfigureAwait(false);
-        }
 
         public static void Initialization()
         {
@@ -49,9 +32,11 @@ namespace Core.Middlewares
             fileWatcher = new CacheFileWatcher("hls");
             EventListener.UpdateInitFile += cacheDefaultRequestHeaders.Clear;
         }
-
-        public ProxyAPI(RequestDelegate next) { }
         #endregion
+
+        public ProxyAPI(RequestDelegate next)
+        {
+        }
 
         async public Task InvokeAsync(HttpContext httpContext)
         {
@@ -183,6 +168,18 @@ namespace Core.Middlewares
 
             try
             {
+                if (EventListener.ProxyApiOverride != null)
+                {
+                    var ev = new EventProxyApiOverride(httpContext, requestInfo, decryptLink, proxyHandler);
+
+                    foreach (Func<EventProxyApiOverride, Task<bool>> handler in EventListener.ProxyApiOverride.GetInvocationList())
+                    {
+                        bool next = await handler(ev);
+                        if (!next)
+                            return;
+                    }
+                }
+
                 if (Isdash)
                 {
                     await ProxyDash(httpContext, init, decryptLink, servUri, servPath, proxyHandler, cacheStream);

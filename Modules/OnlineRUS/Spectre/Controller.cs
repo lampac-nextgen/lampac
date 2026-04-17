@@ -28,7 +28,8 @@ namespace Spectre
         static DateTime lastreq;
         static Timer timer;
         static string edge_hash, resolution, requestOrigin, requestReferer;
-        static int current_time = 0;
+        static int current_time = 0, last_time = 0;
+        static readonly object last_time_lock = new(), resolution_lock = new();
 
         static SpectreController()
         {
@@ -36,22 +37,7 @@ namespace Spectre
             {
                 if (ws != null && lastreq != default && DateTime.Now.AddMinutes(-15) > lastreq)
                 {
-                    try
-                    {
-                        if (wscts != null)
-                        {
-                            wscts.Cancel();
-                            wscts = null;
-                        }
-                    }
-                    catch { }
-
-                    try
-                    {
-                        ws.Dispose();
-                        ws = null;
-                    }
-                    catch { }
+                    ClearConnect();
                 }
             }, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(1));
 
@@ -69,44 +55,65 @@ namespace Spectre
 
                     lastreq = DateTime.Now;
 
+                    #region resolution
                     if (e.decryptLink.userdata != null)
                     {
-                        string quality = e.decryptLink.userdata.ToString();
-                        if (quality != resolution)
+                        bool sendResolution = false;
+
+                        lock (resolution_lock)
                         {
-                            resolution = quality;
-                            Console.WriteLine("resolution: " + resolution);
-
-                            string payload = JsonConvert.SerializeObject(new
+                            string quality = e.decryptLink.userdata.ToString();
+                            if (quality != resolution)
                             {
-                                type = "playback_start",
-                                current_time = current_time,
-                                resolution = resolution,
-                                track_id = "1",
-                                speed = 1,
-                                subtitle = -1,
-                                ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                            });
+                                resolution = quality;
+                                sendResolution = true;
+                            }
+                        }
 
-                            await ws.SendAsync(
-                              new ArraySegment<byte>(Encoding.UTF8.GetBytes(payload)),
-                              WebSocketMessageType.Text,
-                              true,
-                              wscts.Token
-                            );
-
+                        if (sendResolution)
+                        {
+                            Console.WriteLine("resolution: " + resolution);
+                            await WsSendAsync("playback_start");
                             await Task.Delay(1000);
                         }
                     }
+                    #endregion
 
+                    #region current_time
                     string segId = Regex.Match(e.requestMessage.RequestUri.ToString(), "/seg-([0-9]+)-").Groups[1].Value;
                     int seg = int.TryParse(segId, out int s) ? s : 0;
 
                     if (25 >= seg)
+                    {
                         current_time = 0;
+                        last_time = 0;
+                    }
                     else
-                        current_time = (seg - 25) * 6;
+                    {
+                        bool sendSeeked = false;
 
+                        lock (last_time_lock)
+                        {
+                            current_time = (seg - 25) * 6;
+                            if (last_time == 0)
+                                last_time = current_time;
+
+                            if ((current_time - last_time) > 90)
+                                sendSeeked = true;
+
+                            last_time = current_time;
+                        }
+
+                        if (sendSeeked)
+                        {
+                            Console.WriteLine("seeked: " + current_time);
+                            await WsSendAsync("seeked");
+                            await Task.Delay(1000);
+                        }
+                    }
+                    #endregion
+
+                    #region requestMessage
                     e.requestMessage.Headers.Clear();
 
                     e.requestMessage.Headers.TryAddWithoutValidation("Connection", "keep-alive");
@@ -127,6 +134,7 @@ namespace Spectre
 
                     if (e.requestMessage.Content?.Headers != null)
                         e.requestMessage.Content.Headers.Clear();
+                    #endregion
                 }
             };
         }
@@ -411,30 +419,7 @@ namespace Spectre
             if (await IsRequestBlocked(rch: false))
                 return badInitMsg;
 
-            edge_hash = null;
-            resolution = null;
-            current_time = 0;
-            lastreq = DateTime.Now;
-
-            if (ws != null)
-            {
-                try
-                {
-                    if (wscts != null)
-                    {
-                        wscts.Cancel();
-                        wscts = null;
-                    }
-                }
-                catch { }
-
-                try
-                {
-                    _ = ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
-                    ws = null;
-                }
-                catch { }
-            }
+            ClearConnect();
 
             var result = await goMovie($"{init.linkhost}/?token_movie={token_movie}&token={init.token}", id_file);
             if (result.streams.data.Count == 0 || result.wsUri == null)
@@ -750,7 +735,7 @@ namespace Spectre
 
                 var receiveBuffer = new byte[16 * 1024];
 
-                _ = Task.Run(async () =>
+                _ = Task.Factory.StartNew(async () =>
                 {
                     while (!wscts.Token.IsCancellationRequested && ws.State == WebSocketState.Open)
                     {
@@ -761,8 +746,7 @@ namespace Spectre
                         if (result.MessageType == WebSocketMessageType.Close)
                         {
                             Console.WriteLine("Connection closed by server");
-                            ws.Dispose();
-                            ws = null;
+                            ClearConnect();
                             break;
                         }
 
@@ -775,9 +759,9 @@ namespace Spectre
                             Console.WriteLine("edge_hash: " + edge_hash);
                         }
                     }
-                });
+                }, wscts.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
-                _ = Task.Run(async () =>
+                _ = Task.Factory.StartNew(async () =>
                 {
                     while (!wscts.Token.IsCancellationRequested && ws.State == WebSocketState.Open)
                     {
@@ -788,61 +772,76 @@ namespace Spectre
                                 return;
 
                             Console.WriteLine("current_time: " + current_time);
-
-                            string payload = JsonConvert.SerializeObject(new
-                            {
-                                type = "playing",
-                                current_time = current_time,
-                                resolution = resolution,
-                                track_id = "1",
-                                speed = 1,
-                                subtitle = -1,
-                                ts = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()
-                            });
-
-                            await ws.SendAsync(
-                              new ArraySegment<byte>(Encoding.UTF8.GetBytes(payload)),
-                              WebSocketMessageType.Text,
-                              true,
-                              wscts.Token
-                            );
+                            await WsSendAsync("playing");
                         }
                         catch { }
                     }
-                });
-
-
-                Task SendAsync(string type, long unixtime)
-                {
-                    string payload = JsonConvert.SerializeObject(new
-                    {
-                        type = type,
-                        current_time = 0,
-                        resolution = resolution,
-                        track_id = "1",
-                        speed = 1,
-                        subtitle = -1,
-                        ts = unixtime
-                    });
-
-                    return ws.SendAsync(
-                      new ArraySegment<byte>(Encoding.UTF8.GetBytes(payload)),
-                      WebSocketMessageType.Text,
-                      true,
-                      wscts.Token
-                    );
-                }
+                }, wscts.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default);
 
                 long unixtime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
-                await SendAsync("playback_start", unixtime);
-                await SendAsync("init", unixtime);
+                await WsSendAsync("playback_start", unixtime);
+                await WsSendAsync("init", unixtime);
             }
             catch
             {
-                wscts.Cancel();
-                wscts = null;
-                ws.Dispose();
-                ws = null;
+                ClearConnect();
+            }
+        }
+
+        static Task WsSendAsync(string type, long unixtime = 0)
+        {
+            if (ws == null || ws.State != WebSocketState.Open)
+                return Task.CompletedTask;
+
+            if (unixtime == 0)
+                unixtime = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+
+            string payload = JsonConvert.SerializeObject(new
+            {
+                type = type,
+                current_time = current_time,
+                resolution = resolution,
+                track_id = "1",
+                speed = 1,
+                subtitle = -1,
+                ts = unixtime
+            });
+
+            return ws.SendAsync(
+              new ArraySegment<byte>(Encoding.UTF8.GetBytes(payload)),
+              WebSocketMessageType.Text,
+              true,
+              wscts.Token
+            );
+        }
+        #endregion
+
+        #region ClearConnect
+        static void ClearConnect()
+        {
+            edge_hash = null;
+            resolution = null;
+            current_time = 0;
+            lastreq = DateTime.Now;
+
+            if (ws != null)
+            {
+                try
+                {
+                    if (wscts != null)
+                    {
+                        wscts.Cancel();
+                        wscts = null;
+                    }
+                }
+                catch { }
+
+                try
+                {
+                    _ = ws.CloseAsync(WebSocketCloseStatus.NormalClosure, "Closing", CancellationToken.None);
+                    ws = null;
+                }
+                catch { }
             }
         }
         #endregion
