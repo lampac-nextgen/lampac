@@ -15,6 +15,7 @@ Lampac NextGen предоставляет HTTP API для взаимодейст
 | `GET` | `/api/chromium/ping` | Проверка доступности headless браузера Chromium (ответ `pong`). |
 | `POST` | `/rch/result?id=` | Эндпоинт Remote Client Hub для записи результата ответа (до 10 МБ). |
 | `POST` | `/rch/gzresult?id=`| То же, что и выше, но для Gzip сжатых ответов. |
+| `GET`  | `/rch/check/connected`| Проверка подключения клиента к RCH. |
 | `WS`  | `/ws` | Эндпоинт NativeWebSocket для push-уведомлений RCH. |
 
 ## 2. Статистика (Diagnostic Stats)
