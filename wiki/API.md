@@ -47,6 +47,7 @@ Lampac NextGen предоставляет HTTP API для взаимодейст
 | `GET` | `/sisi/bookmark` | Управление закладками SISI. |
 | `GET` | `/sisi/history` | Просмотр истории SISI. |
 | `GET` | `/nexthub` | Доступ к браузеру сайтов через YAML-конфиги (NextHUB). Требует query-параметр `plugin=...`. |
+| `GET` | `/nexthub/vidosik` | Просмотр отдельной карточки/элемента в NextHUB (использует параметр `uri`). |
 
 ## 5. Дополнительные модули
 

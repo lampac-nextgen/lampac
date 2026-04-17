@@ -15,9 +15,10 @@
 - 🚀 **[Установка и запуск (Installation)](Installation.md)** — Подробные инструкции по запуску через Docker, нативную установку на Linux и ручную сборку.
 - ⚙️ **[Конфигурация (Configuration)](Configuration.md)** — Полное описание файла `init.conf`, настроек безопасности, аутентификации и параметров провайдеров с примерами.
 - 🏗️ **[Архитектура (Architecture)](Architecture.md)** — Как устроен проект: слои Core, Shared, динамическая загрузка с помощью Roslyn, Middleware Pipeline.
-- 📦 **[Модули (Modules)](Modules.md)** — Описание встроенных модулей (DLNA, TorrServer, Sync, JacRed, NextHUB и др.) и инструкция по созданию собственных модулей через `manifest.json`.
+- 📦 **[Модули (Modules)](Modules.md)** — Описание встроенных модулей (DLNA, TorrServer, Sync, JacRed, NextHUB, Telegram Auth и др.) и инструкция по созданию собственных модулей через `manifest.json`.
 - 🎬 **[Провайдеры контента (Providers)](Providers.md)** — Списки поддерживаемых источников (СНГ, Аниме, Западные, Украинские, SISI/18+).
 - 🔌 **[API Эндпоинты (API)](API.md)** — Описание всех HTTP-маршрутов для работы с сервером.
+- 📚 **[Зависимости и структура (Dependencies)](Dependencies.md)** — Используемые NuGet пакеты и подробное дерево файлов репозитория.
 
 ---
 
