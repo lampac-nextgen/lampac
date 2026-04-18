@@ -56,46 +56,24 @@ namespace Shared.Services
         {
             try
             {
-                bool initExists = File.Exists("init.conf");
-                bool baseExists = File.Exists("base.conf");
+                string initfile = GetInitSource();
+                bool initExists = string.IsNullOrEmpty(initfile)
+                    ? false
+                    : true;
 
-                string initfile = GetSource();
-                if (string.IsNullOrEmpty(initfile))
-                    initExists = false;
+                string basefile = GetBaseSource();
+                bool baseExists = string.IsNullOrEmpty(basefile)
+                    ? false
+                    : true;
 
                 if (!initExists && !baseExists)
                     return back;
 
                 T conf = default;
 
-                if (!initExists || !baseExists)
+                if (initExists && baseExists)
                 {
-                    if (initExists)
-                    {
-                        conf = JsonConvert.DeserializeObject<T>(initfile, new JsonSerializerSettings
-                        {
-                            Error = (se, ev) =>
-                            {
-                                ev.ErrorContext.Handled = true;
-                                Console.WriteLine($"DeserializeObject Exception init.conf:\n{ev.ErrorContext.ToString()}\n\n");
-                            }
-                        });
-                    }
-                    else
-                    {
-                        conf = JsonConvert.DeserializeObject<T>(File.ReadAllText("base.conf"), new JsonSerializerSettings
-                        {
-                            Error = (se, ev) =>
-                            {
-                                ev.ErrorContext.Handled = true;
-                                Console.WriteLine($"DeserializeObject Exception base.conf:\n{ev.ErrorContext.ToString()}\n\n");
-                            }
-                        });
-                    }
-                }
-                else
-                {
-                    conf = JsonConvert.DeserializeObject<T>(File.ReadAllText("base.conf"), new JsonSerializerSettings
+                    conf = JsonConvert.DeserializeObject<T>(basefile, new JsonSerializerSettings
                     {
                         Error = (se, ev) =>
                         {
@@ -112,6 +90,31 @@ namespace Shared.Services
                             Console.WriteLine($"DeserializeObject Exception init.conf:\n{ev.ErrorContext.Error}\n\n");
                         }
                     });
+                }
+                else
+                {
+                    if (initExists)
+                    {
+                        conf = JsonConvert.DeserializeObject<T>(initfile, new JsonSerializerSettings
+                        {
+                            Error = (se, ev) =>
+                            {
+                                ev.ErrorContext.Handled = true;
+                                Console.WriteLine($"DeserializeObject Exception init.conf:\n{ev.ErrorContext.ToString()}\n\n");
+                            }
+                        });
+                    }
+                    else
+                    {
+                        conf = JsonConvert.DeserializeObject<T>(basefile, new JsonSerializerSettings
+                        {
+                            Error = (se, ev) =>
+                            {
+                                ev.ErrorContext.Handled = true;
+                                Console.WriteLine($"DeserializeObject Exception base.conf:\n{ev.ErrorContext.ToString()}\n\n");
+                            }
+                        });
+                    }
                 }
 
                 if (conf == default)
@@ -141,9 +144,7 @@ namespace Shared.Services
                     Merge(CoreInit.CurrentConf, updateObj);
                 }
             }
-            catch
-            {
-            }
+            catch { }
 
             return val;
         }
@@ -163,9 +164,7 @@ namespace Shared.Services
                     CoreInit.CurrentConf[filed] = val.DeepClone();
                 }
             }
-            catch
-            {
-            }
+            catch { }
         }
 
         static JObject Conf(string filed, object val)
@@ -190,24 +189,27 @@ namespace Shared.Services
             {
                 JObject jo = null;
 
-                if (File.Exists("init.conf"))
+                string basefile = GetBaseSource();
+                if (!string.IsNullOrEmpty(basefile))
                 {
-                    string initfile = GetSource();
-                    if (!string.IsNullOrEmpty(initfile))
+                    try
                     {
-                        try
-                        {
-                            jo = JObject.Parse(initfile);
-                        }
-                        catch
-                        {
-                            try
-                            {
-                                jo = JObject.FromObject(JsonConvert.DeserializeObject(initfile) ?? new JObject());
-                            }
-                            catch { jo = null; }
-                        }
+                        jo = JObject.Parse(basefile);
                     }
+                    catch { }
+                }
+
+                string initfile = GetInitSource();
+                if (!string.IsNullOrEmpty(initfile))
+                {
+                    try
+                    {
+                        if (jo == null)
+                            jo = JObject.Parse(initfile);
+                        else
+                            Merge(jo, JObject.Parse(initfile));
+                    }
+                    catch { }
                 }
 
                 if (jo == null || !jo.ContainsKey(filed))
@@ -257,26 +259,40 @@ namespace Shared.Services
         }
 
 
-        static (DateTime LastWriteTime, string source) _cacheInitFile;
+        #region GetInitSource
+        static (DateTime nextCheckTime, DateTime LastWriteTime, string source) _cacheInitFile;
 
-        static string GetSource()
+        static string GetInitSource()
         {
             try
             {
+                if (_cacheInitFile.nextCheckTime > DateTime.Now)
+                    return _cacheInitFile.source;
+
+                if (!File.Exists("init.conf"))
+                {
+                    _cacheInitFile.nextCheckTime = DateTime.Now.AddSeconds(1);
+                    _cacheInitFile.source = null;
+                    return null;
+                }
+
                 var lastWriteTime = File.GetLastWriteTimeUtc("init.conf");
                 if (_cacheInitFile.LastWriteTime != lastWriteTime)
                 {
                     string source = File.ReadAllText("init.conf");
-                    _cacheInitFile.LastWriteTime = lastWriteTime;
 
                     if (!source.AsSpan().TrimStart().StartsWith("{"))
                         source = "{" + source + "}";
 
                     _cacheInitFile.source = source;
+                    _cacheInitFile.LastWriteTime = lastWriteTime;
+                    _cacheInitFile.nextCheckTime = DateTime.Now.AddSeconds(1);
+
                     return _cacheInitFile.source;
                 }
                 else
                 {
+                    _cacheInitFile.nextCheckTime = DateTime.Now.AddSeconds(1);
                     return _cacheInitFile.source;
                 }
             }
@@ -285,5 +301,45 @@ namespace Shared.Services
                 return null;
             }
         }
+        #endregion
+
+        #region GetBaseSource
+        static (DateTime nextCheckTime, DateTime LastWriteTime, string source) _cacheBaseFile;
+
+        static string GetBaseSource()
+        {
+            try
+            {
+                if (_cacheBaseFile.nextCheckTime > DateTime.Now)
+                    return _cacheBaseFile.source;
+
+                if (!File.Exists("base.conf"))
+                {
+                    _cacheBaseFile.nextCheckTime = DateTime.Now.AddSeconds(5);
+                    _cacheBaseFile.source = null;
+                    return null;
+                }
+
+                var lastWriteTime = File.GetLastWriteTimeUtc("base.conf");
+                if (_cacheBaseFile.LastWriteTime != lastWriteTime)
+                {
+                    _cacheBaseFile.source = File.ReadAllText("base.conf");
+                    _cacheBaseFile.LastWriteTime = lastWriteTime;
+                    _cacheBaseFile.nextCheckTime = DateTime.Now.AddSeconds(5);
+
+                    return _cacheBaseFile.source;
+                }
+                else
+                {
+                    _cacheBaseFile.nextCheckTime = DateTime.Now.AddSeconds(5);
+                    return _cacheBaseFile.source;
+                }
+            }
+            catch
+            {
+                return null;
+            }
+        }
+        #endregion
     }
 }

@@ -1,0 +1,65 @@
+enable: true
+displayindex: 401
+displayname: Xozilla
+rch_access: apk,cors
+stream_access: apk,cors
+rchstreamproxy: web
+host: https://www.xozilla.com
+priorityBrowser: http
+streamproxy_preview: true
+
+menu:
+  sort:
+    Новинки: ""
+    Лучшее: top-rated/{page}/
+    Популярнаe: most-popular/{page}/
+  categories:
+    format: categories/{cat}/{page}/
+    Blonde Huge Tits: blonde-huge-tits
+    Big Booty Slut: big-booty-slut
+    Indian: indian
+    Classic Adult Videos: classic-adult-videos
+    Muslim: muslim
+    Hijab: hijab
+    Sexy Nurse: sexy-nurse
+    Russian Porn: russian-porn
+    Teen Girls 18+: teen-girls-18
+    Big Tits Mom: big-tits-mom
+    MILF Creampie: milf-creampie
+    Lesbian: lesbian
+    Natural Tits: natural-tits
+    POV: pov
+    Amateur: amateur
+    Blowjob: blowjob
+    Big Dick: big-dick
+    MILF: milf
+    Interracial: interracial
+    Asian: asian
+    Anal: anal
+
+list:
+  uri: latest-updates/{page}/
+
+search:
+  uri: search/{search}/{page}/
+
+contentParse:
+  nodes: //a[contains(@class,'item ')]
+  name:
+    node: .//strong
+  href:
+    attribute: href
+  img:
+    node: .//img
+    attribute: data-original
+  duration:
+    node: .//div[@class='duration']
+  preview:
+    attribute: vthumb
+
+view:
+  related: true
+  viewsource: true
+  regexMatch:
+    matches: ["url3", "url2", "url"]
+    pattern: "video_alt_{value}:[\t ]+'([^']+)'"

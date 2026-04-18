@@ -16,8 +16,8 @@ namespace Shared.Services
             Serilog.Log.ForContext("SourceContext", nameof(ModuleRepository));
 
         private const string RepositoryDirectory = "module";
-        private const string RepositoryFile = RepositoryDirectory + "/repository.yaml";
-        private const string StateFile = RepositoryDirectory + "/.repository_state.json";
+        private static string RepositoryFile;
+        private static string StateFile;
 
         private static readonly object SyncRoot = new();
         private static readonly HttpClient HttpClient;
@@ -26,6 +26,17 @@ namespace Shared.Services
 
         static ModuleRepository()
         {
+            if (File.Exists(Path.Combine("mods", "repository.yaml")))
+            {
+                RepositoryFile = Path.Combine(Environment.CurrentDirectory, "mods", "repository.yaml");
+                StateFile = Path.Combine(Environment.CurrentDirectory, "mods", ".repository_state.json");
+            }
+            else
+            {
+                RepositoryFile = Path.Combine(Environment.CurrentDirectory, RepositoryDirectory, "repository.yaml");
+                StateFile = Path.Combine(Environment.CurrentDirectory, RepositoryDirectory, ".repository_state.json");
+            }
+
             HttpClient = new HttpClient
             {
                 Timeout = TimeSpan.FromSeconds(60),
@@ -121,16 +132,15 @@ namespace Shared.Services
 
         private static List<RepositoryEntry> LoadConfiguration()
         {
-            string path = Path.Combine(Environment.CurrentDirectory, RepositoryFile.Replace('/', Path.DirectorySeparatorChar));
-            if (!File.Exists(path))
+            if (!File.Exists(RepositoryFile))
             {
-                Log($"Repository config file not found at {path}");
+                Log($"Repository config file not found at {RepositoryFile}");
                 return new List<RepositoryEntry>();
             }
 
             try
             {
-                string yaml = File.ReadAllText(path);
+                string yaml = File.ReadAllText(RepositoryFile);
                 if (string.IsNullOrWhiteSpace(yaml))
                 {
                     Log("Repository config file is empty");
@@ -468,13 +478,11 @@ namespace Shared.Services
             if (repositoryState != null)
                 return repositoryState;
 
-            string path = Path.Combine(Environment.CurrentDirectory, StateFile.Replace('/', Path.DirectorySeparatorChar));
-
-            if (File.Exists(path))
+            if (File.Exists(StateFile))
             {
                 try
                 {
-                    var json = File.ReadAllText(path);
+                    var json = File.ReadAllText(StateFile);
                     var data = JsonConvert.DeserializeObject<Dictionary<string, string>>(json);
                     if (data != null)
                         repositoryState = new Dictionary<string, string>(data, StringComparer.OrdinalIgnoreCase);
@@ -494,9 +502,8 @@ namespace Shared.Services
         {
             try
             {
-                string path = Path.Combine(Environment.CurrentDirectory, StateFile.Replace('/', Path.DirectorySeparatorChar));
-                Directory.CreateDirectory(Path.GetDirectoryName(path));
-                File.WriteAllText(path, JsonConvert.SerializeObject(state, Formatting.Indented));
+                Directory.CreateDirectory(Path.GetDirectoryName(StateFile));
+                File.WriteAllText(StateFile, JsonConvert.SerializeObject(state, Formatting.Indented));
             }
             catch (Exception ex)
             {
@@ -917,20 +924,6 @@ namespace Shared.Services
                     }
 
                     string destinationPath = GetRepositoryModulePath(repository, folder);
-                    string legacyPath = Path.Combine(Environment.CurrentDirectory, RepositoryDirectory, repository.Owner, folder.ModuleName);
-
-                    if (!string.Equals(legacyPath, destinationPath, StringComparison.OrdinalIgnoreCase) && Directory.Exists(legacyPath))
-                    {
-                        try
-                        {
-                            Directory.Delete(legacyPath, true);
-                            Log($"Removed legacy module path '{legacyPath}'");
-                        }
-                        catch (Exception ex)
-                        {
-                            LogError(ex, $"Failed to remove legacy path '{legacyPath}'");
-                        }
-                    }
 
                     string existingManifestJson = null;
                     string existingManifestPath = Path.Combine(destinationPath, "manifest.json");
@@ -964,9 +957,8 @@ namespace Shared.Services
                         try
                         {
                             string newManifestJson = File.ReadAllText(newManifestPath);
-                            var merged = MergeManifests(existingManifestJson, newManifestJson);
-                            if (merged != null)
-                                File.WriteAllText(newManifestPath, merged);
+                            string merged = MergeManifests(existingManifestJson, newManifestJson);
+                            File.WriteAllText(newManifestPath, merged);
                         }
                         catch (Exception ex)
                         {
@@ -992,124 +984,53 @@ namespace Shared.Services
             }
         }
 
-        private static string GetRepositoryBasePath(RepositoryEntry repository)
-        {
-            return Path.Combine(
-                Environment.CurrentDirectory,
-                RepositoryDirectory,
-                repository.Owner,
-                repository.Name
-            );
-        }
-
         private static string GetRepositoryModulePath(RepositoryEntry repository, RepositoryFolder folder)
         {
-            return Path.Combine(GetRepositoryBasePath(repository), folder.ModuleName);
+            return Path.Combine(
+               Environment.CurrentDirectory,
+               RepositoryDirectory,
+               repository.Name,
+               folder.ModuleName
+           );
         }
 
         private static string MergeManifests(string existingJson, string newJson)
         {
             try
             {
-                var existingToken = JsonConvert.DeserializeObject<JToken>(existingJson);
-                var newToken = JsonConvert.DeserializeObject<JToken>(newJson);
+                var existingObj = JsonConvert.DeserializeObject<JObject>(existingJson);
+                var newObj = JsonConvert.DeserializeObject<JObject>(newJson);
 
-                if (existingToken == null)
+                if (existingObj == null)
                     return newJson;
 
-                if (newToken == null)
+                if (newObj == null)
                     return existingJson;
 
-                // If both are arrays: merge by 'dll' key; start from existing to preserve custom fields
-                if (existingToken is JArray existingArr && newToken is JArray newArr)
+                // Основа - новый manifest
+                var result = (JObject)newObj.DeepClone();
+
+                foreach (var oldProp in existingObj.Properties())
                 {
-                    // Build index for existing by dll (case-insensitive)
-                    var existingIndex = new Dictionary<string, JObject>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var e in existingArr.OfType<JObject>())
+                    var oldName = oldProp.Name;
+
+                    // enable и dynamic всегда сохраняем из старого, если они там есть
+                    if (string.Equals(oldName, "enable", StringComparison.OrdinalIgnoreCase) ||
+                        string.Equals(oldName, "dynamic", StringComparison.OrdinalIgnoreCase))
                     {
-                        var dll = e["dll"]?.Value<string>();
-                        if (!string.IsNullOrEmpty(dll))
-                            existingIndex[dll.ToLowerInvariant()] = (JObject)e.DeepClone();
+                        result[oldName] = oldProp.Value.DeepClone();
+                        continue;
                     }
 
-                    // Apply updates from newArr: only properties present in source overwrite existing
-                    foreach (var n in newArr.OfType<JObject>())
-                    {
-                        var ndll = n["dll"]?.Value<string>();
-                        if (!string.IsNullOrEmpty(ndll) && existingIndex.TryGetValue(ndll.ToLowerInvariant(), out JObject existObj))
-                        {
-                            foreach (var prop in n.Properties())
-                            {
-                                var name = prop.Name;
-                                if (string.Equals(name, "enable", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    // preserve existing enable if present
-                                    if (existObj.Property(name, StringComparison.OrdinalIgnoreCase) == null)
-                                        existObj[name] = prop.Value.DeepClone();
+                    // Любые кастомные поля переносим только если их нет в новом
+                    var existsInNew = result.Properties()
+                        .Any(p => string.Equals(p.Name, oldName, StringComparison.OrdinalIgnoreCase));
 
-                                    continue;
-                                }
-
-                                // Only update properties that exist in new manifest (we are iterating them)
-                                existObj[name] = prop.Value.DeepClone();
-                            }
-
-                            existingIndex[ndll.ToLowerInvariant()] = existObj;
-                        }
-                        else
-                        {
-                            // New entry: add to existingIndex
-                            var clone = (JObject)n.DeepClone();
-                            existingIndex[ndll?.ToLowerInvariant() ?? Guid.NewGuid().ToString()] = clone;
-                        }
-                    }
-
-                    // Preserve original order where possible: start with original existingArr order, then append any new ones not present
-                    var resultArr = new JArray();
-
-                    var added = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-                    foreach (var e in existingArr.OfType<JObject>())
-                    {
-                        var dll = e["dll"]?.Value<string>() ?? string.Empty;
-                        if (existingIndex.TryGetValue(dll.ToLowerInvariant(), out JObject val))
-                        {
-                            resultArr.Add(val);
-                            added.Add(dll.ToLowerInvariant());
-                        }
-                        else
-                        {
-                            resultArr.Add(e);
-                            added.Add(dll.ToLowerInvariant());
-                        }
-                    }
-
-                    // Append remaining
-                    foreach (var kv in existingIndex)
-                    {
-                        if (!added.Contains(kv.Key))
-                            resultArr.Add(kv.Value);
-                    }
-
-                    return JsonConvert.SerializeObject(resultArr, Formatting.Indented);
+                    if (!existsInNew)
+                        result[oldName] = oldProp.Value.DeepClone();
                 }
 
-                // If both are objects: merge into existing, updating only fields present in new, but preserve existing enable
-                if (existingToken is JObject existingObjRoot && newToken is JObject newObjRoot)
-                {
-                    foreach (var prop in newObjRoot.Properties())
-                    {
-                        var name = prop.Name;
-                        if (string.Equals(name, "enable", StringComparison.OrdinalIgnoreCase) && existingObjRoot.Property(name, StringComparison.OrdinalIgnoreCase) != null)
-                            continue; // preserve
-
-                        existingObjRoot[name] = prop.Value.DeepClone();
-                    }
-
-                    return JsonConvert.SerializeObject(existingObjRoot, Formatting.Indented);
-                }
-
-                // Fallback: return newJson
-                return newJson;
+                return JsonConvert.SerializeObject(result, Formatting.Indented);
             }
             catch
             {

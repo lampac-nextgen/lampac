@@ -310,10 +310,9 @@ namespace Core
                                         compilationFolders.Add(folder);
                                         break;
                                     }
-                                    else if (lm.EndsWith("*"))
+                                    else if (lm.IndexOfAny(['*', '?', '[']) != -1)
                                     {
-                                        string _lm = lm.TrimEnd('*');
-                                        if (folderName.StartsWith(_lm) || folderNameMainMod.StartsWith(_lm))
+                                        if (Regex.IsMatch(folderName, lm) || Regex.IsMatch(folderNameMainMod, lm))
                                         {
                                             compilationFolders.Add(folder);
                                             break;

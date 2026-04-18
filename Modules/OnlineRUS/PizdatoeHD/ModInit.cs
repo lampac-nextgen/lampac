@@ -72,6 +72,7 @@ namespace PizdatoeHD
             conf = ModuleInvoke.Init("PizdatoeHD", new ModuleConf("pizdatoehd", "https://rezka.ag")
             {
                 kit = false,
+                enable = true,
                 imitationHuman = true,
                 displayindex = 331,
                 hls = true,
