@@ -17,6 +17,8 @@ namespace Shared.Models.Events
 
         public static Func<EventProxyApiCacheStream, (string uriKey, string contentType)> ProxyApiCacheStream;
 
+        public static Func<EventProxyApiOverride, Task<bool>> ProxyApiOverride;
+
         public static Func<EventProxyImgMd5key, string> ProxyImgMd5key;
 
         public static Func<EventStaticache, bool> Staticache;

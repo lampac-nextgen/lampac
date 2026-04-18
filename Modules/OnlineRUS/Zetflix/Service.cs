@@ -49,6 +49,9 @@ namespace Zetflix
 
             string file = Regex.Match(html, "file:(\\[[^\n\r]+\\])(,|}\\) ;)").Groups[1].Value;
             if (string.IsNullOrWhiteSpace(file))
+                file = Regex.Match(html, "file:(\\[[\\s\\S]+?\\])\\s*(,|\\}\\) ;)", RegexOptions.Multiline).Groups[1].Value;
+
+            if (string.IsNullOrWhiteSpace(file))
             {
                 file = Regex.Match(html, "file:\"([^\"]+)\"").Groups[1].Value;
                 if (!string.IsNullOrWhiteSpace(file))
@@ -68,7 +71,7 @@ namespace Zetflix
                 return null;
             }
 
-            file = Regex.Replace(file.Trim(), "(\\{|, )([a-z]+): ?", "$1\"$2\":")
+            file = Regex.Replace(file.Trim(), "(\\{|, )([a-zA-Z_][a-zA-Z0-9_]*): ?", "$1\"$2\":")
                         .Replace("},]", "}]");
 
             List<RootObject> pl = null;
@@ -84,7 +87,8 @@ namespace Zetflix
                 return null;
             }
 
-            return new EmbedModel() { pl = pl, movie = !file.Contains("\"comment\":"), quality = quality, check_url = check_url };
+            bool isMovie = !file.Contains("\"comment\":", StringComparison.OrdinalIgnoreCase);
+            return new EmbedModel() { pl = pl, movie = isMovie, quality = quality, check_url = check_url };
         }
 
         public async Task<int> number_of_seasons(long id)

@@ -4,7 +4,7 @@ displayname: VtraheTV
 rch_access: apk,cors
 stream_access: apk,cors
 rchstreamproxy: web
-host: https://mov.vtrahe.work
+host: https://ox.vtrahe.work
 priorityBrowser: http
 
 route:

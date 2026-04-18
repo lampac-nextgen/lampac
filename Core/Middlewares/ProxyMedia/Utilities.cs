@@ -2,6 +2,7 @@
 using Microsoft.Extensions.Primitives;
 using Shared;
 using Shared.Models.Base;
+using Shared.Models.Events;
 using Shared.Services;
 using Shared.Services.Pools;
 using Shared.Services.Utilities;
@@ -10,6 +11,7 @@ using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Text.RegularExpressions;
@@ -21,6 +23,20 @@ namespace Core.Middlewares
 {
     public partial class ProxyAPI
     {
+        static readonly HttpClientHandler baseHandler = new HttpClientHandler()
+        {
+            AutomaticDecompression = DecompressionMethods.Brotli | DecompressionMethods.GZip | DecompressionMethods.Deflate,
+            AllowAutoRedirect = false,
+            UseProxy = false,
+            ServerCertificateCustomValidationCallback = (sender, cert, chain, sslPolicyErrors) => true
+        };
+
+        static async Task InvokeProxyApiCreateHttpRequestHandlers(EventProxyApiCreateHttpRequest eventArgs)
+        {
+            foreach (Func<EventProxyApiCreateHttpRequest, Task> handler in EventListener.ProxyApiCreateHttpRequest.GetInvocationList())
+                await handler(eventArgs).ConfigureAwait(false);
+        }
+
         #region CreateProxyHttpRequest
         static HttpRequestMessage CreateProxyHttpRequest(string plugin, HttpContext context, List<HeadersModel> headers, Uri uri)
         {

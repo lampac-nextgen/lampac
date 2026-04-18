@@ -16,6 +16,9 @@ namespace Core.Middlewares
 {
     public partial class ProxyAPI
     {
+        static readonly Regex rexM3u = new Regex("(https?://[^\n\r\"\\# ]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+        static readonly Regex rexUri = new Regex("(URI=\")([^\"]+)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
+
         async public Task ProxyM3u8(HttpContext httpContext, ServerproxyConf init, ProxyLinkModel decryptLink, HttpResponseMessage response, string contentType, CancellationTokenSource ctsHttp)
         {
             using (HttpContent content = response.Content)
@@ -238,7 +241,7 @@ namespace Core.Middlewares
                 }
                 else
                 {
-                    // проксируем ошибку 
+                    // проксируем ошибку
                     await CopyProxyHttpResponse(httpContext, response, null, ctsHttp.Token).ConfigureAwait(false);
                 }
             }

@@ -46,6 +46,8 @@ namespace Shared.Models.Events
 
     public record EventProxyApiCacheStream(HttpContext httpContext, ProxyLinkModel decryptLink);
 
+    public record EventProxyApiOverride(HttpContext httpContext, RequestModel requestInfo, ProxyLinkModel decryptLink, HttpClientHandler proxyHandler);
+
     public record EventProxyImgMd5key(HttpContext httpContext, RequestModel requestInfo, ProxyLinkModel decryptLink, string href, int width, int height);
 
     public record EventStaticache(HttpContext httpContext, RequestModel requestInfo);

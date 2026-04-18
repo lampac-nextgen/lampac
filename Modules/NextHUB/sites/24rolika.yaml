@@ -4,7 +4,7 @@ displayname: 24rolika
 rch_access: apk
 stream_access: apk
 streamproxy: true
-host: https://w1.huyalkino.com
+host: https://w2.huyalkino.com
 priorityBrowser: http
 headers_stream:
   referer: "{host}/"

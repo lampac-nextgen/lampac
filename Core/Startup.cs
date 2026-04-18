@@ -283,25 +283,71 @@ namespace Core
                     #endregion
 
                     #region compilation
-                    List<string> compilationFolders = CollectCompilationFolders(modfolder, skipCompilationFolders);
+                    List<string> compilationFolders = new();
 
-                    foreach (string folderMod in compilationFolders)
+                    foreach (string folderMod in Directory.GetDirectories(Path.Combine(AppContext.BaseDirectory, modfolder)))
                     {
                         if (mods.LoadModules == null || mods.LoadModules.Length == 0)
                             continue;
 
-                        string folderName = Path.GetFileName(folderMod);
-                        string parentFolderName = Path.GetFileName(Directory.GetParent(folderMod)?.FullName);
-                        if (!IsLoadModuleAllowed(mods.LoadModules, folderName, parentFolderName))
-                            continue;
+                        void add(string folder)
+                        {
+                            string folderName = Path.GetFileName(folder);
+                            if (skipCompilationFolders.Contains(folderName))
+                            {
+                                Console.WriteLine($"skip compilation {modfolder}: {folderName}");
+                                return;
+                            }
 
+                            if (mods.LoadModules[0] != ".*")
+                            {
+                                string folderNameMainMod = Path.GetFileName(folderMod);
+
+                                foreach (string lm in mods.LoadModules)
+                                {
+                                    if (lm == folderName || lm == folderNameMainMod)
+                                    {
+                                        compilationFolders.Add(folder);
+                                        break;
+                                    }
+                                    else if (lm.EndsWith("*"))
+                                    {
+                                        string _lm = lm.TrimEnd('*');
+                                        if (folderName.StartsWith(_lm) || folderNameMainMod.StartsWith(_lm))
+                                        {
+                                            compilationFolders.Add(folder);
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                            else
+                            {
+                                compilationFolders.Add(folder);
+                            }
+                        }
+
+                        if (File.Exists(Path.Combine(folderMod, "manifest.json")))
+                        {
+                            add(folderMod);
+                        }
+                        else
+                        {
+                            foreach (string recurseMod in Directory.GetDirectories(folderMod))
+                            {
+                                string manifest = Path.Combine(recurseMod, "manifest.json");
+                                if (File.Exists(manifest))
+                                    add(recurseMod);
+                            }
+                        }
+                    }
+
+                    foreach (string folderMod in compilationFolders)
+                    {
                         string manifest = Path.Combine(folderMod, "manifest.json");
-                        if (!File.Exists(manifest))
-                            continue;
-
                         var mod = JsonConvert.DeserializeObject<RootModule>(File.ReadAllText(manifest));
 
-                        mod.name = folderName;
+                        mod.name = Path.GetFileName(folderMod);
                         mod.path = folderMod;
 
                         if (!mod.enable || CoreInit.modules.FirstOrDefault(i => i.name == mod.name) != null)
@@ -715,7 +761,7 @@ namespace Core
                                 Console.WriteLine("rebuild module: " + mod.name);
                             }
                         }
-                        catch (System.Exception ex)
+                        catch (Exception ex)
                         {
                             Serilog.Log.Error(ex, "CatchId={CatchId}", "id_64a00701");
                             Console.WriteLine($"Failed to rebuild module {mod.name}: {ex.Message}");
@@ -804,82 +850,5 @@ namespace Core
             }
         }
         #endregion
-
-        static List<string> CollectCompilationFolders(string modfolder, HashSet<string> skipCompilationFolders)
-        {
-            var result = new List<string>();
-            string rootPath = Path.Combine(AppContext.BaseDirectory, modfolder);
-
-            if (!Directory.Exists(rootPath))
-                return result;
-
-            var pending = new Stack<string>(Directory.GetDirectories(rootPath));
-
-            while (pending.Count > 0)
-            {
-                string folderPath = pending.Pop();
-                string folderName = Path.GetFileName(folderPath);
-
-                if (skipCompilationFolders.Contains(folderName))
-                {
-                    Console.WriteLine($"skip compilation folder {modfolder}: {folderName}");
-                    continue;
-                }
-
-                if (File.Exists(Path.Combine(folderPath, "manifest.json")))
-                {
-                    result.Add(folderPath);
-                    continue;
-                }
-
-                foreach (string childPath in Directory.GetDirectories(folderPath))
-                    pending.Push(childPath);
-            }
-
-            return result;
-        }
-
-        static bool IsLoadModuleAllowed(string[] loadModules, string moduleName, string parentFolderName)
-        {
-            if (loadModules == null || loadModules.Length == 0)
-                return false;
-
-            foreach (string rawPattern in loadModules)
-            {
-                string pattern = rawPattern?.Trim();
-                if (string.IsNullOrWhiteSpace(pattern))
-                    continue;
-
-                if (pattern == ".*" || pattern == "*")
-                    return true;
-
-                if (pattern.Equals(moduleName, StringComparison.OrdinalIgnoreCase))
-                    return true;
-
-                if (!string.IsNullOrEmpty(parentFolderName) && pattern.Equals(parentFolderName, StringComparison.OrdinalIgnoreCase))
-                    return true;
-
-                string dottedName = string.IsNullOrEmpty(parentFolderName)
-                    ? moduleName
-                    : $"{parentFolderName}.{moduleName}";
-
-                if (IsWildcardMatch(pattern, moduleName) || IsWildcardMatch(pattern, dottedName))
-                    return true;
-            }
-
-            return false;
-        }
-
-        static bool IsWildcardMatch(string pattern, string value)
-        {
-            if (string.IsNullOrEmpty(pattern) || string.IsNullOrEmpty(value))
-                return false;
-
-            if (pattern.IndexOfAny(new[] { '*', '?' }) == -1)
-                return false;
-
-            string regexPattern = $"^{Regex.Escape(pattern).Replace("\\*", ".*").Replace("\\?", ".")}$";
-            return Regex.IsMatch(value, regexPattern, RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
-        }
     }
 }

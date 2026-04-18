@@ -1,0 +1,139 @@
+enable: true
+displayindex: 400
+displayname: Analdin
+rch_access: apk,cors
+stream_access: apk,cors
+rchstreamproxy: web
+host: https://www.analdin.com
+priorityBrowser: http
+streamproxy_preview: true
+
+menu:
+  sort:
+    Новинки: ""
+    Лучшее: top-rated/{page}/
+    Популярнаe: most-popular/{page}/
+  categories:
+    format: categories/{cat}/{page}/
+    Sex: sex
+    Blowjobs: blowjobs
+    Hot: hot
+    Pussy: pussy
+    Ass: ass
+    Sexy: sexy
+    Hardcore: hardcore
+    Babes: babes
+    Big Tits: big-tits
+    Tits: tits
+    Brunettes: brunettes
+    Big Ass: big-ass
+    "Teens 18+": teens-18
+    Amateurs: amateurs
+    Blondes: blondes
+    Doggy Style: doggy-style
+    Big Cock: big-cock
+    Cumshots: cumshots
+    Anal: anal
+    big dick: big-dick
+    Pussy Licking: pussy-licking
+    Sluts: sluts
+    Crazy: crazy
+    Pornstars: pornstars
+    Masturbation: masturbation
+    Young: young
+    Cowgirl: cowgirl
+    MILFs: milfs
+    Oral: oral
+    POV: pov
+    MILF: milf
+    HD: hd
+    Small Tits: small-tits
+    Tattoos: tattoos
+    porn: porn
+    Missionary: missionary
+    Lesbians: lesbians
+    Homemade: homemade
+    Interracial: interracial
+    Busty: busty
+    Natural Tits: natural-tits
+    Reverse Cowgirl: reverse-cowgirl
+    Facial: facial
+    Black: black
+    Mature: mature
+    Handjob: handjob
+    Naked: naked
+    Deepthroat: deepthroat
+    Latina: latina
+    Petite: petite
+    Asian: asian
+    Caucasian: caucasian
+    Fetish: fetish
+    Shaved: shaved
+    Riding: riding
+    BBW: bbw
+    Creampie: creampie
+    Cum: cum
+    Outdoor: outdoor
+    Skinny: skinny
+    Threesome: threesome
+    Ass Licking: ass-licking
+    Mom: mom
+    Threesomes: threesomes
+    Orgasms: orgasms
+    Chubby: chubby
+    Bubble Butt: bubble-butt
+    Small Ass: small-ass
+    Lingerie: lingerie
+    Piercing: piercing
+    Cute: cute
+    Licking: licking
+    Wives: wives
+    Group: group
+    Redheads: redheads
+    Fingering: fingering
+    Kissing: kissing
+    Chicks: chicks
+    Couple: couple
+    Public: public
+    Ass Fucking: ass-fucking
+    Wild: wild
+    Japanese: japanese
+    Erotic: erotic
+    Big Black Cock: big-black-cock
+    Sweet: sweet
+    High Heels: high-heels
+    rough: rough
+    Solo: solo
+    Hairy: hairy
+    Model: model
+    Orgy: orgy
+    "18 Years Old": 18-years-old
+
+list:
+  uri: latest-updates/{page}/
+
+search:
+  uri: search/{search}/{page}/
+
+contentParse:
+  nodes: //div[@class='item  ']
+  name:
+    node: .//strong
+  href:
+    node: .//a
+    attribute: href
+  img:
+    node: .//img
+    attribute: data-original
+  duration:
+    node: .//div[@class='duration']
+  preview:
+    node: .//a[@class='popup-video-link']
+    attribute: vthumb
+
+view:
+  related: true
+  viewsource: true
+  regexMatch:
+    matches: ["url3", "url2", "url"]
+    pattern: "video_alt_{value}:[\t ]+'([^']+)'"
