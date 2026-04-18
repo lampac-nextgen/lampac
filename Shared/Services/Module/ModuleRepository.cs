@@ -917,20 +917,6 @@ namespace Shared.Services
                     }
 
                     string destinationPath = GetRepositoryModulePath(repository, folder);
-                    string legacyPath = Path.Combine(Environment.CurrentDirectory, RepositoryDirectory, repository.Owner, folder.ModuleName);
-
-                    if (!string.Equals(legacyPath, destinationPath, StringComparison.OrdinalIgnoreCase) && Directory.Exists(legacyPath))
-                    {
-                        try
-                        {
-                            Directory.Delete(legacyPath, true);
-                            Log($"Removed legacy module path '{legacyPath}'");
-                        }
-                        catch (Exception ex)
-                        {
-                            LogError(ex, $"Failed to remove legacy path '{legacyPath}'");
-                        }
-                    }
 
                     string existingManifestJson = null;
                     string existingManifestPath = Path.Combine(destinationPath, "manifest.json");
@@ -997,7 +983,6 @@ namespace Shared.Services
             return Path.Combine(
                 Environment.CurrentDirectory,
                 RepositoryDirectory,
-                repository.Owner,
                 repository.Name
             );
         }
