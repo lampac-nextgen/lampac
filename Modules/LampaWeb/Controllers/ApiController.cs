@@ -8,12 +8,9 @@ using Newtonsoft.Json.Linq;
 using Shared;
 using Shared.Models.Events;
 using Shared.Services;
-using Shared.Services.Utilities;
 using System;
 using System.Collections.Generic;
-using System.IO.Compression;
 using System.Linq;
-using System.Security.Cryptography;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Web;
@@ -314,7 +311,10 @@ namespace LampaWeb.Controllers
         [Route("samsung.wgt")]
         public ActionResult SamsWgt(string overwritehost)
         {
-            string cache = $"cache/widgets/samsung/{CrypTo.md5(overwritehost ?? host + "v3")}";
+            if (!ModInit.conf.widgets.samsung)
+                return NotFound();
+
+            string cache = $"cache/widgets/samsung/{Shared.Services.Utilities.CrypTo.md5(overwritehost ?? host + "v4")}";
             string wgt = $"{cache}.wgt";
 
             if (IO.File.Exists(wgt))
@@ -325,21 +325,25 @@ namespace LampaWeb.Controllers
 
             IO.Directory.CreateDirectory(publishDirectory);
 
-            string index = IO.File.ReadAllText($"{widgetDirectory}/index.html");
+            foreach (string inFilePath in IO.Directory.GetFiles(widgetDirectory, "*", IO.SearchOption.AllDirectories))
+            {
+                string outFile = inFilePath.Replace(widgetDirectory, publishDirectory);
+                IO.Directory.CreateDirectory(IO.Path.GetDirectoryName(outFile));
+                IO.File.Copy(inFilePath, outFile, true);
+            }
+
+            string index = IO.File.ReadAllText($"{publishDirectory}/index.html");
             IO.File.WriteAllText($"{publishDirectory}/index.html", index.Replace("{localhost}", overwritehost ?? host));
 
-            string loader = IO.File.ReadAllText($"{widgetDirectory}/loader.js");
+            string loader = IO.File.ReadAllText($"{publishDirectory}/loader.js");
             IO.File.WriteAllText($"{publishDirectory}/loader.js", loader.Replace("{localhost}", overwritehost ?? host));
-            string app = IO.File.ReadAllText($"{widgetDirectory}/app.js");
-            IO.File.WriteAllText($"{publishDirectory}/app.js", app.Replace("{localhost}", overwritehost ?? host));
 
-            IO.File.Copy($"{widgetDirectory}/icon.png", $"{publishDirectory}/icon.png", overwrite: true);
-            IO.File.Copy($"{widgetDirectory}/logo_appname_fg.png", $"{publishDirectory}/logo_appname_fg.png", overwrite: true);
-            IO.File.Copy($"{widgetDirectory}/config.xml", $"{publishDirectory}/config.xml", overwrite: true);
+            string app = IO.File.ReadAllText($"{publishDirectory}/app.js");
+            IO.File.WriteAllText($"{publishDirectory}/app.js", app.Replace("{localhost}", overwritehost ?? host));
 
             string gethash(string file)
             {
-                using (SHA512 sha = SHA512.Create())
+                using (var sha = System.Security.Cryptography.SHA512.Create())
                 {
                     return Convert.ToBase64String(sha.ComputeHash(IO.File.ReadAllBytes(file)));
                 }
@@ -364,7 +368,7 @@ namespace LampaWeb.Controllers
             IO.File.WriteAllText($"{publishDirectory}/author-signature.xml", author_sigxml);
 
             string authorsignaturehashsha512 = gethash($"{publishDirectory}/author-signature.xml");
-            string sigxml1 = IO.File.ReadAllText($"{widgetDirectory}/signature1.xml");
+            string sigxml1 = IO.File.ReadAllText($"{publishDirectory}/signature1.xml");
             sigxml1 = sigxml1
                 .Replace("loaderhashsha512", loaderhashsha512)
                 .Replace("apphashsha512", apphashsha512)
@@ -375,9 +379,9 @@ namespace LampaWeb.Controllers
                 .Replace("indexhashsha512", indexhashsha512);
 
             IO.File.WriteAllText($"{publishDirectory}/signature1.xml", sigxml1);
-            ZipFile.CreateFromDirectory(publishDirectory, wgt);
+            IO.Compression.ZipFile.CreateFromDirectory(publishDirectory, wgt);
 
-            IO.Directory.Delete(publishDirectory, true);
+            IO.Directory.Delete(cache, true);
 
             return File(IO.File.OpenRead(wgt), "application/octet-stream");
         }

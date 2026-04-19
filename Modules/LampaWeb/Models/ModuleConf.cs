@@ -23,6 +23,7 @@ namespace LampaWeb.Models
 
         public List<LampaPlugin> customPlugins { get; set; }
 
+        public WidgetsConf widgets { get; set; } = new();
 
         public Dictionary<string, string> appReplace { get; set; }
 
