@@ -1,14 +1,9 @@
-﻿using Shared.Models.Base;
-using Shared.Models.Module;
+﻿using Shared.Models.Module;
 
 namespace Shared.Models.SISI.Base
 {
-    public class SisiConf : ModuleBaseConf, Igroup
+    public class SisiConf : ModuleBaseConf
     {
-        public int group { get; set; }
-
-        public bool group_hide { get; set; } = true;
-
         public bool rsize { get; set; }
 
         public string rsize_host { get; set; }

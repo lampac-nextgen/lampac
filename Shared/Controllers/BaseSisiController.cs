@@ -173,12 +173,6 @@ namespace Shared
                 }
             }
 
-            if (NoAccessGroup(CoreInit.conf.sisi, out string error_msg_sisi))
-            {
-                badInitMsg = new JsonResult(new { accsdb = true, msg = error_msg_sisi });
-                return true;
-            }
-
             if (NoAccessGroup(init, out string error_msg))
             {
                 badInitMsg = new JsonResult(new { accsdb = true, msg = error_msg });

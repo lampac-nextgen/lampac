@@ -119,9 +119,6 @@ namespace SISI
         [Route("sisi")]
         async public Task<JsonResult> Index(string rchtype, string account_email, string uid, string token, bool spder)
         {
-            if (NoAccessGroup(CoreInit.conf.sisi, out string denySisi))
-                return new JsonResult(new { accsdb = true, msg = denySisi });
-
             var appConf = ModInit.conf;
             JObject kitconf = loadKitConf();
 
@@ -131,22 +128,17 @@ namespace SISI
             if (kitconf != null && kitconf.Value<bool?>("lgbt") == false)
                 lgbt = false;
 
-            var channels = new List<ChannelItem>(50);
-
-            if (!SkipSourceForGroupPolicy(CoreInit.conf.sisi))
+            var channels = new List<ChannelItem>(50)
             {
-                channels.Add(new ChannelItem("Закладки", $"{host}/sisi/bookmarks", 0));
+                new ChannelItem("Закладки", $"{host}/sisi/bookmarks", 0)
+            };
 
-                if (ModInit.conf.history.enable)
-                    channels.Add(new ChannelItem("История", $"{host}/sisi/historys", 1));
-            }
+            if (ModInit.conf.history.enable)
+                channels.Add(new ChannelItem("История", $"{host}/sisi/historys", 1));
 
             #region send
             void send(string name, BaseSettings _init, string plugin = null, int displayindex = -1, BaseSettings myinit = null)
             {
-                if (SkipSourceForGroupPolicy(CoreInit.conf.sisi))
-                    return;
-
                 var init = myinit != null ? _init : loadKit(_init, kitconf);
                 bool enable = init.enable && !init.rip;
                 if (!enable)
