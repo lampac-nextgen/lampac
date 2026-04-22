@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Newtonsoft.Json.Linq;
+using Shared;
 using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Entrys;
@@ -118,24 +119,34 @@ namespace SISI
         [Route("sisi")]
         async public Task<JsonResult> Index(string rchtype, string account_email, string uid, string token, bool spder)
         {
+            if (NoAccessGroup(CoreInit.conf.sisi, out string denySisi))
+                return new JsonResult(new { accsdb = true, msg = denySisi });
+
             var appConf = ModInit.conf;
             JObject kitconf = loadKitConf();
+
+            var user = requestInfo.user;
 
             bool lgbt = appConf.lgbt;
             if (kitconf != null && kitconf.Value<bool?>("lgbt") == false)
                 lgbt = false;
 
-            var channels = new List<ChannelItem>(50)
-            {
-                new ChannelItem("Закладки", $"{host}/sisi/bookmarks", 0)
-            };
+            var channels = new List<ChannelItem>(50);
 
-            if (ModInit.conf.history.enable)
-                channels.Add(new ChannelItem("История", $"{host}/sisi/historys", 1));
+            if (!SkipSourceForGroupPolicy(CoreInit.conf.sisi))
+            {
+                channels.Add(new ChannelItem("Закладки", $"{host}/sisi/bookmarks", 0));
+
+                if (ModInit.conf.history.enable)
+                    channels.Add(new ChannelItem("История", $"{host}/sisi/historys", 1));
+            }
 
             #region send
             void send(string name, BaseSettings _init, string plugin = null, int displayindex = -1, BaseSettings myinit = null)
             {
+                if (SkipSourceForGroupPolicy(CoreInit.conf.sisi))
+                    return;
+
                 var init = myinit != null ? _init : loadKit(_init, kitconf);
                 bool enable = init.enable && !init.rip;
                 if (!enable)
@@ -175,11 +186,18 @@ namespace SISI
                     return;
                 }
 
-                if (init.group > 0 && init.group_hide)
+                if (init.group_hide)
                 {
-                    var user = requestInfo.user;
-                    if (user == null || init.group > user.group)
-                        return;
+                    if (init.group > 0)
+                    {
+                        if (user == null || init.group > user.group)
+                            return;
+                    }
+                    else if (CoreInit.conf.accsdb.enable)
+                    {
+                        if (user == null)
+                            return;
+                    }
                 }
 
                 string url = string.Empty;

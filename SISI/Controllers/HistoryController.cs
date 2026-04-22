@@ -1,6 +1,7 @@
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Newtonsoft.Json;
+using Shared;
 using Shared.Services.Pools.Json;
 using SISI.SQL;
 using System.Web;
@@ -15,6 +16,9 @@ namespace SISI.Controllers
         [Route("sisi/historys")]
         async public Task<ActionResult> List(int pg = 1, int pageSize = 36)
         {
+            if (DenySisiModuleGuestOrGroup(out string deny))
+                return new JsonResult(new { accsdb = true, msg = deny });
+
             string md5user = getuser();
             if (md5user == null || !ModInit.conf.history.enable)
                 return StatusCode(403, "access denied");
@@ -101,6 +105,9 @@ namespace SISI.Controllers
         [Route("sisi/history/add")]
         async public Task<ActionResult> Add([FromBody] PlaylistItem data)
         {
+            if (DenySisiModuleGuestOrGroup(out string deny))
+                return new JsonResult(new { accsdb = true, msg = deny });
+
             string md5user = getuser();
             if (md5user == null || !ModInit.conf.history.enable || data == null || string.IsNullOrEmpty(data?.bookmark?.site) || string.IsNullOrEmpty(data?.bookmark?.href))
                 return StatusCode(403, "access denied");
@@ -164,6 +171,9 @@ namespace SISI.Controllers
         [Route("sisi/history/remove")]
         async public Task<ActionResult> Remove(string id)
         {
+            if (DenySisiModuleGuestOrGroup(out string deny))
+                return new JsonResult(new { accsdb = true, msg = deny });
+
             string md5user = getuser();
             if (md5user == null || !ModInit.conf.history.enable || string.IsNullOrEmpty(id))
                 return StatusCode(403, "access denied");

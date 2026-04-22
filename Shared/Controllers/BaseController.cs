@@ -814,6 +814,37 @@ namespace Shared
 
             return false;
         }
+
+        public bool SkipSourceForGroupPolicy(Igroup cfg)
+        {
+            if (!cfg.group_hide)
+                return false;
+
+            var user = requestInfo.user;
+            if (cfg.group > 0)
+                return user == null || cfg.group > user.group;
+
+            if (CoreInit.conf.accsdb.enable)
+                return user == null;
+
+            return false;
+        }
+
+        public bool DenySisiModuleGuestOrGroup(out string error_msg)
+        {
+            error_msg = null;
+            var s = CoreInit.conf.sisi;
+            if (NoAccessGroup(s, out error_msg))
+                return true;
+
+            if (s.group_hide && s.group == 0 && CoreInit.conf.accsdb.enable && requestInfo.user == null)
+            {
+                error_msg = CoreInit.conf.accsdb.authMesage;
+                return true;
+            }
+
+            return false;
+        }
         #endregion
 
         #region accsArgs
