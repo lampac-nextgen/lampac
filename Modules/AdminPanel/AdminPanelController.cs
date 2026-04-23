@@ -18,6 +18,7 @@ namespace AdminPanel
     {
         const string InitFile = "init.conf";
         const string CurrentFile = "current.conf";
+        const string UsersFile = "users.json";
 
         [HttpGet]
         [AllowAnonymous]
@@ -281,6 +282,85 @@ namespace AdminPanel
             catch
             {
                 return raw;
+            }
+        }
+
+        [HttpGet]
+        [Route("/adminpanel/api/users-json")]
+        public ActionResult GetUsersJson()
+        {
+            if (!System.IO.File.Exists(UsersFile))
+                return Content("[]", "application/json; charset=utf-8");
+
+            var text = System.IO.File.ReadAllText(UsersFile, Encoding.UTF8);
+            if (string.IsNullOrWhiteSpace(text))
+                return Content("[]", "application/json; charset=utf-8");
+
+            return Content(NormalizeJsonText(text), "application/json; charset=utf-8");
+        }
+
+        [HttpPost]
+        [Route("/adminpanel/api/users-json")]
+        public async Task<IActionResult> SaveUsersJson()
+        {
+            string body;
+            using (var reader = new StreamReader(Request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, bufferSize: 1024, leaveOpen: true))
+                body = await reader.ReadToEndAsync().ConfigureAwait(false);
+
+            if (string.IsNullOrWhiteSpace(body))
+                return AdminJsonError(400, "empty body");
+
+            try
+            {
+                var parsed = JToken.Parse(body);
+                if (parsed.Type != JTokenType.Array)
+                    return AdminJsonError(400, "root must be a JSON array", "users.json must be a list of AccsUser objects");
+
+                foreach (var item in (JArray)parsed)
+                {
+                    if (item.Type != JTokenType.Object)
+                        return AdminJsonError(400, "invalid array item", "each element must be a JSON object");
+                }
+
+                var formatted = ((JArray)parsed).ToString(Formatting.Indented);
+                await WriteUsersAtomicAsync(formatted).ConfigureAwait(false);
+                return AdminJsonOk();
+            }
+            catch (JsonException ex)
+            {
+                return AdminJsonError(400, "invalid json", ex.Message);
+            }
+            catch (IOException ex)
+            {
+                return AdminJsonError(500, "failed to write users.json", ex.Message);
+            }
+        }
+
+        static async Task WriteUsersAtomicAsync(string formatted)
+        {
+            var tmp = UsersFile + ".tmp";
+            await System.IO.File.WriteAllTextAsync(tmp, formatted, Encoding.UTF8).ConfigureAwait(false);
+            try
+            {
+                try
+                {
+                    System.IO.File.Move(tmp, UsersFile, overwrite: true);
+                }
+                catch (IOException ex) when (IsReplaceTargetBusy(ex))
+                {
+                    await System.IO.File.WriteAllTextAsync(UsersFile, formatted, Encoding.UTF8).ConfigureAwait(false);
+                }
+            }
+            finally
+            {
+                try
+                {
+                    if (System.IO.File.Exists(tmp))
+                        System.IO.File.Delete(tmp);
+                }
+                catch
+                {
+                }
             }
         }
     }

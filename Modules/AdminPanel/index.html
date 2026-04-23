@@ -956,6 +956,235 @@
       margin-left: auto;
     }
 
+    /* users.json: form + JSON */
+    #panel-users .editor-wrap {
+      height: calc(100dvh - 220px);
+    }
+
+    .users-inner-tabs {
+      flex-shrink: 0;
+    }
+
+    .users-inner-tabs .tab {
+      padding: 6px 14px;
+      font-size: var(--text-sm);
+    }
+
+    .users-editor-subrow {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: var(--sp-3);
+      margin-bottom: var(--sp-3);
+    }
+
+    .users-form-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      gap: var(--sp-2);
+      align-items: center;
+      margin-bottom: var(--sp-4);
+    }
+
+    .users-split {
+      display: grid;
+      grid-template-columns: minmax(220px, 300px) 1fr;
+      gap: var(--sp-5);
+      flex: 1;
+      min-height: 0;
+      align-items: stretch;
+    }
+
+    .users-list-aside {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    .users-list-h {
+      font-size: var(--text-xs);
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      color: var(--text-faint);
+      margin-bottom: var(--sp-2);
+      padding-left: var(--sp-2);
+    }
+
+    .users-list-mount {
+      flex: 1;
+      min-height: 0;
+      max-height: calc(100dvh - 320px);
+      overflow-y: auto;
+      border: 1px solid var(--border);
+      border-radius: var(--r-lg);
+      background: var(--surface-2);
+    }
+
+    .users-list-empty {
+      font-size: var(--text-sm);
+      color: var(--text-muted);
+      padding: var(--sp-5);
+      text-align: center;
+    }
+
+    .users-list-item {
+      display: flex;
+      flex-direction: column;
+      align-items: stretch;
+      gap: 2px;
+      width: 100%;
+      text-align: left;
+      font: inherit;
+      padding: var(--sp-3) var(--sp-4);
+      border: none;
+      border-bottom: 1px solid var(--border-subtle);
+      background: transparent;
+      color: var(--text);
+      cursor: pointer;
+      transition: background var(--dur) var(--ease);
+    }
+
+    .users-list-item:last-child {
+      border-bottom: none;
+    }
+
+    .users-list-item:hover {
+      background: var(--surface-hover);
+    }
+
+    .users-list-item.active {
+      background: var(--accent-dim);
+      box-shadow: inset 3px 0 0 0 var(--accent);
+    }
+
+    .users-list-id {
+      font-weight: 600;
+      font-size: var(--text-sm);
+      word-break: break-word;
+    }
+
+    .users-list-id-muted {
+      color: var(--text-muted);
+      font-weight: 500;
+    }
+
+    .users-list-meta {
+      font-size: var(--text-xs);
+      color: var(--text-faint);
+      line-height: 1.35;
+    }
+
+    .users-detail-aside {
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+      min-width: 0;
+    }
+
+    .users-detail-mount {
+      flex: 1;
+      min-height: 0;
+      overflow-y: auto;
+      padding-right: var(--sp-1);
+    }
+
+    .users-detail-mount .user-card {
+      margin-bottom: 0;
+    }
+
+    .users-detail-empty {
+      font-size: var(--text-sm);
+      color: var(--text-muted);
+      padding: var(--sp-8) var(--sp-4);
+      text-align: center;
+      border: 1px dashed var(--border);
+      border-radius: var(--r-lg);
+      background: var(--surface-2);
+    }
+
+    @media (max-width: 900px) {
+      .users-split {
+        grid-template-columns: 1fr;
+      }
+
+      .users-list-mount {
+        max-height: 220px;
+      }
+    }
+
+    .user-card {
+      border: 1px solid var(--border);
+      border-radius: var(--r-xl);
+      background: var(--surface);
+      padding: var(--sp-4) var(--sp-5);
+      margin-bottom: var(--sp-4);
+      transition: border-color var(--dur) var(--ease), box-shadow var(--dur-slow) var(--ease);
+    }
+
+    .user-card:focus-within {
+      border-color: color-mix(in srgb, var(--accent) 35%, var(--border));
+      box-shadow: 0 0 0 1px var(--accent-dim);
+    }
+
+    .user-card-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: var(--sp-3);
+      margin-bottom: var(--sp-4);
+      padding-bottom: var(--sp-3);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+
+    .user-card-title {
+      font-weight: 700;
+      font-size: var(--text-sm);
+      color: var(--text);
+      letter-spacing: -0.01em;
+    }
+
+    .user-card .simple-row {
+      margin-bottom: var(--sp-3);
+    }
+
+    .user-card textarea.uf-ids,
+    .user-card textarea.uf-params {
+      min-height: 72px;
+      font-size: var(--text-xs);
+    }
+
+    .user-card .simple-check {
+      margin-top: 0;
+    }
+
+    #usersEditorJson {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      gap: var(--sp-2);
+    }
+
+    #usersEditorJson textarea.code {
+      flex: 1;
+      min-height: 200px;
+    }
+
+    .users-editor-form-panel {
+      display: flex;
+      flex-direction: column;
+      flex: 1;
+      min-height: 0;
+      gap: 0;
+    }
+
+    #usersEditorForm[hidden],
+    #usersEditorJson[hidden] {
+      display: none !important;
+    }
+
     /* ── SIMPLE EDITOR ── */
     details.simple-key-block {
       border: 1px solid var(--border);
@@ -1644,6 +1873,16 @@
             </svg>
             current.conf
           </button>
+          <button type="button" class="tab" data-panel="users" role="tab">
+            <svg style="width:12px;height:12px;margin-right:4px;vertical-align:-1px" viewBox="0 0 24 24" fill="none"
+              stroke="currentColor" stroke-width="2" stroke-linecap="round">
+              <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2" />
+              <circle cx="9" cy="7" r="4" />
+              <path d="M23 21v-2a4 4 0 0 0-3-3.87" />
+              <path d="M16 3.13a4 4 0 0 1 0 7.75" />
+            </svg>
+            users.json
+          </button>
         </div>
 
         <div class="topbar-spacer"></div>
@@ -1665,7 +1904,7 @@
             <span class="btn-label">Обновить</span>
           </button>
           <button type="button" class="btn btn-primary btn-sm" id="saveInitBtn"
-            title="Сохранить весь init.conf (Ctrl+S)">
+            title="Сохранить: init.conf или users.json на активной вкладке (Ctrl+S)">
             <svg style="width:13px;height:13px" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"
               stroke-linecap="round">
               <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
@@ -1683,6 +1922,7 @@
         <button type="button" class="tab" data-panel="simple">Редактор</button>
         <button type="button" class="tab" data-panel="init">init.conf</button>
         <button type="button" class="tab" data-panel="current">current</button>
+        <button type="button" class="tab" data-panel="users">users</button>
       </div>
     </div>
 
@@ -1863,6 +2103,69 @@
             <textarea class="code" id="currentRaw" spellcheck="false" readonly></textarea>
           </div>
         </div>
+
+        <!-- PANEL: users.json (accsdb) -->
+        <div class="panel" id="panel-users" data-panel="users">
+          <div class="editor-wrap">
+            <div class="editor-toolbar">
+              <button type="button" class="btn btn-ghost btn-sm" id="formatUsersBtn">
+                <svg style="width:13px;height:13px" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2" stroke-linecap="round">
+                  <polyline points="16 18 22 12 16 6" />
+                  <polyline points="8 6 2 12 8 18" />
+                </svg>
+                Форматировать
+              </button>
+              <button type="button" class="btn btn-ghost btn-sm" id="copyUsersBtn">
+                <svg style="width:13px;height:13px" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2" stroke-linecap="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+                </svg>
+                Копировать
+              </button>
+              <button type="button" class="btn btn-primary btn-sm" id="saveUsersBtn">
+                <svg style="width:13px;height:13px" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                  stroke-width="2.2" stroke-linecap="round">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z" />
+                  <polyline points="17 21 17 13 7 13 7 21" />
+                  <polyline points="7 3 7 8 15 8" />
+                </svg>
+                Сохранить users.json
+              </button>
+              <span class="hint-text" style="font-size:var(--text-xs);color:var(--text-faint);margin-left:auto">
+                <span class="kbd">Ctrl+S</span> на этой вкладке тоже сохраняет users.json
+              </span>
+            </div>
+            <div class="users-editor-subrow">
+              <span style="font-size:var(--text-xs);font-weight:600;color:var(--text-muted)">Режим</span>
+              <div class="tabs users-inner-tabs" role="tablist" aria-label="Редактор users.json">
+                <button type="button" class="tab active" data-users-view="form" role="tab">Форма</button>
+                <button type="button" class="tab" data-users-view="json" role="tab">JSON</button>
+              </div>
+            </div>
+            <div id="usersEditorForm" class="users-editor-form-panel">
+              <div class="users-form-toolbar">
+                <button type="button" class="btn btn-primary btn-sm" id="usersAddBtn">+ Пользователь</button>
+                <button type="button" class="btn btn-ghost btn-sm" id="usersFormFromJsonBtn">Обновить из JSON</button>
+              </div>
+              <div class="users-split">
+                <aside class="users-list-aside" aria-label="Список учётных записей">
+                  <div class="users-list-h">Пользователи</div>
+                  <div id="usersListMount" class="users-list-mount" aria-live="polite"></div>
+                </aside>
+                <div class="users-detail-aside">
+                  <p id="usersDetailEmpty" class="users-detail-empty" hidden>Выберите запись в списке слева или нажмите
+                    «+ Пользователь».</p>
+                  <div id="usersDetailMount" class="users-detail-mount"></div>
+                </div>
+              </div>
+            </div>
+            <div id="usersEditorJson" hidden>
+              <textarea class="code" id="usersRaw" spellcheck="false" autocomplete="off"></textarea>
+            </div>
+          </div>
+        </div>
       </main>
     </div>
   </div>
@@ -1882,6 +2185,10 @@
   <script>
     (function () {
       const api = (path, opts) => fetch(path, Object.assign({ credentials: 'same-origin' }, opts || {}));
+
+      let usersEditorView = 'form';
+      let usersFormData = [];
+      let usersSelectedIndex = -1;
 
       let groupsMeta = [];
       let catalogGroupsMeta = [];
@@ -1961,15 +2268,36 @@
 
       /* ── Panel Switching ── */
       function switchPanel(id) {
-        $$('.tab').forEach(t => t.classList.toggle('active', t.dataset.panel === id));
+        const prevPanel = $('.panel.active');
+        const prevId = prevPanel ? prevPanel.dataset.panel : null;
+        if (prevId === 'users' && id !== 'users' && usersEditorView === 'form')
+          usersSerializeFormToTextarea();
+
+        $$('.topbar .tabs .tab[data-panel], #mobileTabs .tab[data-panel]').forEach(t =>
+          t.classList.toggle('active', t.dataset.panel === id));
         $$('.panel').forEach(p => p.classList.toggle('active', p.dataset.panel === id));
         const sj = $('#sidebarJsonNav');
         const ss = $('#sidebarSimpleNav');
         if (sj && ss) {
-          const isSimple = id === 'simple';
-          sj.hidden = isSimple;
-          ss.hidden = !isSimple;
+          if (id === 'simple') {
+            sj.hidden = true;
+            ss.hidden = false;
+          } else if (id === 'sections') {
+            sj.hidden = false;
+            ss.hidden = true;
+          } else if (id === 'users') {
+            sj.hidden = true;
+            ss.hidden = true;
+          } else {
+            sj.hidden = false;
+            ss.hidden = true;
+          }
         }
+      }
+
+      function activePanelId() {
+        const p = $('.panel.active');
+        return p ? p.dataset.panel : null;
       }
 
       /* ── Confirm Dialog ── */
@@ -2023,6 +2351,312 @@
         try { currentObj = JSON.parse(currentText); } catch (e) { currentObj = {}; }
         $('#initRaw').value = initText;
         $('#currentRaw').value = currentText;
+      }
+
+      async function loadUsersJson() {
+        const ru = await api('/adminpanel/api/users-json');
+        if (!ru.ok) {
+          if (ru.status === 404)
+            throw new Error('Нет доступа (установите cookie на /adminpanel/auth)');
+          throw new Error('users-json ' + ru.status);
+        }
+        const txt = await ru.text();
+        const ta = $('#usersRaw');
+        if (ta) ta.value = txt;
+        if (usersEditorView === 'form')
+          usersRefreshFormFromTextarea();
+      }
+
+      function usersDefaultExpires() {
+        return '2099-12-31T23:59:59';
+      }
+
+      function usersEmptyRow() {
+        return {
+          id: '',
+          ids: [],
+          IsPasswd: false,
+          expires: usersDefaultExpires(),
+          group: 0,
+          ban: false,
+          ban_msg: '',
+          comment: '',
+          params: {}
+        };
+      }
+
+      function usersNormalizeFromJson(u) {
+        if (!u || typeof u !== 'object' || Array.isArray(u))
+          return usersEmptyRow();
+        const ids = Array.isArray(u.ids) ? u.ids.map(String).map(s => s.trim()).filter(Boolean) : [];
+        let group = 0;
+        if (typeof u.group === 'number' && !Number.isNaN(u.group))
+          group = u.group;
+        else if (u.group != null) {
+          const n = parseInt(String(u.group), 10);
+          if (!Number.isNaN(n)) group = n;
+        }
+        let params = {};
+        if (u.params != null && typeof u.params === 'object' && !Array.isArray(u.params))
+          params = JSON.parse(JSON.stringify(u.params));
+        return {
+          id: u.id != null ? String(u.id) : '',
+          ids,
+          IsPasswd: !!u.IsPasswd,
+          expires: u.expires != null && String(u.expires).trim() ? String(u.expires) : usersDefaultExpires(),
+          group,
+          ban: !!u.ban,
+          ban_msg: u.ban_msg != null ? String(u.ban_msg) : '',
+          comment: u.comment != null ? String(u.comment) : '',
+          params
+        };
+      }
+
+      function usersParseArrayFromTextarea() {
+        const ta = $('#usersRaw');
+        if (!ta) return [];
+        const raw = ta.value.trim();
+        let parsed;
+        try {
+          parsed = JSON.parse(raw === '' ? '[]' : raw);
+        } catch (e) {
+          throw new Error('JSON: ' + e.message);
+        }
+        if (!Array.isArray(parsed))
+          throw new Error('Корень должен быть JSON-массивом');
+        return parsed.map(usersNormalizeFromJson);
+      }
+
+      function userCardTemplate() {
+        return (
+          '<div class="user-card">' +
+          '  <div class="user-card-head">' +
+          '    <span class="user-card-title">Параметры записи</span>' +
+          '    <button type="button" class="btn btn-danger btn-sm uf-remove" title="Удалить пользователя из списка">Удалить</button>' +
+          '  </div>' +
+          '  <div class="simple-row"><label>id <span style="color:var(--err)">*</span></label><div><input type="text" class="uf-id" autocomplete="off" spellcheck="false" placeholder="основной UID или логин" /></div></div>' +
+          '  <div class="simple-row"><label>ids</label><div><textarea class="uf-ids simple-json" spellcheck="false" placeholder="дополнительные UID — по одному в строку или через запятую"></textarea></div></div>' +
+          '  <div class="simple-row"><label>expires</label><div><input type="text" class="uf-expires" autocomplete="off" spellcheck="false" placeholder="ISO 8601" /></div></div>' +
+          '  <div class="simple-row"><label>group</label><div><input type="number" class="uf-group" step="1" /></div></div>' +
+          '  <div class="simple-row"><label>ban</label><div class="simple-check"><input type="checkbox" class="uf-ban" /> <span style="font-size:var(--text-xs);color:var(--text-muted)">заблокирован</span></div></div>' +
+          '  <div class="simple-row"><label>ban_msg</label><div><input type="text" class="uf-ban_msg" autocomplete="off" spellcheck="false" placeholder="текст при бане" /></div></div>' +
+          '  <div class="simple-row"><label>comment</label><div><input type="text" class="uf-comment" autocomplete="off" spellcheck="false" /></div></div>' +
+          '  <div class="simple-row"><label>IsPasswd</label><div class="simple-check"><input type="checkbox" class="uf-ispasswd" /> <span style="font-size:var(--text-xs);color:var(--text-muted)">метка «вход по паролю» (TelegramAuth / accs)</span></div></div>' +
+          '  <div class="simple-row" style="display:block"><label style="display:block;margin-bottom:var(--sp-2)">params (JSON-объект)</label><textarea class="uf-params simple-json" spellcheck="false" placeholder="{ }"></textarea></div>' +
+          '</div>'
+        );
+      }
+
+      function usersFillCard(card, u) {
+        card.querySelector('.uf-id').value = u.id || '';
+        card.querySelector('.uf-ids').value = (u.ids || []).join('\n');
+        card.querySelector('.uf-expires').value = u.expires || '';
+        card.querySelector('.uf-group').value = String(u.group != null ? u.group : 0);
+        card.querySelector('.uf-ban').checked = !!u.ban;
+        card.querySelector('.uf-ban_msg').value = u.ban_msg || '';
+        card.querySelector('.uf-comment').value = u.comment || '';
+        card.querySelector('.uf-ispasswd').checked = !!u.IsPasswd;
+        const pta = card.querySelector('.uf-params');
+        pta.value = u.params && Object.keys(u.params).length ? JSON.stringify(u.params, null, 2) : '{}';
+      }
+
+      function usersReadDetailCardToObject(card) {
+        const idsRaw = (card.querySelector('.uf-ids')?.value || '').trim();
+        const ids = idsRaw.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
+        let params = {};
+        const pr = (card.querySelector('.uf-params')?.value || '').trim();
+        if (pr && pr !== '{}') {
+          try {
+            params = JSON.parse(pr);
+          } catch (e) {
+            throw new Error('params: ' + e.message);
+          }
+          if (typeof params !== 'object' || params === null || Array.isArray(params))
+            throw new Error('params должен быть JSON-объектом');
+        }
+        let expires = (card.querySelector('.uf-expires')?.value || '').trim();
+        if (!expires) expires = usersDefaultExpires();
+        const g = parseInt(card.querySelector('.uf-group')?.value || '0', 10);
+        const ban_msg = (card.querySelector('.uf-ban_msg')?.value || '').trim();
+        const comment = (card.querySelector('.uf-comment')?.value || '').trim();
+        const id = (card.querySelector('.uf-id')?.value || '').trim();
+        const draft = {
+          id,
+          ids,
+          IsPasswd: !!card.querySelector('.uf-ispasswd')?.checked,
+          expires,
+          group: Number.isNaN(g) ? 0 : g,
+          ban: !!card.querySelector('.uf-ban')?.checked,
+          ban_msg: ban_msg || null,
+          comment,
+          params
+        };
+        return usersNormalizeFromJson(draft);
+      }
+
+      function usersDetailToData() {
+        const det = $('#usersDetailMount');
+        if (!det) return;
+        const card = det.querySelector('.user-card');
+        if (!card || usersSelectedIndex < 0 || usersSelectedIndex >= usersFormData.length) return;
+        usersFormData[usersSelectedIndex] = usersReadDetailCardToObject(card);
+      }
+
+      function usersListSubtitle(u) {
+        const parts = ['group ' + (u.group != null ? u.group : 0)];
+        if (u.ban) parts.push('ban');
+        const ex = (u.expires || '').toString().trim();
+        if (ex) parts.push(ex.length > 24 ? ex.slice(0, 24) + '…' : ex);
+        return parts.join(' · ');
+      }
+
+      function usersBindDetailRemove(card) {
+        card.querySelector('.uf-remove').addEventListener('click', () => {
+          if (usersSelectedIndex < 0 || usersSelectedIndex >= usersFormData.length) return;
+          usersFormData.splice(usersSelectedIndex, 1);
+          if (usersSelectedIndex >= usersFormData.length)
+            usersSelectedIndex = usersFormData.length ? usersFormData.length - 1 : -1;
+          usersRenderListAndDetail();
+        });
+      }
+
+      function usersRenderListAndDetail() {
+        const listMount = $('#usersListMount');
+        const detMount = $('#usersDetailMount');
+        const emptyEl = $('#usersDetailEmpty');
+        if (!listMount || !detMount) return;
+
+        listMount.innerHTML = '';
+        detMount.innerHTML = '';
+
+        if (!usersFormData.length) {
+          listMount.innerHTML = '<p class="users-list-empty">Нет записей. «+ Пользователь» или «Обновить из JSON».</p>';
+          usersSelectedIndex = -1;
+          if (emptyEl) {
+            emptyEl.hidden = false;
+            emptyEl.textContent = 'Список пуст. Добавьте пользователя или загрузите JSON.';
+          }
+          return;
+        }
+
+        if (usersSelectedIndex < 0 || usersSelectedIndex >= usersFormData.length)
+          usersSelectedIndex = 0;
+
+        usersFormData.forEach((raw, i) => {
+          const u = usersNormalizeFromJson(raw);
+          const b = document.createElement('button');
+          b.type = 'button';
+          b.className = 'users-list-item' + (i === usersSelectedIndex ? ' active' : '');
+          b.dataset.userIndex = String(i);
+          const idSpan = document.createElement('span');
+          idSpan.className = 'users-list-id';
+          const idStr = (u.id || '').trim();
+          if (idStr) idSpan.textContent = idStr;
+          else {
+            idSpan.classList.add('users-list-id-muted');
+            idSpan.textContent = '(без id)';
+          }
+          const meta = document.createElement('span');
+          meta.className = 'users-list-meta';
+          meta.textContent = usersListSubtitle(u);
+          b.appendChild(idSpan);
+          b.appendChild(meta);
+          b.addEventListener('click', () => {
+            try {
+              usersDetailToData();
+            } catch (err) {
+              showToast(err.message || String(err), 'err');
+              return;
+            }
+            usersSelectedIndex = i;
+            usersRenderListAndDetail();
+          });
+          listMount.appendChild(b);
+        });
+
+        if (emptyEl) emptyEl.hidden = true;
+
+        const wrap = document.createElement('div');
+        wrap.innerHTML = userCardTemplate();
+        const card = wrap.firstElementChild;
+        usersFillCard(card, usersFormData[usersSelectedIndex]);
+        usersBindDetailRemove(card);
+        detMount.appendChild(card);
+      }
+
+      function usersSerializeFormToTextarea() {
+        if (usersEditorView !== 'form') return true;
+        try {
+          usersDetailToData();
+          const out = [];
+          const skipped = [];
+          usersFormData.forEach((raw, i) => {
+            const u = usersNormalizeFromJson(raw);
+            const id = (u.id || '').trim();
+            if (!id) {
+              skipped.push(i + 1);
+              return;
+            }
+            const obj = {
+              id,
+              ids: u.ids || [],
+              IsPasswd: !!u.IsPasswd,
+              expires: u.expires,
+              group: u.group,
+              ban: !!u.ban,
+              ban_msg: u.ban_msg && String(u.ban_msg).trim() ? String(u.ban_msg).trim() : null
+            };
+            if (u.comment && String(u.comment).trim())
+              obj.comment = String(u.comment).trim();
+            if (u.params && typeof u.params === 'object' && !Array.isArray(u.params) && Object.keys(u.params).length)
+              obj.params = JSON.parse(JSON.stringify(u.params));
+            out.push(obj);
+          });
+          if (skipped.length)
+            showToast('Записи без id не попадают в JSON: строки списка ' + skipped.join(', '), 'warn');
+          $('#usersRaw').value = JSON.stringify(out, null, 2);
+          usersFormData = out.map(usersNormalizeFromJson);
+          if (usersSelectedIndex >= usersFormData.length)
+            usersSelectedIndex = usersFormData.length ? usersFormData.length - 1 : -1;
+          if (usersEditorView === 'form') usersRenderListAndDetail();
+          return true;
+        } catch (e) {
+          showToast(e.message || String(e), 'err');
+          return false;
+        }
+      }
+
+      function usersRefreshFormFromTextarea() {
+        try {
+          usersFormData = usersParseArrayFromTextarea();
+          if (usersSelectedIndex >= usersFormData.length)
+            usersSelectedIndex = usersFormData.length ? usersFormData.length - 1 : -1;
+          if (usersSelectedIndex < 0 && usersFormData.length)
+            usersSelectedIndex = 0;
+          usersRenderListAndDetail();
+        } catch (e) {
+          showToast(e.message || String(e), 'err');
+          usersFormData = [];
+          usersSelectedIndex = -1;
+          usersRenderListAndDetail();
+        }
+      }
+
+      function usersSwitchSubView(view) {
+        if (view === 'json') {
+          if (!usersSerializeFormToTextarea()) return;
+          usersEditorView = 'json';
+          $('#usersEditorForm').hidden = true;
+          $('#usersEditorJson').hidden = false;
+        } else {
+          usersEditorView = 'form';
+          $('#usersEditorForm').hidden = false;
+          $('#usersEditorJson').hidden = true;
+          usersRefreshFormFromTextarea();
+        }
+        $$('#panel-users .users-inner-tabs .tab').forEach(btn => {
+          btn.classList.toggle('active', btn.dataset.usersView === usersEditorView);
+        });
       }
 
       /* ── Helpers ── */
@@ -2651,6 +3285,46 @@
         await refresh();
       }
 
+      async function saveUsersJson() {
+        if (usersEditorView === 'form' && !usersSerializeFormToTextarea())
+          return;
+        const raw = $('#usersRaw').value.trim();
+        let parsed;
+        try {
+          parsed = JSON.parse(raw === '' ? '[]' : raw);
+        } catch (e) {
+          showToast('JSON ошибка: ' + e.message, 'err');
+          return;
+        }
+        if (!Array.isArray(parsed)) {
+          showToast('Корень должен быть JSON-массивом', 'err');
+          return;
+        }
+        const ok = await showConfirm('Сохранить users.json?', 'Файл users.json в рабочей директории будет перезаписан.');
+        if (!ok) return;
+
+        const body = JSON.stringify(parsed);
+        const res = await api('/adminpanel/api/users-json', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: body
+        });
+        if (!res.ok) {
+          let err = 'Ошибка ' + res.status;
+          try { const j = await res.json(); if (j.error) err = j.error + (j.detail ? ': ' + j.detail : ''); } catch (e) { }
+          showToast(err, 'err');
+          return;
+        }
+        showToast('users.json сохранён', 'ok');
+        await refresh();
+      }
+
+      async function saveActiveConfig() {
+        if (activePanelId() === 'users')
+          return saveUsersJson();
+        return saveFullInit();
+      }
+
       /* ── Copy to clipboard ── */
       function copyToClipboard(text, label) {
         navigator.clipboard.writeText(text).then(() => {
@@ -2671,6 +3345,7 @@
           renderNav();
           renderCatalogNav();
           await loadConfigs();
+          await loadUsersJson();
           renderSections();
           renderSimpleSections();
         } catch (e) {
@@ -2680,7 +3355,7 @@
 
       /* ── Event Listeners ── */
       $('#reloadBtn').addEventListener('click', refresh);
-      $('#saveInitBtn').addEventListener('click', saveFullInit);
+      $('#saveInitBtn').addEventListener('click', saveActiveConfig);
       $('#formatInitBtn').addEventListener('click', () => {
         try {
           $('#initRaw').value = JSON.stringify(JSON.parse($('#initRaw').value), null, 2);
@@ -2690,8 +3365,51 @@
         }
       });
 
-      // Tabs
-      $$('.tab').forEach(t => t.addEventListener('click', () => switchPanel(t.dataset.panel)));
+      $('#formatUsersBtn').addEventListener('click', () => {
+        try {
+          if (usersEditorView === 'form') usersSerializeFormToTextarea();
+          const t = $('#usersRaw').value.trim();
+          $('#usersRaw').value = JSON.stringify(JSON.parse(t === '' ? '[]' : t), null, 2);
+          if (usersEditorView === 'form') usersRefreshFormFromTextarea();
+          showToast('JSON отформатирован', 'ok');
+        } catch (e) {
+          showToast('Формат: ' + e.message, 'err');
+        }
+      });
+
+      $('#copyUsersBtn').addEventListener('click', () => {
+        if (usersEditorView === 'form' && !usersSerializeFormToTextarea()) return;
+        copyToClipboard($('#usersRaw').value, 'users.json');
+      });
+
+      $('#saveUsersBtn').addEventListener('click', saveUsersJson);
+
+      $$('#panel-users .users-inner-tabs .tab').forEach(btn => {
+        btn.addEventListener('click', () => usersSwitchSubView(btn.dataset.usersView));
+      });
+
+      $('#usersAddBtn').addEventListener('click', () => {
+        if (usersEditorView !== 'form')
+          usersSwitchSubView('form');
+        try {
+          if (usersFormData.length) usersDetailToData();
+        } catch (e) {
+          showToast(e.message || String(e), 'err');
+          return;
+        }
+        usersFormData.push(usersEmptyRow());
+        usersSelectedIndex = usersFormData.length - 1;
+        usersRenderListAndDetail();
+      });
+
+      $('#usersFormFromJsonBtn').addEventListener('click', () => {
+        usersRefreshFormFromTextarea();
+        showToast('Форма обновлена из JSON', 'ok');
+      });
+
+      // Tabs (только верхняя полоса и мобильные — не внутренние вкладки users.json)
+      $$('.topbar .tabs .tab[data-panel], #mobileTabs .tab[data-panel]').forEach(t =>
+        t.addEventListener('click', () => switchPanel(t.dataset.panel)));
 
       // Theme
       $('#themeBtn').addEventListener('click', () => {
@@ -2730,7 +3448,7 @@
         // Ctrl+S / Cmd+S — save init
         if ((e.ctrlKey || e.metaKey) && e.key === 's') {
           e.preventDefault();
-          saveFullInit();
+          saveActiveConfig();
         }
         // Alt+R — reload
         if (e.altKey && e.key === 'r') {
@@ -2758,6 +3476,7 @@
           renderNav();
           renderCatalogNav();
           await loadConfigs();
+          await loadUsersJson();
           renderSections();
           renderSimpleSections();
         } catch (e) {
