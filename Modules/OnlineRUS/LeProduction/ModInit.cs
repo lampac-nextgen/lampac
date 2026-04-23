@@ -17,7 +17,7 @@ namespace LeProduction
         {
             var online = new List<ModuleOnlineItem>();
 
-            if ((args.serial == -1 || args.serial == 0) && !args.isanime)
+            if (!args.isanime)
                 online.Add(new(conf));
 
             return online;
