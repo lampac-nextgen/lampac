@@ -5,6 +5,9 @@
 # installs .NET ASP.NET Core 10 runtime + OS deps aligned with the Docker runner image,
 # and registers a systemd unit.
 #
+# Update mode (--update): uses rsync --delete to remove old files not in the release,
+# preserving user data via exclude patterns.
+#
 # Run as any user; sudo is used when needed.
 #
 set -euo pipefail
@@ -20,16 +23,12 @@ readonly RELEASE_ZIP_NAME="lampac-nextgen.zip"
 readonly DOTNET_INSTALL_DIR="${LAMPAC_DOTNET_ROOT:-/usr/share/dotnet}"
 readonly DOTNET_CHANNEL="${LAMPAC_DOTNET_CHANNEL:-10.0}"
 readonly LISTEN_PORT="${LAMPAC_PORT:-9118}"
-# Paths under $INSTALL_ROOT: extracted from the release on fresh install; on
-# `install.sh --update`, an existing file is stashed and restored after unpack so
-# the release copy does not replace local data (missing files still get the zip version).
-readonly UPDATE_PRESERVE_REL_PATHS=(
-  "data/kinoukr.json"
-  "data/PizdatoeDb.json"
-)
+# Имя скрипта — исключается из синхронизации при обновлении
+readonly UPDATE_SCRIPT_NAME="install.sh"
 
 REMOVE=0
 UPDATE=0
+DRY_RUN=0
 PRE_RELEASE=0
 ARCH=""
 PUBLISH_URL=""
@@ -59,6 +58,7 @@ Environment (optional):
 
 Options:
   --update       Replace app files from latest release, restart service
+  --dry-run      Show what would be updated/deleted without applying changes
   --pre-release  Use latest GitHub pre-release asset ($RELEASE_ZIP_NAME)
   --remove       Remove systemd unit, user, and install directory
   -h, --help     Show this help and exit
@@ -121,6 +121,10 @@ parse_args() {
       -h|--help)
         usage
         exit 0
+        ;;
+      --dry-run)
+        DRY_RUN=1
+        shift
         ;;
       --pre-release)
         PRE_RELEASE=1
@@ -260,48 +264,99 @@ set_install_ownership() {
   chown -R "${LAMPAC_USER}:${LAMPAC_USER}" "$INSTALL_ROOT"
 }
 
-stash_preserved_paths_for_update() {
-  local backup_dir="$1"
-  local rel
-  for rel in "${UPDATE_PRESERVE_REL_PATHS[@]}"; do
-    if [[ -f "${INSTALL_ROOT}/${rel}" ]]; then
-      mkdir -p "$(dirname "${backup_dir}/${rel}")"
-      cp -a "${INSTALL_ROOT}/${rel}" "${backup_dir}/${rel}"
-      log_info "Will preserve existing ${rel} after unpacking the release."
-    fi
-  done
+build_rsync_excludes() {
+  # Пути относительно INSTALL_ROOT, которые rsync никогда не должен трогать.
+  local -n _out="$1"
+  _out=(
+    # Этот скрипт — не удалять его при обновлении
+    "$UPDATE_SCRIPT_NAME"
+
+    # Пользовательский конфиг
+    "init.conf"
+    "init.yaml"
+
+    # Пользовательские Roslyn-модули
+    "mods/"
+
+    # Локальные базы данных (не поставляются релизом)
+    "data/kinoukr.json"
+    "data/PizdatoeDb.json"
+
+    # SQLite — состояние Sync/SISI/TimeCode
+    "*.db"
+    "*.db-shm"
+    "*.db-wal"
+
+    # Runtime-данные
+    "logs/"
+    "cache/"
+
+    # TorrServer — бинарь и состояние управляются отдельно
+    "TorrServer"
+    "torrserver/"
+    "data/ts/"
+
+    # Домашняя директория пользователя lampac (chromium nssdb, сертификаты и т.д.)
+    ".local/"
+    ".aspnet/"
+    ".claude/"
+    ".config/"
+    ".playwright/"
+
+    # Пользовательские данные приложения
+    "users.json"
+    "passwd"
+    "current.conf"
+    "database/"
+
+    # Пользовательские .js в корне wwwroot/ (темы, кнопки и т.д.)
+    "wwwroot/*.js"
+
+    # Старая папка lampa-main (не входит в новый релиз, но может быть нужна)
+    "wwwroot/lampa-main/"
+
+    # Пользовательские плагины и состояние
+    "plugins/override/"
+    "notifications_date.txt"
+  )
 }
 
-apply_stashed_preserved_paths() {
-  local backup_dir="$1"
-  local rel
-  for rel in "${UPDATE_PRESERVE_REL_PATHS[@]}"; do
-    if [[ -f "${backup_dir}/${rel}" ]]; then
-      mkdir -p "$(dirname "${INSTALL_ROOT}/${rel}")"
-      cp -a "${backup_dir}/${rel}" "${INSTALL_ROOT}/${rel}"
-      log_info "Restored local ${rel} (release copy did not replace it)."
-    fi
-  done
-  rm -rf "${backup_dir}"
-}
+download_and_extract_to_staging() {
+  local staging_dir="$1"
+  local tmp_zip
+  tmp_zip="$(mktemp /tmp/lampac-nextgen.XXXXXX.zip)"
+  CLEANUP_PATHS+=("$tmp_zip")
 
-download_and_unpack() {
-  local dest_zip="$1"
   log_info "Downloading: $PUBLISH_URL"
-  if ! curl -fSL --retry 3 -o "$dest_zip" "$PUBLISH_URL"; then
+  if ! curl -fSL --retry 3 -o "$tmp_zip" "$PUBLISH_URL"; then
     log_err "Download failed."
     return 1
   fi
-  if [[ ! -s "$dest_zip" ]]; then
+  if [[ ! -s "$tmp_zip" ]]; then
     log_err "Downloaded file is empty."
     return 1
   fi
-  log_info "Extracting to $INSTALL_ROOT ..."
-  mkdir -p "$INSTALL_ROOT"
-  unzip -oq "$dest_zip" -d "$INSTALL_ROOT"
-  rm -f "$dest_zip"
-  if [[ ! -f "${INSTALL_ROOT}/Core.dll" ]]; then
-    log_err "Expected Core.dll in $INSTALL_ROOT after extract — check release layout."
+
+  log_info "Extracting to staging: $staging_dir ..."
+  unzip -oq "$tmp_zip" -d "$staging_dir"
+  rm -f "$tmp_zip"
+
+  # Если архив содержит корневую папку (например, lampac-nextgen/),
+  # переносим файлы в корень staging_dir
+  local subdirs
+  subdirs=$(find "$staging_dir" -mindepth 1 -maxdepth 1 -type d | wc -l)
+  if [[ "$subdirs" -eq 1 ]]; then
+    local only_subdir
+    only_subdir=$(find "$staging_dir" -mindepth 1 -maxdepth 1 -type d | head -n1)
+    log_info "Detected archive root directory: $only_subdir — moving contents to staging root"
+    shopt -s dotglob nullglob
+    mv "$only_subdir"/* "$staging_dir"/ 2>/dev/null || true
+    shopt -u dotglob nullglob
+    rmdir "$only_subdir" 2>/dev/null || true
+  fi
+
+  if [[ ! -f "${staging_dir}/Core.dll" ]]; then
+    log_err "Expected Core.dll in $staging_dir after extract — check release layout."
     return 1
   fi
 }
@@ -310,7 +365,19 @@ install_app() {
   local tmp_zip
   tmp_zip="$(mktemp /tmp/lampac-nextgen.XXXXXX.zip)"
   CLEANUP_PATHS+=("$tmp_zip")
-  download_and_unpack "$tmp_zip"
+  log_info "Downloading: $PUBLISH_URL"
+  if ! curl -fSL --retry 3 -o "$tmp_zip" "$PUBLISH_URL"; then
+    log_err "Download failed."
+    exit 1
+  fi
+  log_info "Extracting to $INSTALL_ROOT ..."
+  mkdir -p "$INSTALL_ROOT"
+  unzip -oq "$tmp_zip" -d "$INSTALL_ROOT"
+  rm -f "$tmp_zip"
+  if [[ ! -f "${INSTALL_ROOT}/Core.dll" ]]; then
+    log_err "Expected Core.dll in $INSTALL_ROOT after extract — check release layout."
+    exit 1
+  fi
   log_info "Application installed to $INSTALL_ROOT"
 }
 
@@ -319,22 +386,92 @@ do_update() {
     log_err "Install not found at $INSTALL_ROOT. Run install first."
     exit 1
   fi
+
+  # rsync обязателен
+  if ! command -v rsync >/dev/null 2>&1; then
+    log_info "rsync not found, installing..."
+    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends rsync
+  fi
+
   ensure_service_user
-  log_info "Stopping $SERVICE_NAME..."
-  systemctl stop "$SERVICE_NAME" 2>/dev/null || true
-  local tmp_zip
-  tmp_zip="$(mktemp /tmp/lampac-nextgen.XXXXXX.zip)"
-  CLEANUP_PATHS+=("$tmp_zip")
-  local preserve_dir
-  preserve_dir="$(mktemp -d /tmp/lampac-update-preserve.XXXXXX)"
-  stash_preserved_paths_for_update "$preserve_dir"
-  if ! download_and_unpack "$tmp_zip"; then
-    apply_stashed_preserved_paths "$preserve_dir"
+
+  # Скачиваем и распаковываем релиз во временную staging-директорию
+  local staging_dir
+  staging_dir="$(mktemp -d /tmp/lampac-update-stage.XXXXXX)"
+  CLEANUP_PATHS+=("$staging_dir")
+
+  if ! download_and_extract_to_staging "$staging_dir"; then
     log_err "Update failed."
     exit 1
   fi
-  apply_stashed_preserved_paths "$preserve_dir"
+
+  # Копируем сам скрипт в staging, чтобы rsync --delete его не удалил из INSTALL_ROOT
+  if [[ -f "${INSTALL_ROOT}/${UPDATE_SCRIPT_NAME}" ]]; then
+    cp -a "${INSTALL_ROOT}/${UPDATE_SCRIPT_NAME}" "${staging_dir}/${UPDATE_SCRIPT_NAME}"
+  fi
+
+  # Собираем exclude-аргументы
+  local -a RSYNC_EXCLUDES=()
+  build_rsync_excludes RSYNC_EXCLUDES
+
+  local rsync_exclude_args=()
+  for excl in "${RSYNC_EXCLUDES[@]}"; do
+    rsync_exclude_args+=(--exclude="$excl")
+  done
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    # --dry-run: показываем что изменится, ничего не применяем
+    log_info "=== DRY-RUN: изменения не применяются, сервис не останавливается ==="
+
+    # rsync --itemize-changes формат:
+    # *deleting     = файл будет удалён
+    # >f..t......   = файл будет обновлён (received)
+    # <f..t......   = файл будет удалён на источнике (локально)
+    local rsync_output
+    rsync_output=$(rsync -a --delete --dry-run --itemize-changes \
+      "${rsync_exclude_args[@]}" \
+      "${staging_dir}/" \
+      "${INSTALL_ROOT}/" \
+      2>/dev/null || true)
+
+    log_info "Что будет удалено из $INSTALL_ROOT (файлы не из релиза):"
+    local del_files
+    del_files=$(echo "$rsync_output" | awk '/\*deleting/ && !/\/$/ {sub(/\*deleting +/, ""); print}')
+    if [[ -n "$del_files" ]]; then
+      echo "$del_files" | while IFS= read -r f; do
+        log_info "  DEL $f"
+      done
+    else
+      log_info "  (ничего удалять не нужно)"
+    fi
+
+    log_info "Что будет добавлено / обновлено:"
+    local upd_files
+    upd_files=$(echo "$rsync_output" | grep -v '*deleting' | grep -v '^$' | grep -v '/$' | grep '^.>')
+    if [[ -n "$upd_files" ]]; then
+      echo "$upd_files" | while IFS= read -r f; do
+        log_info "  UPD $(echo "$f" | awk '{sub(/^.. ........... /, ""); print}')"
+      done
+    else
+      log_info "  (нет новых или изменённых файлов)"
+    fi
+
+    log_info "=== DRY-RUN завершён. Для реального обновления запустите без --dry-run ==="
+    return 0
+  fi
+
+  # Реальное обновление
+  log_info "Stopping $SERVICE_NAME..."
+  systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+
+  log_info "Syncing release into $INSTALL_ROOT (rsync --delete, user paths excluded)..."
+  rsync -a --delete \
+    "${rsync_exclude_args[@]}" \
+    "${staging_dir}/" \
+    "${INSTALL_ROOT}/"
+
   set_install_ownership
+
   log_info "Starting $SERVICE_NAME..."
   systemctl start "$SERVICE_NAME"
   log_info "Update complete."

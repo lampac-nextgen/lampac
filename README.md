@@ -242,7 +242,7 @@ services:
 # Установка
 curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash
 
-# Обновление
+# Обновление (удаляет старые файлы, которых нет в релизе)
 curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update
 
 # Предрелизная версия
@@ -250,6 +250,18 @@ curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.
 
 # Удаление
 curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --remove
+
+# Проверка обновления без внесения изменений (dry-run)
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update --dry-run
+```
+
+**Альтернатива:** можно использовать отдельный скрипт [`lampac-update.sh`](lampac-update.sh) (требуется предварительно скачать):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/lampac-update.sh -o lampac-update.sh
+chmod +x lampac-update.sh
+sudo ./lampac-update.sh --dry-run   # проверка
+sudo ./lampac-update.sh             # реальное обновление
 ```
 
 Переменные окружения для кастомизации:
@@ -268,6 +280,51 @@ systemctl stop lampac
 systemctl status lampac
 journalctl -u lampac -f
 ```
+
+<details>
+<summary><strong>Исключения при обновлении (какие файлы не затрагиваются)</strong></summary>
+
+При обновлении через `install.sh --update` используется `rsync --delete`, который удаляет файлы, отсутствующие в новом релизе. Однако следующие пути **защищены** и не удаляются/не перезаписываются:
+
+| Исключение | Описание |
+| --- | --- |
+| `install.sh` | Сам скрипт установки |
+| `init.conf`, `init.yaml` | Пользовательская конфигурация |
+| `mods/` | Пользовательские модули |
+| `data/kinoukr.json`, `data/PizdatoeDb.json` | Локальные базы данных |
+| `*.db`, `*.db-shm`, `*.db-wal` | SQLite-файлы (Sync, SISI, TimeCode) |
+| `logs/`, `cache/` | Логи и кеш |
+| `TorrServer`, `torrserver/`, `data/ts/` | TorrServer и его данные |
+| `.local/`, `.aspnet/`, `.claude/`, `.config/`, `.playwright/` | Домашние директории пользователя |
+| `users.json`, `passwd`, `current.conf`, `database/` | Пользовательские данные |
+| `wwwroot/*.js` | Пользовательские JS в wwwroot (темы, кнопки) |
+| `wwwroot/lampa-main/` | Кеш Lampa UI (модуль LampaWeb загружает файлы динамически) |
+| `plugins/override/` | Пользовательские переопределения плагинов |
+| `notifications_date.txt` | Файл состояния уведомлений |
+
+#### Как добавить своё исключение
+
+Чтобы добавить дополнительный путь в список исключений, отредактируйте функцию `build_rsync_excludes()` в [`install.sh`](install.sh) (строка ~277):
+
+```bash
+build_rsync_excludes() {
+  local -n _out="$1"
+  _out=(
+    # ... существующие исключения ...
+    
+    # Ваше исключение (примеры):
+    "my_custom_folder/"      # Папка целиком
+    "config/local.conf"      # Конкретный файл
+    "*.custom"               # Все файлы с расширением .custom
+  )
+}
+```
+
+Правила:
+- Пути относительно `$INSTALL_ROOT` (по умолчанию `/opt/lampac`)
+- Для папок добавляйте trailing slash (`folder/`)
+- Поддерживаются glob-паттерны (`*.ext`)
+</details>
 
 ### Ручная сборка
 
