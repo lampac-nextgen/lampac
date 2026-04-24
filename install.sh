@@ -318,7 +318,21 @@ build_rsync_excludes() {
     # Пользовательские плагины и состояние
     "plugins/override/"
     "notifications_date.txt"
+
+    # Файл с пользовательскими дополнительными исключениями
+    "excludes.conf"
   )
+
+  # Дополнительные исключения из excludes.conf (если файл существует)
+  local excludes_file="${INSTALL_ROOT}/excludes.conf"
+  if [[ -f "$excludes_file" ]]; then
+    local line
+    while IFS= read -r line || [[ -n "$line" ]]; do
+      # Пропускаем пустые строки и комментарии
+      [[ -z "$line" || "$line" == \#* ]] && continue
+      _out+=("$line")
+    done < "$excludes_file"
+  fi
 }
 
 download_and_extract_to_staging() {
@@ -408,6 +422,11 @@ do_update() {
   # Копируем сам скрипт в staging, чтобы rsync --delete его не удалил из INSTALL_ROOT
   if [[ -f "${INSTALL_ROOT}/${UPDATE_SCRIPT_NAME}" ]]; then
     cp -a "${INSTALL_ROOT}/${UPDATE_SCRIPT_NAME}" "${staging_dir}/${UPDATE_SCRIPT_NAME}"
+  fi
+
+  # Копируем excludes.conf в staging, чтобы rsync --delete его не удалил
+  if [[ -f "${INSTALL_ROOT}/excludes.conf" ]]; then
+    cp -a "${INSTALL_ROOT}/excludes.conf" "${staging_dir}/excludes.conf"
   fi
 
   # Собираем exclude-аргументы

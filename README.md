@@ -304,26 +304,23 @@ journalctl -u lampac -f
 
 #### Как добавить своё исключение
 
-Чтобы добавить дополнительный путь в список исключений, отредактируйте функцию `build_rsync_excludes()` в [`install.sh`](install.sh) (строка ~277):
+Создайте файл `excludes.conf` в директории установки (рядом с `Core.dll`):
 
 ```bash
-build_rsync_excludes() {
-  local -n _out="$1"
-  _out=(
-    # ... существующие исключения ...
-    
-    # Ваше исключение (примеры):
-    "my_custom_folder/"      # Папка целиком
-    "config/local.conf"      # Конкретный файл
-    "*.custom"               # Все файлы с расширением .custom
-  )
-}
+# /opt/lampac/excludes.conf
+# Одно исключение на строку. Строки с # и пустые строки игнорируются.
+my_custom_folder/
+config/local.conf
+*.custom
 ```
 
 Правила:
+
 - Пути относительно `$INSTALL_ROOT` (по умолчанию `/opt/lampac`)
 - Для папок добавляйте trailing slash (`folder/`)
 - Поддерживаются glob-паттерны (`*.ext`)
+- Сам файл `excludes.conf` защищён от удаления при обновлении
+
 </details>
 
 ### Ручная сборка
