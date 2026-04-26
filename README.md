@@ -4,8 +4,8 @@
 [![Release](https://github.com/lampac-nextgen/lampac/actions/workflows/release.yml/badge.svg)](https://github.com/lampac-nextgen/lampac/actions/workflows/release.yml)
 [![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/lampac-nextgen/lampac?label=version)](https://github.com/lampac-nextgen/lampac/releases)
 [![GitHub tag (latest SemVer pre-release)](https://img.shields.io/github/v/tag/lampac-nextgen/lampac?include_prereleases&label=pre-release)](https://github.com/lampac-nextgen/lampac/tags)
-[![DeepWiki](https://img.shields.io/badge/DeepWiki-Docs-5B4FBE?logo=gitbook&logoColor=white)](https://deepwiki.com/lampac-nextgen/lampac)
 [![Telegram](https://img.shields.io/badge/Telegram-Chat-2CA5E0?logo=telegram&logoColor=white)](https://t.me/LampacTalks/13998)
+[![DeepWiki](https://deepwiki.com/badge.svg)](https://deepwiki.com/lampac-nextgen/lampac)
 
 > Самохостируемый backend-сервер для [Lampa](https://github.com/yumata/lampa). Собирает ссылки на публично доступный контент с 70+ источников и отдаёт их Lampa в виде плагинов. Построен на ASP.NET Core (.NET 10).
 
