@@ -163,8 +163,11 @@ curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.
 # Удаление
 curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --remove
 
-# Подробный лог (для диагностики ошибок)
+# Подробный лог при установке (для диагностики ошибок)
 curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --verbose
+
+# Подробный лог при обновлении (для диагностики ошибок)
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update --verbose
 ```
 
 ```bash
