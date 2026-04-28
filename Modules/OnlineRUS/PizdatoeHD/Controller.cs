@@ -60,7 +60,7 @@ public class PizdatoeHDController : BaseOnlineController<ModuleConf>
                 CacheResult<SearchModel> search;
 
                 string _kp = kinopoisk_id.ToString();
-                var dbEntry = ModInit.PizdatoeDb.Where(e => (imdb_id != null && e.Value.imdb == imdb_id) || e.Value.kp == _kp);
+                var dbEntry = ModInit.database.Where(e => (imdb_id != null && e.Value.imdb == imdb_id) || e.Value.kp == _kp);
                 if (dbEntry.Any())
                 {
                     var model = new SearchModel()

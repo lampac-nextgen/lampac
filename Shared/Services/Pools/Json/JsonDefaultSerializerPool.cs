@@ -8,5 +8,13 @@ public static class JsonDefaultSerializerPool
     private static JsonSerializer _instance;
 
     public static JsonSerializer Instance
-        => (_instance ??= JsonSerializer.CreateDefault());
+    {
+        get
+        {
+            if (CoreInit.conf.lowMemoryMode)
+                return JsonSerializer.CreateDefault();
+
+            return _instance ??= JsonSerializer.CreateDefault();
+        }
+    }
 }

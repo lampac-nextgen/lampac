@@ -11,8 +11,6 @@ namespace KinoUkr;
 
 public class KinoukrInvoke
 {
-    public static ConcurrentDictionary<string, DbModel> KinoukrDb = null;
-
     #region KinoukrInvoke
     HttpHydra http;
 
@@ -59,7 +57,7 @@ public class KinoukrInvoke
 
         if (!string.IsNullOrEmpty(kp) || !string.IsNullOrEmpty(imdb))
         {
-            var resultId = KinoukrDb.Where(i =>
+            var resultId = ModInit.database.Where(i =>
             {
                 if (!string.IsNullOrEmpty(kp) && i.Value.kp_id == kp)
                     return true;
@@ -77,7 +75,7 @@ public class KinoukrInvoke
         string sname = StringConvert.SearchName(name);
         string seng_name = StringConvert.SearchName(eng_name);
 
-        var result = KinoukrDb.Where(i =>
+        var result = ModInit.database.Where(i =>
         {
             if (sname != null && StringConvert.SearchName(i.Value.name) == sname)
                 return true;

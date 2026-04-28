@@ -58,6 +58,9 @@ public static class StringBuilderPool
     {
         get
         {
+            if (CoreInit.conf.lowMemoryMode)
+                return new StringBuilder();
+
             var sb = (_threadSmall ??= new StringBuilder(1024));
             sb.Clear();
             return sb;
@@ -77,7 +80,7 @@ public static class StringBuilderPool
             sb.Clear();
             _poolSmall.Add(sb);
         }
-        else if (rentLarge > sb.Capacity && largeMaxCount > _poolLarge.Count)
+        else if (rentLarge >= sb.Capacity && largeMaxCount > _poolLarge.Count && CoreInit.conf.lowMemoryMode == false)
         {
             sb.Clear();
             _poolLarge.Add(sb);

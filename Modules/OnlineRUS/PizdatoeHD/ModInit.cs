@@ -7,8 +7,8 @@ using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
 using Shared.PlaywrightCore;
 using Shared.Services;
+using Shared.Services.Utilities;
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Threading;
@@ -17,10 +17,15 @@ namespace PizdatoeHD;
 
 public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
 {
-    public static ConcurrentDictionary<string, DbModel> PizdatoeDb = null;
-
     public static ModuleConf conf;
     static Timer timer;
+
+    #region database
+    public static Dictionary<string, DbModel> databaseCache;
+
+    public static IEnumerable<KeyValuePair<string, DbModel>> database
+        => databaseCache ?? JsonHelper.DictionaryReader<DbModel>("data/PizdatoeDb.json");
+    #endregion
 
     public List<ModuleOnlineItem> Invoke(HttpContext httpContext, RequestModel requestInfo, string host, OnlineEventsModel args)
     {
@@ -52,8 +57,11 @@ public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
         EventListener.UpdateInitFile += updateConf;
         EventListener.OnlineApiQuality += onlineApiQuality;
 
-        PizdatoeDb = JsonConvert.DeserializeObject<ConcurrentDictionary<string, DbModel>>(File.ReadAllText("data/PizdatoeDb.json"));
-        timer = new Timer(CronParse.Pizda, null, TimeSpan.FromMinutes(20), TimeSpan.FromMinutes(Random.Shared.Next(10, 30)));
+        if (CoreInit.conf.lowMemoryMode == false)
+        {
+            databaseCache = JsonConvert.DeserializeObject<Dictionary<string, DbModel>>(File.ReadAllText("data/PizdatoeDb.json"));
+            timer = new Timer(CronParse.Pizda, null, TimeSpan.FromMinutes(20), TimeSpan.FromMinutes(Random.Shared.Next(10, 30)));
+        }
 
         //CronParse.PizdaBobra();
     }
@@ -63,7 +71,8 @@ public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
         EventListener.UpdateInitFile -= updateConf;
         EventListener.OnlineApiQuality -= onlineApiQuality;
 
-        PizdatoeDb?.Clear();
+        databaseCache?.Clear();
+        databaseCache = null;
         timer?.Dispose();
     }
 

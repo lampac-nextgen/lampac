@@ -8,5 +8,13 @@ public static class JsonIgnoreDeserializePool
     private static JsonSerializer _instance;
 
     public static JsonSerializer Instance
-        => (_instance ??= JsonSerializer.Create(new JsonSerializerSettings { Error = (se, ev) => { ev.ErrorContext.Handled = true; } }));
+    {
+        get
+        {
+            if (CoreInit.conf.lowMemoryMode)
+                return JsonSerializer.Create(new JsonSerializerSettings { Error = (se, ev) => { ev.ErrorContext.Handled = true; } });
+
+            return _instance ??= JsonSerializer.Create(new JsonSerializerSettings { Error = (se, ev) => { ev.ErrorContext.Handled = true; } });
+        }
+    }
 }

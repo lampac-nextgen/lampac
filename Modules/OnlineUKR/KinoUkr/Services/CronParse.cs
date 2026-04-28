@@ -55,20 +55,20 @@ public static class CronParse
                                 year = year
                             };
 
-                            if (!KinoukrInvoke.KinoukrDb.ContainsKey(link))
+                            if (!ModInit.databaseCache.ContainsKey(link))
                             {
-                                KinoukrInvoke.KinoukrDb.TryAdd(link, md);
+                                ModInit.databaseCache.Add(link, md);
                                 savedb = true;
                             }
                             else
                             {
                                 if (string.IsNullOrEmpty(md.tortuga))
-                                    md.tortuga = KinoukrInvoke.KinoukrDb[link].tortuga;
+                                    md.tortuga = ModInit.databaseCache[link].tortuga;
 
                                 if (string.IsNullOrEmpty(md.ashdi))
-                                    md.ashdi = KinoukrInvoke.KinoukrDb[link].ashdi;
+                                    md.ashdi = ModInit.databaseCache[link].ashdi;
 
-                                KinoukrInvoke.KinoukrDb[link] = md;
+                                ModInit.databaseCache[link] = md;
                             }
                         }
                     }
@@ -78,7 +78,7 @@ public static class CronParse
             }
 
             if (savedb)
-                File.WriteAllText("data/kinoukr.json", JsonConvert.SerializeObject(KinoukrInvoke.KinoukrDb, Formatting.Indented));
+                File.WriteAllText("data/kinoukr.json", JsonConvert.SerializeObject(ModInit.databaseCache, Formatting.Indented));
         }
         catch (System.Exception ex)
         {

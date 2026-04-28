@@ -79,7 +79,7 @@ public sealed class BufferWriterPool<T> : IBufferWriter<T>, IDisposable where T 
 
         if (_nbuf == null)
         {
-            if (_large && largeMaxCount > _poolLarge.Count)
+            if (_large && largeMaxCount > _poolLarge.Count && CoreInit.conf.lowMemoryMode == false)
             {
                 if (!_poolLarge.TryTake(out _nbuf))
                     _nbuf = new NativeBuffer<T>(sizeLargePool);

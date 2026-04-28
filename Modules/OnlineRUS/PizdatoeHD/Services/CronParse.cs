@@ -126,7 +126,7 @@ public static class CronParse
         while (m.Success)
         {
             string link = m.Groups[2].Value;
-            if (string.IsNullOrEmpty(link) || ModInit.PizdatoeDb.ContainsKey(link))
+            if (string.IsNullOrEmpty(link) || ModInit.databaseCache.ContainsKey(link))
             {
                 m = m.NextMatch();
                 continue;
@@ -186,7 +186,7 @@ public static class CronParse
                         kp = string.IsNullOrEmpty(kp) ? null : kp
                     };
 
-                    ModInit.PizdatoeDb.TryAdd(link, md);
+                    ModInit.databaseCache.TryAdd(link, md);
                     savedb = true;
                 }
             }
@@ -197,7 +197,7 @@ public static class CronParse
         if (savedb)
         {
             lock (_lock)
-                File.WriteAllText("data/PizdatoeDb.json", JsonConvert.SerializeObject(ModInit.PizdatoeDb, Formatting.Indented));
+                File.WriteAllText("data/PizdatoeDb.json", JsonConvert.SerializeObject(ModInit.databaseCache, Formatting.Indented));
         }
 
         return true;

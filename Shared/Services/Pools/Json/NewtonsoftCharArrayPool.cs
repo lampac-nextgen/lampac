@@ -47,7 +47,7 @@ public class NewtonsoftCharArrayPool : IArrayPool<char>
 
     public char[] Rent(int minimumLength)
     {
-        if (sizeSmall >= minimumLength)
+        if (sizeSmall >= minimumLength && CoreInit.conf.lowMemoryMode)
         {
             return (_threadSmall ??= new char[sizeSmall]);
         }

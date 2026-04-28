@@ -55,10 +55,7 @@ public static class JsonHelper
 
         return new JsonItemEnumerable<T>(filePath);
     }
-    #endregion
 
-
-    #region [Codex AI] JsonItemEnumerable<T>
     private class JsonItemEnumerable<T> : IEnumerable<T>
     {
         readonly string filePath;
@@ -68,9 +65,11 @@ public static class JsonHelper
             this.filePath = filePath;
         }
 
-        public IEnumerator<T> GetEnumerator() => new JsonItemEnumerator(filePath);
+        public IEnumerator<T> GetEnumerator()
+            => new JsonItemEnumerator(filePath);
 
-        IEnumerator IEnumerable.GetEnumerator() => GetEnumerator();
+        IEnumerator IEnumerable.GetEnumerator()
+            => GetEnumerator();
 
         private class JsonItemEnumerator : IEnumerator<T>
         {
@@ -81,6 +80,8 @@ public static class JsonHelper
             GZipStream gzipStream;
             StreamReader reader;
             JsonTextReader jsonReader;
+
+            bool disposed;
 
             public JsonItemEnumerator(string filePath)
             {
@@ -96,14 +97,28 @@ public static class JsonHelper
             {
                 try
                 {
-                    fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, bufferSize: PoolInvk.bufferSize, options: FileOptions.Asynchronous);
-                    gzipStream = new GZipStream(fileStream, CompressionMode.Decompress);
-                    reader = new StreamReader(gzipStream, Encoding.UTF8, false, PoolInvk.bufferSize);
-                    jsonReader = new JsonTextReader(reader);
+                    fileStream = FileReaderPool.Rent(filePath);
+
+                    gzipStream = new GZipStream(
+                        fileStream,
+                        CompressionMode.Decompress,
+                        leaveOpen: true);
+
+                    reader = new StreamReader(
+                        gzipStream,
+                        Encoding.UTF8,
+                        false,
+                        CoreInit.conf.lowMemoryMode ? 1024 : PoolInvk.bufferSize);
+
+                    jsonReader = new JsonTextReader(reader)
+                    {
+                        ArrayPool = NewtonsoftPool.Array
+                    };
                 }
                 catch
                 {
                     Dispose();
+                    throw;
                 }
             }
 
@@ -121,7 +136,7 @@ public static class JsonHelper
                             Current = serializer.Deserialize<T>(jsonReader);
                             return true;
                         }
-                        catch (System.Exception ex)
+                        catch (Exception ex)
                         {
                             Log.Error(ex, "CatchId={CatchId}", "id_qccuip0u");
                         }
@@ -132,14 +147,178 @@ public static class JsonHelper
                 return false;
             }
 
-            public void Reset() => throw new NotSupportedException();
+            public void Reset()
+                => throw new NotSupportedException();
 
             public void Dispose()
             {
-                jsonReader?.Close();
-                reader?.Dispose();
-                gzipStream?.Dispose();
-                fileStream?.Dispose();
+                if (disposed)
+                    return;
+
+                disposed = true;
+
+                try
+                {
+                    jsonReader?.Close();
+                    reader?.Dispose();
+                    gzipStream?.Dispose();
+                }
+                finally
+                {
+                    jsonReader = null;
+                    reader = null;
+                    gzipStream = null;
+
+                    if (fileStream != null)
+                    {
+                        var fs = fileStream;
+                        fileStream = null;
+
+                        FileReaderPool.Return(filePath, fs);
+                    }
+                }
+            }
+        }
+    }
+    #endregion
+
+    #region DictionaryReader
+    public static IEnumerable<KeyValuePair<string, TValue>> DictionaryReader<TValue>(string filePath)
+    {
+        if (!File.Exists(filePath))
+            return Enumerable.Empty<KeyValuePair<string, TValue>>();
+
+        return new JsonDictionaryEnumerable<TValue>(filePath);
+    }
+
+    private class JsonDictionaryEnumerable<TValue> : IEnumerable<KeyValuePair<string, TValue>>
+    {
+        readonly string filePath;
+
+        public JsonDictionaryEnumerable(string filePath)
+        {
+            this.filePath = filePath;
+        }
+
+        public IEnumerator<KeyValuePair<string, TValue>> GetEnumerator()
+            => new JsonDictionaryEnumerator(filePath);
+
+        IEnumerator IEnumerable.GetEnumerator()
+            => GetEnumerator();
+
+        private class JsonDictionaryEnumerator : IEnumerator<KeyValuePair<string, TValue>>
+        {
+            readonly string filePath;
+            readonly JsonSerializer serializer = new JsonSerializer();
+
+            FileStream fileStream;
+            StreamReader reader;
+            JsonTextReader jsonReader;
+
+            bool disposed;
+
+            public JsonDictionaryEnumerator(string filePath)
+            {
+                this.filePath = filePath;
+                Initialize();
+            }
+
+            public KeyValuePair<string, TValue> Current { get; private set; }
+
+            object IEnumerator.Current => Current;
+
+            void Initialize()
+            {
+                try
+                {
+                    fileStream = FileReaderPool.Rent(filePath);
+
+                    reader = new StreamReader(
+                        fileStream,
+                        Encoding.UTF8,
+                        false,
+                        CoreInit.conf.lowMemoryMode ? 1024 : PoolInvk.bufferSize);
+
+                    jsonReader = new JsonTextReader(reader)
+                    {
+                        ArrayPool = NewtonsoftPool.Array
+                    };
+
+                    jsonReader.Read();
+
+                    if (jsonReader.TokenType != JsonToken.StartObject)
+                        throw new JsonReaderException("Expected JSON object for dictionary.");
+                }
+                catch
+                {
+                    Dispose();
+                    throw;
+                }
+            }
+
+            public bool MoveNext()
+            {
+                if (jsonReader == null)
+                    return false;
+
+                while (jsonReader.Read())
+                {
+                    if (jsonReader.TokenType == JsonToken.PropertyName)
+                    {
+                        var key = (string)jsonReader.Value;
+
+                        try
+                        {
+                            if (!jsonReader.Read())
+                                return false;
+
+                            var value = serializer.Deserialize<TValue>(jsonReader);
+
+                            Current = new KeyValuePair<string, TValue>(key, value);
+                            return true;
+                        }
+                        catch (Exception ex)
+                        {
+                            Log.Error(ex, "CatchId={CatchId}", "id_dictionary_reader");
+                        }
+                    }
+
+                    if (jsonReader.TokenType == JsonToken.EndObject)
+                        break;
+                }
+
+                Current = default;
+                return false;
+            }
+
+            public void Reset()
+                => throw new NotSupportedException();
+
+            public void Dispose()
+            {
+                if (disposed)
+                    return;
+
+                disposed = true;
+
+                try
+                {
+                    jsonReader?.Close();
+                    reader?.Dispose();
+                }
+                finally
+                {
+                    jsonReader = null;
+                    reader = null;
+
+                    if (fileStream != null)
+                    {
+                        var fs = fileStream;
+                        fileStream = null;
+
+                        FileReaderPool.Return(filePath, fs);
+                    }
+                }
             }
         }
     }

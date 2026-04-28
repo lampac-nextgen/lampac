@@ -7,6 +7,9 @@ namespace Shared.Services.Pools;
 public sealed class BufferCharPool : IDisposable
 {
     #region pool
+    public static readonly int sizeLowMemory = 512 * 1024; // 1Mb
+    static readonly ConcurrentBag<NativeBuffer<char>> _poolLowMemory = new();
+
     public static readonly int sizeSmall = 1024 * 1024; // 2Mb
     static readonly ConcurrentBag<NativeBuffer<char>> _poolSmall = new();
 
@@ -41,27 +44,43 @@ public sealed class BufferCharPool : IDisposable
     {
         var pool = CoreInit.conf.pool;
 
-        if (sizeSmall >= capacity && pool.BufferCharSmallMaxCount > _poolSmall.Count)
+        if (CoreInit.conf.lowMemoryMode)
         {
-            _typepool = 1;
-            if (!_poolSmall.TryTake(out _nbuf))
-                _nbuf = new NativeBuffer<char>(sizeSmall);
-        }
-        else if (sizeMedium >= capacity && pool.BufferCharMediumMaxCount > _poolMedium.Count)
-        {
-            _typepool = 2;
-            if (!_poolMedium.TryTake(out _nbuf))
-                _nbuf = new NativeBuffer<char>(sizeMedium);
-        }
-        else if (sizeLarge >= capacity && pool.BufferCharLargeMaxCount > _poolLarge.Count)
-        {
-            _typepool = 3;
-            if (!_poolLarge.TryTake(out _nbuf))
-                _nbuf = new NativeBuffer<char>(sizeLarge);
+            if (sizeLowMemory >= capacity && pool.BufferCharSmallMaxCount > _poolLowMemory.Count)
+            {
+                _typepool = 5;
+                if (!_poolLowMemory.TryTake(out _nbuf))
+                    _nbuf = new NativeBuffer<char>(sizeLowMemory);
+            }
+            else
+            {
+                _nbuf = new NativeBuffer<char>(capacity);
+            }
         }
         else
         {
-            _nbuf = new NativeBuffer<char>(capacity);
+            if (sizeSmall >= capacity && pool.BufferCharSmallMaxCount > _poolSmall.Count)
+            {
+                _typepool = 1;
+                if (!_poolSmall.TryTake(out _nbuf))
+                    _nbuf = new NativeBuffer<char>(sizeSmall);
+            }
+            else if (sizeMedium >= capacity && pool.BufferCharMediumMaxCount > _poolMedium.Count)
+            {
+                _typepool = 2;
+                if (!_poolMedium.TryTake(out _nbuf))
+                    _nbuf = new NativeBuffer<char>(sizeMedium);
+            }
+            else if (sizeLarge >= capacity && pool.BufferCharLargeMaxCount > _poolLarge.Count)
+            {
+                _typepool = 3;
+                if (!_poolLarge.TryTake(out _nbuf))
+                    _nbuf = new NativeBuffer<char>(sizeLarge);
+            }
+            else
+            {
+                _nbuf = new NativeBuffer<char>(capacity);
+            }
         }
     }
 
@@ -97,6 +116,9 @@ public sealed class BufferCharPool : IDisposable
                 break;
             case 3:
                 _poolLarge.Add(_nbuf);
+                break;
+            case 5:
+                _poolLowMemory.Add(_nbuf);
                 break;
             default:
                 int bufferSize = _nbuf.Memory.Length;

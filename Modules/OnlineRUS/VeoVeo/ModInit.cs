@@ -14,7 +14,13 @@ namespace VeoVeo;
 public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
 {
     public static OnlinesSettings conf;
-    public static List<Movie> database;
+
+    #region database
+    static List<Movie> databaseCache;
+
+    public static IEnumerable<Movie> database
+        => databaseCache ?? JsonHelper.IEnumerableReader<Movie>("data/veoveo.json");
+    #endregion
 
     public List<ModuleOnlineItem> Invoke(HttpContext httpContext, RequestModel requestInfo, string host, OnlineEventsModel args)
     {
@@ -40,13 +46,16 @@ public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
         EventListener.UpdateInitFile += updateConf;
         EventListener.OnlineApiQuality += onlineApiQuality;
 
-        database = JsonHelper.ListReader<Movie>("data/veoveo.json", 130_000).Result;
+        if (CoreInit.conf.lowMemoryMode == false)
+            databaseCache = JsonHelper.ListReader<Movie>("data/veoveo.json", 130_000).Result;
     }
 
     public void Dispose()
     {
         EventListener.UpdateInitFile -= updateConf;
         EventListener.OnlineApiQuality -= onlineApiQuality;
+        databaseCache?.Clear();
+        databaseCache = null;
     }
 
     void updateConf()

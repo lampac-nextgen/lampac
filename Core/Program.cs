@@ -20,6 +20,7 @@ using System.IO;
 using System.Linq;
 using System.Net;
 using System.Reflection;
+using System.Runtime;
 using System.Runtime.Loader;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -35,7 +36,7 @@ public class Program
 
     public static ConcurrentBag<(IPAddress prefix, int prefixLength)> cloudflare_ips = new();
 
-    static Timer _usersTimer;
+    static Timer _usersTimer, _lowMemoryModeTimer;
     #endregion
 
     #region Run
@@ -51,7 +52,6 @@ public class Program
             {
                 var loadedAssembly = Assembly.LoadFrom(dllPath);
                 AssemblyLocations.Add(loadedAssembly.Location);
-
             }
 
             AssemblyLoadContext.Default.Resolving += (context, assemblyName) =>
@@ -225,6 +225,17 @@ public class Program
         HybridFileCache.LoadCache();
 
         _usersTimer = new Timer(UpdateUsersDb, null, TimeSpan.Zero, TimeSpan.FromSeconds(1));
+
+        if (CoreInit.conf.lowMemoryMode)
+        {
+            _lowMemoryModeTimer = new Timer(_ =>
+            {
+                GCSettings.LargeObjectHeapCompactionMode = GCLargeObjectHeapCompactionMode.CompactOnce;
+                GC.Collect(GC.MaxGeneration, GCCollectionMode.Aggressive, true, true);
+                GC.WaitForPendingFinalizers();
+                GC.Collect();
+            }, null, TimeSpan.FromHours(1), TimeSpan.FromHours(1));
+        }
 
         try
         {

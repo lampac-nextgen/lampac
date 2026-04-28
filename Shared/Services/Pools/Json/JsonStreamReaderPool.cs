@@ -11,6 +11,9 @@ public class JsonStreamReaderPool : TextReader, IDisposable
     [ThreadStatic]
     private static char[] _charInstance;
 
+    private byte[] _byteLowInstance;
+    private char[] _charLowInstance;
+
     readonly Stream _stream;
     readonly bool _leaveOpen;
     bool _checkedPreamble;
@@ -26,11 +29,27 @@ public class JsonStreamReaderPool : TextReader, IDisposable
     bool _isFinalBlock;
     int _disposed; // 0 = alive, 1 = disposed
 
-    Span<byte> ByteBuffer
-        => (_byteInstance ??= new byte[PoolInvk.bufferSize]);
+    public Span<byte> ByteBuffer
+    {
+        get
+        {
+            if (CoreInit.conf.lowMemoryMode)
+                return _byteLowInstance ??= new byte[1024];
 
-    Span<char> CharBuffer
-        => (_charInstance ??= new char[Encoding.UTF8.GetMaxCharCount(PoolInvk.bufferSize)]);
+            return _byteInstance ??= new byte[PoolInvk.bufferSize];
+        }
+    }
+
+    public Span<char> CharBuffer
+    {
+        get
+        {
+            if (CoreInit.conf.lowMemoryMode)
+                return _charLowInstance ??= new char[1025];
+
+            return _charInstance ??= new char[Encoding.UTF8.GetMaxCharCount(PoolInvk.bufferSize)];
+        }
+    }
 
     public JsonStreamReaderPool(Stream stream, Encoding encoding, bool leaveOpen)
     {

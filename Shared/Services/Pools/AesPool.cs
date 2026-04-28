@@ -31,7 +31,7 @@ public static class AesPool
     }
 
     public static AesInstance Instance
-        => (_instance ??= new AesInstance(aesKey, aesIV));
+        => _instance ??= new AesInstance(aesKey, aesIV);
 }
 
 

@@ -307,7 +307,10 @@ public class PizdaInvoke
 
                         string voice_href = Regex.Match(match.Groups[0].Value, "href=\"(https?://[^/]+)?/([^\"]+)\"").Groups[2].Value;
                         if (string.IsNullOrEmpty(voice_href))
+                        {
+                            match = match.NextMatch();
                             continue;
+                        }
 
                         link += $"&voice={HttpUtility.UrlEncode(voice_href)}";
 
