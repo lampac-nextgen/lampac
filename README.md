@@ -247,6 +247,25 @@ config/local.conf
 
 Сервер запустится на порту 9118 (или другом, указанном в init.conf). Для остановки нажмите `Ctrl+C`.
 
+> **NOTE**
+> Для запуска в фоне можно использовать NSSM (создать сервис в Windows):
+>
+> 1. Для создания сервиса необходимо скачать инструмент [NSSM](https://nssm.cc/download) и распаковать, например, в `C:\nssm`
+>
+> 2. Создание сервиса через **CMD** от имени администратора:
+> ```
+> "C:\nssm\win64\nssm.exe" install Lampac "C:\Program Files\dotnet\dotnet.exe" "C:\lampacNG\Core.dll"
+> "C:\nssm\win64\nssm.exe" set Lampac AppDirectory "C:\lampacNG"
+> "C:\nssm\win64\nssm.exe" set Lampac Start SERVICE_AUTO_START
+> "C:\nssm\win64\nssm.exe" start Lampac
+> ```
+>
+> 3. Удаление сервиса:
+> ```
+> "C:\nssm\win64\nssm.exe" stop Lampac
+> "C:\nssm\win64\nssm.exe" remove Lampac
+> ```
+> Важно помнить, что для обновления сервиса необходимо сначала его остановить, затем заменить файлы в папке `C:\lampacNG` на новые из архива, и после этого снова запустить сервис.
 ---
 
 ### Ручная сборка
