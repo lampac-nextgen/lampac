@@ -80,15 +80,17 @@ public static class LampaCron
                 {
                     currentapp = null;
                     string repo = init.git.Split('/')[^1];
+                    var targetDirectory = $"{repo}-{(istree ? init.tree : "main")}";
+                    var isDefaultDirectory = targetDirectory.Equals("lampa-main", StringComparison.OrdinalIgnoreCase);
 
                     await File.WriteAllBytesAsync("wwwroot/lampa.zip", array);
                     ZipFile.ExtractToDirectory("wwwroot/lampa.zip", "wwwroot/", overwriteFiles: true);
 
-                    if (istree)
+                    if (!isDefaultDirectory)
                     {
-                        foreach (string infilePath in Directory.GetFiles($"wwwroot/{repo}-{init.tree}", "*", SearchOption.AllDirectories))
+                        foreach (string infilePath in Directory.GetFiles($"wwwroot/{targetDirectory}", "*", SearchOption.AllDirectories))
                         {
-                            string outfile = infilePath.Replace($"{repo}-{init.tree}", "lampa-main");
+                            string outfile = infilePath.Replace($"{targetDirectory}", "lampa-main");
                             Directory.CreateDirectory(Path.GetDirectoryName(outfile));
                             File.Copy(infilePath, outfile, true);
                         }
@@ -113,8 +115,8 @@ public static class LampaCron
 
                     File.Delete("wwwroot/lampa.zip");
 
-                    if (istree)
-                        Directory.Delete($"wwwroot/{repo}-{init.tree}", true);
+                    if (!isDefaultDirectory)
+                        Directory.Delete($"wwwroot/{targetDirectory}", true);
                 }
             }
         }
