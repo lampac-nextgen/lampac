@@ -72,6 +72,9 @@ RUN case "$BUILDARCH" in \
     && rm /tmp/ffmpeg.tar.xz \
     && touch /out/lampac/isdocker
 
+# Bake init.conf into image (ip 0.0.0.0, port 9118, chromium path, modules)
+RUN cp /build/config/init.conf /out/lampac/init.conf
+
 # Runner — OS/arch of the published image (amd64 vs arm64)
 FROM debian:13-slim AS runner
 
