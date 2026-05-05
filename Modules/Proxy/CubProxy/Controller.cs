@@ -289,7 +289,10 @@ public class CubProxyController : BaseController
                         var headers = HeadersModel.Init();
 
                         if (requestInfo.Country != null)
-                            headers.Add(new HeadersModel("cf-connecting-ip", requestInfo.IP));
+                        {
+                            headers.Add(new HeadersModel("X-Forwarded-For", requestInfo.IP));
+                            headers.Add(new HeadersModel("X-Real-IP", requestInfo.IP));
+                        }
 
                         if (path.Split(".")[0] == "tmdb")
                         {
@@ -401,7 +404,10 @@ public class CubProxyController : BaseController
             request.Headers["Cookie"] = "viewru=1";
 
         if (requestInfo.Country != null)
-            request.Headers["Cf-Connecting-Ip"] = requestInfo.IP;
+        {
+            request.Headers["X-Forwarded-For"] = requestInfo.IP;
+            request.Headers["X-Real-IP"] = requestInfo.IP;
+        }
 
         #region Headers
         foreach (var header in request.Headers)
