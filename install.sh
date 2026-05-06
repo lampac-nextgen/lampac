@@ -294,7 +294,7 @@ require_root() {
 
 pick_libicu_package() {
   local p
-  for p in libicu76 libicu74 libicu72 libicu70 libicu67; do
+  for p in libicu78 libicu76 libicu74 libicu72 libicu70 libicu67; do
     if apt-cache show "$p" &>/dev/null; then
       echo "$p"
       return 0
