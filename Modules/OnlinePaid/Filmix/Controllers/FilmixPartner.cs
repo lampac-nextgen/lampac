@@ -142,7 +142,7 @@ public class FilmixPartner : BaseOnlineController<FilmixSettings>
                         int sid = season.Value<int>("season");
                         string sname = $"{sid} сезон";
 
-                        if (!temp_season.Add(sid))
+                        if (temp_season.Add(sid))
                         {
                             tpl.Append(
                                 sname,

@@ -134,18 +134,18 @@ public struct AshdiInvoke
                     {
                         foreach (var season in voice.folder)
                         {
-                            if (!hashseason.Add(season.title))
-                                continue;
+                            if (hashseason.Add(season.title))
+                            {
+                                string numberseason = Regex.Match(season.title, "([0-9]+)$").Groups[1].Value;
+                                if (string.IsNullOrEmpty(numberseason))
+                                    continue;
 
-                            string numberseason = Regex.Match(season.title, "([0-9]+)$").Groups[1].Value;
-                            if (string.IsNullOrEmpty(numberseason))
-                                continue;
-
-                            tpl.Append(
-                                season.title,
-                                host + $"lite/ashdi?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&uri={enc_uri}&s={numberseason}",
-                                numberseason
-                            );
+                                tpl.Append(
+                                    season.title,
+                                    host + $"lite/ashdi?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&uri={enc_uri}&s={numberseason}",
+                                    numberseason
+                                );
+                            }
                         }
                     }
 

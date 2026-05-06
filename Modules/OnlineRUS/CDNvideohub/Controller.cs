@@ -68,14 +68,14 @@ public class CDNvideohubController : BaseOnlineController
                     {
                         int season = video.season;
 
-                        if (!hash.Add(season))
-                            continue;
-
-                        tpl.Append(
-                            $"{season} сезон",
-                            $"{host}/lite/cdnvideohub?s={season}{defaultargs}",
-                            season
-                        );
+                        if (hash.Add(season))
+                        {
+                            tpl.Append(
+                                $"{season} сезон",
+                                $"{host}/lite/cdnvideohub?s={season}{defaultargs}",
+                                season
+                            );
+                        }
                     }
 
                     return tpl;

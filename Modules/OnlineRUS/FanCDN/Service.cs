@@ -229,14 +229,14 @@ public struct FanCDNInvoke
 
                 foreach (var voice in root.serial.OrderBy(i => i.seasons))
                 {
-                    if (!hash.Add(voice.seasons))
-                        continue;
-
-                    tpl.Append(
-                        $"{voice.seasons} сезон",
-                        host + $"lite/fancdn?rjson={rjson}&imdb_id={imdb_id}&kinopoisk_id={kinopoisk_id}&title={enc_title}&original_title={enc_original_title}&s={voice.seasons}",
-                        voice.seasons
-                    );
+                    if (hash.Add(voice.seasons))
+                    {
+                        tpl.Append(
+                            $"{voice.seasons} сезон",
+                            host + $"lite/fancdn?rjson={rjson}&imdb_id={imdb_id}&kinopoisk_id={kinopoisk_id}&title={enc_title}&original_title={enc_original_title}&s={voice.seasons}",
+                            voice.seasons
+                        );
+                    }
                 }
 
                 return tpl;

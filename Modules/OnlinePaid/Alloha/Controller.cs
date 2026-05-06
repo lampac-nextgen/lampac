@@ -165,17 +165,17 @@ public class AllohaController : BaseOnlineController<ModuleConf>
                     {
                         if (translation?.id > 0)
                         {
-                            if (!temp_translation.Add(translation.id))
-                                continue;
+                            if (temp_translation.Add(translation.id))
+                            {
+                                if (activTranslate == -1)
+                                    activTranslate = translation.id;
 
-                            if (activTranslate == -1)
-                                activTranslate = translation.id;
-
-                            vtpl.Append(
-                                translation.name,
-                                activTranslate == translation.id,
-                                $"{host}/lite/alloha?rjson={rjson}&s={s}&t={translation.id}{defaultargs}"
-                            );
+                                vtpl.Append(
+                                    translation.name,
+                                    activTranslate == translation.id,
+                                    $"{host}/lite/alloha?rjson={rjson}&s={s}&t={translation.id}{defaultargs}"
+                                );
+                            }
                         }
                     }
                 }

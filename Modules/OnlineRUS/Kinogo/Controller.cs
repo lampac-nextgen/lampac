@@ -217,17 +217,17 @@ public class KinogoController : BaseOnlineController
                     foreach (var voice in episode.folder)
                     {
                         int voice_id = voice.voice_id;
-                        if (!hashSet.Add(voice_id))
-                            continue;
+                        if (hashSet.Add(voice_id))
+                        {
+                            if (t == -1)
+                                t = voice_id;
 
-                        if (t == -1)
-                            t = voice_id;
-
-                        vtpl.Append(
-                            voice.title,
-                            t == voice_id,
-                            $"{host}/lite/kinogo?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&year={year}&href={enc_href}&s={s}&t={voice_id}"
-                        );
+                            vtpl.Append(
+                                voice.title,
+                                t == voice_id,
+                                $"{host}/lite/kinogo?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&year={year}&href={enc_href}&s={s}&t={voice_id}"
+                            );
+                        }
                     }
                 }
                 #endregion
