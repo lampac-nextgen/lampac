@@ -1,10 +1,9 @@
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.Playwright;
 using Shared;
 using Shared.Attributes;
-using Shared.Models.Base;
 using Shared.Models.Templates;
-using Shared.Services.RxEnumerate;
-using Shared.Services.Utilities;
+using Shared.PlaywrightCore;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -23,7 +22,9 @@ public class FlixCDNController : BaseOnlineController
         {
             oninvk = new FlixCDNInvoke
             (
-               init.hls,
+               host,
+               init,
+               httpHydra,
                streamfile => HostStreamProxy(streamfile)
             );
         };
@@ -41,29 +42,14 @@ public class FlixCDNController : BaseOnlineController
         if (string.IsNullOrEmpty(init?.token))
             return OnError();
 
-        rhubFallback:
+    rhubFallback:
         var cache = await InvokeCacheResult<SearchItem>($"flixcdn:search:{imdb_id}:{kinopoisk_id}:{title}:{similar}", TimeSpan.FromHours(4), async e =>
         {
-            if (similar || (kinopoisk_id == 0 && string.IsNullOrEmpty(imdb_id)))
-            {
-                var search = await SearchByTitle(imdb_id, kinopoisk_id, title, original_title, similar);
-                if (search == null)
-                    return e.Fail("SearchByTitle", refresh_proxy: true);
+            var search = await oninvk.SearchByTitle(imdb_id, kinopoisk_id, title, original_title, similar);
+            if (search == null)
+                return e.Fail("SearchByTitle", refresh_proxy: true);
 
-                return e.Success(search);
-            }
-            else
-            {
-                var item = await SearchById(imdb_id, kinopoisk_id);
-                if (item != null)
-                    return e.Success(item);
-
-                var search = await SearchByTitle(imdb_id, kinopoisk_id, title, original_title, false);
-                if (search == null)
-                    return e.Fail("SearchById", refresh_proxy: true);
-
-                return e.Success(search);
-            }
+            return e.Success(search);
         });
 
         if (IsRhubFallback(cache))
@@ -78,6 +64,7 @@ public class FlixCDNController : BaseOnlineController
 
             if (result.type is "movie" or "cartoon")
             {
+                #region Фильм
                 var mtpl = new MovieTpl(title, original_title, result.translations.Count);
 
                 foreach (var voice in result.translations)
@@ -91,6 +78,7 @@ public class FlixCDNController : BaseOnlineController
                 }
 
                 return mtpl;
+                #endregion
             }
             else
             {
@@ -178,45 +166,80 @@ public class FlixCDNController : BaseOnlineController
         if (string.IsNullOrEmpty(iframe))
             return OnError();
 
-        if (await IsRequestBlocked(rch: true))
+        if (await IsRequestBlocked(rch_check: false))
             return badInitMsg;
 
-        if (rch != null)
-        {
-            if (rch.IsNotConnected())
-            {
-                if (init.rhub_fallback && play)
-                    rch.Disabled();
-                else
-                    return ContentTo(rch.connectionMsg);
-            }
-
-            if (!play && rch.IsRequiredConnected())
-                return ContentTo(rch.connectionMsg);
-
-            if (rch.IsNotSupport(out string rch_error))
-                return ShowError(rch_error);
-        }
-
-    rhubFallback:
         var cache = await InvokeCacheResult<string>(ipkey($"flixcdn:stream:{iframe}:{t}:{s}:{e}"), 10, async result =>
         {
             string file = null;
             string iframeUrl = oninvk.BuildIframeUrl(iframe, t, s, e);
 
-            await httpHydra.GetSpan(iframeUrl, spanAction: html =>
+            try
             {
-                file = Rx.Match(html, "file'?:\\s*'([^']+)'");
-            });
+                using (var browser = new Firefox())
+                {
+                    var page = await browser.NewPageAsync(init.plugin, proxy: proxy_data, headers: init.headers).ConfigureAwait(false);
+                    if (page == null)
+                        return result.Fail("page");
+
+                    await page.RouteAsync("**/*", async route =>
+                    {
+                        try
+                        {
+                            if (browser.completionSource.Task.IsCompleted ||
+                                route.Request.Url.Contains("mc.yandex.ru") ||
+                                route.Request.Url.Contains("/videos/"))
+                            {
+                                await route.AbortAsync();
+                                return;
+                            }
+
+                            if (route.Request.Url.StartsWith("https://flixcdn.live"))
+                            {
+                                await route.FulfillAsync(new RouteFulfillOptions
+                                {
+                                    Body = PlaywrightBase.IframeHtml(iframeUrl)
+                                });
+                            }
+                            else
+                            {
+                                if (route.Request.Url.Contains("&cuid="))
+                                {
+                                    await route.ContinueAsync();
+
+                                    var response = await page.WaitForResponseAsync(route.Request.Url);
+                                    browser.completionSource.SetResult(response != null
+                                        ? await response.TextAsync()
+                                        : null);
+                                    return;
+                                }
+                                else
+                                {
+                                    if (await PlaywrightBase.AbortOrCache(page, route))
+                                        return;
+
+                                    await route.ContinueAsync();
+                                }
+                            }
+                        }
+                        catch (Exception ex)
+                        {
+                            Serilog.Log.Error(ex, "{Class} {CatchId}", "Flixcdn", "id_erdbn91q");
+                        }
+                    });
+
+                    PlaywrightBase.GotoAsync(page, "https://flixcdn.live/");
+                    file = await browser.WaitPageResult().ConfigureAwait(false);
+                }
+            }
+            catch { }
 
             if (string.IsNullOrWhiteSpace(file))
-                return result.Fail("embed", refresh_proxy: true);
+                return result.Fail("file", refresh_proxy: true);
 
+            file = file.Replace("\\", "");
             return result.Success(file);
         });
-
-        if (IsRhubFallback(cache))
-            goto rhubFallback;
 
         if (!cache.IsSuccess)
             return OnError(cache.ErrorMsg);
@@ -240,92 +263,4 @@ public class FlixCDNController : BaseOnlineController
             httpContext: HttpContext
         ));
     }
-
-
-    #region search
-    async Task<SearchItem> SearchByTitle(string imdb_id, long kinopoisk_id, string title, string original_title, bool forceSimilar)
-    {
-        if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(original_title))
-            return null;
-
-        var root = await ApiSearch($"title={HttpUtility.UrlEncode(title ?? original_title)}");
-        if (root == null || root.Length == 0)
-            return null;
-
-        var stpl = new SimilarTpl(root.Length);
-        string enc_title = HttpUtility.UrlEncode(title);
-        string enc_original_title = HttpUtility.UrlEncode(original_title);
-
-        string stitle = StringConvert.SearchName(title);
-        string sorig = StringConvert.SearchName(original_title);
-
-        SearchItem exact = null;
-
-        foreach (var item in root)
-        {
-            string name = item.title_rus ?? item.title_orig;
-            string details = item.year > 0 ? item.year.ToString() : string.Empty;
-
-            stpl.Append(
-                name,
-                details,
-                string.Empty,
-                $"{host}/lite/flixcdn?kinopoisk_id={kinopoisk_id}&imdb_id={imdb_id}&title={HttpUtility.UrlEncode(item.title_rus)}&original_title={HttpUtility.UrlEncode(item.title_orig)}&year={item.year}",
-                PosterApi.Size(item.poster)
-            );
-
-            if (exact == null && !string.IsNullOrEmpty(name))
-            {
-                string sname = StringConvert.SearchName(name);
-                if (!string.IsNullOrEmpty(stitle) && sname.Contains(stitle))
-                    exact = item;
-                else if (!string.IsNullOrEmpty(sorig) && sname.Contains(sorig))
-                    exact = item;
-            }
-        }
-
-        if (forceSimilar)
-            return new SearchItem() { similar = stpl };
-
-        if (exact != null)
-            return exact;
-
-        if (root.Length == 1)
-            return root[0];
-
-        if (stpl.Length > 0)
-            return new SearchItem() { similar = stpl };
-
-        return null;
-    }
-
-    async Task<SearchItem> SearchById(string imdb_id, long kinopoisk_id)
-    {
-        /// iframe
-        // https://player0.flixcdn.space/show/imdb/{imdb_id}
-        // https://player0.flixcdn.space/show/kinopoisk/{kp_id}
-
-        var args = new List<string>(3);
-
-        if (kinopoisk_id > 0)
-            args.Add($"kinopoisk_id={kinopoisk_id}");
-
-        if (!string.IsNullOrEmpty(imdb_id))
-            args.Add($"imdb_id={imdb_id}");
-
-        var root = await ApiSearch(string.Join("&", args));
-        if (root != null && root.Length > 0)
-            return root[0];
-
-        return null;
-    }
-
-    async Task<SearchItem[]> ApiSearch(string query)
-    {
-        string uri = $"{init.apihost}/search?token={init.token}&{query}";
-        var root = await httpHydra.Get<SearchRoot>(uri, safety: true);
-
-        return root?.result;
-    }
-    #endregion
 }

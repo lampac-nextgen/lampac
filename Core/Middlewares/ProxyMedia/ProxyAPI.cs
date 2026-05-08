@@ -259,6 +259,9 @@ public partial class ProxyAPI
 
                         ctsHttp.CancelAfter(TimeSpan.FromSeconds(30));
 
+                        if (init.showOrigUri)
+                            httpContext.Response.Headers["PX-Req"] = request.RequestUri.ToString();
+
                         using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ctsHttp.Token).ConfigureAwait(false))
                         {
                             if (ctsHttp.IsCancellationRequested)

@@ -189,8 +189,13 @@ public class ApiController : BaseController
             if (ModInit.conf.initPlugins.cubProxy)
             {
                 bulder = bulder.Replace("protocol + mirror + '/api/checker'", $"'{host}/cub/api/checker'");
-                bulder = bulder.Replace("Utils$1.protocol() + 'tmdb.' + object$2.cub_domain + '/' + u,", $"'{host}/cub/tmdb./' + u,");
-                bulder = bulder.Replace("Utils$1.protocol() + object$2.cub_domain", $"'{host}/cub/red'");
+
+                string utlprotocol = file.Contains("Utils$1.protocol()") ?
+                    "Utils$1.protocol()" :
+                    "Utils$2.protocol()";
+
+                bulder = bulder.Replace($"{utlprotocol} + 'tmdb.' + object$2.cub_domain + '/' + u,", $"'{host}/cub/tmdb./' + u,");
+                bulder = bulder.Replace($"{utlprotocol} + object$2.cub_domain", $"'{host}/cub/red'");
                 bulder = bulder.Replace("object$2.cub_domain", $"'{CoreInit.conf.cub.mirror}'");
             }
 
@@ -463,7 +468,7 @@ public class ApiController : BaseController
             sb = sb.Replace("{deny}", FileCache.ReadAllText($"{ModInit.modpath}/plugins/deny.js", "deny.js").Replace("{cubMesage}", CoreInit.conf.accsdb.authMesage));
 
         sb = sb.Replace("{lampainit-invc}", FileCache.ReadAllText($"{ModInit.modpath}/plugins/lampainit-invc.js", "lampainit-invc.js"));
-        sb = sb.Replace("{country}", requestInfo.Country);
+        sb = sb.Replace("{country}", requestInfo.Country ?? string.Empty);
         sb = sb.Replace("{localhost}", host);
         sb = sb.Replace("{deny}", string.Empty);
         sb = sb.Replace("{pirate_store}", string.Empty);
@@ -613,7 +618,7 @@ public class ApiController : BaseController
         }
 
         plugin = plugin
-            .Replace("{country}", requestInfo.Country)
+            .Replace("{country}", requestInfo.Country ?? string.Empty)
             .Replace("{localhost}", host);
 
         return Content(plugin, "application/javascript; charset=utf-8");
@@ -632,7 +637,7 @@ public class ApiController : BaseController
             return Content(string.Empty, "application/javascript; charset=utf-8");
 
         string privateinit = FileCache.ReadAllText($"{ModInit.modpath}/plugins/privateinit.js", "privateinit.js")
-            .Replace("{country}", requestInfo.Country)
+            .Replace("{country}", requestInfo.Country ?? string.Empty)
             .Replace("{localhost}", host);
 
         if (ModInit.conf.initPlugins.jacred)

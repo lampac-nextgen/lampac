@@ -4,6 +4,7 @@ using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
 using Shared.Models.Online.Settings;
+using Shared.PlaywrightCore;
 using Shared.Services;
 using System.Collections.Generic;
 
@@ -15,6 +16,9 @@ public class ModInit : IModuleLoaded, IModuleOnline
 
     public List<ModuleOnlineItem> Invoke(HttpContext httpContext, RequestModel requestInfo, string host, OnlineEventsModel args)
     {
+        if (Firefox.Status == PlaywrightStatus.disabled)
+            return null;
+
         var online = new List<ModuleOnlineItem>();
 
         if (args.kinopoisk_id > 0 && !args.isanime)
@@ -42,10 +46,9 @@ public class ModInit : IModuleLoaded, IModuleOnline
         {
             enable = false,
             displayindex = 525,
-            rch_access = "apk",
             stream_access = "apk,cors,web",
-            httpversion = 1,
             headers_stream = HeadersModel.Init(
+                ("accept", "*/*"),
                 ("origin", "https://player0.flixcdn.space"),
                 ("referer", "https://player0.flixcdn.space/"),
                 ("sec-fetch-dest", "video"),

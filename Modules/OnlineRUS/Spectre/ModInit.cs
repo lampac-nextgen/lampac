@@ -45,7 +45,7 @@ public class ModInit : IModuleLoaded, IModuleOnline
     {
         conf = ModuleInvoke.Init("Spectre", new ModuleConf("Spectre", "https://api.apbugall.org", "https://aport-as.allarknow.online", "22c8122334d050de1bfc97bd08aa5e", "", true)
         {
-            enable = true,
+            enable = false,
             mux = true, // multi stream
             m4s = true, // 4k
             displayindex = 510,

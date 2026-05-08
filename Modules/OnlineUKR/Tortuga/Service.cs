@@ -162,17 +162,17 @@ public struct TortugaInvoke
                     {
                         foreach (var voice in episode.folder)
                         {
-                            if (!hashVoice.Add(voice.title))
-                                continue;
+                            if (hashVoice.Add(voice.title))
+                            {
+                                if (string.IsNullOrEmpty(t))
+                                    t = voice.title;
 
-                            if (string.IsNullOrEmpty(t))
-                                t = voice.title;
-
-                            vtpl.Append(
-                                voice.title,
-                                t == voice.title,
-                                host + $"lite/tortuga?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&uri={enc_uri}&s={s}&t={voice.title}"
-                            );
+                                vtpl.Append(
+                                    voice.title,
+                                    t == voice.title,
+                                    host + $"lite/tortuga?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&uri={enc_uri}&s={s}&t={voice.title}"
+                                );
+                            }
                         }
                     }
                     #endregion

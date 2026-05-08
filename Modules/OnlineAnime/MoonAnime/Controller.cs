@@ -136,14 +136,14 @@ public class MoonAnimeController : BaseOnlineController
                     {
                         foreach (var season in voice.Value)
                         {
-                            if (!temp.Add(season.Key))
-                                continue;
-
-                            tpl.Append(
-                                $"{season.Key} сезон",
-                                $"{host}/lite/moonanime?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&animeid={animeid}&s={season.Key}",
-                                season.Key
-                            );
+                            if (temp.Add(season.Key))
+                            {
+                                tpl.Append(
+                                    $"{season.Key} сезон",
+                                    $"{host}/lite/moonanime?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&animeid={animeid}&s={season.Key}",
+                                    season.Key
+                                );
+                            }
                         }
                     }
                 }

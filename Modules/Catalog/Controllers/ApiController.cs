@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Shared.Models.Events;
 
 namespace Catalog;
 
@@ -17,7 +18,7 @@ public class ApiController : BaseController
         var plugin = FileCache.ReadAllText($"{ModInit.modpath}/plugin.js", "catalog.js")
             .Replace("{localhost}", host)
             .Replace("{token}", HttpUtility.UrlEncode(token))
-            .Replace("catalogs:{}", $"catalogs:{jsonCatalogs()}");
+            .Replace("catalogs:{}", $"catalogs:{Channels().ToString(Formatting.None)}");
 
         return Content(plugin, "application/javascript; charset=utf-8");
     }
@@ -27,17 +28,31 @@ public class ApiController : BaseController
     [Route("catalog")]
     public ActionResult Index()
     {
-        return ContentTo(jsonCatalogs());
+        var ch = Channels();
+
+        if (EventListener.CatalogChannels != null)
+        {
+            var em = new EventCatalogChannels(this, ch, HttpContext);
+
+            foreach (Func<EventCatalogChannels, ActionResult> handler in EventListener.CatalogChannels.GetInvocationList())
+            {
+                var eventResult = handler(em);
+                if (eventResult != null)
+                    return eventResult;
+            }
+        }
+
+        return ContentTo(ch.ToString(Formatting.None));
     }
 
 
-    string jsonCatalogs()
+    JObject Channels()
     {
         var result = new JObject();
 
         string dir = Path.Combine(AppContext.BaseDirectory, ModInit.modpath, "sites");
         if (!Directory.Exists(dir))
-            return result.ToString(Formatting.None);
+            return result;
 
         #region sites
         var sites = new List<(string key, JObject obj, int index)>();
@@ -212,6 +227,6 @@ public class ApiController : BaseController
         }
         #endregion
 
-        return result.ToString(Formatting.None);
+        return result;
     }
 }

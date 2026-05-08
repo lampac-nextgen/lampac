@@ -118,6 +118,9 @@ public partial class ProxyAPI
                 await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
             }
 
+            if (init.showOrigUri)
+                httpContext.Response.Headers["PX-Req"] = request.RequestUri.ToString();
+
             using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(httpContext.RequestAborted))
             {
                 ctsHttp.CancelAfter(TimeSpan.FromSeconds(30));

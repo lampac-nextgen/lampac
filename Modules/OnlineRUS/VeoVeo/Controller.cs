@@ -116,14 +116,14 @@ public class VeoVeoController : BaseOnlineController
                     foreach (var item in cache.Value)
                     {
                         int season = item.season?.order ?? 0;
-                        if (!hash.Add(season))
-                            continue;
-
-                        tpl.Append(
-                            $"{season} сезон",
-                            $"{host}/lite/veoveo?rjson={rjson}&movieid={movieid}&kinopoisk_id={kinopoisk_id}&imdb_id={imdb_id}&title={enc_title}&original_title={enc_original_title}&s={season}",
-                            season
-                        );
+                        if (hash.Add(season))
+                        {
+                            tpl.Append(
+                                $"{season} сезон",
+                                $"{host}/lite/veoveo?rjson={rjson}&movieid={movieid}&kinopoisk_id={kinopoisk_id}&imdb_id={imdb_id}&title={enc_title}&original_title={enc_original_title}&s={season}",
+                                season
+                            );
+                        }
                     }
 
                     return tpl;

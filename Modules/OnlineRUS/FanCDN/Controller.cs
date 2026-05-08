@@ -1,208 +1,89 @@
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.Playwright;
-using Shared.PlaywrightCore;
-using BrowserCookie = Microsoft.Playwright.Cookie;
 using Microsoft.AspNetCore.Routing;
+using Shared;
 using System;
 using System.Collections.Generic;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using Shared;
-using Shared.Models.Base;
+using BrowserCookie = Microsoft.Playwright.Cookie;
 
 namespace FanCDN;
 
 public class FanCDNController : BaseOnlineController
 {
-    public FanCDNController() : base(ModInit.conf) { }
+    static List<BrowserCookie> cookies;
+
+    public FanCDNController() : base(ModInit.conf)
+    {
+        requestInitialization += () =>
+        {
+            if (cookies == null && !string.IsNullOrEmpty(init.cookie))
+            {
+                string fanhost = "." + Regex.Replace(init.host, "^https?://", "");
+                var excookie = DateTimeOffset.UtcNow.AddYears(1).ToUnixTimeSeconds();
+
+                cookies = new List<BrowserCookie>();
+
+                foreach (string line in init.cookie.Split(";"))
+                {
+                    if (string.IsNullOrEmpty(line) || !line.Contains("=") || line.Contains("cf_clearance") || line.Contains("PHPSESSID"))
+                        continue;
+
+                    cookies.Add(new BrowserCookie()
+                    {
+                        Domain = fanhost,
+                        Expires = excookie,
+                        Path = "/",
+                        HttpOnly = true,
+                        Secure = true,
+                        Name = line.Split("=")[0].Trim(),
+                        Value = line.Split("=")[1].Trim()
+                    });
+                }
+            }
+        };
+    }
 
     [HttpGet]
     [Route("lite/fancdn")]
-    async public Task<ActionResult> Index(string imdb_id, long kinopoisk_id, string title, string original_title, int year, int serial, int t = -1, int s = -1, bool rjson = false)
+    async public Task<ActionResult> Index(string imdb_id, long kinopoisk_id, string title, string original_title, int year, int serial)
     {
-        if (await IsRequestBlocked(rch: true))
+        if (await IsRequestBlocked(rch: false))
             return badInitMsg;
 
-        if (kinopoisk_id == 0 || serial == 1)
+        if (kinopoisk_id == 0 || serial == 1 || cookies == null)
             return OnError();
 
         var oninvk = new FanCDNInvoke
         (
-           host,
-           init.host,
-           httpHydra,
-           async ongettourl =>
-           {
-               return await httpHydra.Get(ongettourl);
-
-               if (ongettourl.Contains("fancdn."))
-                   return await black_magic(init.cors(ongettourl));
-
-               if (string.IsNullOrEmpty(init.cookie))
-                   return null;
-
-               var headers = httpHeaders(init, HeadersModel.Init(
-                   ("sec-fetch-dest", "document"),
-                   ("sec-fetch-mode", "navigate"),
-                   ("sec-fetch-site", "none"),
-                   ("cookie", init.cookie)
-               ));
-
-               if (rch?.enable == true || init.priorityBrowser == "http")
-                   return await httpHydra.Get(ongettourl, newheaders: headers, safety: true);
-
-               #region Browser Search
-               try
-               {
-                   using (var browser = new PlaywrightBrowser())
-                   {
-                       var page = await browser.NewPageAsync(init.plugin, proxy: proxy_data);
-                       if (page == null)
-                           return null;
-
-                       string fanhost = "." + Regex.Replace(init.host, "^https?://", "");
-                       var excookie = DateTimeOffset.UtcNow.AddYears(1).ToUnixTimeSeconds();
-
-                       var cookies = new List<BrowserCookie>();
-                       foreach (string line in init.cookie.Split(";"))
-                       {
-                           if (string.IsNullOrEmpty(line) || !line.Contains("=") || line.Contains("cf_clearance") || line.Contains("PHPSESSID"))
-                               continue;
-
-                           cookies.Add(new BrowserCookie()
-                           {
-                               Domain = fanhost,
-                               Expires = excookie,
-                               Path = "/",
-                               HttpOnly = true,
-                               Secure = true,
-                               Name = line.Split("=")[0].Trim(),
-                               Value = line.Split("=")[1].Trim()
-                           });
-                       }
-
-                       await page.Context.AddCookiesAsync(cookies);
-
-                       var response = await page.GotoAsync(ongettourl, new PageGotoOptions()
-                       {
-                           Timeout = 10_000,
-                           WaitUntil = WaitUntilState.DOMContentLoaded
-                       });
-
-                       if (response == null)
-                           return null;
-
-                       return await response.TextAsync();
-                   }
-               }
-               catch
-               {
-                   return null;
-               }
-               #endregion
-           },
+           init,
+           cookies,
            streamfile => HostStreamProxy(streamfile)
         );
 
-    rhubFallback:
-        var cache = await InvokeCacheResult<EmbedModel>(ipkey($"fancdn:{kinopoisk_id}"), 20, textJson: true, onget: async e =>
+        var search = await InvokeCacheResult<(string kp, string key)>($"fancdn:{title}:{original_title}:{year}", TimeSpan.FromHours(4), onget: async e =>
         {
-            //var result = !string.IsNullOrEmpty(init.token) && kinopoisk_id > 0
-            //    ? await oninvk.EmbedToken(kinopoisk_id, init.token)
-            //    : await oninvk.EmbedSearch(title, original_title, year, serial);
-
-            var result = await oninvk.EmbedFilms(init.host, kinopoisk_id);
-
-            if (result == null)
-                return e.Fail("result");
+            var result = await oninvk.Search(title, original_title, year);
+            if (result.key == null)
+                return e.Fail("search");
 
             return e.Success(result);
         });
 
-        if (IsRhubFallback(cache, safety: true))
-            goto rhubFallback;
+        if (!search.IsSuccess)
+            return OnError(search.ErrorMsg);
+
+        var cache = await InvokeCacheResult<EmbedModel>($"fancdn:{search.Value}", 20, textJson: true, onget: async e =>
+        {
+            var result = await oninvk.Embed(search.Value.kp, search.Value.key);
+            if (result == null)
+                return e.Fail("embed");
+
+            return e.Success(result);
+        });
 
         return ContentTpl(cache,
-            () => oninvk.Tpl(cache.Value, imdb_id, kinopoisk_id, title, original_title, t, s, rjson: rjson, vast: init.vast, headers: httpHeaders(init))
+            () => oninvk.Tpl(cache.Value, imdb_id, kinopoisk_id, title, original_title, vast: init.vast, headers: httpHeaders(init))
         );
     }
-
-
-    #region black_magic
-    async Task<string> black_magic(string uri)
-    {
-        try
-        {
-            var headers = httpHeaders(init, HeadersModel.Init(
-                ("sec-fetch-dest", "iframe"),
-                ("sec-fetch-mode", "navigate"),
-                ("sec-fetch-site", "cross-site"),
-                ("referer", $"{init.host}/")
-            ));
-
-            if (rch?.enable == true || init.priorityBrowser == "http")
-                return await httpHydra.Get(uri, newheaders: headers, safety: true);
-
-            using (var browser = new PlaywrightBrowser())
-            {
-                var page = await browser.NewPageAsync(init.plugin, init.headers, proxy: proxy_data, imitationHuman: init.imitationHuman);
-                if (page == null)
-                    return null;
-
-                browser.SetFailedUrl(uri);
-
-                await page.RouteAsync("**/*", async route =>
-                {
-                    try
-                    {
-                        if (route.Request.Url.StartsWith(init.host))
-                        {
-                            await route.FulfillAsync(new RouteFulfillOptions
-                            {
-                                Body = PlaywrightBase.IframeHtml(uri)
-                            });
-                        }
-                        else if (route.Request.Url == uri)
-                        {
-                            string html = null;
-                            await browser.ClearContinueAsync(route, page);
-
-                            var response = await page.WaitForResponseAsync(route.Request.Url);
-                            if (response != null)
-                                html = await response.TextAsync();
-
-                            browser.SetPageResult(html);
-                        }
-                        else
-                        {
-                            if (!init.imitationHuman || route.Request.Url.EndsWith(".m3u8"))
-                            {
-                                PlaywrightBase.ConsoleLog(() => $"Playwright: Abort {route.Request.Url}");
-                                await route.AbortAsync();
-                            }
-                            else
-                            {
-                                if (await PlaywrightBase.AbortOrCache(page, route))
-                                    return;
-
-                                await browser.ClearContinueAsync(route, page);
-                            }
-                        }
-                    }
-                    catch (System.Exception ex)
-                    {
-                        Serilog.Log.Error(ex, "{Class} {CatchId}", "FanCDN", "id_1bgipk7h");
-                    }
-                });
-
-                PlaywrightBase.GotoAsync(page, init.host);
-                return await browser.WaitPageResult();
-            }
-        }
-        catch
-        {
-            return null;
-        }
-    }
-    #endregion
 }

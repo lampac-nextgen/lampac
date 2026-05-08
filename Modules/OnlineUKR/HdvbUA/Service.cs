@@ -147,17 +147,17 @@ public struct HdvbUAInvoke
 
                     for (int i = 0; i < season.folder.Length; i++)
                     {
-                        if (!hash.Add(season.folder[i].title))
-                            continue;
+                        if (hash.Add(season.folder[i].title))
+                        {
+                            if (t == -1)
+                                t = i;
 
-                        if (t == -1)
-                            t = i;
-
-                        vtpl.Append(
-                            season.folder[i].title,
-                            t == i,
-                            host + $"lite/hdvbua?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&uri={enc_uri}&s={s}&t={i}"
-                        );
+                            vtpl.Append(
+                                season.folder[i].title,
+                                t == i,
+                                host + $"lite/hdvbua?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&uri={enc_uri}&s={s}&t={i}"
+                            );
+                        }
                     }
                     #endregion
 

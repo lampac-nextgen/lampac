@@ -2,10 +2,10 @@
   "enable": true,
   "dynamic": true,
   "tree": [
+    "Services",
     "Controller.cs",
     "Model.cs",
     "ModInit.cs",
-    "ModuleConf.cs",
-    "Service.cs"
+    "ModuleConf.cs"
   ]
 }

@@ -200,14 +200,14 @@ public class FilmixTVInvoke
                 {
                     foreach (var season in translation.Value)
                     {
-                        if (!temp.Add(season.Value.season))
-                            continue;
-
-                        tpl.Append(
-                            $"{season.Value.season} сезон",
-                            $"{host}lite/filmixtv?rjson={rjson}&postid={postid}&title={enc_title}&original_title={enc_original_title}&s={season.Value.season}",
-                            season.Value.season
-                        );
+                        if (temp.Add(season.Value.season))
+                        {
+                            tpl.Append(
+                                $"{season.Value.season} сезон",
+                                $"{host}lite/filmixtv?rjson={rjson}&postid={postid}&title={enc_title}&original_title={enc_original_title}&s={season.Value.season}",
+                                season.Value.season
+                            );
+                        }
                     }
                 }
 

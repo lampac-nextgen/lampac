@@ -1,7 +1,8 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Shared.Models.Events;
 using Shared.PlaywrightCore;
-using System.Net.Http;
 using Shared.Services.Pools.Json;
+using System.Net.Http;
 
 namespace Catalog;
 
@@ -205,6 +206,18 @@ public class CardController : BaseController
                     jo["tagline"] = original_name;
 
                 hybridCache.Set(memKey, jo, cacheTimeBase(init.cache_time, init: init));
+            }
+
+            if (EventListener.CatalogCard != null)
+            {
+                var em = new EventCatalogCard(this, HttpContext, jo, plugin, uri, type);
+
+                foreach (Func<EventCatalogCard, ActionResult> handler in EventListener.CatalogCard.GetInvocationList())
+                {
+                    var eventResult = handler(em);
+                    if (eventResult != null)
+                        return eventResult;
+                }
             }
 
             return ContentTo(JsonConvertPool.SerializeObject(jo));

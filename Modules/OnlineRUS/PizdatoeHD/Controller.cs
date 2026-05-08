@@ -42,10 +42,17 @@ public class PizdatoeHDController : BaseOnlineController<ModuleConf>
 
     [HttpGet]
     [Route("lite/pizdatoehd")]
-    async public Task<ActionResult> Index(string imdb_id, long kinopoisk_id, string title, string original_title, int clarification, int year, string href, string t, int s = -1, bool rjson = false, bool similar = false)
+    async public Task<ActionResult> Index(string imdb_id, long kinopoisk_id, string title, string original_title, int clarification, int year, string href, string t, int s = -1, bool rjson = false, bool similar = false, string source = null, string id = null)
     {
         if (await IsRequestBlocked(rch: false))
             return badInitMsg;
+
+        if (string.IsNullOrEmpty(href) && !string.IsNullOrEmpty(source) && !string.IsNullOrEmpty(id))
+        {
+            if (source.Equals("rezka", StringComparison.OrdinalIgnoreCase) ||
+                source.Equals("hdrezka", StringComparison.OrdinalIgnoreCase))
+                href = id;
+        }
 
         if (string.IsNullOrWhiteSpace(href) && string.IsNullOrWhiteSpace(title))
             return OnError();

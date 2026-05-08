@@ -1,10 +1,10 @@
 using Microsoft.AspNetCore.Http;
 using Newtonsoft.Json.Linq;
-using Shared.Services;
 using Shared.Models.Proxy;
 using Shared.Models.SISI.Base;
 using Shared.Models.SISI.OnResult;
 using Shared.Models.Templates;
+using Shared.Services;
 using System.Net;
 using System.Net.Http;
 using System.Text.Json;
@@ -29,6 +29,12 @@ public record EventSisiOnResult(BaseController controller, BaseSettings init, Ht
 public record EventSisiBookmarks(BaseController controller, HttpContext httpContext, IList<MenuItem> menu, IList<PlaylistItem> bookmarks, int pg, int pageSize, int total_pages);
 
 public record EventSisiHistorys(BaseController controller, HttpContext httpContext, IList<PlaylistItem> historys, int pg, int pageSize);
+
+public record EventCatalogChannels(BaseController controller, JObject channels, HttpContext httpContext);
+
+public record EventCatalogList(BaseController controller, HttpContext httpContext, List<Catalog.PlaylistItem> playlists, string query, string plugin, string cat, string sort, int page, int? total_pages, bool? next_page);
+
+public record EventCatalogCard(BaseController controller, HttpContext httpContext, JObject card, string plugin, string uri, string type);
 
 public record EventAppReplace(string source, string token, string arg, string host, RequestModel requestInfo, HttpRequest request);
 

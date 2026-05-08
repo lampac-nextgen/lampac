@@ -735,6 +735,19 @@ public class OnlineApiController : BaseController
         }
         #endregion
 
+        #region EventListener
+        if (EventListener.OnlineChannels != null)
+        {
+            var em = new EventOnline(this, online, moduleArgs, kitconf, HttpContext);
+            foreach (Func<EventOnline, ActionResult> handler in EventListener.OnlineChannels.GetInvocationList())
+            {
+                var eventResult = handler(em);
+                if (eventResult != null)
+                    return eventResult;
+            }
+        }
+        #endregion
+
         #region checkOnlineSearch
         if (ModInit.conf.checkOnlineSearch && !string.IsNullOrEmpty(id))
         {
@@ -767,17 +780,6 @@ public class OnlineApiController : BaseController
             return ContentTo($"[{string.Join(",", links.Where(i => i.code != null).OrderByDescending(i => i.work).ThenBy(i => i.index).Select(i => i.code)).Replace("{localhost}", host)}]");
         }
         #endregion
-
-        if (EventListener.OnlineChannels != null)
-        {
-            var em = new EventOnline(this, online, moduleArgs, kitconf, HttpContext);
-            foreach (Func<EventOnline, ActionResult> handler in EventListener.OnlineChannels.GetInvocationList())
-            {
-                var eventResult = handler(em);
-                if (eventResult != null)
-                    return eventResult;
-            }
-        }
 
         string online_result = string.Join(",", online.OrderBy(i => i.index).Select(i => "{\"name\":\"" + i.name + "\",\"url\":\"" + i.url + "\",\"balanser\":\"" + i.plugin + "\"}"));
         return ContentTo($"[{online_result.Replace("{localhost}", host)}]");

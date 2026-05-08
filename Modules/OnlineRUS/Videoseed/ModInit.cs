@@ -40,7 +40,7 @@ public class ModInit : IModuleLoaded, IModuleOnline
 
     void updateConf()
     {
-        conf = ModuleInvoke.Init("Videoseed", new OnlinesSettings("Videoseed", "https://videoseed.tv", streamproxy: true, enable: false)
+        conf = ModuleInvoke.Init("Videoseed", new OnlinesSettings("Videoseed", "https://videoseed.tv", "https://api.videoseed.tv", streamproxy: true, enable: false)
         {
             displayindex = 580,
             stream_access = "apk,cors,web",

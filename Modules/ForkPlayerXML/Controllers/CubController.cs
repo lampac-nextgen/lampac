@@ -10,77 +10,11 @@ using System.Web;
 
 namespace ForkXML;
 
-public class ForkController : BaseController
+public class CubController : BaseController
 {
     [HttpGet]
-    [Route("fxml")]
-    public ActionResult Index()
-    {
-        var channels = new List<ForkPlaylistItem>()
-        {
-            new ForkPlaylistItem()
-            {
-                search_on = "search_on",
-                title = "Поиск",
-                playlist_url = $"{host}/fxml/cub",
-                //logo_30x30 = ""
-            },
-            new ForkPlaylistItem()
-            {
-                title = "Сейчас смотрят",
-                playlist_url = $"{host}/fxml/cub?sort=now_playing",
-                logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png"
-            },
-            new ForkPlaylistItem()
-            {
-                title = "Фильмы",
-                playlist_url = $"{host}/fxml/cub?cat=movie&without_genres=16",
-                logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png"
-            },
-            new ForkPlaylistItem()
-            {
-                title = "Сериалы",
-                playlist_url = $"{host}/fxml/cub?cat=tv&without_genres=16",
-                logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png"
-            },
-            new ForkPlaylistItem()
-            {
-                title = "Мультфильмы",
-                playlist_url = $"{host}/fxml/cub?cat=movie&genre=16",
-                logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png"
-            },
-            new ForkPlaylistItem()
-            {
-                title = "Мультсериалы",
-                playlist_url = $"{host}/fxml/cub?cat=tv&genre=16",
-                logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png"
-            },
-            new ForkPlaylistItem()
-            {
-                title = "Аниме",
-                playlist_url = $"{host}/fxml/cub?cat=anime",
-                logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png"
-            },
-            new ForkPlaylistItem()
-            {
-                title = "Клубничка 18+",
-                playlist_url = $"{host}/sisi",
-                logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png"
-            }
-        };
-
-        return Json(new
-        {
-            title = "Lampac",
-            all_local = "directly",
-            //icon = "",
-            channels = channels
-        });
-    }
-
-    [HttpGet]
     [Route("fxml/cub")]
-    async public Task<ActionResult> CubParse(string search, string cat, string sort, int page = 1)
+    async public Task<ActionResult> Index(string search, string cat, string sort, int page = 1)
     {
         string uri = $"{host}/fxml/cub";
 
@@ -115,7 +49,7 @@ public class ForkController : BaseController
             {
                 title = title ?? original_title,
                 description = Description(movie, end_title),
-                logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png",
+                logo_30x30 = Icon.Folder,
                 playlist_url = $"{host}/lite/events?{args}",
             });
         }
@@ -128,9 +62,6 @@ public class ForkController : BaseController
 
         if (string.IsNullOrEmpty(search) && sort != "releases")
         {
-            string iconfilter = "";
-            string iconfolder = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png";
-
             menu.Add(new ForkPlaylistItem()
             {
                 title = $"Сортировка: {(string.IsNullOrEmpty(sort) ? "выбрать" : sort.Replace("now_playing", "сейчас смотрят").Replace("now", "новинки").Replace("top", "популярное"))}",
@@ -141,22 +72,22 @@ public class ForkController : BaseController
                     {
                         title = "Новинки",
                         playlist_url = $"{uri}?cat={cat}&page={page}&sort=now",
-                        logo_30x30 = iconfolder
+                        logo_30x30 = Icon.Folder
                     },
                     new ForkPlaylistItem()
                     {
                         title = "Популярное",
                         playlist_url = $"{uri}?cat={cat}&page={page}&sort=top",
-                        logo_30x30 = iconfolder
+                        logo_30x30 = Icon.Folder
                     },
                     new ForkPlaylistItem()
                     {
                         title = "Cейчас смотрят",
                         playlist_url = $"{uri}?cat={cat}&page={page}&sort=now_playing",
-                        logo_30x30 =iconfolder
+                        logo_30x30 = Icon.Folder
                     }
                 },
-                logo_30x30 = iconfilter
+                logo_30x30 = Icon.Filter
             });
         }
 

@@ -2,8 +2,8 @@
 # Build with: docker buildx build --platform linux/amd64,linux/arm64 -f Dockerfile .
 
 # Global ARGs
-ARG DOTNET_VERSION=10.0.5
-ARG DOTNET_SDK_VERSION=10.0.201
+ARG DOTNET_VERSION=10.0.7
+ARG DOTNET_SDK_VERSION=10.0.203
 
 # Builder image — platform set by buildx
 FROM --platform=$BUILDPLATFORM debian:13-slim AS builder

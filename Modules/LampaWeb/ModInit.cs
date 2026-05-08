@@ -45,7 +45,7 @@ public class ModInit : IModuleLoaded
             basetag = true,
             index = "lampa-main/index.html",
             git = "yumata/lampa",
-            tree = "9e99655e7fcdb378825987265cf07e586256fa34",
+            tree = "d96b1849da8a03c4d9d029ab2fec5a02c5fa7923",
             limit_map = new List<WafLimitRootMap>()
             {
                 new("^/(extensions|testaccsdb|msx/)", new WafLimitMap { limit = 10, second = 1 })

@@ -274,7 +274,7 @@ public class CoreInit
         api_key = "4ef0d7355d9ffb5151e987764708ce96",
         scheme = "https",
         domain = "cub.red",
-        mirror = "cub.red"
+        mirror = "cub.rip"
     };
 
     public PosterApiConf posterApi = new PosterApiConf()
@@ -386,8 +386,9 @@ public class CoreInit
             cache_rsize = true,
             cache_time = 60 * 24 // 24h
         },
+        cache_hls = 60 * 24,       // 24h
         maxlength_m3u = 10_000000, // 10mb
-        maxlength_ts = 70_000000  // 70mb
+        maxlength_ts = 70_000000   // 70mb
     };
 
     public OnlineConf online = new OnlineConf()

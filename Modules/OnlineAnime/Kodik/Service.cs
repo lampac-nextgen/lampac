@@ -349,14 +349,14 @@ public struct KodikInvoke
                 {
                     int season = item.last_season;
 
-                    if (!hash.Add(season))
-                        continue;
-
-                    tpl.Append(
-                        $"{season} сезон",
-                        host + $"lite/kodik?rjson={rjson}&imdb_id={imdb_id}&kinopoisk_id={kinopoisk_id}&title={enc_title}&original_title={enc_original_title}&clarification={clarification}&pick={enc_pick}&s={season}",
-                        season
-                    );
+                    if (hash.Add(season))
+                    {
+                        tpl.Append(
+                            $"{season} сезон",
+                            host + $"lite/kodik?rjson={rjson}&imdb_id={imdb_id}&kinopoisk_id={kinopoisk_id}&title={enc_title}&original_title={enc_original_title}&clarification={clarification}&pick={enc_pick}&s={season}",
+                            season
+                        );
+                    }
                 }
 
                 return tpl;

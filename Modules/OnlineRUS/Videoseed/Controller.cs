@@ -7,7 +7,6 @@ using Shared.Models.Templates;
 using Shared.PlaywrightCore;
 using Shared.Services.Utilities;
 using System;
-using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -33,7 +32,7 @@ public class VideoseedController : BaseOnlineController
         if (string.IsNullOrEmpty(init.token))
             return OnError();
 
-        var cache = await InvokeCacheResult<(Dictionary<string, Season> seasons, string iframe)>($"videoseed:view:{kinopoisk_id}:{imdb_id}:{original_title}", TimeSpan.FromHours(4), async e =>
+        var cache = await InvokeCacheResult<Data>($"videoseed:view:{kinopoisk_id}:{imdb_id}:{original_title}", TimeSpan.FromHours(4), async e =>
         {
             var data =
                 await goSearch(serial, kinopoisk_id > 0, $"&kp={kinopoisk_id}") ??
@@ -43,36 +42,15 @@ public class VideoseedController : BaseOnlineController
             if (data == null)
                 return e.Fail("search_data", refresh_proxy: true);
 
-            (Dictionary<string, Season> seasons, string iframe) result = (null, null);
-
-            if (serial == 1)
-                result.seasons = data?.seasons;
-            else
-                result.iframe = data?.iframe;
-
-            if (result.seasons == null && string.IsNullOrEmpty(result.iframe))
+            if (data?.seasons == null && string.IsNullOrEmpty(data?.iframe))
                 return e.Fail("empty_embed", refresh_proxy: true);
 
-            return e.Success(result);
+            return e.Success(data);
         });
 
         return ContentTpl(cache, () =>
         {
-            if (cache.Value.iframe != null)
-            {
-                #region Фильм
-                var mtpl = new MovieTpl(title, original_title, 1);
-                mtpl.Append(
-                    "По-умолчанию",
-                    accsArgs($"{host}/lite/videoseed/video/{AesTo.Encrypt(cache.Value.iframe)}") + "#.m3u8",
-                    "call",
-                    vast: init.vast
-                );
-
-                return mtpl;
-                #endregion
-            }
-            else
+            if (cache.Value.seasons != null)
             {
                 #region Сериал
                 string enc_title = HttpUtility.UrlEncode(title);
@@ -118,13 +96,45 @@ public class VideoseedController : BaseOnlineController
                 }
                 #endregion
             }
+            else
+            {
+                #region Фильм
+                var mtpl = new MovieTpl(title, original_title, 1);
+
+                if (cache.Value.translation_iframe?.Count > 0)
+                {
+                    foreach (var translation in cache.Value.translation_iframe)
+                    {
+                        string voice = translation.Value.short_name;
+
+                        mtpl.Append(
+                            voice ?? translation.Value.name ?? translation.Key,
+                            accsArgs($"{host}/lite/videoseed/video/{AesTo.Encrypt(cache.Value.iframe)}") + $"&voice={HttpUtility.UrlEncode(voice)}" + "#.m3u8",
+                            "call",
+                            vast: init.vast
+                        );
+                    }
+                }
+                else
+                {
+                    mtpl.Append(
+                        "По-умолчанию",
+                        accsArgs($"{host}/lite/videoseed/video/{AesTo.Encrypt(cache.Value.iframe)}") + "#.m3u8",
+                        "call",
+                        vast: init.vast
+                    );
+                }
+
+                return mtpl;
+                #endregion
+            }
         });
     }
 
     #region Video
     [HttpGet]
     [Route("lite/videoseed/video/{*iframe}")]
-    async public Task<ActionResult> Video(string iframe)
+    async public Task<ActionResult> Video(string iframe, string voice)
     {
         if (await IsRequestBlocked(rch: false))
             return badInitMsg;
@@ -207,14 +217,15 @@ public class VideoseedController : BaseOnlineController
                     if (string.IsNullOrEmpty(file) || file.Length <= 2)
                         return e.Fail("playerjs_file", refresh_proxy: true);
 
-                    string cleaned = Regex.Replace(file.Substring(2), @"\|\|\|[^=]+==", string.Empty);
+                    string cleaned = Regex.Replace(file.Substring(2), @"\|\|\|[^=\|]+==", string.Empty);
+                    if (cleaned.Contains("|||"))
+                        cleaned = Regex.Replace(cleaned, @"\|\|\|[^=\|]+==", string.Empty);
+
                     string json = CrypTo.DecodeBase64(cleaned);
-                    string location = Regex.Match(json, "(https?://[^\n\r\t ]+/hls\\.m3u8)").Groups[1].Value;
+                    if (string.IsNullOrEmpty(json) || !json.Contains(".m3u8"))
+                        return e.Fail("json");
 
-                    if (string.IsNullOrEmpty(location))
-                        return e.Fail("stream_location", refresh_proxy: true);
-
-                    return e.Success(location);
+                    return e.Success(json);
                 }
             }
             catch
@@ -226,13 +237,23 @@ public class VideoseedController : BaseOnlineController
         if (!cache.IsSuccess)
             return OnError(cache.ErrorMsg);
 
+        string location = null;
+
+        if (voice != null)
+            location = Regex.Match(cache.Value, "\\{" + voice + "\\} ?(https?://[^\\;\\{\"\n\r\t ]+\\.m3u8)").Groups[1].Value;
+
+        if (string.IsNullOrEmpty(location))
+            location = Regex.Match(cache.Value, "(https?://[^\\;\\{\"\n\r\t ]+\\.m3u8)").Groups[1].Value;
+
+        if (string.IsNullOrEmpty(location))
+            return OnError("location");
+
         string referer = Regex.Match(iframe, "(^https?://[^/]+)").Groups[1].Value;
         var headers_stream = httpHeaders(init.host, HeadersModel.Join(HeadersModel.Init("referer", referer), init.headers_stream));
 
-        string link = HostStreamProxy(cache.Value, headers: headers_stream);
         return ContentTo(VideoTpl.ToJson(
             "play",
-            link,
+            HostStreamProxy(location, headers: headers_stream),
             "auto",
             vast: init.vast,
             httpContext: HttpContext
@@ -246,7 +267,7 @@ public class VideoseedController : BaseOnlineController
         if (!isOk)
             return null;
 
-        var root = await httpHydra.Get<Root>($"{init.host}/apiv2.php?item={(serial == 1 ? "serial" : "movie")}&token={init.token}" + arg, safety: true);
+        var root = await httpHydra.Get<Root>($"{init.apihost}/apiv2.php?item={(serial == 1 ? "serial" : "movie")}&token={init.token}" + arg, safety: true);
 
         if (root?.data == null || root.status == "error")
         {

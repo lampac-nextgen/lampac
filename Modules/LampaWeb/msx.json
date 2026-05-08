@@ -6,46 +6,31 @@
   "parameter": "content:{localhost}/msx/start.json",
   "action": "[settings:validate_links:0|home]",
   "dictionary": "{localhost}/lampa-main/msx/lang/ru.json",
-   "template": {
-        "type": "separate",
-      "layout": "0,0,2,3",
-      "color": "msx-glass"
-   },
-   "items": [
-      {
-         "title":"Lampa",
-         "image": "{localhost}/lampa-main/msx-logo.png",
-         "action": "link:{localhost}/lampa-main/index.html"
-      },
-	  {
-         "title":"Lampa Lite",
-         "image": "{localhost}/lampa-lite/msx-logo.png",
-         "action": "link:{localhost}/lampa-lite/index.html"
-      },
-	  {
-         "title":"SiSi",
-         "image": "{localhost}/sisi/msx-logo.png",
-         "action": "link:{localhost}/sisi/index.html"
-      },
-      {
-         "title":"ForkPlayer",
-         "image": "{localhost}/msx/fork2.png",
-         "action": "link:http://browser.appfxml.com"
-      },
-      {
-         "title":"OTTplayer",
-         "image": "{localhost}/msx/ottplayer.jpg",
-         "action": "link:http://widget.ottplayer.es"
-      },
-      {
-         "title":"Ott-play",
-         "image": "{localhost}/msx/ottplay.jpg",
-         "action": "link:http://ott-play.com/f/"
-      },
-      {
-         "title":"Speedtest",
-         "image": "{localhost}/msx/test.png",
-         "action": "link:http://openspeedtest.com/Get-widget.php?Auto=3"
-      }
-   ]
+  "template": {
+    "type": "separate",
+    "layout": "0,0,2,3",
+    "color": "msx-glass"
+  },
+  "items": [
+    {
+      "title": "Lampa",
+      "image": "{localhost}/lampa-main/msx-logo.png",
+      "action": "link:{localhost}/lampa-main/index.html"
+    },
+    {
+      "title": "SiSi",
+      "image": "{localhost}/sisi/msx-logo.png",
+      "action": "link:{localhost}/sisi/index.html"
+    },
+    {
+      "title": "SiSi Native",
+      "image": "{localhost}/sisi/msx-logo.png",
+      "action": "content:{localhost}/sisi?initial=msx"
+    },
+    {
+      "title": "ForkPlayer",
+      "image": "{localhost}/msx/fork2.png",
+      "action": "link:http://browser.appfxml.com"
+    }
+  ]
 }

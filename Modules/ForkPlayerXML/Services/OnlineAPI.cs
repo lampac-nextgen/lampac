@@ -9,47 +9,10 @@ namespace ForkXML;
 
 public static class OnlineAPI
 {
-    #region VideoTpl
-    public static string VideoTpl(EventVideoTpl e)
-    {
-        if (e.httpContext == null || !ModInit.IsForkPlayer(e.httpContext))
-            return null;
-
-        var forklist = new List<ForkPlaylistItem>();
-
-        foreach (var item in e.video.quality)
-        {
-            forklist.Add(new ForkPlaylistItem()
-            {
-                title = item.Key,
-                stream_url = item.Value,
-                logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4701/4701658.png"
-            });
-        }
-
-        if (forklist.Count == 0)
-        {
-            forklist.Add(new ForkPlaylistItem()
-            {
-                title = e.video.title,
-                stream_url = e.video.url,
-                logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4701/4701658.png"
-            });
-        }
-
-        return System.Text.Json.JsonSerializer.Serialize(new
-        {
-            title = "Lampac",
-            all_local = "directly",
-            channels = forklist
-        });
-    }
-    #endregion
-
     #region Channels
     public static ActionResult Channels(EventOnline e)
     {
-        if (!ModInit.IsForkPlayer(e.httpContext))
+        if (!Utilities.IsForkPlayer(e.httpContext))
             return null;
 
         var forklist = new List<ForkPlaylistItem>();
@@ -64,7 +27,7 @@ public static class OnlineAPI
             {
                 title = item.name,
                 playlist_url = uri,
-                logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png"
+                logo_30x30 = Icon.CdnSearch
             });
         }
 
@@ -80,7 +43,7 @@ public static class OnlineAPI
     #region ContentTpl
     public static ActionResult ContentTpl(EventOnlineTpl e)
     {
-        if (!ModInit.IsForkPlayer(e.httpContext))
+        if (!Utilities.IsForkPlayer(e.httpContext))
             return null;
 
         List<ForkPlaylistItem> menu = null;
@@ -102,6 +65,7 @@ public static class OnlineAPI
                 {
                     title = item.title,
                     playlist_url = item.url,
+                    logo_30x30 = Icon.Folder,
                     description = desc(item.title, item.img),
                 });
             }
@@ -119,12 +83,12 @@ public static class OnlineAPI
                 if (!string.IsNullOrEmpty(item.stream) || item.method == "play")
                 {
                     md.stream_url = (item.stream ?? item.link).Split(" ")[0];
-                    md.logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4701/4701658.png";
+                    md.logo_30x30 = Icon.Play;
                 }
                 else
                 {
                     md.playlist_url = item.link;
-                    md.logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png";
+                    md.logo_30x30 = Icon.Folder;
                 }
 
                 forklist.Add(md);
@@ -138,7 +102,7 @@ public static class OnlineAPI
                 {
                     title = item.name,
                     playlist_url = item.url,
-                    logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png"
+                    logo_30x30 = Icon.Folder
                 });
             }
         }
@@ -155,12 +119,12 @@ public static class OnlineAPI
                 if (!string.IsNullOrEmpty(item.stream) || item.method == "play")
                 {
                     md.stream_url = (item.stream ?? item.url).Split(" ")[0];
-                    md.logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4701/4701658.png";
+                    md.logo_30x30 = Icon.Play;
                 }
                 else
                 {
                     md.playlist_url = item.url;
-                    md.logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png";
+                    md.logo_30x30 = Icon.Folder;
                 }
 
                 forklist.Add(md);
@@ -179,8 +143,7 @@ public static class OnlineAPI
                     submenu.Add(new ForkPlaylistItem()
                     {
                         title = voice.name,
-                        playlist_url = voice.url,
-                        //logo_30x30 = ""
+                        playlist_url = voice.url
                     });
                 }
 
@@ -191,7 +154,7 @@ public static class OnlineAPI
                         title = $"Перевод: {active ?? "выбрать"}",
                         playlist_url = "submenu",
                         submenu = submenu,
-                        //logo_30x30 = ""
+                        logo_30x30 = Icon.Filter
                     }
                 };
             }
@@ -202,6 +165,43 @@ public static class OnlineAPI
             title = "Lampac",
             all_local = "directly",
             menu = menu,
+            channels = forklist
+        });
+    }
+    #endregion
+
+    #region VideoTpl
+    public static string VideoTpl(EventVideoTpl e)
+    {
+        if (e.httpContext == null || !Utilities.IsForkPlayer(e.httpContext))
+            return null;
+
+        var forklist = new List<ForkPlaylistItem>();
+
+        foreach (var item in e.video.quality)
+        {
+            forklist.Add(new ForkPlaylistItem()
+            {
+                title = item.Key,
+                stream_url = item.Value,
+                logo_30x30 = Icon.Play
+            });
+        }
+
+        if (forklist.Count == 0)
+        {
+            forklist.Add(new ForkPlaylistItem()
+            {
+                title = e.video.title,
+                stream_url = e.video.url,
+                logo_30x30 = Icon.Play
+            });
+        }
+
+        return System.Text.Json.JsonSerializer.Serialize(new
+        {
+            title = "Lampac",
+            all_local = "directly",
             channels = forklist
         });
     }

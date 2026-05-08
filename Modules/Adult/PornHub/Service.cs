@@ -29,6 +29,7 @@ public static class PornHubTo
         {
             url.Append("video/search?search=");
             url.Append(HttpUtility.UrlEncode(search));
+            splitkey = '&';
 
             if (!string.IsNullOrEmpty(sort))
             {

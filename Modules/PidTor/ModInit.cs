@@ -19,7 +19,9 @@ public class ModInit : IModuleLoaded, IModuleOnline
     {
         var online = new List<ModuleOnlineItem>();
 
-        if ((conf.torrs != null && conf.torrs.Length > 0) || (conf.auth_torrs != null && conf.auth_torrs.Count > 0))
+        bool enable = (conf.torrs != null && conf.torrs.Length > 0) || (conf.auth_torrs != null && conf.auth_torrs.Count > 0);
+
+        if (enable || CoreInit.CurrentConf.ContainsKey("TorrServer"))
         {
             var md = new BaseSettings()
             {

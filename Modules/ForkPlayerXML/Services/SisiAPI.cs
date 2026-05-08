@@ -1,6 +1,7 @@
 ﻿using Microsoft.AspNetCore.Mvc;
 using Shared;
 using Shared.Models.Events;
+using Shared.Services.Utilities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -12,7 +13,7 @@ public static class SisiAPI
     #region Channels
     public static ActionResult Channels(EventSisiChannels e)
     {
-        if (!ModInit.IsForkPlayer(e.httpContext))
+        if (!Utilities.IsForkPlayer(e.httpContext))
             return null;
 
         var forklist = new List<ForkPlaylistItem>();
@@ -23,7 +24,7 @@ public static class SisiAPI
             {
                 title = ch.title,
                 playlist_url = ch.playlist_url,
-                logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png"
+                logo_30x30 = Icon.Folder
             });
         }
 
@@ -39,12 +40,14 @@ public static class SisiAPI
     #region PlaylistResult
     public static ActionResult PlaylistResult(EventSisiPlaylistResult e)
     {
-        if (!ModInit.IsForkPlayer(e.httpContext))
+        if (!Utilities.IsForkPlayer(e.httpContext))
             return null;
 
-        var forklist = new List<ForkPlaylistItem>();
         string box_mac = e.httpContext.Request.Query["box_mac"];
         string host = CoreInit.Host(e.httpContext);
+
+        #region playlists
+        var forklist = new List<ForkPlaylistItem>();
 
         foreach (var pl in e.playlists)
         {
@@ -60,7 +63,7 @@ public static class SisiAPI
             var htmlpl = new ForkPlaylistItem()
             {
                 title = pl.name,
-                stream_url = pl.json ? null : (video + (video.Contains("?") ? $"&box_mac={box_mac}" : $"?box_mac={box_mac}")),
+                stream_url = pl.json ? null : video,
                 playlist_url = pl.json ? video : null,
                 position = "html",
                 template = $"<div class=\"grid\"><small>{pl.time}</small><img class=\"gridmage\" src=\"{picture}\"><strong>{pl.name}</strong></div>"
@@ -71,7 +74,9 @@ public static class SisiAPI
 
             forklist.Add(htmlpl);
         }
+        #endregion
 
+        #region pages
         if (!int.TryParse(e.httpContext.Request.Query["pg"], out int page))
             page = 1;
 
@@ -81,7 +86,7 @@ public static class SisiAPI
 
         for (int pg = page + 1; pg < total_pages; pg++)
         {
-            string args = ModInit.clearArgs(e.httpContext.Request.Query);
+            string args = Utilities.ClearArgs(e.httpContext.Request.Query);
 
             forklist.Add(new ForkPlaylistItem()
             {
@@ -99,6 +104,42 @@ public static class SisiAPI
         }
 
         forklist[forklist.Count - 1].after = "</div>";
+        #endregion
+
+        #region menu
+        var menu = new List<ForkPlaylistItem>();
+
+        if (e.menu != null)
+        {
+            foreach (var item in e.menu)
+            {
+                if (item.title.Equals("Поиск", StringComparison.OrdinalIgnoreCase))
+                {
+                    menu.Add(new ForkPlaylistItem()
+                    {
+                        title = item.title,
+                        search_on = "search_on",
+                        playlist_url = item.playlist_url,
+                        logo_30x30 = Icon.Search
+                    });
+                }
+                else
+                {
+                    menu.Add(new ForkPlaylistItem()
+                    {
+                        title = item.title,
+                        playlist_url = item.playlist_url,
+                        submenu = item.submenu?.Select(i => new ForkPlaylistItem()
+                        {
+                            title = i.title,
+                            playlist_url = i.playlist_url
+                        }).ToList(),
+                        logo_30x30 = Icon.Filter
+                    });
+                }
+            }
+        }
+        #endregion
 
         return new JsonResult(new
         {
@@ -114,7 +155,7 @@ public static class SisiAPI
                   "ul>li>img[onerror]{width:0px}" +
                   "@media screen and (min-width: 1900px){ .grid{height:310px;} .gridmage{height: 230px;} small{font-size: 19px;} strong{font-size:24px;} }",
             align = "left",
-            menu = e.menu,
+            menu = menu,
             channels = forklist
         });
     }
@@ -123,7 +164,7 @@ public static class SisiAPI
     #region OnResult
     public static ActionResult OnResult(EventSisiOnResult e)
     {
-        if (!ModInit.IsForkPlayer(e.httpContext))
+        if (!Utilities.IsForkPlayer(e.httpContext))
             return null;
 
         var forklist = new List<ForkPlaylistItem>();
@@ -135,7 +176,7 @@ public static class SisiAPI
             {
                 title = pl.Key == "auto" ? "смотреть" : pl.Key,
                 stream_url = e.controller.HostStreamProxy(e.init, pl.Value, e.headers_stream),
-                logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4701/4701658.png"
+                logo_30x30 = Icon.Play
             });
         }
 
@@ -158,7 +199,8 @@ public static class SisiAPI
                     title = pl.name,
                     description = desc(pl.name, pl.picture, pl.time),
                     playlist_url = playlist_url,
-                    logo_30x30 = "https://cdn-icons-png.flaticon.com/128/4725/4725439.png"
+                    ident = CrypTo.md5(pl.video),
+                    logo_30x30 = Icon.Folder
                 });
             }
         }

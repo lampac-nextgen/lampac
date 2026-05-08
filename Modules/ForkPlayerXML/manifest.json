@@ -1,4 +1,11 @@
 {
   "enable": true,
-  "dynamic": true
+  "dynamic": true,
+  "tree": [
+    "Controllers",
+    "Models",
+    "Services",
+    "Icon.cs",
+    "ModInit.cs"
+  ]
 }

@@ -83,14 +83,14 @@ public class HDVBController : BaseOnlineController
                             continue;
 
                         string season_name = $"{season.season_number.Value} сезон";
-                        if (!tmp_season.Add(season_name))
-                            continue;
-
-                        tpl.Append(
-                            season_name,
-                            $"{host}/lite/hdvb?rjson={rjson}&serial=1&kinopoisk_id={kinopoisk_id}&title={enc_title}&original_title={enc_original_title}&s={season.season_number.Value}",
-                            season.season_number.Value
-                        );
+                        if (tmp_season.Add(season_name))
+                        {
+                            tpl.Append(
+                                season_name,
+                                $"{host}/lite/hdvb?rjson={rjson}&serial=1&kinopoisk_id={kinopoisk_id}&title={enc_title}&original_title={enc_original_title}&s={season.season_number.Value}",
+                                season.season_number.Value
+                            );
+                        }
                     }
                 }
 

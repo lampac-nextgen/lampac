@@ -1,4 +1,5 @@
 ﻿using Microsoft.AspNetCore.Mvc;
+using Shared.Models.Events;
 using Shared.PlaywrightCore;
 using System.Net.Http;
 
@@ -228,6 +229,18 @@ public class ListController : BaseController
                 results.Add(jo);
             }
             #endregion
+
+            if (EventListener.CatalogList != null)
+            {
+                var em = new EventCatalogList(this, HttpContext, cache.playlists, query, plugin, cat, sort, page, total_pages, next_page);
+
+                foreach (Func<EventCatalogList, ActionResult> handler in EventListener.CatalogList.GetInvocationList())
+                {
+                    var eventResult = handler(em);
+                    if (eventResult != null)
+                        return eventResult;
+                }
+            }
 
             return ContentTo(JsonConvert.SerializeObject(new
             {

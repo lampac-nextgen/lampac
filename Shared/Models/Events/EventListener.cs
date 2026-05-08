@@ -37,6 +37,12 @@ public class EventListener
 
     public static Func<EventSisiHistorys, ActionResult> SisiHistorys;
 
+    public static Func<EventCatalogChannels, ActionResult> CatalogChannels;
+
+    public static Func<EventCatalogList, ActionResult> CatalogList;
+
+    public static Func<EventCatalogCard, ActionResult> CatalogCard;
+
     public static Func<EventHostStreamProxy, string> HostStreamProxy;
 
     public static Func<EventHostImgProxy, string> HostImgProxy;
