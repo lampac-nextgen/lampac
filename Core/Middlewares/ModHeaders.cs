@@ -14,9 +14,6 @@ public class ModHeaders
 
     public Task Invoke(HttpContext httpContext)
     {
-        if (httpContext.Request.Path.Value.StartsWith("/cors/check", StringComparison.OrdinalIgnoreCase))
-            return Task.CompletedTask;
-
         httpContext.Response.Headers["Access-Control-Allow-Credentials"] = "true";
         httpContext.Response.Headers["Access-Control-Allow-Private-Network"] = "true";
         httpContext.Response.Headers["Access-Control-Allow-Methods"] = "POST, GET, OPTIONS";
@@ -34,6 +31,13 @@ public class ModHeaders
             httpContext.Response.Headers["Access-Control-Allow-Origin"] = "*";
 
         if (HttpMethods.IsOptions(httpContext.Request.Method))
+            return Task.CompletedTask;
+
+        // /cors/check — пинг от online-плагина для проверки CORS-доступа.
+        // Возвращаем пустой 200 с уже установленными CORS-заголовками,
+        // чтобы плагин корректно определил режим 'cors' и не вываливал
+        // "blocked by CORS policy" в консоль.
+        if (httpContext.Request.Path.Value.StartsWith("/cors/check", StringComparison.OrdinalIgnoreCase))
             return Task.CompletedTask;
 
         return _next(httpContext);
