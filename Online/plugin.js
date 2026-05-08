@@ -94,6 +94,22 @@
       var name = j.name.split(' ')[0];
       return (bals || name).toLowerCase();
     }
+
+    // Custom display order for the source picker. Keys listed here are pinned
+    // to the top in this exact order; everything else keeps its original
+    // server-side order beneath them.
+    var balanser_priority = ['filmix', 'zetflix', 'rutubemovie', 'vkmovie'];
+    function prioritizeBalansers(keys) {
+      if (!keys || !keys.length) return keys;
+      var pinned = [];
+      var seen = {};
+      for (var i = 0; i < balanser_priority.length; i++) {
+        var p = balanser_priority[i];
+        if (keys.indexOf(p) !== -1 && !seen[p]) { pinned.push(p); seen[p] = true; }
+      }
+      var rest = keys.filter(function (k) { return !seen[k]; });
+      return pinned.concat(rest);
+    }
 	
 	function clarificationSearchAdd(value){
 		var id = Lampa.Utils.hash(object.movie.number_of_seasons ? object.movie.original_name : object.movie.original_title);
@@ -296,7 +312,7 @@
             show: typeof j.show == 'undefined' ? true : j.show
           };
         });
-        filter_sources = Lampa.Arrays.getKeys(sources);
+        filter_sources = prioritizeBalansers(Lampa.Arrays.getKeys(sources));
         if (filter_sources.length) {
           var last_select_balanser = Lampa.Storage.cache('online_last_balanser', 3000, {});
           if (last_select_balanser[object.movie.id]) {
@@ -306,7 +322,7 @@
           }
           if (!sources[balanser]) balanser = filter_sources[0];
           if (!sources[balanser].show && !object.lampac_custom_select) balanser = filter_sources[0];
-          source = sources[balanser].url;
+          source = sources[balanser].url; 
           Lampa.Storage.set('active_balanser', balanser);
           resolve(json);
         } else {
@@ -350,7 +366,7 @@
                 show: typeof j.show == 'undefined' ? true : j.show
               };
             });
-            filter_sources = Lampa.Arrays.getKeys(sources);
+            filter_sources = prioritizeBalansers(Lampa.Arrays.getKeys(sources));
             filter.set('sort', filter_sources.map(function(e) {
               return {
                 title: sources[e].name,
@@ -1750,13 +1766,8 @@
         });
       }
     } catch (e) {}
-    if (Lampa.Manifest.app_digital >= 177) {
-        var balansers_sync = ["filmix", 'filmixtv', "fxapi", "rezka", "rhsprem", "lumex", "videodb", "collaps", "collaps-dash", "hdvb", "zetflix", "kodik", "ashdi", "kinoukr", "kinotochka", "remux", "iframevideo", "cdnmovies", "anilibria", "animedia", "animego", "animevost", "animebesst", "redheadsound", "alloha", "animelib", "moonanime", "kinopub", "vibix", "vdbmovies", "fancdn", "cdnvideohub", "vokino", "rc/filmix", "rc/fxapi", "rc/rhs", "vcdn", "videocdn", "mirage", "hydraflix", "videasy", "vidsrc", "movpi", "vidlink", "twoembed", "autoembed", "smashystream", "autoembed", "rgshows", "pidtor", "videoseed", "iptvonline", "veoveo", "kinoflix"];
-      balansers_sync.forEach(function(name) {
-        Lampa.Storage.sync('online_choice_' + name, 'object_object');
-      });
-      Lampa.Storage.sync('online_watched_last', 'object_object');
-    }
+    // Синхронизация online_choice_* и online_watched_last с CUB-бэкендом отключена —
+    // 50+ GET'ов /api/storage/data/... при старте создавали лишний шум, выбор балансёра остаётся только локальным.
   }
   if (!window.lampac_plugin) startPlugin();
 
