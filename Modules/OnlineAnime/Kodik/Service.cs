@@ -131,7 +131,7 @@ public struct KodikInvoke
                         similar.year?.ToString(),
                         details,
                         host + $"lite/kodik?title={enc_title}&original_title={enc_original_title}&clarification={clarification}&pick={HttpUtility.UrlEncode(pick)}",
-                        PosterApi.Size(matd.anime_poster_url ?? matd.drama_poster_url ?? matd.poster_url)
+                        matd != null ? PosterApi.Size(matd.anime_poster_url ?? matd.drama_poster_url ?? matd.poster_url) : null
                     );
                 }
             }
