@@ -15,17 +15,17 @@ public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
 
     public List<ModuleOnlineItem> Invoke(HttpContext httpContext, RequestModel requestInfo, string host, OnlineEventsModel args)
     {
-        if (args.original_language == null)
-            return null;
-
-        var lang = args.original_language.Split("|")[0];
-        if (lang is not ("ja" or "ko" or "zh" or "cn" or "th" or "vi" or "tl"))
-            return null;
-
-        return new List<ModuleOnlineItem>()
+        string lang = args.original_language?.Split("|")?[0];
+        if (args.isanime || (lang is "ja" or "ko" or "zh" or "cn" or "th" or "vi" or "tl"))
         {
-            new(conf)
-        };
+
+            return new List<ModuleOnlineItem>()
+            {
+                new(conf)
+            };
+        }
+
+        return null;
     }
 
     public List<ModuleOnlineSpiderItem> Spider(HttpContext httpContext, RequestModel requestInfo, string host, OnlineSpiderModel args)

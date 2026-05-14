@@ -262,9 +262,20 @@
       var query = [];
       var card_source = object.movie.source || 'tmdb'; //Lampa.Storage.field('source')
       query.push('id=' + encodeURIComponent(object.movie.id));
+
       if (object.movie.imdb_id) query.push('imdb_id=' + (object.movie.imdb_id || ''));
       if (object.movie.kinopoisk_id) query.push('kinopoisk_id=' + (object.movie.kinopoisk_id || ''));
-	  if (object.movie.tmdb_id) query.push('tmdb_id=' + (object.movie.tmdb_id || ''));
+      if (object.movie.tmdb_id) query.push('tmdb_id=' + (object.movie.tmdb_id || ''));
+
+      if (object.movie.keywords && object.movie.keywords.results) {
+         for (var i = 0, a = object.movie.keywords.results; i < a.length; i++) {
+            if (a[i].name == 'anime') {
+                query.push('anime=1');
+                break;
+            }
+         }
+      }
+
       query.push('title=' + encodeURIComponent(object.clarification ? object.search : object.movie.title || object.movie.name));
       query.push('original_title=' + encodeURIComponent(object.movie.original_title || object.movie.original_name));
       query.push('serial=' + (object.movie.name ? 1 : 0));
@@ -1555,7 +1566,7 @@
     window.lampac_plugin = true;
     var manifst = {
       type: 'video',
-      version: '1.7.0',
+      version: '1.7.1',
       name: 'Lampac',
       description: 'Плагин для просмотра онлайн сериалов и фильмов',
       component: 'lampac',

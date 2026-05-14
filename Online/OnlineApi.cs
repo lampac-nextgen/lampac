@@ -630,10 +630,10 @@ public class OnlineApiController : BaseController
 
     [HttpGet]
     [Route("lite/events")]
-    async public Task<ActionResult> Events(string id, string imdb_id, long kinopoisk_id, long tmdb_id, string title, string original_title, string original_language, int year, string source, string rchtype, int serial = -1, bool life = false, bool islite = false, string account_email = null, string uid = null, string token = null, string nws_id = null)
+    async public Task<ActionResult> Events(string id, string imdb_id, long kinopoisk_id, long tmdb_id, string title, string original_title, string original_language, int year, string source, string rchtype, int serial = -1, int anime = -1, bool life = false, bool islite = false, string account_email = null, string uid = null, string token = null, string nws_id = null)
     {
         var online = new List<(string name, string url, string plugin, int index)>(50);
-        bool isanime = original_language is "ja" or "zh";
+        bool isanime = anime != -1 || original_language is "ja" or "zh";
 
         #region fix title
         bool fix_title = false;
@@ -824,7 +824,7 @@ public class OnlineApiController : BaseController
 
                 foreach (var o in online.OrderBy(i => i.index))
                 {
-                    var tk = checkSearch(memkey, kitconf, links, tasks.Count, o.index, o.name, o.url, o.plugin, id, imdb_id, kinopoisk_id, tmdb_id, title, original_title, original_language, source, year, serial, life, rchtype);
+                    var tk = checkSearch(memkey, kitconf, links, tasks.Count, o.index, o.name, o.url, o.plugin, id, imdb_id, kinopoisk_id, tmdb_id, title, original_title, original_language, source, year, serial, anime, life, rchtype);
                     tasks.Add(tk);
                 }
 
@@ -848,7 +848,7 @@ public class OnlineApiController : BaseController
 
     #region checkSearch
     async Task checkSearch(string memkey, JObject kitconf, List<EventLinkItem> links, int indexList, int index, string name, string uri, string plugin,
-                           string id, string imdb_id, long kinopoisk_id, long tmdb_id, string title, string original_title, string original_language, string source, int year, int serial, bool life, string rchtype)
+                           string id, string imdb_id, long kinopoisk_id, long tmdb_id, string title, string original_title, string original_language, string source, int year, int serial, int anime, bool life, string rchtype)
     {
         try
         {
@@ -860,7 +860,7 @@ public class OnlineApiController : BaseController
 
             bool work = false, rch = false;
 
-            string checkuri = $"{srq}{(srq.Contains("?") ? "&" : "?")}id={HttpUtility.UrlEncode(id)}&imdb_id={imdb_id}&kinopoisk_id={kinopoisk_id}&tmdb_id={tmdb_id}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&original_language={original_language}&source={source}&year={year}&serial={serial}&rchtype={rchtype}&checksearch=true";
+            string checkuri = $"{srq}{(srq.Contains("?") ? "&" : "?")}id={HttpUtility.UrlEncode(id)}&imdb_id={imdb_id}&kinopoisk_id={kinopoisk_id}&tmdb_id={tmdb_id}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&original_language={original_language}&source={source}&year={year}&serial={serial}&anime={anime}&rchtype={rchtype}&checksearch=true";
 
             await Http.GetSpan(AccsDbInvk.Args(checkuri, HttpContext), timeoutSeconds: 10, headers: header, spanAction: res =>
             {
