@@ -809,13 +809,36 @@ public class DLNAController : BaseController
                 return Json(files.Select(i => new { i.Path }));
             }
 
-            var data = await torrentEngine.DownloadMetadataAsync(MagnetLink.Parse(magnet), s_cts.Token);
-            if (data.IsEmpty)
-                return Json(new { error = "DownloadMetadata" });
+            try
+            {
+                var data = await torrentEngine.DownloadMetadataAsync(MagnetLink.Parse(magnet), s_cts.Token);
+                if (data.IsEmpty)
+                    return Json(new { error = "DownloadMetadata" });
 
-            IO.File.WriteAllBytes($"cache/torrent/{hash}", data.Span);
+                IO.File.WriteAllBytes($"cache/torrent/{hash}", data.Span);
 
-            return Json(Torrent.Load(data.Span).Files.Select(i => new { i.Path }));
+                return Json(Torrent.Load(data.Span).Files.Select(i => new { i.Path }));
+            }
+            finally
+            {
+                // Always release the manager after the metadata fetch — Show()
+                // only needs the file list, and the streaming session in
+                // Download() re-loads metadata from the on-disk cache
+                // (cache/torrent/{hash}) and creates its own manager. Keeping
+                // this one around triggers the duplicate-register bug on the
+                // next Show() for the same torrent ("A manager for this torrent
+                // has already been registered" from MonoTorrent.ClientEngine).
+                //
+                // An earlier revision of this PR also added a defensive
+                // removeClientEngine(hash) BEFORE DownloadMetadataAsync, but
+                // that broke cold-start: removeClientEngine disposes the entire
+                // engine when Torrents.Count == 0 (its end-of-method GC path),
+                // so on a freshly built engine it nuked torrentEngine and the
+                // very next line crashed with NullReferenceException. Removed
+                // — this finally is sufficient because it runs on every exit
+                // path (success, exception, cancellation).
+                try { await removeClientEngine(hash); } catch { }
+            }
         }
         catch (System.Exception ex)
         {
