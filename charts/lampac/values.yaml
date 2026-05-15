@@ -1,0 +1,149 @@
+# Default values for lampac.
+#
+# Gateway API HTTPRoute: see helm/lampac-values.yaml for local-k8s + Envoy Gateway.
+# Image: https://github.com/lampac-nextgen/lampac/pkgs/container/lampac
+#
+# Config paths inside the container match Docker docs (WORKDIR /lampac):
+#   init.conf, passwd — https://github.com/lampac-nextgen/lampac
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/lampac-nextgen/lampac
+  pullPolicy: IfNotPresent
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# HTTP container port. Should match init.conf listen.port when mounting your own init.conf.
+service:
+  type: ClusterIP
+  port: 9118
+  targetPort: 9118
+
+# Mount init.conf (and optionally passwd) from a directory on the Kubernetes **node** filesystem.
+# Typical for single-node clusters (OrbStack, Docker Desktop, minikube): set hostPath to a folder
+# that exists on the node and contains at least init.conf. Optional passwd when mountPasswd is true.
+#
+# The directory is mounted per-file via subPath (same pattern as docker -v .../init.conf:/lampac/init.conf).
+config:
+  fromHost:
+    enabled: false
+    hostPath: ""
+  # Requires passwd file in the same hostPath directory when true.
+  mountPasswd: false
+
+# Extra writable space for Playwright/Chromium (docker-compose uses shm_size).
+shm:
+  enabled: true
+  sizeLimit: 1Gi
+
+# Persistent volumes for cache, SQLite DBs (Sync, TimeCode, SISI), etc.
+persistence:
+  cache:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 5Gi
+    existingClaim: ""
+    mountPath: /lampac/cache
+  database:
+    enabled: true
+    storageClass: ""
+    accessMode: ReadWriteOnce
+    size: 2Gi
+    existingClaim: ""
+    mountPath: /lampac/database
+
+serviceAccount:
+  create: true
+  annotations: {}
+  name: ""
+  automount: true
+
+podAnnotations: {}
+podLabels: {}
+
+podSecurityContext:
+  fsGroup: 1000
+
+securityContext:
+  runAsNonRoot: true
+  runAsUser: 1000
+  runAsGroup: 1000
+  allowPrivilegeEscalation: false
+  readOnlyRootFilesystem: false
+  capabilities:
+    drop:
+      - ALL
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: lampac.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Gateway API (HTTPRoute) — attach to an existing Gateway.
+httpRoute:
+  enabled: false
+  name: ""
+  annotations: {}
+  parentRefs: []
+  hostnames: []
+  rules: []
+
+resources:
+  requests:
+    cpu: 200m
+    memory: 512Mi
+  limits:
+    cpu: 4000m
+    memory: 4Gi
+
+# Lampac can take minutes on first start (JIT, modules, optional Playwright).
+# startupProbe: while failing, readiness/liveness are skipped (Kubernetes behavior).
+# Default uses TCP so "Ready" means Kestrel is listening; override if needed.
+startupProbe:
+  tcpSocket:
+    port: http
+  periodSeconds: 5
+  failureThreshold: 72
+  timeoutSeconds: 3
+
+# After startup succeeds, this marks the pod Ready for Service/Helm --wait.
+readinessProbe:
+  tcpSocket:
+    port: http
+  periodSeconds: 5
+  timeoutSeconds: 3
+  failureThreshold: 3
+
+livenessProbe:
+  httpGet:
+    path: /api/geo
+    port: http
+  initialDelaySeconds: 120
+  periodSeconds: 30
+  timeoutSeconds: 5
+  failureThreshold: 3
+
+autoscaling:
+  enabled: false
+  minReplicas: 1
+  maxReplicas: 2
+  targetCPUUtilizationPercentage: 80
+
+nodeSelector: {}
+tolerations: []
+affinity: {}
+
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []

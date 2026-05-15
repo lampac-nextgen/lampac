@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "lampac.fullname" . }}
+  labels:
+    {{- include "lampac.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "lampac.selectorLabels" . | nindent 6 }}
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "lampac.labels" . | nindent 8 }}
+        {{- with .Values.podLabels }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      serviceAccountName: {{ include "lampac.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ include "lampac.imageTag" . }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            {{- with .Values.extraEnv }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+          ports:
+            - name: http
+              containerPort: {{ include "lampac.containerPort" . }}
+              protocol: TCP
+          {{- if .Values.startupProbe }}
+          startupProbe:
+            {{- toYaml .Values.startupProbe | nindent 12 }}
+          {{- end }}
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            {{- if .Values.shm.enabled }}
+            - name: dshm
+              mountPath: /dev/shm
+            {{- end }}
+            {{- if .Values.persistence.cache.enabled }}
+            - name: cache
+              mountPath: {{ .Values.persistence.cache.mountPath }}
+            {{- end }}
+            {{- if .Values.persistence.database.enabled }}
+            - name: database
+              mountPath: {{ .Values.persistence.database.mountPath }}
+            {{- end }}
+            {{- if .Values.config.fromHost.enabled }}
+            - name: lampac-config-host
+              mountPath: /lampac/init.conf
+              subPath: init.conf
+              readOnly: true
+            {{- if .Values.config.mountPasswd }}
+            - name: lampac-config-host
+              mountPath: /lampac/passwd
+              subPath: passwd
+              readOnly: true
+            {{- end }}
+            {{- end }}
+            {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+            {{- end }}
+      volumes:
+        {{- if .Values.shm.enabled }}
+        - name: dshm
+          emptyDir:
+            medium: Memory
+            sizeLimit: {{ .Values.shm.sizeLimit }}
+        {{- end }}
+        {{- if .Values.persistence.cache.enabled }}
+        - name: cache
+          {{- if .Values.persistence.cache.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.cache.existingClaim }}
+          {{- else }}
+          persistentVolumeClaim:
+            claimName: {{ include "lampac.fullname" . }}-cache
+          {{- end }}
+        {{- end }}
+        {{- if .Values.persistence.database.enabled }}
+        - name: database
+          {{- if .Values.persistence.database.existingClaim }}
+          persistentVolumeClaim:
+            claimName: {{ .Values.persistence.database.existingClaim }}
+          {{- else }}
+          persistentVolumeClaim:
+            claimName: {{ include "lampac.fullname" . }}-database
+          {{- end }}
+        {{- end }}
+        {{- if .Values.config.fromHost.enabled }}
+        - name: lampac-config-host
+          hostPath:
+            path: {{ .Values.config.fromHost.hostPath | required "config.fromHost.hostPath must be set when config.fromHost.enabled is true" }}
+            type: Directory
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+        {{- toYaml . | nindent 8 }}
+        {{- end }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}

@@ -1,0 +1,15 @@
+apiVersion: v2
+name: lampac
+description: A Helm chart for Lampac Next Generation (Lampa backend)
+type: application
+version: 1.0.0
+appVersion: "1.23.0"
+keywords:
+  - lampac
+  - lampa
+  - streaming
+home: https://github.com/lampac-nextgen/lampac
+sources:
+  - https://github.com/lampac-nextgen/lampac
+maintainers:
+  - name: devops

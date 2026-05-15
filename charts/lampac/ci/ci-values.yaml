@@ -1,0 +1,31 @@
+# CI / template smoke — no persistence, no host config
+persistence:
+  cache:
+    enabled: false
+  database:
+    enabled: false
+
+config:
+  fromHost:
+    enabled: false
+
+shm:
+  enabled: true
+  sizeLimit: 512Mi
+
+resources:
+  requests:
+    cpu: 100m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1536Mi
+
+httpRoute:
+  enabled: false
+
+service:
+  type: ClusterIP
+
+ingress:
+  enabled: false

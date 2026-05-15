@@ -1,0 +1,40 @@
+1. Lampac Next Generation — https://github.com/lampac-nextgen/lampac
+{{- if .Values.httpRoute.enabled }}
+  Gateway API HTTPRoute is enabled. Example URLs (adjust hostnames):
+  {{- range .Values.httpRoute.hostnames }}
+  http://{{ . }}/
+  {{- end }}
+{{- else if .Values.ingress.enabled }}
+{{- range $host := .Values.ingress.hosts }}
+  {{- range .paths }}
+  http{{ if $.Values.ingress.tls }}s{{ end }}://{{ $host.host }}{{ .path }}
+  {{- end }}
+{{- end }}
+{{- else if contains "NodePort" .Values.service.type }}
+  export NODE_PORT=$(kubectl get --namespace {{ .Release.Namespace }} -o jsonpath="{.spec.ports[0].nodePort}" services {{ include "lampac.fullname" . }})
+  export NODE_IP=$(kubectl get nodes --namespace {{ .Release.Namespace }} -o jsonpath="{.items[0].status.addresses[0].address}")
+  echo http://$NODE_IP:$NODE_PORT
+{{- else if contains "LoadBalancer" .Values.service.type }}
+     NOTE: It may take a few minutes for the LoadBalancer IP to be available.
+  export SERVICE_IP=$(kubectl get svc --namespace {{ .Release.Namespace }} {{ include "lampac.fullname" . }} --template "{{"{{range (index .status.loadBalancer.ingress 0)}}{{.}}{{end}}"}}")
+  echo http://$SERVICE_IP:{{ .Values.service.port }}
+{{- else }}
+  export POD_NAME=$(kubectl get pods --namespace {{ .Release.Namespace }} -l "app.kubernetes.io/name={{ include "lampac.name" . }},app.kubernetes.io/instance={{ .Release.Name }}" -o jsonpath="{.items[0].metadata.name}")
+  kubectl --namespace {{ .Release.Namespace }} port-forward "$POD_NAME" {{ .Values.service.port }}:{{ include "lampac.containerPort" . }}
+{{- end }}
+
+2. Health / version:
+   curl -sS http://<host>/version
+
+3. Logs:
+   kubectl logs -n {{ .Release.Namespace }} -l app.kubernetes.io/name={{ include "lampac.name" . }} -f
+
+{{- if .Values.persistence.cache.enabled }}
+4. Cache PVC: {{ include "lampac.fullname" . }}-cache  ({{ .Values.persistence.cache.size }})
+{{- end }}
+{{- if .Values.persistence.database.enabled }}
+   Database PVC: {{ include "lampac.fullname" . }}-database  ({{ .Values.persistence.database.size }})
+{{- end }}
+{{- if .Values.config.fromHost.enabled }}
+   Config from node hostPath: {{ .Values.config.fromHost.hostPath }} → /lampac/init.conf
+{{- end }}

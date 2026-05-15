@@ -1,0 +1,17 @@
+{{- if and .Values.persistence.database.enabled (not .Values.persistence.database.existingClaim) }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ include "lampac.fullname" . }}-database
+  labels:
+    {{- include "lampac.labels" . | nindent 4 }}
+spec:
+  accessModes:
+    - {{ .Values.persistence.database.accessMode }}
+  {{- if .Values.persistence.database.storageClass }}
+  storageClassName: {{ .Values.persistence.database.storageClass }}
+  {{- end }}
+  resources:
+    requests:
+      storage: {{ .Values.persistence.database.size }}
+{{- end }}
