@@ -268,7 +268,11 @@ public class FilmixPartner : BaseOnlineController<FilmixSettings>
             if (string.IsNullOrWhiteSpace(XFXTOKEN))
                 return 0;
 
-            var root = await Http.Get<JObject>($"{init.host}/film/by-kp/{kinopoisk_id}", proxy: proxy, headers: httpHeaders(init, HeadersModel.Init("X-FX-TOKEN", XFXTOKEN)));
+            var root = await Http.Get<JObject>(
+                $"{init.host}/film/by-kp/{kinopoisk_id}",
+                proxy: proxy,
+                headers: httpHeaders(init, HeadersModel.Init("X-FX-TOKEN", XFXTOKEN))
+            );
 
             if (root == null || !root.ContainsKey("id"))
                 return 0;
@@ -413,7 +417,7 @@ public class FilmixPartner : BaseOnlineController<FilmixSettings>
 
     static string serverip = null;
 
-    async ValueTask<string> getXFXTOKEN(string uid = null)
+    async Task<string> getXFXTOKEN(string uid = null)
     {
         var init = ModInit.conf.FilmixPartner;
 
@@ -443,52 +447,98 @@ public class FilmixPartner : BaseOnlineController<FilmixSettings>
             }
         }
 
-        string XNICK = ReverseString(DateTime.Now.ToString("HHmm")) + DateTime.Now.ToString("yyyyMMdd");
-        string XSAM = ReverseString(serverip.Replace(".", "")) + DateTime.Now.ToString("HHmm");
+        var now = DateTime.Now;
+        string XNICK = ReverseString(now.ToString("HHmm")) + now.ToString("yyyyMMdd");
+        string XSAM = ReverseString(serverip.Replace(".", "")) + now.ToString("HHmm");
 
-        var salt = await Http.Post<JObject>($"{init.host}/request-salt", $"key={init.APIKEY}", headers: httpHeaders(init, HeadersModel.Init(
-            ("X-NICK", SHA1(XNICK)),
-            ("X-SAM", SHA1(XSAM))
-        )));
+        var rsalt = await Http.Post<JObject>(
+            $"{init.host}/request-salt",
+            $"key={init.APIKEY}",
+            headers: httpHeaders(init, HeadersModel.Init(
+                ("X-NICK", SHA1(XNICK)),
+                ("X-SAM", SHA1(XSAM))
+            )
+        ));
 
-        if (salt == null || string.IsNullOrWhiteSpace(salt.Value<string>("salt")))
+        string salt = rsalt?.Value<string>("salt");
+        if (string.IsNullOrEmpty(salt))
             return null;
 
-        string token = SHA1(init.APISECRET + init.APIKEY + CrypTo.md5(array_sum(serverip) + salt.Value<string>("salt")));
+        string token = SHA1(init.APISECRET + init.APIKEY + CrypTo.md5(array_sum(serverip) + salt));
 
-        var xtk = await Http.Post<JObject>($"{init.host}/request-token", $"user_name={init.user_name}&user_passw={init.user_passw}&key={init.APIKEY}&token={token}", proxy: proxy, headers: httpHeaders(init, HeadersModel.Init("User-Id", userid.ToString())));
+        var xtk = await Http.Post<JObject>(
+            $"{init.host}/request-token",
+            $"user_name={init.user_name}&user_passw={init.user_passw}&key={init.APIKEY}&token={token}",
+            proxy: proxy,
+            headers: httpHeaders(init, HeadersModel.Init("User-Id", userid.ToString()))
+        );
 
-        if (xtk != null && !string.IsNullOrWhiteSpace(xtk.Value<string>("token")))
-            return xtk.Value<string>("token");
+        string tk = xtk?.Value<string>("token");
 
-        return null;
+        return string.IsNullOrEmpty(tk)
+            ? null
+            : tk;
     }
     #endregion
 
     #region ReverseString / array_sum / SHA1
     static string ReverseString(string s)
     {
-        char[] charArray = s.ToCharArray();
-        Array.Reverse(charArray);
-        return new string(charArray);
+        Span<char> buffer = stackalloc char[s.Length];
+
+        for (int i = 0; i < s.Length; i++)
+            buffer[i] = s[s.Length - 1 - i];
+
+        return new string(buffer);
     }
 
-    static int array_sum(string s)
+    static int array_sum(string ip)
     {
-        List<int> mass = new List<int>();
-        foreach (var num in s.Split("."))
-            mass.Add(int.Parse(num));
+        int sum = 0;
+        int current = 0;
 
-        return mass.Sum();
-    }
-
-    static string SHA1(string IntText)
-    {
-        using (var sha1 = new System.Security.Cryptography.SHA1Managed())
+        foreach (char c in ip)
         {
-            var result = sha1.ComputeHash(Encoding.UTF8.GetBytes(IntText));
-            return BitConverter.ToString(result).Replace("-", "").ToLower();
+            if (c == '.')
+            {
+                sum += current;
+                current = 0;
+            }
+            else
+            {
+                current = current * 10 + (c - '0');
+            }
         }
+
+        return sum + current;
+    }
+
+    static string SHA1(string inputText)
+    {
+        int capacity = Encoding.UTF8.GetByteCount(inputText);
+        Span<byte> utf8 = stackalloc byte[capacity];
+        Span<byte> hash = stackalloc byte[20];
+        Span<char> hex = stackalloc char[40];
+
+        int bytesWritten = Encoding.UTF8.GetBytes(inputText, utf8);
+
+        System.Security.Cryptography.SHA1.HashData(utf8[..bytesWritten], hash);
+
+        for (int i = 0; i < hash.Length; i++)
+        {
+            byte b = hash[i];
+            hex[i * 2] = ToHexLower(b >> 4);
+            hex[i * 2 + 1] = ToHexLower(b & 0xF);
+        }
+
+        return new string(hex);
+    }
+
+    static char ToHexLower(int value)
+    {
+        return (char)(value < 10
+            ? '0' + value
+            : 'a' + (value - 10));
     }
     #endregion
 }

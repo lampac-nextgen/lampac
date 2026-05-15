@@ -1,0 +1,269 @@
+enable: true
+displayindex: 425
+displayname: FapGuru
+rch_access: apk
+stream_access: apk
+host: https://x.fap-guru.pro
+priorityBrowser: http
+streamproxy: true
+headers_stream:
+  referer: "{host}/"
+
+menu:
+  route:
+    sort: "{host}/videos/{sort}?page={page}"
+    cat: "{host}/{cat}/latest?page={page}"
+    catsort: "{host}/{cat}/{sort}?page={page}"
+  sort:
+    Новинки: ""
+    Популярные: trending
+  categories:
+    Мамочки: moms
+    Русское: "%D1%80%D1%83%D1%81%D1%81%D0%BA%D0%BE%D0%B5"
+    Анал: anal
+    Измена: cheating
+    Домашнее: "%D0%B4%D0%BE%D0%BC%D0%B0%D1%88%D0%BD%D0%B5%D0%B5"
+    Большая грудь: big-tits
+    Жёсткое: hard
+    Красивое порно: "%D0%BA%D1%80%D0%B0%D1%81%D0%B8%D0%B2%D0%BE%D0%B5%20%D0%BF%D0%BE%D1%80%D0%BD%D0%BE"
+    Кончают внутрь: creampie
+    Красивые киски: "%D0%BA%D1%80%D0%B0%D1%81%D0%B8%D0%B2%D1%8B%D0%B5%20%D0%BA%D0%B8%D1%81%D0%BA%D0%B8"
+    Полненькие: "%D0%BF%D0%BE%D0%BB%D0%BD%D0%B5%D0%BD%D1%8C%D0%BA%D0%B8%D0%B5"
+    Пошлые разговоры: "%D0%BF%D0%BE%D1%88%D0%BB%D1%8B%D0%B5%20%D1%80%D0%B0%D0%B7%D0%B3%D0%BE%D0%B2%D0%BE%D1%80%D1%8B"
+    Женская мастурбация: female-masturbation
+    Брат и сестра: "%D0%B1%D1%80%D0%B0%D1%82%20%D0%B8%20%D1%81%D0%B5%D1%81%D1%82%D1%80%D0%B0"
+    Куни: kuni
+    Мамка и сын: "%D0%BC%D0%B0%D1%82%D1%8C%20%D0%B8%20%D1%81%D1%8B%D0%BD"
+    МЖМ: mfm
+    Отец и дочь: "%D0%BE%D1%82%D0%B5%D1%86%20%D0%B8%20%D0%B4%D0%BE%D1%87%D1%8C"
+    Свингеры: "%D1%81%D0%B2%D0%B8%D0%BD%D0%B3%D0%B5%D1%80%D1%8B"
+    С разговорами: "%D1%81%20%D1%80%D0%B0%D0%B7%D0%B3%D0%BE%D0%B2%D0%BE%D1%80%D0%B0%D0%BC%D0%B8"
+    Заглатывают член: deep-blowjob
+    Большие попки: "%D0%B1%D0%BE%D0%BB%D1%8C%D1%88%D0%B8%D0%B5%20%D0%BF%D0%BE%D0%BF%D0%BA%D0%B8"
+    Азиатки: "%D0%B0%D0%B7%D0%B8%D0%B0%D1%82%D0%BA%D0%B8"
+    Миниатюрные: "%D0%BC%D0%B8%D0%BD%D0%B8%D0%B0%D1%82%D1%8E%D1%80%D0%BD%D1%8B%D0%B5"
+    Красивый минет: "%D0%BA%D1%80%D0%B0%D1%81%D0%B8%D0%B2%D1%8B%D0%B9%20%D0%BC%D0%B8%D0%BD%D0%B5%D1%82"
+    Эротика: "%D1%8D%D1%80%D0%BE%D1%82%D0%B8%D0%BA%D0%B0"
+    Сексвайф / делятся женой: sexvayf
+    Судорожные оргазмы: shiver
+    На массаже: massage
+    Кончают в рот: cum-mouth
+    Публичное: public
+    Упругие попки: "%D1%83%D0%BF%D1%80%D1%83%D0%B3%D0%B8%D0%B5%20%D0%BF%D0%BE%D0%BF%D0%BA%D0%B8"
+    Спящие: "%D1%81%D0%BF%D1%8F%D1%89%D0%B8%D0%B5"
+    Чулки и колготки: stockings
+    Альтушки: altushki
+    Крупным планом: zoomed
+    В универе: univer
+    Дрочат парню: jerking-off
+    Принуждение: forced
+    Ебут толпой: gangbangs
+    Шлюхи: whores
+    Худые: "%D1%85%D1%83%D0%B4%D1%8B%D0%B5"
+    Куколд: "%D0%BA%D1%83%D0%BA%D0%BE%D0%BB%D0%B4"
+    Сквирт: squirt
+    Нежное: sensual
+    Полнометражное русское: long-fap-rus
+    Анальный оргазм: "%D0%B0%D0%BD%D0%B0%D0%BB%D1%8C%D0%BD%D1%8B%D0%B9%20%D0%BE%D1%80%D0%B3%D0%B0%D0%B7%D0%BC"
+    Инцест: "%D0%B8%D0%BD%D1%86%D0%B5%D1%81%D1%82"
+    Молодые парни: young
+    Красивые попки: "%D0%BA%D1%80%D0%B0%D1%81%D0%B8%D0%B2%D1%8B%D0%B5%20%D0%BF%D0%BE%D0%BF%D0%BA%D0%B8"
+    Дружеский секс: "%D0%B4%D1%80%D1%83%D0%B6%D0%B5%D1%81%D0%BA%D0%B8%D0%B9%20%D1%81%D0%B5%D0%BA%D1%81"
+    Поза раком: "%D1%80%D0%B0%D0%BA%D0%BE%D0%BC"
+    Съем девушек: pickup
+    Большие члены: big-dicks
+    Кричат от удовольствия: "%D0%BA%D1%80%D0%B8%D1%87%D0%B0%D1%82%20%D0%BE%D1%82%20%D1%83%D0%B4%D0%BE%D0%B2%D0%BE%D0%BB%D1%8C%D1%81%D1%82%D0%B2%D0%B8%D1%8F"
+    Милашки: "%D0%BC%D0%B8%D0%BB%D0%B0%D1%88%D0%BA%D0%B8"
+    Девушка сверху: riding
+    Мастурбируют девушке: "%D0%BC%D0%B0%D1%81%D1%82%D1%83%D1%80%D0%B1%D0%B8%D1%80%D1%83%D1%8E%D1%82%20%D0%B4%D0%B5%D0%B2%D1%83%D1%88%D0%BA%D0%B5"
+    Волосатые лобки: unshaven-pussy
+    Игрушки: sex-toys
+    БДСМ: "%D0%B1%D0%B4%D1%81%D0%BC"
+    Пьяные: "%D0%BF%D1%8C%D1%8F%D0%BD%D1%8B%D0%B5"
+    Оргии: "%D0%BE%D1%80%D0%B3%D0%B8%D0%B8"
+    Много спермы: "%D0%BC%D0%BD%D0%BE%D0%B3%D0%BE%20%D1%81%D0%BF%D0%B5%D1%80%D0%BC%D1%8B"
+    От первого лица: pov
+    Огромные члены: huge-cocks
+    В юбках и платьях: "%D0%B2%20%D1%8E%D0%B1%D0%BA%D0%B5"
+    Девственность: defloration
+    Сидя на лице: face-sitting
+    Училка и студент: "%D1%83%D1%87%D0%B8%D0%BB%D0%BA%D0%B0%20%D0%B8%20%D1%81%D1%82%D1%83%D0%B4%D0%B5%D0%BD%D1%82"
+    Необычные позы: "%D0%BD%D0%B5%D0%BE%D0%B1%D1%8B%D1%87%D0%BD%D1%8B%D0%B5%20%D0%BF%D0%BE%D0%B7%D1%8B"
+    Вибраторы: "%D0%B2%D0%B8%D0%B1%D1%80%D0%B0%D1%82%D0%BE%D1%80%D1%8B"
+    Анал в чулках: assfuck-stockings
+    Анальная боль: "%D0%B0%D0%BD%D0%B0%D0%BB%D1%8C%D0%BD%D0%B0%D1%8F%20%D0%B1%D0%BE%D0%BB%D1%8C"
+    Дилдо: "%D0%B4%D0%B8%D0%BB%D0%B4%D0%BE"
+    Сексуальное белье: sexy-lingerie
+    Красивая грудь: "%D0%BA%D1%80%D0%B0%D1%81%D0%B8%D0%B2%D0%B0%D1%8F%20%D0%B3%D1%80%D1%83%D0%B4%D1%8C"
+    Негритянки: "%D0%BD%D0%B5%D0%B3%D1%80%D0%B8%D1%82%D1%8F%D0%BD%D0%BA%D0%B8"
+    Миссионерская поза: "%D0%BC%D0%B8%D1%81%D1%81%D0%B8%D0%BE%D0%BD%D0%B5%D1%80%D1%81%D0%BA%D0%B0%D1%8F%20%D0%BF%D0%BE%D0%B7%D0%B0"
+    Девушка с девушкой: girls-love
+    В офисе: office
+    Двойное проникновение: double-penetration
+    В авто: "%D0%B2%20%D0%B0%D0%B2%D1%82%D0%BE"
+    Женский куколдинг: "%D0%B6%D0%B5%D0%BD%D1%81%D0%BA%D0%B8%D0%B9%20%D0%BA%D1%83%D0%BA%D0%BE%D0%BB%D0%B4%D0%B8%D0%BD%D0%B3"
+    В душе: shower
+    Глотают сперму: swallow-cum
+    Шантаж: "%D1%88%D0%B0%D0%BD%D1%82%D0%B0%D0%B6"
+    Маленькие сиськи: small-tits
+    Жёсткое анальное: anal-extreme
+    Блондинки: "%D0%B1%D0%BB%D0%BE%D0%BD%D0%B4%D0%B8%D0%BD%D0%BA%D0%B8"
+    Трутся о член: "%D1%82%D1%80%D1%83%D1%82%D1%81%D1%8F%20%D0%BE%20%D1%87%D0%BB%D0%B5%D0%BD"
+    Высокие каблуки: "%D0%B2%D1%8B%D1%81%D0%BE%D0%BA%D0%B8%D0%B5%20%D0%BA%D0%B0%D0%B1%D0%BB%D1%83%D0%BA%D0%B8"
+    Упругая грудь: "%D1%83%D0%BF%D1%80%D1%83%D0%B3%D0%B0%D1%8F%20%D0%B3%D1%80%D1%83%D0%B4%D1%8C"
+    Доминация госпожи: dominating-girls
+    На природе: "%D0%BD%D0%B0%20%D0%BF%D1%80%D0%B8%D1%80%D0%BE%D0%B4%D0%B5"
+    В бане: "%D0%B2%20%D0%B1%D0%B0%D0%BD%D0%B5"
+    Фистинг: fisting
+    Куни для зрелых: mature-cuni
+    Поза 69: 69sex
+    Писсинг: "%D0%BF%D0%B8%D1%81%D1%81%D0%B8%D0%BD%D0%B3"
+    Анал со зрелками: anal-milfs
+    Поцелуи: kisses
+    Натуральная грудь: "%D0%BD%D0%B0%D1%82%D1%83%D1%80%D0%B0%D0%BB%D1%8C%D0%BD%D0%B0%D1%8F%20%D0%B3%D1%80%D1%83%D0%B4%D1%8C"
+    С неграми: "%D1%81%20%D0%BD%D0%B5%D0%B3%D1%80%D0%B0%D0%BC%D0%B8"
+    Скромные девушки: modest-girls
+    В больнице: hospital
+    Женская доминация: men-humiliation
+    В спортзале: gym
+    Преподаватель и студентка: "%D0%BF%D1%80%D0%B5%D0%BF%D0%BE%D0%B4%D0%B0%D0%B2%D0%B0%D1%82%D0%B5%D0%BB%D1%8C%20%D0%B8%20%D1%81%D1%82%D1%83%D0%B4%D0%B5%D0%BD%D1%82%D0%BA%D0%B0"
+    Брюнетки: "%D0%B1%D1%80%D1%8E%D0%BD%D0%B5%D1%82%D0%BA%D0%B8"
+    ЖМЖ: fmf
+    В одежде: dressed
+    Фут фетиш: "%D1%84%D1%83%D1%82%D1%84%D0%B5%D1%82%D0%B8%D1%88"
+    Подборки: "%D0%BF%D0%BE%D0%B4%D0%B1%D0%BE%D1%80%D0%BA%D0%B8"
+    Большие соски: "%D0%B1%D0%BE%D0%BB%D1%8C%D1%88%D0%B8%D0%B5%20%D1%81%D0%BE%D1%81%D0%BA%D0%B8"
+    Анилингус девушке: "%D0%B0%D0%BD%D0%B8%D0%BB%D0%B8%D0%BD%D0%B3%D1%83%D1%81%20%D0%B4%D0%B5%D0%B2%D1%83%D1%88%D0%BA%D0%B5"
+    Унижение девушек: girl-humiliation
+    Нежный минет: "%D0%BD%D0%B5%D0%B6%D0%BD%D1%8B%D0%B9%20%D0%BC%D0%B8%D0%BD%D0%B5%D1%82"
+    Кончают на лицо: facial
+    Секс за деньги: "%D1%81%D0%B5%D0%BA%D1%81%20%D0%B7%D0%B0%20%D0%B4%D0%B5%D0%BD%D1%8C%D0%B3%D0%B8"
+    Текущая киска: "%D1%82%D0%B5%D0%BA%D1%83%D1%89%D0%B0%D1%8F%20%D0%BA%D0%B8%D1%81%D0%BA%D0%B0"
+    Длительные ласки: petting
+    Секс стоя: "%D1%81%D0%B5%D0%BA%D1%81%20%D1%81%D1%82%D0%BE%D1%8F"
+    Тётя и племянник: "%D1%82%D1%91%D1%82%D1%8F%20%D0%B8%20%D0%BF%D0%BB%D0%B5%D0%BC%D1%8F%D0%BD%D0%BD%D0%B8%D0%BA"
+    Рыжие: "%D1%80%D1%8B%D0%B6%D0%B8%D0%B5"
+    В туалете: toilet
+    Кончают в трусики: "%D0%B2%20%D1%82%D1%80%D1%83%D1%81%D0%B8%D0%BA%D0%B8"
+    Беременные: "%D0%B1%D0%B5%D1%80%D0%B5%D0%BC%D0%B5%D0%BD%D0%BD%D1%8B%D0%B5"
+    Горячие: "%D0%B3%D0%BE%D1%80%D1%8F%D1%87%D0%B8%D0%B5"
+    В купальнике: "%D0%B2%20%D0%BA%D1%83%D0%BF%D0%B0%D0%BB%D1%8C%D0%BD%D0%B8%D0%BA%D0%B5"
+    Большой клитор: "%D0%B1%D0%BE%D0%BB%D1%8C%D1%88%D0%BE%D0%B9%20%D0%BA%D0%BB%D0%B8%D1%82%D0%BE%D1%80"
+    С каре: "%D1%81%20%D0%BA%D0%B0%D1%80%D0%B5"
+    На кухне: kitchen
+    Подглядывание: "%D0%BF%D0%BE%D0%B4%D0%B3%D0%BB%D1%8F%D0%B4%D1%8B%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5"
+    Порно TikTok и Reels: "%D1%82%D0%B8%D0%BA%D1%82%D0%BE%D0%BA"
+    Очень жёсткое: extra-hard
+    Гладкие киски: "%D0%B3%D0%BB%D0%B0%D0%B4%D0%BA%D0%B8%D0%B5%20%D0%BA%D0%B8%D1%81%D0%BA%D0%B8"
+    В поезде: "%D0%B2%20%D0%BF%D0%BE%D0%B5%D0%B7%D0%B4%D0%B5"
+    Анилингус парню: "%D0%B0%D0%BD%D0%B8%D0%BB%D0%B8%D0%BD%D0%B3%D1%83%D1%81%20%D0%BF%D0%B0%D1%80%D0%BD%D1%8E"
+    Скрытая камера: "%D1%81%D0%BA%D1%80%D1%8B%D1%82%D0%B0%D1%8F%20%D0%BA%D0%B0%D0%BC%D0%B5%D1%80%D0%B0"
+    Маленькие попки: "%D0%BC%D0%B0%D0%BB%D0%B5%D0%BD%D1%8C%D0%BA%D0%B8%D0%B5%20%D0%BF%D0%BE%D0%BF%D0%BA%D0%B8"
+    Соблазнение: seduced
+    Небольшие члены: dicks-comfort
+    Латинки: "%D0%BB%D0%B0%D1%82%D0%B8%D0%BD%D0%BA%D0%B8"
+    Короткое русское: fast-fap-rus
+    Для двоих: for-couples
+    Секс-машины: sex-machines
+    Красивые стоны: "%D0%BA%D1%80%D0%B0%D1%81%D0%B8%D0%B2%D1%8B%D0%B5%20%D1%81%D1%82%D0%BE%D0%BD%D1%8B"
+    Начальник и подчинённая: "%D0%BD%D0%B0%D1%87%D0%B0%D0%BB%D1%8C%D0%BD%D0%B8%D0%BA%20%D0%B8%20%D0%BF%D0%BE%D0%B4%D1%87%D0%B8%D0%BD%D1%91%D0%BD%D0%BD%D0%B0%D1%8F"
+    Кончают толпой: all-in-cum
+    Сочные киски: "%D1%81%D0%BE%D1%87%D0%BD%D1%8B%D0%B5%20%D0%BA%D0%B8%D1%81%D0%BA%D0%B8"
+    Связывают девушку: girl-bondage
+    Раздевание: "%D1%80%D0%B0%D0%B7%D0%B4%D0%B5%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5"
+    Секс на животе: "%D1%81%D0%B5%D0%BA%D1%81%20%D0%BD%D0%B0%20%D0%B6%D0%B8%D0%B2%D0%BE%D1%82%D0%B5"
+    Мамка и дочь: "%D0%BC%D0%B0%D1%82%D1%8C%20%D0%B8%20%D0%B4%D0%BE%D1%87%D1%8C"
+    Прыгающая грудь: "%D0%BF%D1%80%D1%8B%D0%B3%D0%B0%D1%8E%D1%89%D0%B0%D1%8F%20%D0%B3%D1%80%D1%83%D0%B4%D1%8C"
+    Слизала сперму: "%D1%81%D0%BB%D0%B8%D0%B7%D0%B0%D0%BB%D0%B0%20%D1%81%D0%BF%D0%B5%D1%80%D0%BC%D1%83"
+    Шлепки: "%D1%88%D0%BB%D0%B5%D0%BF%D0%BA%D0%B8"
+    В носочках: "%D0%B2%20%D0%BD%D0%BE%D1%81%D0%BE%D1%87%D0%BA%D0%B0%D1%85"
+    В отеле: "%D0%B2%20%D0%BE%D1%82%D0%B5%D0%BB%D0%B5"
+    Красивые ножки: "%D0%BA%D1%80%D0%B0%D1%81%D0%B8%D0%B2%D1%8B%D0%B5%20%D0%BD%D0%BE%D0%B6%D0%BA%D0%B8"
+    Инструкции дрочки / JOI: joi
+    Короткое: fast-fap
+    Межрасовый: interracial
+    В очках: "%D0%B2%20%D0%BE%D1%87%D0%BA%D0%B0%D1%85"
+    Незнакомцы: "%D0%BD%D0%B5%D0%B7%D0%BD%D0%B0%D0%BA%D0%BE%D0%BC%D1%86%D1%8B"
+    Спортивные парни: athletes
+    Слюнявый минет: "%D1%81%D0%BB%D1%8E%D0%BD%D1%8F%D0%B2%D1%8B%D0%B9%20%D0%BC%D0%B8%D0%BD%D0%B5%D1%82"
+    Секс боком: "%D1%81%D0%B5%D0%BA%D1%81%20%D0%B1%D0%BE%D0%BA%D0%BE%D0%BC"
+    Секс кастинг: "%D1%81%D0%B5%D0%BA%D1%81%20%D0%BA%D0%B0%D1%81%D1%82%D0%B8%D0%BD%D0%B3"
+    С презервативом: "%D1%81%20%D0%BF%D1%80%D0%B5%D0%B7%D0%B5%D1%80%D0%B2%D0%B0%D1%82%D0%B8%D0%B2%D0%BE%D0%BC"
+    От лица девушки: "%D0%B6%D0%B5%D0%BD%D1%81%D0%BA%D0%B8%D0%B9%20pov"
+    Кончают на грудь: cum-tits
+    Растягивание: "%D1%80%D0%B0%D1%81%D1%82%D1%8F%D0%B6%D0%BA%D0%B0"
+    Анальная пробка: "%D0%B0%D0%BD%D0%B0%D0%BB%D1%8C%D0%BD%D0%B0%D1%8F%20%D0%BF%D1%80%D0%BE%D0%B1%D0%BA%D0%B0"
+    Зарубежное: "%D0%B7%D0%B0%D1%80%D1%83%D0%B1%D0%B5%D0%B6%D0%BD%D0%BE%D0%B5"
+    Меж сисек: "%D0%BC%D0%B5%D0%B6%20%D1%81%D0%B8%D1%81%D0%B5%D0%BA"
+    Интимные стрижки: "%D0%B8%D0%BD%D1%82%D0%B8%D0%BC%D0%BD%D1%8B%D0%B5%20%D1%81%D1%82%D1%80%D0%B8%D0%B6%D0%BA%D0%B8"
+    В примерочной: "%D0%B2%20%D0%BF%D1%80%D0%B8%D0%BC%D0%B5%D1%80%D0%BE%D1%87%D0%BD%D0%BE%D0%B9"
+    Кончают на киску: cum-pussy
+    Палец в попку: "%D0%BF%D0%B0%D0%BB%D0%B5%D1%86%20%D0%B2%20%D0%BF%D0%BE%D0%BF%D0%BA%D1%83"
+    В боди: "%D0%B2%20%D0%B1%D0%BE%D0%B4%D0%B8"
+    Латекс: "%D0%BB%D0%B0%D1%82%D0%B5%D0%BA%D1%81"
+    Лижут яйца: "%D0%BB%D0%B8%D0%B6%D1%83%D1%82%20%D1%8F%D0%B9%D1%86%D0%B0"
+    Круглые попки: "%D0%BA%D1%80%D1%83%D0%B3%D0%BB%D1%8B%D0%B5%20%D0%BF%D0%BE%D0%BF%D0%BA%D0%B8"
+    Оргазм сосков: "%D0%BE%D1%80%D0%B3%D0%B0%D0%B7%D0%BC%20%D1%81%D0%BE%D1%81%D0%BA%D0%BE%D0%B2"
+    На руках: on-hands
+    Русское порно 2025: rus-porn-2025
+    Кончают на попку: cum-ass
+    Силиконовая грудь: "%D1%81%D0%B8%D0%BB%D0%B8%D0%BA%D0%BE%D0%BD%D0%BE%D0%B2%D0%B0%D1%8F%20%D0%B3%D1%80%D1%83%D0%B4%D1%8C"
+    В спальне: "%D0%B2%20%D1%81%D0%BF%D0%B0%D0%BB%D1%8C%D0%BD%D0%B5"
+    В пеньюаре: "%D0%B2%20%D0%BF%D0%B5%D0%BD%D1%8C%D1%8E%D0%B0%D1%80%D0%B5"
+    В бассейне: "%D0%B1%D0%B0%D1%81%D1%81%D0%B5%D0%B9%D0%BD"
+    Татуированные девушки: tatooed-girls
+    Красивые члены: "%D0%BA%D1%80%D0%B0%D1%81%D0%B8%D0%B2%D1%8B%D0%B5%20%D1%87%D0%BB%D0%B5%D0%BD%D1%8B"
+    Дрочат ножками: "%D0%B4%D1%80%D0%BE%D1%87%D0%B0%D1%82%20%D0%BD%D0%BE%D0%B6%D0%BA%D0%B0%D0%BC%D0%B8"
+    На столе: "%D0%BD%D0%B0%20%D1%81%D1%82%D0%BE%D0%BB%D0%B5"
+    Немецкое: "%D0%BD%D0%B5%D0%BC%D0%B5%D1%86%D0%BA%D0%BE%D0%B5"
+    Русское порно 2022: porn-rus-22
+    В масле: "%D0%B2%20%D0%BC%D0%B0%D1%81%D0%BB%D0%B5"
+    Смуглые: "%D1%81%D0%BC%D1%83%D0%B3%D0%BB%D1%8B%D0%B5"
+    Поцелуи со спермой: "%D0%BF%D0%BE%D1%86%D0%B5%D0%BB%D1%83%D0%B8%20%D1%81%D0%BE%20%D1%81%D0%BF%D0%B5%D1%80%D0%BC%D0%BE%D0%B9"
+    Начальница и подчинённый: "%D0%BD%D0%B0%D1%87%D0%B0%D0%BB%D1%8C%D0%BD%D0%B8%D1%86%D0%B0%20%D0%B8%20%D0%BF%D0%BE%D0%B4%D1%87%D0%B8%D0%BD%D1%91%D0%BD%D0%BD%D1%8B%D0%B9"
+    Наручники: handcuffs
+    С косичками: "%D1%81%20%D0%BA%D0%BE%D1%81%D0%B8%D1%87%D0%BA%D0%B0%D0%BC%D0%B8"
+    В общежитии: hostel
+    Смазка: "%D1%81%D0%BC%D0%B0%D0%B7%D0%BA%D0%B0"
+    Брутальные: brutal
+    Русское порно 2023: rus-porn-2023
+    Дядя и племянница: "%D0%B4%D1%8F%D0%B4%D1%8F%20%D0%B8%20%D0%BF%D0%BB%D0%B5%D0%BC%D1%8F%D0%BD%D0%BD%D0%B8%D1%86%D0%B0"
+    Анальный фистинг: "%D0%B0%D0%BD%D0%B0%D0%BB%D1%8C%D0%BD%D1%8B%D0%B9%20%D1%84%D0%B8%D1%81%D1%82%D0%B8%D0%BD%D0%B3"
+    Загорелые: "%D0%B7%D0%B0%D0%B3%D0%BE%D1%80%D0%B5%D0%BB%D1%8B%D0%B5"
+    Переодевание: "%D0%BF%D0%B5%D1%80%D0%B5%D0%BE%D0%B4%D0%B5%D0%B2%D0%B0%D0%BD%D0%B8%D0%B5"
+    Лактация: "%D0%BB%D0%B0%D0%BA%D1%82%D0%B0%D1%86%D0%B8%D1%8F"
+    Порно 2025: porn-2025
+    Познавательное: "%D0%BF%D0%BE%D0%B7%D0%BD%D0%B0%D0%B2%D0%B0%D1%82%D0%B5%D0%BB%D1%8C%D0%BD%D0%BE%D0%B5"
+    Чёрные чулки: "%D1%87%D1%91%D1%80%D0%BD%D1%8B%D0%B5%20%D1%87%D1%83%D0%BB%D0%BA%D0%B8"
+    В гольфах: "%D0%B2%20%D0%B3%D0%BE%D0%BB%D1%8C%D1%84%D0%B0%D1%85"
+    Чешское: "%D1%87%D0%B5%D1%88%D1%81%D0%BA%D0%BE%D0%B5"
+
+list:
+  uri: videos?page={page}
+
+search:
+  uri: videos/search?q={search}
+
+contentParse:
+  nodes: //div[@class='video trailer']
+  name:
+    node: .//div[@class='title']
+  href:
+    node: .//a
+    attribute: href
+  img:
+    node: .//img
+    attribute: src
+  duration:
+    node: .//span[@class='info-column column-time']
+  preview:
+    attribute: id
+    format: 'https://m.fap-guru.pro/images/trailer/{value}.webm'
+
+view:
+  related: true
+  bindingToIP: true
+  viewsource: true
+  nodeFile:
+    node: //video//source[@src] | //source[@src]
+    attribute: src
