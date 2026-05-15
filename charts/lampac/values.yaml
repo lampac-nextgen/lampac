@@ -22,6 +22,13 @@ service:
   type: ClusterIP
   port: 9118
   targetPort: 9118
+  # Optional dual-stack Service (omit on single-stack clusters). Examples:
+  # ipFamilyPolicy: PreferDualStack
+  # ipFamilies:
+  #   - IPv4
+  #   - IPv6
+  ipFamilyPolicy: ""
+  ipFamilies: []
 
 # Mount init.conf (and optionally passwd) from a directory on the Kubernetes **node** filesystem.
 # Typical for single-node clusters (OrbStack, Docker Desktop, minikube): set hostPath to a folder
