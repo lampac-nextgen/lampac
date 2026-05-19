@@ -1,0 +1,487 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LogUserRequest Lite</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root { --font-body: 'Inter', system-ui, sans-serif; --font-mono: 'JetBrains Mono', monospace; --text-xs: 0.75rem; --text-sm: 0.875rem; --text-base: 1rem; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --sp-5: 20px; --sp-6: 24px; --r-md: 8px; --r-lg: 12px; --r-xl: 16px; }
+        [data-theme="dark"] { --bg: #0c0e12; --surface: #13161d; --surface-2: #1a1e28; --surface-3: #222733; --border: #2a3040; --text: #e2e6ef; --text-muted: #7c849a; --text-faint: #4d5568; --accent: #3ec9d1; --accent-dim: rgba(62, 201, 209, 0.12); --ok: #4ade80; --err: #f87171; --shadow-sm: 0 1px 2px rgba(0,0,0,0.3); --modal-overlay: rgba(0,0,0,0.7); --chart-grid: #2a3040; }
+        [data-theme="light"] { --bg: #f4f5f8; --surface: #ffffff; --surface-2: #f0f1f5; --surface-3: #e8eaf0; --border: #d4d8e3; --text: #1a1e28; --text-muted: #6b7280; --text-faint: #9ca3af; --accent: #0d9499; --accent-dim: rgba(13, 148, 153, 0.1); --ok: #16a34a; --err: #dc2626; --shadow-sm: 0 1px 2px rgba(0,0,0,0.06); --modal-overlay: rgba(0,0,0,0.5); --chart-grid: #d4d8e3; }
+        html, body { height: 100%; }
+        body { font-family: var(--font-body); font-size: var(--text-base); background: var(--bg); color: var(--text); line-height: 1.5; -webkit-font-smoothing: antialiased; padding: 20px; }
+        .container { max-width: 1400px; margin: 0 auto; }
+        .header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; flex-wrap: wrap; gap: 12px; }
+        .header-left { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+        .logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.2rem; color: var(--text); }
+        .logo svg { width: 28px; height: 28px; }
+        .logo small { font-weight: 400; color: var(--text-muted); margin-left: 4px; }
+        .actions { display: flex; gap: 8px; }
+        .btn { font: inherit; font-size: var(--text-xs); font-weight: 600; padding: 8px 16px; border-radius: var(--r-md); border: 1px solid var(--accent); background: var(--accent-dim); color: var(--accent); cursor: pointer; transition: all 0.15s; display: inline-flex; align-items: center; gap: 6px; }
+        .btn:hover { background: rgba(62, 201, 209, 0.22); transform: translateY(-1px); }
+        .btn-primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .btn-primary:hover { background: var(--accent); opacity: 0.85; }
+        .btn-premium { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); margin-left: 8px; }
+        .btn-premium:hover { background: rgba(62, 201, 209, 0.22); }
+        .btn-premium svg { width: 16px; height: 16px; }
+        .btn-ghost { border-color: var(--border); background: var(--surface-2); color: var(--text-muted); }
+        .btn-ghost:hover { color: var(--text); background: var(--surface-3); }
+        .btn-icon { width: 34px; height: 34px; padding: 0; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); color: var(--text-muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+        .btn-icon:hover { color: var(--text); background: var(--surface-3); }
+        .btn-icon svg { width: 16px; height: 16px; }
+        .filter-bar { display: flex; gap: 10px; margin-bottom: 24px; flex-wrap: wrap; }
+        .filter-bar input { background: var(--surface-2); border: 1px solid var(--border); border-radius: var(--r-md); padding: 10px 16px; color: var(--text); font-size: 0.9rem; flex: 1; min-width: 200px; }
+        .filter-bar input:focus { outline: none; border-color: var(--accent); }
+        
+        .stats-block { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl); padding: 20px; margin-bottom: 24px; }
+        .stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 16px; margin-bottom: 24px; }
+        .stat-card { background: var(--surface-2); border-radius: var(--r-lg); padding: 16px; text-align: center; border: 1px solid rgba(255,255,255,0.06); }
+        .stat-value { font-size: 2rem; font-weight: 700; color: var(--accent); line-height: 1.2; }
+        .stat-label { font-size: var(--text-xs); color: var(--text-muted); margin-top: 6px; }
+        .top-section { margin-bottom: 20px; }
+        .top-section h3 { font-size: 0.9rem; font-weight: 600; margin-bottom: 12px; color: var(--text-muted); }
+        .scroll-grid { display: flex; flex-wrap: wrap; gap: 10px; }
+        .grid-item { background: var(--surface-2); border: 1px solid rgba(255,255,255,0.06); border-radius: var(--r-lg); padding: 8px 14px; min-width: 100px; display: inline-flex; align-items: center; gap: 8px; }
+        .grid-rank { font-size: var(--text-xs); font-weight: 700; color: var(--text-faint); background: var(--surface-3); width: 22px; height: 22px; display: inline-flex; align-items: center; justify-content: center; border-radius: 6px; }
+        .grid-name { font-size: var(--text-sm); font-weight: 500; }
+        .grid-count { font-size: var(--text-xs); color: var(--text-muted); background: var(--surface-3); padding: 2px 8px; border-radius: 6px; }
+        .requests-list { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl); overflow: hidden; }
+        .request-card { background: var(--surface-2); border-bottom: 1px solid var(--border); padding: 16px 20px; }
+        .request-card:last-child { border-bottom: none; }
+        .request-header { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 8px; font-size: 0.8rem; }
+        .request-time { color: var(--text-faint); }
+        .request-uid { color: var(--accent); font-weight: 600; }
+        .request-ip { color: var(--text-muted); }
+        .request-uri { font-family: var(--font-mono); font-size: 0.75rem; word-break: break-all; color: var(--text-muted); margin-top: 6px; }
+        .loading, .empty { text-align: center; padding: 40px; color: var(--text-faint); }
+        
+        /* Модальное окно */
+        .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: var(--modal-overlay); display: flex; align-items: flex-start; justify-content: center; z-index: 1000; padding: 20px; padding-top: 60px; backdrop-filter: blur(4px); overflow-y: auto; }
+        .modal { background: var(--surface); border: 1px solid var(--border); border-radius: var(--r-xl); max-width: 950px; width: 100%; box-shadow: 0 25px 50px -12px rgba(0,0,0,0.5); animation: modalSlide 0.2s ease; max-height: calc(100vh - 80px); overflow-y: auto; }
+        @keyframes modalSlide { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
+        .modal-header { display: flex; justify-content: space-between; align-items: center; padding: 20px 24px; border-bottom: 1px solid var(--border); position: sticky; top: 0; background: var(--surface); z-index: 5; }
+        .modal-header h2 { font-size: 1.25rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+        .modal-header h2 svg { width: 24px; height: 24px; color: var(--accent); }
+        .modal-close { width: 32px; height: 32px; border-radius: var(--r-md); border: 1px solid var(--border); background: var(--surface-2); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; font-size: 18px; }
+        .modal-close:hover { color: var(--text); background: var(--surface-3); }
+        .modal-body { padding: 24px; }
+        
+        /* График в модалке */
+        .lite-chart-block { background: var(--surface-2); border-radius: var(--r-lg); padding: 20px; margin-bottom: 32px; }
+        .lite-chart-header { margin-bottom: 16px; }
+        .lite-chart-header h3 { font-size: 1rem; font-weight: 600; color: var(--text); display: flex; align-items: center; gap: 8px; }
+        .lite-chart-header h3 svg { width: 20px; height: 20px; }
+        .lite-chart-container { position: relative; height: 200px; }
+        .lite-scroll-hint { display: flex; justify-content: center; margin-top: 12px; }
+        .lite-scroll-arrow { color: var(--text-faint); font-size: var(--text-xs); display: flex; flex-direction: column; align-items: center; gap: 4px; opacity: 0.7; }
+        .lite-scroll-arrow svg { width: 20px; height: 20px; animation: bounce 2s infinite; }
+        @keyframes bounce { 0%, 20%, 50%, 80%, 100% { transform: translateY(0); } 40% { transform: translateY(6px); } 60% { transform: translateY(3px); } }
+        
+        .premium-section { margin-top: 8px; }
+        .premium-header { display: flex; align-items: center; gap: 8px; margin-bottom: 24px; }
+        .premium-header h3 { font-size: 1.1rem; font-weight: 700; color: var(--accent); display: flex; align-items: center; gap: 8px; }
+        .premium-header svg { width: 24px; height: 24px; }
+        
+        .comparison-table { width: 100%; border-collapse: collapse; margin: 0 0 24px; font-size: var(--text-sm); }
+        .comparison-table th { text-align: left; padding: 10px 8px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-weight: 500; font-size: var(--text-xs); }
+        .comparison-table td { padding: 8px; border-bottom: 1px solid var(--border); text-align: left; }
+        .comparison-table tr:last-child td { border-bottom: none; }
+        .comparison-table .feature-col { font-weight: 500; color: var(--text); }
+        .comparison-table .lite-col { color: var(--text-muted); }
+        .comparison-table .premium-col { color: var(--ok); }
+        .comparison-table .both-col { color: var(--ok); }
+        
+        .video-container { position: relative; padding-bottom: 56.25%; height: 0; margin: 24px 0; border-radius: var(--r-lg); overflow: hidden; border: 1px solid var(--border); }
+        .video-container iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: 0; }
+        
+        .telegram-section { background: var(--accent-dim); border-radius: var(--r-lg); padding: 24px; text-align: center; border: 1px solid var(--accent); }
+        .telegram-section h3 { color: var(--accent); margin-bottom: 8px; }
+        .telegram-section p { color: var(--text-muted); margin-bottom: 20px; }
+        .telegram-link { display: inline-flex; align-items: center; gap: 8px; background: var(--accent); color: #fff; padding: 12px 24px; border-radius: var(--r-lg); text-decoration: none; font-weight: 600; transition: all 0.15s; }
+        .telegram-link:hover { opacity: 0.85; transform: translateY(-2px); }
+        .telegram-link svg { width: 20px; height: 20px; fill: #fff; }
+        
+        .hidden { display: none !important; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header">
+        <div class="header-left">
+            <div class="logo">
+                <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
+                    <rect x="2" y="2" width="24" height="24" rx="6" stroke="currentColor" stroke-width="1.5" fill="none" />
+                    <rect x="7" y="16" width="3" height="6" rx="1" fill="var(--accent)" />
+                    <rect x="12.5" y="11" width="3" height="11" rx="1" fill="var(--accent)" opacity="0.7" />
+                    <rect x="18" y="6" width="3" height="16" rx="1" fill="var(--accent)" opacity="0.45" />
+                </svg>
+                <span>LogUserRequest Lite</span>
+            </div>
+            <button class="btn btn-premium" id="premiumBtn">
+
+                Premium
+            </button>
+        </div>
+        <div class="actions">
+            <button class="btn-icon" id="themeBtn" title="Сменить тему (Alt+T)">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+                </svg>
+            </button>
+            <button class="btn btn-ghost" id="logoutBtn">Выйти</button>
+        </div>
+    </div>
+    
+    <div class="filter-bar">
+        <input type="text" id="uidInput" placeholder="UID пользователя (оставьте пустым для всех)">
+        <button class="btn btn-primary" onclick="applyFilter()">Показать</button>
+        <button class="btn btn-ghost" onclick="resetFilter()">Сбросить</button>
+    </div>
+    
+    <div class="stats-block" id="statsBlock" style="display:none;">
+        <div class="stats-grid">
+            <div class="stat-card"><div class="stat-value" id="statToday">0</div><div class="stat-label">Запросов сегодня</div></div>
+            <div class="stat-card"><div class="stat-value" id="statMonth">0</div><div class="stat-label">За месяц</div></div>
+            <div class="stat-card"><div class="stat-value" id="statDevices">0</div><div class="stat-label">Устройств</div></div>
+            <div class="stat-card"><div class="stat-value" id="statIps">0</div><div class="stat-label">IP адресов</div></div>
+        </div>
+        <div class="top-section">
+            <h3>👥 Топ пользователей</h3>
+            <div class="scroll-grid" id="topUsers"></div>
+        </div>
+        <div class="top-section">
+            <h3>⚡ Топ балансиров</h3>
+            <div class="scroll-grid" id="topBalancers"></div>
+        </div>
+    </div>
+    
+    <div class="requests-list" id="requestsList">
+        <div class="loading">Загрузка...</div>
+    </div>
+</div>
+
+<!-- Модальное окно Premium -->
+<div class="modal-overlay hidden" id="premiumModal">
+    <div class="modal">
+        <div class="modal-header">
+            <h2>
+                <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
+                    <rect x="2" y="2" width="24" height="24" rx="6" stroke="currentColor" stroke-width="1.5" fill="none" />
+                    <rect x="7" y="16" width="3" height="6" rx="1" fill="currentColor" />
+                    <rect x="12.5" y="11" width="3" height="11" rx="1" fill="currentColor" opacity="0.7" />
+                    <rect x="18" y="6" width="3" height="16" rx="1" fill="currentColor" opacity="0.45" />
+                </svg>
+                LogUserRequest Lite
+            </h2>
+            <button class="modal-close" id="closeModalBtn">✕</button>
+        </div>
+        <div class="modal-body">
+            <!-- Блок Lite-версии с графиком -->
+            <div class="lite-chart-block">
+                <div class="lite-chart-header">
+                    <h3>
+                        <svg viewBox="0 0 28 28" fill="none" aria-hidden="true" width="20" height="20">
+                            <rect x="2" y="2" width="24" height="24" rx="6" stroke="currentColor" stroke-width="1.5" fill="none" />
+                            <rect x="7" y="16" width="3" height="6" rx="1" fill="currentColor" />
+                            <rect x="12.5" y="11" width="3" height="11" rx="1" fill="currentColor" opacity="0.7" />
+                            <rect x="18" y="6" width="3" height="16" rx="1" fill="currentColor" opacity="0.45" />
+                        </svg>
+                        Активность за 3 дня
+                    </h3>
+                </div>
+                <div class="lite-chart-container">
+                    <canvas id="premiumChart"></canvas>
+                </div>
+                <div class="lite-scroll-hint">
+                    <span class="lite-scroll-arrow">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M12 5v14M19 12l-7 7-7-7"/>
+                        </svg>
+                        Прокрутите чтобы увидеть Premium-возможности
+                    </span>
+                </div>
+            </div>
+            
+            <!-- Разделитель / пустое пространство -->
+            <div style="height: 400px;"></div>
+            
+            <!-- Premium секция -->
+            <div class="premium-section">
+                <div class="premium-header">
+                    <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
+                        <rect x="2" y="2" width="24" height="24" rx="6" stroke="var(--accent)" stroke-width="1.5" fill="none" />
+                        <rect x="7" y="16" width="3" height="6" rx="1" fill="var(--accent)" />
+                        <rect x="12.5" y="11" width="3" height="11" rx="1" fill="var(--accent)" opacity="0.7" />
+                        <rect x="18" y="6" width="3" height="16" rx="1" fill="var(--accent)" opacity="0.45" />
+                    </svg>
+                    <h3>LogUserRequest Premium</h3>
+                </div>
+                
+                <table class="comparison-table">
+                    <thead>
+                        <tr><th>Функция</th><th>Lite-версия</th><th>Premium-версия</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr><td class="feature-col">Логирование запросов</td><td class="both-col">✅ Все запросы</td><td class="both-col">✅ Все запросы</td></tr>
+                        <tr><td class="feature-col">Фильтрация служебных путей</td><td class="both-col">✅ Хардкод-список</td><td class="premium-col">✅ Гибкий UI + regex + IP</td></tr>
+                        <tr><td class="feature-col">Авторизация</td><td class="both-col">✅ Сессии + rate-limit</td><td class="both-col">✅ Сессии + rate-limit</td></tr>
+                        <tr><td class="feature-col">База данных</td><td class="both-col">✅ SQLite</td><td class="premium-col">✅ SQLite с индексами</td></tr>
+                        <tr><td class="feature-col">Очистка старых записей</td><td class="both-col">✅ По дням (logDay)</td><td class="premium-col">✅ По дням + по размеру БД</td></tr>
+                        <tr><td class="feature-col">Статистика</td><td class="both-col">✅ Топы пользователей и балансиров</td><td class="premium-col">✅ Топы + графики + модальные окна</td></tr>
+                        <tr><td class="feature-col">Тёмная/светлая тема</td><td class="both-col">✅ Есть</td><td class="both-col">✅ Есть</td></tr>
+                        <tr><td class="feature-col">Мобильная адаптация</td><td class="both-col">✅ Есть</td><td class="both-col">✅ Есть</td></tr>
+                        <tr><td class="feature-col">Поиск по UID</td><td class="both-col">✅ Поле ввода</td><td class="premium-col">✅ Поле ввода + модальное окно</td></tr>
+                        <tr><td class="feature-col">Дашборд</td><td class="lite-col">❌ Простой список</td><td class="premium-col">✅ Полноценный SPA с графиками</td></tr>
+                        <tr><td class="feature-col">Дедупликация перебора балансиров</td><td class="lite-col">❌ Нет</td><td class="premium-col">✅ First + Last (окно 30 сек)</td></tr>
+                        <tr><td class="feature-col">Фильтр по дате</td><td class="lite-col">❌ Нет</td><td class="premium-col">✅ На дашборде</td></tr>
+                        <tr><td class="feature-col">Активность в реальном времени</td><td class="lite-col">❌ Нет</td><td class="premium-col">✅ Live-обновления</td></tr>
+                        <tr><td class="feature-col">Экспорт данных</td><td class="lite-col">❌ Нет</td><td class="premium-col">✅ CSV/JSON (ZIP)</td></tr>
+                        <tr><td class="feature-col">Массовое удаление</td><td class="lite-col">❌ Нет</td><td class="premium-col">✅ С гибкими фильтрами</td></tr>
+                        <tr><td class="feature-col">Архивация</td><td class="lite-col">❌ Нет</td><td class="premium-col">✅ По дате + по размеру БД</td></tr>
+                        <tr><td class="feature-col">Telegram-уведомления</td><td class="lite-col">❌ Нет</td><td class="premium-col">✅ Мониторинг + архив + ошибки</td></tr>
+                        <tr><td class="feature-col">Health-check</td><td class="lite-col">❌ Нет</td><td class="premium-col">✅ API для мониторинга</td></tr>
+                        <tr><td class="feature-col">Настройка фильтров через UI</td><td class="lite-col">❌ Нет</td><td class="premium-col">✅ Модальное окно + авто-сохранение</td></tr>
+                        <tr><td class="feature-col">Защита от ReDoS</td><td class="lite-col">❌ Нет</td><td class="premium-col">✅ Кэширование regex + таймаут</td></tr>
+                        <tr><td class="feature-col">Очередь с защитой от переполнения</td><td class="lite-col">❌ Нет</td><td class="premium-col">✅ До 50000 записей</td></tr>
+                        <tr><td class="feature-col">Потребление памяти</td><td class="both-col">~20-30 МБ</td><td class="both-col">~50-70 МБ</td></tr>
+                    </tbody>
+                </table>
+                
+                <!-- Видео-обзор -->
+                <div class="video-container">
+                    <iframe src="https://drive.google.com/file/d/1VCgOGJIVy4CVjYV1wL47t_5Vb5dbs-Gg/preview" allow="autoplay; fullscreen" allowfullscreen></iframe>
+                </div>
+                
+                <!-- Telegram -->
+                <div class="telegram-section">
+                    <h3>💬 Заинтересовал Premium?</h3>
+                    <p>Напишите автору в Telegram — отвечу на вопросы и дам доступ</p>
+                    <a href="https://t.me/Viacheslav_Sh1" target="_blank" class="telegram-link">
+                        <svg viewBox="0 0 24 24" fill="currentColor">
+                            <path d="M12 0C5.373 0 0 5.373 0 12s5.373 12 12 12 12-5.373 12-12S18.627 0 12 0zm5.562 8.161c-.18 1.897-.962 6.502-1.359 8.627-.168.9-.5 1.201-.82 1.23-.697.064-1.226-.46-1.901-.903-1.056-.692-1.653-1.123-2.678-1.799-1.185-.781-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.015-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.479.329-.913.489-1.302.481-.428-.009-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.015 3.333-1.386 4.025-1.627 4.476-1.635.099-.002.321.023.465.141.145.118.185.276.204.388.018.112.013.23.01.356z"/>
+                        </svg>
+                        @Viacheslav_Sh1
+                    </a>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const THEME_KEY = 'loguser-theme';
+function setTheme(dark) {
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    try { localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light'); } catch(e) {}
+}
+const saved = localStorage.getItem(THEME_KEY);
+setTheme(saved === 'dark' || (saved === null && window.matchMedia('(prefers-color-scheme: dark)').matches));
+document.getElementById('themeBtn').addEventListener('click', () => {
+    setTheme(document.documentElement.getAttribute('data-theme') !== 'dark');
+});
+document.addEventListener('keydown', e => {
+    if (e.altKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault();
+        setTheme(document.documentElement.getAttribute('data-theme') !== 'dark');
+    }
+});
+
+let currentUid = '';
+let skip = 0;
+const take = 50;
+let loading = false;
+let allLoaded = false;
+let premiumChart = null;
+
+// Модальное окно
+const modal = document.getElementById('premiumModal');
+const premiumBtn = document.getElementById('premiumBtn');
+const closeBtn = document.getElementById('closeModalBtn');
+
+function openModal() {
+    modal.classList.remove('hidden');
+    loadPremiumChart();
+}
+
+premiumBtn.addEventListener('click', openModal);
+closeBtn.addEventListener('click', () => modal.classList.add('hidden'));
+modal.addEventListener('click', (e) => { if (e.target === modal) modal.classList.add('hidden'); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') modal.classList.add('hidden'); });
+
+async function apiCall(path) {
+    const res = await fetch('/lite/logrequest' + path, { credentials: 'include' });
+    if (res.status === 401 || res.status === 403) {
+        window.location.href = '/lite/logrequest/auth';
+        throw new Error('Unauthorized');
+    }
+    const json = await res.json();
+    return json.success ? json.data : json;
+}
+
+async function loadPremiumChart() {
+    if (premiumChart) return;
+    
+    try {
+        const result = await apiCall('/premium-chart?days=3');
+        
+        const ctx = document.getElementById('premiumChart').getContext('2d');
+        const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#3ec9d1';
+        const gridColor = getComputedStyle(document.documentElement).getPropertyValue('--chart-grid').trim() || '#2a3040';
+        
+        let labels, values;
+        
+        if (result && result.data && result.data.length > 0) {
+            labels = result.data.map(d => new Date(d.date).toLocaleDateString('ru', { day: 'numeric', month: 'short' }));
+            values = result.data.map(d => d.count);
+        } else {
+            labels = ['Нет данных'];
+            values = [0];
+        }
+        
+        premiumChart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Запросы',
+                    data: values,
+                    borderColor: accentColor,
+                    backgroundColor: accentColor + '20',
+                    tension: 0.3,
+                    fill: true,
+                    pointBackgroundColor: accentColor
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    y: { beginAtZero: true, grid: { color: gridColor } },
+                    x: { grid: { display: false } }
+                }
+            }
+        });
+        
+    } catch(e) {
+        console.error('Chart error:', e);
+    }
+}
+
+async function loadStats() {
+    try {
+        const url = currentUid ? `/stats?uid=${encodeURIComponent(currentUid)}` : '/stats';
+        const stats = await apiCall(url);
+        if (!stats) return;
+        
+        document.getElementById('statsBlock').style.display = 'block';
+        document.getElementById('statToday').innerText = stats.today || 0;
+        document.getElementById('statMonth').innerText = stats.month || 0;
+        document.getElementById('statDevices').innerText = stats.uniqueUserAgent || 0;
+        document.getElementById('statIps').innerText = stats.uniqueIp || 0;
+        
+        const topUsers = document.getElementById('topUsers');
+        const users = stats.topUsers || [];
+        topUsers.innerHTML = users.map((u, idx) => `
+            <div class="grid-item">
+                <span class="grid-rank">${idx + 1}</span>
+                <span class="grid-name">${escapeHtml(u.name)}</span>
+                <span class="grid-count">${u.count}</span>
+            </div>
+        `).join('') || '<div class="empty">Нет данных</div>';
+        
+        const topBalancers = document.getElementById('topBalancers');
+        const balancers = stats.topBalancers || [];
+        topBalancers.innerHTML = balancers.map((b, idx) => `
+            <div class="grid-item">
+                <span class="grid-rank">${idx + 1}</span>
+                <span class="grid-name">${escapeHtml(b.name)}</span>
+                <span class="grid-count">${b.count}</span>
+            </div>
+        `).join('') || '<div class="empty">Нет данных</div>';
+    } catch(e) {
+        console.error('Stats error:', e);
+    }
+}
+
+async function loadRequests(reset = true) {
+    if (reset) { skip = 0; allLoaded = false; document.getElementById('requestsList').innerHTML = ''; }
+    if (loading || allLoaded) return;
+    
+    loading = true;
+    try {
+        let url = `/api?skip=${skip}&take=${take}`;
+        if (currentUid) url += `&uid=${encodeURIComponent(currentUid)}`;
+        
+        const data = await apiCall(url);
+        
+        if (!data || (Array.isArray(data) && data.length === 0)) {
+            allLoaded = true;
+            if (skip === 0) document.getElementById('requestsList').innerHTML = '<div class="empty">Нет записей</div>';
+            loading = false;
+            return;
+        }
+        
+        if (reset) document.getElementById('requestsList').innerHTML = '';
+        
+        data.forEach(r => {
+            const card = document.createElement('div');
+            card.className = 'request-card';
+            card.innerHTML = `
+                <div class="request-header">
+                    <span class="request-time">${new Date(r.time).toLocaleString()}</span>
+                    <span class="request-uid">${escapeHtml(r.userUid || r.uid || 'unknown')}</span>
+                    <span class="request-ip">${escapeHtml(r.ip || 'unknown')}</span>
+                </div>
+                <div class="request-uri">${escapeHtml(r.uri || '')}</div>
+            `;
+            document.getElementById('requestsList').appendChild(card);
+        });
+        
+        skip += data.length;
+        if (data.length < take) allLoaded = true;
+        loading = false;
+    } catch(e) {
+        console.error('Load error:', e);
+        loading = false;
+    }
+}
+
+function escapeHtml(str) {
+    if (!str) return '';
+    return String(str).replace(/[&<>]/g, m => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[m] || m));
+}
+
+function applyFilter() {
+    currentUid = document.getElementById('uidInput').value.trim();
+    loadStats();
+    loadRequests(true);
+}
+
+function resetFilter() {
+    document.getElementById('uidInput').value = '';
+    currentUid = '';
+    loadStats();
+    loadRequests(true);
+}
+
+document.getElementById('logoutBtn').addEventListener('click', () => {
+    window.location.href = '/lite/logrequest/logout';
+});
+
+window.addEventListener('scroll', () => {
+    if (window.innerHeight + window.scrollY >= document.body.offsetHeight - 500) {
+        if (!loading && !allLoaded) loadRequests(false);
+    }
+});
+
+loadStats();
+loadRequests(true);
+</script>
+</body>
+</html>

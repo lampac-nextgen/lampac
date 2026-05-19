@@ -1,0 +1,110 @@
+<!DOCTYPE html>
+<html lang="ru" data-theme="dark">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0c0e12" id="metaTheme">
+    <title>LogUserRequest — Вход</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+        :root { --font-body: 'Inter', system-ui, -apple-system, sans-serif; }
+        [data-theme="dark"] { --bg: #0c0e12; --surface: #13161d; --surface-2: #1a1e28; --border: #2a3040; --text: #e2e6ef; --text-muted: #7c849a; --accent: #3ec9d1; --accent-soft: #2ea8b0; --err: #f87171; --err-dim: rgba(248, 113, 113, 0.12); --shadow-lg: 0 12px 40px rgba(0, 0, 0, 0.45); }
+        [data-theme="light"] { --bg: #f4f5f8; --surface: #ffffff; --surface-2: #f0f1f5; --border: #d4d8e3; --text: #1a1e28; --text-muted: #6b7280; --accent: #0d9499; --accent-soft: #0b7d82; --err: #dc2626; --err-dim: rgba(220, 38, 38, 0.1); --shadow-lg: 0 12px 32px rgba(0, 0, 0, 0.12); }
+        html, body { height: 100%; }
+        body { font-family: var(--font-body); background: var(--bg); display: flex; justify-content: center; align-items: center; color: var(--text); -webkit-font-smoothing: antialiased; }
+        .auth-container { background: var(--surface); border: 1px solid var(--border); border-radius: 24px; padding: 48px 40px; width: 100%; max-width: 420px; box-shadow: var(--shadow-lg); }
+        .logo { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 32px; }
+        .logo svg { width: 36px; height: 36px; }
+        .logo span { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; color: var(--text); }
+        .logo small { font-weight: 400; color: var(--text-muted); margin-left: 4px; }
+        h2 { font-size: 1.25rem; font-weight: 600; margin-bottom: 24px; text-align: center; color: var(--accent); }
+        .error { background: var(--err-dim); border: 1px solid var(--err); border-radius: 10px; padding: 12px 16px; margin-bottom: 20px; color: var(--err); font-size: 0.9rem; display: none; }
+        .error.show { display: block; }
+        input { width: 100%; background: var(--surface-2); border: 1px solid var(--border); border-radius: 12px; padding: 14px 18px; color: var(--text); font-size: 1rem; margin-bottom: 24px; transition: border 0.15s; }
+        input:focus { outline: none; border-color: var(--accent); }
+        button { width: 100%; background: var(--accent); border: none; border-radius: 12px; padding: 14px; color: #fff; font-size: 1rem; font-weight: 600; cursor: pointer; transition: background 0.15s; }
+        button:hover { background: var(--accent-soft); }
+        .theme-toggle { position: absolute; top: 20px; right: 20px; width: 40px; height: 40px; border-radius: 10px; background: var(--surface-2); border: 1px solid var(--border); color: var(--text-muted); cursor: pointer; display: flex; align-items: center; justify-content: center; }
+        .theme-toggle:hover { color: var(--text); }
+        .theme-toggle svg { width: 20px; height: 20px; }
+    </style>
+</head>
+<body>
+<button class="theme-toggle" id="themeBtn" title="Сменить тему (Alt+T)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </svg>
+</button>
+<div class="auth-container">
+    <div class="logo">
+        <svg viewBox="0 0 28 28" fill="none" aria-hidden="true">
+            <rect x="2" y="2" width="24" height="24" rx="6" stroke="currentColor" stroke-width="1.5" fill="none" />
+            <rect x="7" y="16" width="3" height="6" rx="1" fill="var(--accent)" />
+            <rect x="12.5" y="11" width="3" height="11" rx="1" fill="var(--accent)" opacity="0.7" />
+            <rect x="18" y="6" width="3" height="16" rx="1" fill="var(--accent)" opacity="0.45" />
+        </svg>
+        <span>LogUserRequest <small>Lite</small></span>
+    </div>
+    <h2>🔐 Вход</h2>
+    <div class="error" id="errorMsg"></div>
+    <form method="post" action="/lite/logrequest/login">
+        <input type="password" name="password" placeholder="Пароль" autocomplete="off" autofocus>
+        <button type="submit">Войти</button>
+    </form>
+</div>
+<script>
+const THEME_KEY = 'loguser-theme';
+function setTheme(dark) {
+    document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+    try { localStorage.setItem(THEME_KEY, dark ? 'dark' : 'light'); } catch(e) {}
+}
+const saved = localStorage.getItem(THEME_KEY);
+setTheme(saved === 'dark' || (saved === null && window.matchMedia('(prefers-color-scheme: dark)').matches));
+document.getElementById('themeBtn').addEventListener('click', () => {
+    setTheme(document.documentElement.getAttribute('data-theme') !== 'dark');
+});
+document.addEventListener('keydown', e => {
+    if (e.altKey && (e.key === 't' || e.key === 'T')) {
+        e.preventDefault();
+        setTheme(document.documentElement.getAttribute('data-theme') !== 'dark');
+    }
+});
+
+const urlParams = new URLSearchParams(window.location.search);
+const errorEl = document.getElementById('errorMsg');
+if (urlParams.has('error')) {
+    const remaining = urlParams.get('remaining');
+    errorEl.innerText = remaining ? `Неверный пароль. Осталось попыток: ${remaining}` : 'Неверный пароль';
+    errorEl.classList.add('show');
+}
+if (urlParams.has('blocked')) {
+    errorEl.innerText = 'Доступ заблокирован на сутки';
+    errorEl.classList.add('show');
+}
+
+// Предотвращаем возврат на auth через кнопку "назад"
+(function() {
+    if (window.history && window.history.replaceState) {
+        const url = new URL(window.location);
+        if (!url.searchParams.has('error') && !url.searchParams.has('blocked')) {
+            window.history.replaceState(null, '', '/lite/logrequest');
+        }
+    }
+    
+    window.addEventListener('pageshow', function(event) {
+        if (event.persisted) {
+            fetch('/lite/logrequest/api?skip=0&take=1', { 
+                credentials: 'include',
+                cache: 'no-cache'
+            }).then(r => {
+                if (r.ok) window.location.replace('/lite/logrequest');
+            }).catch(() => {});
+        }
+    });
+})();
+</script>
+</body>
+</html>
