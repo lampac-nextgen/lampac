@@ -1,0 +1,6 @@
+{
+  "enable": false,
+  "version": 1,
+  "namespace": "LogUserRequest",
+  "logDay": 90
+}
