@@ -51,7 +51,7 @@ public class AesInstance
 
     public int CharSize => 4096;
 
-    public int ByteSize => 32 * 1024;
+    public int ByteSize => 16 * 1024;
 
     private char[] _charBuffer;
     private byte[] _byteBuffer;

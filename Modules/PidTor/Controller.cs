@@ -6,6 +6,7 @@ using Shared.Models.Base;
 using Shared.Models.Online.Settings;
 using Shared.Models.Templates;
 using Shared.Services;
+using Shared.Services.Pools;
 using Shared.Services.Utilities;
 using System;
 using System.Collections.Generic;
@@ -379,7 +380,7 @@ public class PiTor : BaseOnlineController
         var cache = await InvokeCacheResult<FileStat[]>($"pidtor:serial:{id}", 60 * 36, textJson: true, onget: async e =>
         {
             #region gots
-            (List<HeadersModel> header, string host) gots()
+            (IReadOnlyList<HeadersModel> header, string host) gots()
             {
                 if ((init.torrs == null || init.torrs.Length == 0) && (init.auth_torrs == null || init.auth_torrs.Count == 0))
                 {
@@ -487,10 +488,16 @@ public class PiTor : BaseOnlineController
             string memKey = $"pidtor:auth_stream:{id}:{uhost ?? host}";
             if (!hybridCache.TryGetValue(memKey, out string hash))
             {
-                var headers = HeadersModel.Init("Authorization", $"Basic {CrypTo.Base64($"{login}:{passwd}")}");
-                headers = httpHeaders(host, HeadersModel.Join(headers, addheaders));
+                hash = await Http.Post(
+                    $"{host}/torrents",
+                    "{\"action\":\"add\",\"link\":\"" + magnet + "\",\"title\":\"\",\"poster\":\"\",\"save_to_db\":false}",
+                    timeoutSeconds: 15,
+                    headers: HeadersModel.Init(
+                        addheaders,
+                        ("Authorization", $"Basic {CrypTo.Base64($"{login}:{passwd}")}")
+                    )
+                );
 
-                hash = await Http.Post($"{host}/torrents", "{\"action\":\"add\",\"link\":\"" + magnet + "\",\"title\":\"\",\"poster\":\"\",\"save_to_db\":false}", timeoutSeconds: 15, headers: headers);
                 if (hash == null)
                     return StatusCode(503, $"{host} unavailable");
 
@@ -587,30 +594,33 @@ public class PiTor : BaseOnlineController
                 aes.Key = Encoding.UTF8.GetBytes(i[0]);
                 aes.IV = Encoding.UTF8.GetBytes(i[1]);
 
-                Span<byte> plainBytes = new byte[Encoding.UTF8.GetByteCount(plainText)];
+                using (var plainBuf = new BufferBytePool(Encoding.UTF8.GetMaxByteCount(plainText.Length)))
+                {
+                    Span<byte> plainBytes = plainBuf.Span;
 
-                int writtenPlain = Encoding.UTF8.GetBytes(plainText, plainBytes);
-                if (writtenPlain <= 0)
-                    return string.Empty;
+                    int writtenPlain = Encoding.UTF8.GetBytes(plainText, plainBytes);
+                    if (writtenPlain <= 0)
+                        return string.Empty;
 
-                int blockSize = aes.BlockSize / 8;
-                int paddedLen = ((writtenPlain / blockSize) + 1) * blockSize;
+                    int blockSize = aes.BlockSize / 8;
+                    int paddedLen = ((writtenPlain / blockSize) + 1) * blockSize;
 
-                Span<byte> encrypted = new byte[paddedLen];
+                    Span<byte> encrypted = new byte[paddedLen];
 
-                int cipherLen = aes.EncryptCbc(
-                    plainBytes.Slice(0, writtenPlain),
-                    aes.IV,
-                    encrypted,
-                    PaddingMode.PKCS7);
+                    int cipherLen = aes.EncryptCbc(
+                        plainBytes.Slice(0, writtenPlain),
+                        aes.IV,
+                        encrypted,
+                        PaddingMode.PKCS7);
 
-                if (cipherLen <= 0)
-                    return string.Empty;
+                    if (cipherLen <= 0)
+                        return string.Empty;
 
-                return Convert.ToBase64String(encrypted.Slice(0, cipherLen))
-                    .Replace('+', '-')
-                    .Replace('/', '_')
-                    .TrimEnd('=');
+                    return Convert.ToBase64String(encrypted.Slice(0, cipherLen))
+                        .Replace('+', '-')
+                        .Replace('/', '_')
+                        .TrimEnd('=');
+                }
             }
         }
         catch

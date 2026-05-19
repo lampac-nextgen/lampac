@@ -69,7 +69,7 @@ public class VideasyController : BaseENGController
             {
                 using (var browser = new PlaywrightBrowser(init.priorityBrowser))
                 {
-                    var page = await browser.NewPageAsync(init.plugin, httpHeaders(init).ToDictionary(), proxy_data, deferredDispose: true);
+                    var page = await browser.NewPageAsync(init.plugin, httpHeaders(init)?.ToDictionary(), proxy_data, deferredDispose: true);
                     if (page == null)
                         return default;
 

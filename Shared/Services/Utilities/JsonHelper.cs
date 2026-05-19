@@ -108,7 +108,7 @@ public static class JsonHelper
                         gzipStream,
                         Encoding.UTF8,
                         false,
-                        CoreInit.conf.lowMemoryMode ? 1024 : PoolInvk.bufferSize);
+                        CoreInit.conf.lowMemoryMode ? 4096 : PoolInvk.bufferSize);
 
                     jsonReader = new JsonTextReader(reader)
                     {
@@ -237,7 +237,7 @@ public static class JsonHelper
                         fileStream,
                         Encoding.UTF8,
                         false,
-                        CoreInit.conf.lowMemoryMode ? 1024 : PoolInvk.bufferSize);
+                        CoreInit.conf.lowMemoryMode ? 4096 : PoolInvk.bufferSize);
 
                     jsonReader = new JsonTextReader(reader)
                     {

@@ -10,10 +10,10 @@ public class HttpHydra
     RequestModel requestInfo;
     RchClient rch;
     WebProxy proxy;
-    List<HeadersModel> baseHeaders;
+    IReadOnlyList<HeadersModel> baseHeaders;
     HttpClient httpClient;
 
-    public HttpHydra(BaseSettings init, List<HeadersModel> baseHeaders, RequestModel requestInfo, RchClient rch, WebProxy proxy)
+    public HttpHydra(BaseSettings init, IReadOnlyList<HeadersModel> baseHeaders, RequestModel requestInfo, RchClient rch, WebProxy proxy)
     {
         this.init = init;
         this.requestInfo = requestInfo;
@@ -24,7 +24,7 @@ public class HttpHydra
 
 
     #region Get
-    public Task<T> Get<T>(string url, List<HeadersModel> addheaders = null, List<HeadersModel> newheaders = null, bool useDefaultHeaders = true, bool statusCodeOK = true, Encoding encoding = default, bool IgnoreDeserializeObject = false, bool safety = false, bool textJson = false, CookieContainer cookieContainer = null)
+    public Task<T> Get<T>(string url, IReadOnlyList<HeadersModel> addheaders = null, IReadOnlyList<HeadersModel> newheaders = null, bool useDefaultHeaders = true, bool statusCodeOK = true, Encoding encoding = default, bool IgnoreDeserializeObject = false, bool safety = false, bool textJson = false, CookieContainer cookieContainer = null)
     {
         var headers = JsonHeaders(addheaders, newheaders);
 
@@ -33,7 +33,7 @@ public class HttpHydra
             : Http.Get<T>(init.cors(url, headers, requestInfo), null, null, 0, init.httptimeout, headers, IgnoreDeserializeObject, proxy, statusCodeOK, init.httpversion, cookieContainer, useDefaultHeaders: useDefaultHeaders, httpClient: httpClient, textJson: textJson);
     }
 
-    public Task<string> Get(string url, List<HeadersModel> addheaders = null, List<HeadersModel> newheaders = null, bool useDefaultHeaders = true, bool statusCodeOK = true, Encoding encoding = default, bool safety = false, CookieContainer cookieContainer = null)
+    public Task<string> Get(string url, IReadOnlyList<HeadersModel> addheaders = null, IReadOnlyList<HeadersModel> newheaders = null, bool useDefaultHeaders = true, bool statusCodeOK = true, Encoding encoding = default, bool safety = false, CookieContainer cookieContainer = null)
     {
         var headers = JsonHeaders(addheaders, newheaders);
 
@@ -44,7 +44,7 @@ public class HttpHydra
     #endregion
 
     #region GetSpan
-    public Task GetSpan(string url, Action<ReadOnlySpan<char>> spanAction, List<HeadersModel> addheaders = null, List<HeadersModel> newheaders = null, bool useDefaultHeaders = true, bool statusCodeOK = true, bool safety = false, CookieContainer cookieContainer = null)
+    public Task GetSpan(string url, Action<ReadOnlySpan<char>> spanAction, IReadOnlyList<HeadersModel> addheaders = null, IReadOnlyList<HeadersModel> newheaders = null, bool useDefaultHeaders = true, bool statusCodeOK = true, bool safety = false, CookieContainer cookieContainer = null)
     {
         var headers = JsonHeaders(addheaders, newheaders);
 
@@ -56,7 +56,7 @@ public class HttpHydra
 
 
     #region Post
-    public Task<T> Post<T>(string url, string data, List<HeadersModel> addheaders = null, List<HeadersModel> newheaders = null, bool useDefaultHeaders = true, bool statusCodeOK = true, Encoding encoding = default, bool IgnoreDeserializeObject = false, bool safety = false, bool textJson = false, CookieContainer cookieContainer = null)
+    public Task<T> Post<T>(string url, string data, IReadOnlyList<HeadersModel> addheaders = null, IReadOnlyList<HeadersModel> newheaders = null, bool useDefaultHeaders = true, bool statusCodeOK = true, Encoding encoding = default, bool IgnoreDeserializeObject = false, bool safety = false, bool textJson = false, CookieContainer cookieContainer = null)
     {
         var headers = JsonHeaders(addheaders, newheaders);
 
@@ -65,7 +65,7 @@ public class HttpHydra
             : Http.Post<T>(init.cors(url, headers, requestInfo), data, null, init.httptimeout, headers, encoding, proxy, IgnoreDeserializeObject, cookieContainer, useDefaultHeaders, init.httpversion, 0, statusCodeOK, httpClient, textJson);
     }
 
-    public Task<string> Post(string url, string data, List<HeadersModel> addheaders = null, List<HeadersModel> newheaders = null, bool useDefaultHeaders = true, bool statusCodeOK = true, Encoding encoding = default, bool safety = false, CookieContainer cookieContainer = null)
+    public Task<string> Post(string url, string data, IReadOnlyList<HeadersModel> addheaders = null, IReadOnlyList<HeadersModel> newheaders = null, bool useDefaultHeaders = true, bool statusCodeOK = true, Encoding encoding = default, bool safety = false, CookieContainer cookieContainer = null)
     {
         var headers = JsonHeaders(addheaders, newheaders);
 
@@ -76,7 +76,7 @@ public class HttpHydra
     #endregion
 
     #region PostSpan
-    public Task PostSpan(string url, string data, Action<ReadOnlySpan<char>> spanAction, List<HeadersModel> addheaders = null, List<HeadersModel> newheaders = null, bool useDefaultHeaders = true, bool statusCodeOK = true, Encoding encoding = default, bool safety = false, CookieContainer cookieContainer = null)
+    public Task PostSpan(string url, string data, Action<ReadOnlySpan<char>> spanAction, IReadOnlyList<HeadersModel> addheaders = null, IReadOnlyList<HeadersModel> newheaders = null, bool useDefaultHeaders = true, bool statusCodeOK = true, Encoding encoding = default, bool safety = false, CookieContainer cookieContainer = null)
     {
         var headers = JsonHeaders(addheaders, newheaders);
 
@@ -87,23 +87,32 @@ public class HttpHydra
     #endregion
 
 
-    #region RegisterHttp
+    #region Utilities
     public void RegisterHttp(HttpClient httpClient)
     {
         this.httpClient = httpClient;
     }
-    #endregion
 
+    bool IsRchEnable(bool safety)
+    {
+        bool rch_enable = rch != null && rch.enable;
+        if (rch_enable)
+        {
+            if (safety && init.rhub_safety)
+                rch_enable = false;
+        }
 
-    #region JsonHeaders / IsRchEnable
-    List<HeadersModel> JsonHeaders(List<HeadersModel> addheaders = null, List<HeadersModel> newheaders = null)
+        return rch_enable;
+    }
+
+    List<HeadersModel> JsonHeaders(IReadOnlyList<HeadersModel> addheaders = null, IReadOnlyList<HeadersModel> newheaders = null)
     {
         if ((addheaders == null || addheaders.Count == 0) &&
             (newheaders == null || newheaders.Count == 0) &&
             (baseHeaders == null || baseHeaders.Count == 0))
             return null;
 
-        int capacity = capacityHeaders(addheaders, newheaders);
+        int capacity = capacityHeaders(baseHeaders, addheaders, newheaders);
         var headers = new List<HeadersModel>(capacity);
 
         if (baseHeaders != null && baseHeaders.Count > 0)
@@ -118,7 +127,7 @@ public class HttpHydra
         return headers;
     }
 
-    int capacityHeaders(List<HeadersModel> addheaders, List<HeadersModel> newheaders)
+    static int capacityHeaders(IReadOnlyList<HeadersModel> baseHeaders, IReadOnlyList<HeadersModel> addheaders, IReadOnlyList<HeadersModel> newheaders)
     {
         int capacity = 0;
         if (baseHeaders != null && baseHeaders.Count > 0)
@@ -131,18 +140,6 @@ public class HttpHydra
             capacity += addheaders.Count;
 
         return capacity;
-    }
-
-    bool IsRchEnable(bool safety)
-    {
-        bool rch_enable = rch != null && rch.enable;
-        if (rch_enable)
-        {
-            if (safety && init.rhub_safety)
-                rch_enable = false;
-        }
-
-        return rch_enable;
     }
     #endregion
 }

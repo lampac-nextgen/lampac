@@ -5,6 +5,7 @@ using Shared.Models.Proxy;
 using Shared.Models.ServerProxy;
 using Shared.Services;
 using System;
+using System.Buffers;
 using System.Net;
 using System.Net.Http;
 using System.Text;
@@ -21,23 +22,24 @@ public partial class ProxyAPI
     {
         using (HttpContent content = response.Content)
         {
-            if (response.StatusCode == HttpStatusCode.OK ||
-                response.StatusCode == HttpStatusCode.PartialContent ||
-                response.StatusCode == HttpStatusCode.RequestedRangeNotSatisfiable)
+            if (response.StatusCode is HttpStatusCode.OK or HttpStatusCode.PartialContent or HttpStatusCode.RequestedRangeNotSatisfiable)
             {
                 if (response.Content?.Headers?.ContentLength > init.maxlength_m3u)
                 {
-                    httpContext.Response.StatusCode = 503;
-                    httpContext.Response.ContentType = "text/plain";
-                    await httpContext.Response.WriteAsync("bigfile", ctsHttp.Token).ConfigureAwait(false);
+                    httpContext.Response.ContentType = "text/plain; charset=utf-8";
+                    httpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                    httpContext.Response.BodyWriter.Write("bigfile"u8);
+                    await httpContext.Response.BodyWriter.FlushAsync(ctsHttp.Token).ConfigureAwait(false);
                     return;
                 }
 
                 string mpd = await content.ReadAsStringAsync(ctsHttp.Token).ConfigureAwait(false);
                 if (mpd == null)
                 {
-                    httpContext.Response.StatusCode = 503;
-                    await httpContext.Response.WriteAsync("error array mpd", ctsHttp.Token).ConfigureAwait(false);
+                    httpContext.Response.ContentType = "text/plain; charset=utf-8";
+                    httpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
+                    httpContext.Response.BodyWriter.Write("error array mpd"u8);
+                    await httpContext.Response.BodyWriter.FlushAsync(ctsHttp.Token).ConfigureAwait(false);
                     return;
                 }
 
@@ -85,7 +87,7 @@ public partial class ProxyAPI
                 }
                 else
                 {
-                    if (init.responseContentLength && !CoreInit.CompressionMimeTypes.Contains(httpContext.Response.ContentType))
+                    if (init.responseContentLength && !CoreInit.ContainsMimeTypes(httpContext.Response.ContentType))
                         httpContext.Response.ContentLength = contentLength;
                 }
 
@@ -108,29 +110,41 @@ public partial class ProxyAPI
         if (init.showOrigUri)
             httpContext.Response.Headers["PX-Orig"] = uri.ToString();
 
-        var client = FriendlyHttp.MessageClient("proxy", proxyHandler ?? baseHandler);
+        var client = FriendlyHttp.MessageClient(
+            "proxy",
+            proxyHandler ?? baseHandler,
+            out bool disposeHttpClient
+        );
 
-        using (var request = CreateProxyHttpRequest(decryptLink.plugin, httpContext, decryptLink.headers, uri))
+        try
         {
-            if (EventListener.ProxyApiCreateHttpRequest != null)
+            using (var request = CreateProxyHttpRequest(decryptLink.plugin, httpContext, decryptLink.headers, uri))
             {
-                var em = new EventProxyApiCreateHttpRequest(decryptLink, decryptLink.plugin, httpContext.Request, decryptLink.headers, uri, request);
-                await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
-            }
-
-            if (init.showOrigUri)
-                httpContext.Response.Headers["PX-Req"] = request.RequestUri.ToString();
-
-            using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(httpContext.RequestAborted))
-            {
-                ctsHttp.CancelAfter(TimeSpan.FromSeconds(30));
-
-                using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ctsHttp.Token).ConfigureAwait(false))
+                if (EventListener.ProxyApiCreateHttpRequest != null)
                 {
-                    httpContext.Response.Headers["PX-Cache"] = "BYPASS";
-                    await CopyProxyHttpResponse(httpContext, response, cacheStream.uriKey, ctsHttp.Token).ConfigureAwait(false);
+                    var em = new EventProxyApiCreateHttpRequest(decryptLink, decryptLink.plugin, httpContext.Request, decryptLink.headers, uri, request);
+                    await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
+                }
+
+                if (init.showOrigUri)
+                    httpContext.Response.Headers["PX-Req"] = request.RequestUri.ToString();
+
+                using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(httpContext.RequestAborted))
+                {
+                    ctsHttp.CancelAfter(TimeSpan.FromSeconds(30));
+
+                    using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ctsHttp.Token).ConfigureAwait(false))
+                    {
+                        httpContext.Response.Headers["PX-Cache"] = "BYPASS";
+                        await CopyProxyHttpResponse(httpContext, response, cacheStream.uriKey, ctsHttp.Token).ConfigureAwait(false);
+                    }
                 }
             }
+        }
+        finally
+        {
+            if (disposeHttpClient)
+                client.Dispose();
         }
     }
     #endregion

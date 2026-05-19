@@ -311,20 +311,18 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
             ? null
             : HttpContext.Features.Get<BufferWriterPool<byte>>();
 
+        const int chunkSize = 16 * 1024;
         IBufferWriter<byte> writer = utf8Writer ?? (IBufferWriter<byte>)Response.BodyWriter;
-        writer.GetSpan(128 * 1024); // прогрев на одинаковые блоки
 
         try
         {
             foreach (var chunk in sb.GetChunks())
             {
                 ReadOnlySpan<char> chars = chunk.Span;
-                if (chars.IsEmpty)
-                    continue;
 
                 while (!chars.IsEmpty)
                 {
-                    Span<byte> span = writer.GetSpan(Encoding.UTF8.GetByteCount(chars));
+                    Span<byte> span = writer.GetSpan(chunkSize);
 
                     encoder.Convert(
                         chars,
@@ -332,10 +330,16 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
                         flush: false,
                         out int charsUsed,
                         out int bytesUsed,
-                        out _);
+                        out bool completed);
 
-                    writer.Advance(bytesUsed);
-                    chars = chars.Slice(charsUsed);
+                    if (bytesUsed > 0)
+                    {
+                        writer.Advance(bytesUsed);
+                        chars = chars.Slice(charsUsed);
+                    }
+
+                    if (completed)
+                        break;
                 }
             }
         }
@@ -358,11 +362,25 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
         writer.Advance(_bytesUsed);
         #endregion
 
+        #region Дублируем Staticache в Response.BodyWriter
         if (utf8Writer != null)
         {
-            Response.BodyWriter.GetSpan(128 * 1024); // прогрев на одинаковые блоки
-            Response.BodyWriter.Write(utf8Writer.WrittenSpan);
+            var source = utf8Writer.WrittenSpan;
+
+            while (!source.IsEmpty)
+            {
+                int bytesToWrite = Math.Min(source.Length, chunkSize);
+
+                ReadOnlySpan<byte> chunk = source.Slice(0, bytesToWrite);
+                Span<byte> destination = Response.BodyWriter.GetSpan(chunkSize);
+
+                chunk.CopyTo(destination);
+                Response.BodyWriter.Advance(bytesToWrite);
+
+                source = source.Slice(bytesToWrite);
+            }
         }
+        #endregion
 
         return _emptyResult;
     }
@@ -420,7 +438,7 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
     #endregion
 
     #region HostStreamProxy
-    public string HostStreamProxy(string uri, List<HeadersModel> headers = null, bool force_streamproxy = false, bool forceMd5 = false, object userdata = null)
+    public string HostStreamProxy(string uri, IReadOnlyList<HeadersModel> headers = null, bool force_streamproxy = false, bool forceMd5 = false, object userdata = null)
         => HostStreamProxy(init, uri, headers, proxy, force_streamproxy, rch, forceMd5, userdata);
     #endregion
 

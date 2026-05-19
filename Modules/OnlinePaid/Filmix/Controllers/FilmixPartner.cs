@@ -515,7 +515,7 @@ public class FilmixPartner : BaseOnlineController<FilmixSettings>
 
     static string SHA1(string inputText)
     {
-        int capacity = Encoding.UTF8.GetByteCount(inputText);
+        int capacity = inputText.Length * 2;
         Span<byte> utf8 = stackalloc byte[capacity];
         Span<byte> hash = stackalloc byte[20];
         Span<char> hex = stackalloc char[40];

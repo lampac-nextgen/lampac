@@ -46,7 +46,9 @@ public class RgShowsController : BaseENGController
             stream,
             "English",
             vast: init.vast,
-            headers: init.streamproxy ? null : httpHeaders(init.host, init.headers_stream),
+            headers: init.streamproxy
+                ? null
+                : httpHeaders(init.host, init.headers_stream),
             hls_manifest_timeout: (int)TimeSpan.FromSeconds(30).TotalMilliseconds,
             httpContext: HttpContext
         ));

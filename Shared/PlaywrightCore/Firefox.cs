@@ -226,7 +226,7 @@ public class Firefox : PlaywrightBase, IDisposable
     KeepopenPage keepopen_page { get; set; }
 
 
-    async public Task<IPage> NewPageAsync(string plugin, Dictionary<string, string> headers = null, (string ip, string username, string password) proxy = default, bool keepopen = true)
+    async public Task<IPage> NewPageAsync(string plugin, IReadOnlyDictionary<string, string> headers = null, (string ip, string username, string password) proxy = default, bool keepopen = true)
     {
         try
         {

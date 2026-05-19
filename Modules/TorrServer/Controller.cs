@@ -8,8 +8,8 @@ using Shared.Services.Pools;
 using Shared.Services.Utilities;
 using System;
 using System.Buffers;
+using System.Collections.Frozen;
 using System.IO;
-using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -158,7 +158,10 @@ public class TorrServerController : BaseController
                 {
                     if (ModInit.conf.group > user.group)
                     {
-                        await HttpContext.Response.WriteAsync("NoAccessGroup", HttpContext.RequestAborted).ConfigureAwait(false);
+                        HttpContext.Response.ContentType = "text/plain; charset=utf-8";
+                        HttpContext.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                        HttpContext.Response.BodyWriter.Write("NoAccessGroup"u8);
+                        await HttpContext.Response.BodyWriter.FlushAsync(HttpContext.RequestAborted).ConfigureAwait(false);
                         return;
                     }
 
@@ -169,7 +172,10 @@ public class TorrServerController : BaseController
 
             if (HttpContext.Request.Path.Value.StartsWith("/ts/echo"))
             {
-                await HttpContext.Response.WriteAsync("MatriX.API", HttpContext.RequestAborted).ConfigureAwait(false);
+                HttpContext.Response.ContentType = "text/plain; charset=utf-8";
+                HttpContext.Response.StatusCode = StatusCodes.Status200OK;
+                HttpContext.Response.BodyWriter.Write("MatriX.API"u8);
+                await HttpContext.Response.BodyWriter.FlushAsync(HttpContext.RequestAborted).ConfigureAwait(false);
                 return;
             }
 
@@ -198,8 +204,10 @@ public class TorrServerController : BaseController
             {
                 if (HttpContext.Request.Method != "POST")
                 {
-                    HttpContext.Response.StatusCode = 404;
-                    await HttpContext.Response.WriteAsync("404 page not found", HttpContext.RequestAborted).ConfigureAwait(false);
+                    HttpContext.Response.ContentType = "text/plain; charset=utf-8";
+                    HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    HttpContext.Response.BodyWriter.Write("403 Forbidden"u8);
+                    await HttpContext.Response.BodyWriter.FlushAsync(HttpContext.RequestAborted).ConfigureAwait(false);
                     return;
                 }
 
@@ -269,13 +277,27 @@ public class TorrServerController : BaseController
 
         requestMessage.Headers.Host = string.IsNullOrEmpty(CoreInit.conf.listen.host) ? context.Request.Host.Value : CoreInit.conf.listen.host;
         requestMessage.RequestUri = uri;
-        requestMessage.Method = new HttpMethod(request.Method);
+
+        requestMessage.Method = HttpMethods.IsGet(request.Method)
+            ? HttpMethod.Get
+            : HttpMethods.IsPost(request.Method)
+                ? HttpMethod.Post
+                : new HttpMethod(request.Method);
 
         return requestMessage;
     }
     #endregion
 
     #region CopyProxyHttpResponse
+    static readonly FrozenSet<string> excludedResponseHeaders = new[]
+    {
+        "transfer-encoding",
+        "etag",
+        "connection",
+        "content-security-policy",
+        "content-disposition"
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     async Task CopyProxyHttpResponse(HttpContext context, HttpResponseMessage responseMessage)
     {
         var response = context.Response;
@@ -284,22 +306,35 @@ public class TorrServerController : BaseController
         #region UpdateHeaders
         void UpdateHeaders(HttpHeaders headers)
         {
+            if (headers == null)
+                return;
+
             foreach (var header in headers)
             {
-                if (header.Key.Equals("transfer-encoding", StringComparison.OrdinalIgnoreCase) ||
-                    header.Key.Equals("etag", StringComparison.OrdinalIgnoreCase) ||
-                    header.Key.Equals("connection", StringComparison.OrdinalIgnoreCase) ||
-                    header.Key.Equals("content-security-policy", StringComparison.OrdinalIgnoreCase) ||
-                    header.Key.Equals("content-disposition", StringComparison.OrdinalIgnoreCase))
+                string key = header.Key;
+
+                if (excludedResponseHeaders.Contains(key))
                     continue;
 
-                response.Headers[header.Key] = header.Value.ToArray();
+                var values = header.Value;
+
+                using (var e = values.GetEnumerator())
+                {
+                    if (!e.MoveNext())
+                        continue;
+
+                    var first = e.Current;
+
+                    response.Headers[key] = e.MoveNext()
+                        ? string.Join("; ", values)
+                        : first;
+                }
             }
         }
         #endregion
 
         UpdateHeaders(responseMessage.Headers);
-        UpdateHeaders(responseMessage.Content.Headers);
+        UpdateHeaders(responseMessage.Content?.Headers);
 
         await using (var responseStream = await responseMessage.Content.ReadAsStreamAsync(context.RequestAborted).ConfigureAwait(false))
         {

@@ -78,9 +78,7 @@ public class Program
 
         foreach (string aslPath in AssemblyLocations)
         {
-            if (CoreInit.conf.lowMemoryMode == false)
-                Assembly.LoadFrom(aslPath);
-
+            Assembly.LoadFrom(aslPath);
             CSharpEval.appReferences.Add(MetadataReference.CreateFromFile(aslPath));
         }
         #endregion
@@ -122,8 +120,9 @@ public class Program
         #region Log
         Directory.CreateDirectory("logs");
 
-        var loggerConfiguration = new LoggerConfiguration()
-            .MinimumLevel.Error();
+        LoggerConfiguration loggerConfiguration = init.serilog
+            ? new LoggerConfiguration().MinimumLevel.Error()
+            : new LoggerConfiguration().MinimumLevel.Fatal();
 
         if (init.serilog)
         {

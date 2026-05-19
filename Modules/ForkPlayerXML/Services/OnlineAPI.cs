@@ -50,12 +50,13 @@ public static class OnlineAPI
         var forklist = new List<ForkPlaylistItem>();
 
         var obj = e.tpl.ToObject();
+        string host = CoreInit.Host(e.httpContext);
 
         if (obj is SimilarTpl similarTpl)
         {
             string desc(string title, string img)
             {
-                string _img = $"<img src=\"{e.controller.HostImgProxy(e.init, img)}\" width=\"85%\"/>";
+                string _img = $"<img src=\"{host + img}\" width=\"60%\"/>";
                 return $"<div style=\"text-align: center; font-size: 1.8vw\"><span style=\"color: #699bbb;\"><strong>{title}</strong></span><br /><br />{_img}</div>";
             }
 

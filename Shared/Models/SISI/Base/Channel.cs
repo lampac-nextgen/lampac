@@ -2,9 +2,9 @@
 
 public class Channel
 {
-    public IList<MenuItem> menu { get; set; }
+    public IReadOnlyList<MenuItem> menu { get; set; }
 
-    public IList<PlaylistItem> list { get; set; }
+    public IReadOnlyList<PlaylistItem> list { get; set; }
 
     public int total_pages { get; set; }
 }

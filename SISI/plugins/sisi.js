@@ -107,7 +107,7 @@
           url: Api.account(qualityDefault(qualitys), true),
           url_reserve: data.qualitys_proxy ? Api.account(qualityDefault(data.qualitys_proxy), true) : false,
           quality: qualitys,
-		  headers: data.headers_stream
+          headers: data.headers_stream
         };
         Lampa.Player.play(video);
 
@@ -1024,8 +1024,8 @@
           position: 'absolute',
           right: '-0.3em',
           bottom: '-0.5em',
-          backgroundColor: '#fff',
-          color: '#000',
+          //backgroundColor: '#fff',
+          color: '#fff',
           padding: '0.2em 0.4em',
           fontSize: '0.6em',
           borderRadius: '0.5em',

@@ -121,7 +121,7 @@ public struct CollapsInvoke
     #endregion
 
     #region Tpl
-    public ITplResult Tpl(EmbedModel md, string imdb_id, long kinopoisk_id, long orid, string title, string original_title, int s, bool rjson = false, List<HeadersModel> headers = null, VastConf vast = null)
+    public ITplResult Tpl(EmbedModel md, string imdb_id, long kinopoisk_id, long orid, string title, string original_title, int s, bool rjson = false, IReadOnlyList<HeadersModel> headers = null, VastConf vast = null)
     {
         if (md == null)
             return default;

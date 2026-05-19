@@ -1,4 +1,4 @@
-using Microsoft.AspNetCore.Authorization;
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Shared;
 using System.Collections.Generic;
@@ -86,6 +86,24 @@ public class ForkController : BaseController
                 },
                 new ForkPlaylistItem()
                 {
+                    title = "Документалка",
+                    playlist_url = $"{host}/fxml/cub?genre=99",
+                    logo_30x30 = Icon.Folder
+                },
+                new ForkPlaylistItem()
+                {
+                    title = "ТВ Шоу",
+                    playlist_url = $"{host}/fxml/cub?cat=tvshow",
+                    logo_30x30 = Icon.Folder
+                },
+                new ForkPlaylistItem()
+                {
+                    title = "Цифр. релизы",
+                    playlist_url = $"{host}/fxml/cub?sort=releases",
+                    logo_30x30 = Icon.Folder
+                },
+                new ForkPlaylistItem()
+                {
                     title = "Каталог",
                     playlist_url = $"{host}/catalog",
                     logo_30x30 = Icon.CdnSearch
@@ -110,10 +128,10 @@ public class ForkController : BaseController
                 channels = channels
             });
         }
-    }
 
-    static List<ForkPlaylistItem> DoramaMenu(string host)
-        => new List<ForkPlaylistItem>()
+
+        static List<ForkPlaylistItem> DoramaMenu(string host)
+            => new List<ForkPlaylistItem>()
         {
             new ForkPlaylistItem()
             {
@@ -158,4 +176,5 @@ public class ForkController : BaseController
                 logo_30x30 = Icon.Folder
             }
         };
+    }
 }

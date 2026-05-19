@@ -49,7 +49,7 @@ public class RezkaController : BaseOnlineController<RezkaSettings>
             string cookieRhub = init.rhub ? getRhubCookie() : null;
 
             if (rch?.enable == true && cookieRhub != null)
-                headers.Add(new HeadersModel("Cookie", cookieRhub));
+                headers = httpHeaders(init, HeadersModel.Init("Cookie", cookieRhub));
 
             oninvk = new RezkaInvoke
             (

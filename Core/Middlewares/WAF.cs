@@ -23,6 +23,7 @@ public class WAF
 
     IMemoryCache memoryCache;
     private readonly RequestDelegate _next;
+
     public WAF(RequestDelegate next, IMemoryCache mem)
     {
         _next = next;
@@ -34,7 +35,6 @@ public class WAF
     public Task Invoke(HttpContext httpContext)
     {
         var waf = CoreInit.conf.WAF;
-        var disabled = waf.disabled ?? new WafDisabled();
         if (!waf.enable)
             return _next(httpContext);
 
@@ -48,6 +48,8 @@ public class WAF
         if (waf.bypassLocalIP && requestInfo.IsLocalIp)
             return _next(httpContext);
 
+        var disabled = waf.disabled ?? new WafDisabled();
+
         #region BruteForce
         if (!disabled.bruteForceProtection && waf.bruteForceProtection && !requestInfo.IsLocalIp && CoreInit.conf.accsdb.enable)
         {
@@ -59,7 +61,8 @@ public class WAF
 
             if (ids.Count > 5)
             {
-                httpContext.Response.StatusCode = 429;
+                httpContext.Response.ContentType = "text/plain; charset=utf-8";
+                httpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                 return httpContext.Response.WriteAsync("Many devices for IP, set up KnownProxies to get the user's real IP");
             }
         }
@@ -207,7 +210,8 @@ public class WAF
             {
                 if (RateLimited(httpContext, memoryCache, requestInfo.IP, _limit.map, _limit.pattern))
                 {
-                    httpContext.Response.StatusCode = 429;
+                    httpContext.Response.ContentType = "text/plain; charset=utf-8";
+                    httpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                     return httpContext.Response.WriteAsync("429 Too Many Requests");
                 }
             }

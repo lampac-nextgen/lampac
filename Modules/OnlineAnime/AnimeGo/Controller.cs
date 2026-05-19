@@ -29,8 +29,6 @@ public class AnimeGoController : BaseOnlineController
         if (await IsRequestBlocked(rch: false))
             return badInitMsg;
 
-        var headers_stream = httpHeaders(init.host, init.headers_stream);
-
         if (pid == 0)
         {
             #region Поиск
@@ -176,6 +174,7 @@ public class AnimeGoController : BaseOnlineController
                 #endregion
 
                 var etpl = new EpisodeTpl(vtpl, cache.Value.links.Count);
+                var headers_stream = httpHeaders(init.host, init.headers_stream);
 
                 foreach (var l in cache.Value.links)
                 {

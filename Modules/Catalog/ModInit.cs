@@ -144,7 +144,7 @@ public class ModInit : IModuleLoaded
                             return Path.GetFileNameWithoutExtension(file);
                     }
                 }
-                catch (System.Exception ex)
+                catch (Exception ex)
                 {
                     Serilog.Log.Error(ex, "{Class} {CatchId}", "ModInit", "id_s32ur4xv");
                 }

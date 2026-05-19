@@ -47,7 +47,7 @@ public class KinoPubController : BaseOnlineController<ModuleConf>
         if (string.IsNullOrWhiteSpace(code))
         {
             string uri = $"{init.host}/oauth2/device?grant_type=device_code&client_id=xbmc&client_secret=cgg3gtifu46urtfp2zp1nqtba0k2ezxh";
-            var token_request = await Http.Post<JObject>(uri, "", httpversion: init.httpversion, proxy: proxy, headers: httpHeaders(init));
+            var token_request = await Http.Post<JObject>(uri, "", httpversion: init.httpversion, proxy: proxy, headers: headers);
 
             if (token_request == null)
                 return ContentTo($"нет доступа к {init.host}");
@@ -63,14 +63,14 @@ public class KinoPubController : BaseOnlineController<ModuleConf>
         else
         {
             string uri = $"{init.host}/oauth2/device?grant_type=device_token&client_id=xbmc&client_secret=cgg3gtifu46urtfp2zp1nqtba0k2ezxh&code={code}";
-            var device_token = await Http.Post<JObject>(uri, "", httpversion: init.httpversion, proxy: proxy, headers: httpHeaders(init));
+            var device_token = await Http.Post<JObject>(uri, "", httpversion: init.httpversion, proxy: proxy, headers: headers);
             if (device_token == null || string.IsNullOrWhiteSpace(device_token.Value<string>("access_token")))
                 return LocalRedirect("/lite/kinopubpro");
 
             if (!string.IsNullOrEmpty(name))
             {
                 uri = $"{init.host}/v1/device/notify?access_token={device_token.Value<string>("access_token")}";
-                await Http.Post(uri, $"&title={name}", httpversion: init.httpversion, proxy: proxy, headers: httpHeaders(init));
+                await Http.Post(uri, $"&title={name}", httpversion: init.httpversion, proxy: proxy, headers: headers);
             }
 
             return ContentTo("Добавьте в init.conf<br><br>\"KinoPub\": {<br>&nbsp;&nbsp;\"enable\": true,<br>&nbsp;&nbsp;\"token\": \"" + device_token.Value<string>("access_token") + "\"<br>}");

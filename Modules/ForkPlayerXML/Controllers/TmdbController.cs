@@ -1,6 +1,5 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
-using Newtonsoft.Json.Linq;
 using Shared;
 using Shared.Services;
 using System;
@@ -12,13 +11,6 @@ namespace ForkXML;
 
 public class TmdbController : BaseController
 {
-    class TmdbListCache
-    {
-        public List<TmdbMovie> movies { get; set; }
-
-        public int total_pages { get; set; }
-    }
-
     [HttpGet]
     [Route("fxml/tmdb")]
     async public Task<ActionResult> Index(string cat, string sort, int page = 1)
@@ -30,22 +22,13 @@ public class TmdbController : BaseController
         string additionalArgs = AdditionalArgs();
         string memkey = $"forkxml:tmdb:list:{cat}:{sort}:{page}{additionalArgs}";
 
-        if (!memoryCache.TryGetValue(memkey, out TmdbListCache cache) || cache == null)
+        if (!memoryCache.TryGetValue(memkey, out TmdbList cache) || cache == null)
         {
-            JObject root = await Http.Get<JObject>(DoramaDiscoverUrl(sort, page));
-
-            if (root == null || !root.ContainsKey("results"))
+            var root = await Http.Get<TmdbList>(DoramaDiscoverUrl(sort, page));
+            if (root?.results == null || root.results.Count == 0)
                 return BadRequest();
 
-            cache = new TmdbListCache()
-            {
-                movies = root.Value<JArray>("results")?.ToObject<List<TmdbMovie>>(),
-                total_pages = root.Value<int?>("total_pages") ?? 0
-            };
-
-            if (cache.movies == null || cache.movies.Count == 0)
-                return BadRequest();
-
+            cache = root;
             memoryCache.Set(memkey, cache, DateTime.Now.AddMinutes(5));
         }
 
@@ -61,19 +44,19 @@ public class TmdbController : BaseController
         };
         var playlists = new List<ForkPlaylistItem>();
 
-        foreach (var movie in cache.movies)
+        foreach (var movie in cache.results)
         {
             string title = movie.title ?? movie.name;
             string original_title = movie.original_title ?? movie.original_name;
             string end_title = string.IsNullOrEmpty(original_title) ? title : $"{title} / {original_title}";
             int serial = string.IsNullOrEmpty(movie.title ?? movie.original_title) ? 1 : 0;
 
-            string args = $"id={movie.id}&tmdb_id={movie.id}&imdb_id={movie.imdb_id}&kinopoisk_id={movie.kinopoisk_id}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&serial={serial}&original_language={movie.original_language}&year={(movie.release_date ?? movie.first_air_date)?.Split("-")?[0]}";
+            string args = $"id={movie.id}&source=tmdb&external_ids=true&imdb_id={movie.imdb_id}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&serial={serial}&original_language={movie.original_language}&year={(movie.release_date ?? movie.first_air_date)?.Split("-")?[0]}";
 
             playlists.Add(new ForkPlaylistItem()
             {
                 title = title ?? original_title,
-                description = Description(movie, end_title),
+                description = Utilities.Description(movie, end_title),
                 logo_30x30 = Icon.Folder,
                 playlist_url = $"{host}/lite/events?{args}",
             });
@@ -175,69 +158,65 @@ public class TmdbController : BaseController
         return url + additionalArgs;
     }
 
-    static string SortTitle(string sort)
-        => sort switch
-        {
-            "now_playing" => "сейчас смотрят",
-            "update" => "новые серии",
-            "ongoing" => "онгоинги",
-            "top" => "популярное",
-            "rated" => "с высоким рейтингом",
-            "latest" => "последнее добавление",
-            "now" => "новинки этого года",
-            _ => "выбрать"
-        };
+    static string SortTitle(string sort) => sort switch
+    {
+        "now_playing" => "сейчас смотрят",
+        "update" => "новые серии",
+        "ongoing" => "онгоинги",
+        "top" => "популярное",
+        "rated" => "с высоким рейтингом",
+        "latest" => "последнее добавление",
+        "now" => "новинки этого года",
+        _ => "выбрать"
+    };
 
     static List<ForkPlaylistItem> SortMenu(string uri, string cat, int page, string additionalArgs)
         => new List<ForkPlaylistItem>()
+    {
+        new ForkPlaylistItem()
         {
-            new ForkPlaylistItem()
-            {
-                title = "Сейчас смотрят",
-                playlist_url = ListUrl(uri, cat, "now_playing", page, additionalArgs),
-                logo_30x30 = Icon.Folder
-            },
-            new ForkPlaylistItem()
-            {
-                title = "Новые серии",
-                playlist_url = ListUrl(uri, cat, "update", page, additionalArgs),
-                logo_30x30 = Icon.Folder
-            },
-            new ForkPlaylistItem()
-            {
-                title = "Онгоинги",
-                playlist_url = ListUrl(uri, cat, "ongoing", page, additionalArgs),
-                logo_30x30 = Icon.Folder
-            },
-            new ForkPlaylistItem()
-            {
-                title = "Популярное",
-                playlist_url = ListUrl(uri, cat, "top", page, additionalArgs),
-                logo_30x30 = Icon.Folder
-            },
-            new ForkPlaylistItem()
-            {
-                title = "Последнее добавление",
-                playlist_url = ListUrl(uri, cat, "latest", page, additionalArgs),
-                logo_30x30 = Icon.Folder
-            },
-            new ForkPlaylistItem()
-            {
-                title = "Новинки этого года",
-                playlist_url = ListUrl(uri, cat, "now", page, additionalArgs),
-                logo_30x30 = Icon.Folder
-            },
-            new ForkPlaylistItem()
-            {
-                title = "С высоким рейтингом",
-                playlist_url = ListUrl(uri, cat, "rated", page, additionalArgs),
-                logo_30x30 = Icon.Folder
-            }
-        };
+            title = "Сейчас смотрят",
+            playlist_url = ListUrl(uri, cat, "now_playing", page, additionalArgs),
+            logo_30x30 = Icon.Folder
+        },
+        new ForkPlaylistItem()
+        {
+            title = "Новые серии",
+            playlist_url = ListUrl(uri, cat, "update", page, additionalArgs),
+            logo_30x30 = Icon.Folder
+        },
+        new ForkPlaylistItem()
+        {
+            title = "Онгоинги",
+            playlist_url = ListUrl(uri, cat, "ongoing", page, additionalArgs),
+            logo_30x30 = Icon.Folder
+        },
+        new ForkPlaylistItem()
+        {
+            title = "Популярное",
+            playlist_url = ListUrl(uri, cat, "top", page, additionalArgs),
+            logo_30x30 = Icon.Folder
+        },
+        new ForkPlaylistItem()
+        {
+            title = "Последнее добавление",
+            playlist_url = ListUrl(uri, cat, "latest", page, additionalArgs),
+            logo_30x30 = Icon.Folder
+        },
+        new ForkPlaylistItem()
+        {
+            title = "Новинки этого года",
+            playlist_url = ListUrl(uri, cat, "now", page, additionalArgs),
+            logo_30x30 = Icon.Folder
+        },
+        new ForkPlaylistItem()
+        {
+            title = "С высоким рейтингом",
+            playlist_url = ListUrl(uri, cat, "rated", page, additionalArgs),
+            logo_30x30 = Icon.Folder
+        }
+    };
 
     static bool HasNextPage(int page, int count, int totalPages)
         => totalPages > 0 ? page < totalPages : count == 20;
-
-    static string Description(TmdbMovie movie, string end_title)
-        => $@"<div class=""description"" style=""display: block; top: 38px; max-height: 1042px;""><div id=""title"" style=""color: #699bbb;""><strong>{end_title}</strong></div><br><div id=""cover_div"" style=""float: left; margin: 0px 1.8% 0px 0px;""><img id=""cover_img"" style=""width: 184px; "" src=""http://image.tmdb.org/t/p/w200/{movie.poster_path}""></div><div><strong><span style=""color: #3974d0;"">Выход:</span></strong> {(movie.release_date ?? movie.first_air_date)?.Split("-")[0]}<br><strong><span style=""color: #339966;"">Качество:</span></strong> {movie.release_quality}<br><div id=""footer"" style=""clear: both;  ""><br>{movie.overview}</div></div></div>";
 }

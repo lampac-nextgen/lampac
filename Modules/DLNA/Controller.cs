@@ -281,7 +281,7 @@ public class DLNAController : BaseController
                             {
                                 await i.StopAsync(TimeSpan.FromSeconds(20));
                             }
-                            catch (System.Exception ex)
+                            catch (Exception ex)
                             {
                                 Log.Error(ex, "CatchId={CatchId}", "id_vo4qvlko");
                             }
@@ -297,7 +297,7 @@ public class DLNAController : BaseController
                             {
                                 await i.StopAsync(TimeSpan.FromSeconds(120));
                             }
-                            catch (System.Exception ex)
+                            catch (Exception ex)
                             {
                                 Log.Error(ex, "CatchId={CatchId}", "id_f74nfczr");
                             }
@@ -315,7 +315,7 @@ public class DLNAController : BaseController
                         {
                             torrentEngine.Torrents.Remove(item);
                         }
-                        catch (System.Exception ex)
+                        catch (Exception ex)
                         {
                             Log.Error(ex, "CatchId={CatchId}", "id_ozpje9tt");
                         }
@@ -324,7 +324,7 @@ public class DLNAController : BaseController
                         {
                             await torrentEngine.RemoveAsync(item);
                         }
-                        catch (System.Exception ex)
+                        catch (Exception ex)
                         {
                             Log.Error(ex, "CatchId={CatchId}", "id_opm05p7t");
                         }
@@ -338,7 +338,7 @@ public class DLNAController : BaseController
                     {
                         await torrentEngine.StopAllAsync();
                     }
-                    catch (System.Exception ex)
+                    catch (Exception ex)
                     {
                         Log.Error(ex, "CatchId={CatchId}", "id_sb61hmlz");
                     }
@@ -348,7 +348,7 @@ public class DLNAController : BaseController
                 }
             }
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             Log.Error(ex, "CatchId={CatchId}", "id_9abldvu9");
         }
@@ -366,10 +366,9 @@ public class DLNAController : BaseController
         {
             var handler = new System.Net.Http.HttpClientHandler()
             {
-                AllowAutoRedirect = false
+                AllowAutoRedirect = false,
+                ServerCertificateCustomValidationCallback = Http.AlwaysAllowCertificate
             };
-
-            handler.ServerCertificateCustomValidationCallback += (sender, cert, chain, sslPolicyErrors) => true;
 
             using (var client = new System.Net.Http.HttpClient(handler))
             {
@@ -697,7 +696,7 @@ public class DLNAController : BaseController
         {
             IO.File.Delete($"{dlna_path}/{path}");
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             Log.Error(ex, "CatchId={CatchId}", "id_p39kslrp");
         }
@@ -706,7 +705,7 @@ public class DLNAController : BaseController
         {
             Directory.Delete($"{dlna_path}/{path}", true);
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             Log.Error(ex, "CatchId={CatchId}", "id_k4f5xgy3");
         }
@@ -840,7 +839,7 @@ public class DLNAController : BaseController
                 try { await removeClientEngine(hash); } catch { }
             }
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             Serilog.Log.Error(ex, "CatchId={CatchId}", "id_a1cad0cd");
             return Json(new { error = ex.ToString() });

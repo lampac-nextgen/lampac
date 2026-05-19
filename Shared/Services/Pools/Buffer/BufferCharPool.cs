@@ -7,17 +7,23 @@ namespace Shared.Services.Pools;
 public sealed class BufferCharPool : IDisposable
 {
     #region pool
-    public static readonly int sizeSmall = 1024 * 1024; // 2Mb
+    public const int sizeExtraSmall = 32 * 1024; // 64kb
+    static readonly ConcurrentBag<NativeBuffer<char>> _poolExtraSmall = new();
+
+    public const int sizeSmall = 1024 * 1024; // 2Mb
     static readonly ConcurrentBag<NativeBuffer<char>> _poolSmall = new();
 
-    public static readonly int sizeMedium = 4 * 1024 * 1024; // 8Mb
+    public const int sizeMedium = 4 * 1024 * 1024; // 8Mb
     static readonly ConcurrentBag<NativeBuffer<char>> _poolMedium = new();
 
-    public static readonly int sizeLarge = 10 * 1024 * 1024; // 20Mb
+    public const int sizeLarge = 10 * 1024 * 1024; // 20Mb
     static readonly ConcurrentBag<NativeBuffer<char>> _poolLarge = new();
     #endregion
 
     #region OpenStat
+    public static int FreeExtraSmall
+        => _poolExtraSmall.Count;
+
     public static int FreeSmall
         => _poolSmall.Count;
 
@@ -41,11 +47,17 @@ public sealed class BufferCharPool : IDisposable
     {
         var pool = CoreInit.conf.pool;
 
-        if (CoreInit.conf.lowMemoryMode)
+        if (sizeExtraSmall >= capacity)
         {
-            if (sizeSmall >= capacity && pool.BufferCharSmallMaxCount > _poolSmall.Count)
+            _typepool = 1;
+            if (!_poolExtraSmall.TryTake(out _nbuf))
+                _nbuf = new NativeBuffer<char>(sizeExtraSmall);
+        }
+        else if (sizeSmall >= capacity)
+        {
+            if (pool.BufferCharSmallMaxCount > _poolSmall.Count)
             {
-                _typepool = 1;
+                _typepool = 2;
                 if (!_poolSmall.TryTake(out _nbuf))
                     _nbuf = new NativeBuffer<char>(sizeSmall);
             }
@@ -54,23 +66,24 @@ public sealed class BufferCharPool : IDisposable
                 _nbuf = new NativeBuffer<char>(capacity);
             }
         }
-        else
+        else if (sizeMedium >= capacity)
         {
-            if (sizeSmall >= capacity && pool.BufferCharSmallMaxCount > _poolSmall.Count)
+            if (pool.BufferCharMediumMaxCount > _poolMedium.Count)
             {
-                _typepool = 1;
-                if (!_poolSmall.TryTake(out _nbuf))
-                    _nbuf = new NativeBuffer<char>(sizeSmall);
-            }
-            else if (sizeMedium >= capacity && pool.BufferCharMediumMaxCount > _poolMedium.Count)
-            {
-                _typepool = 2;
+                _typepool = 3;
                 if (!_poolMedium.TryTake(out _nbuf))
                     _nbuf = new NativeBuffer<char>(sizeMedium);
             }
-            else if (sizeLarge >= capacity && pool.BufferCharLargeMaxCount > _poolLarge.Count)
+            else
             {
-                _typepool = 3;
+                _nbuf = new NativeBuffer<char>(capacity);
+            }
+        }
+        else if (sizeLarge >= capacity)
+        {
+            if (CoreInit.conf.lowMemoryMode == false && pool.BufferCharLargeMaxCount > _poolLarge.Count)
+            {
+                _typepool = 4;
                 if (!_poolLarge.TryTake(out _nbuf))
                     _nbuf = new NativeBuffer<char>(sizeLarge);
             }
@@ -78,6 +91,10 @@ public sealed class BufferCharPool : IDisposable
             {
                 _nbuf = new NativeBuffer<char>(capacity);
             }
+        }
+        else
+        {
+            _nbuf = new NativeBuffer<char>(capacity);
         }
     }
 
@@ -106,12 +123,15 @@ public sealed class BufferCharPool : IDisposable
         switch (_typepool)
         {
             case 1:
-                _poolSmall.Add(_nbuf);
+                _poolExtraSmall.Add(_nbuf);
                 break;
             case 2:
-                _poolMedium.Add(_nbuf);
+                _poolSmall.Add(_nbuf);
                 break;
             case 3:
+                _poolMedium.Add(_nbuf);
+                break;
+            case 4:
                 _poolLarge.Add(_nbuf);
                 break;
             default:

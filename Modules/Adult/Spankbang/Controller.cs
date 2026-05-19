@@ -50,7 +50,12 @@ public class SpankbangController : BaseSisiController
             {
                 var headers = httpHeaders(init);
 
-                string html = await PlaywrightBrowser.Get(init, init.cors(url, headers, requestInfo), headers, proxy_data);
+                string html = await PlaywrightBrowser.Get(
+                    init,
+                    init.cors(url, headers, requestInfo),
+                    headers,
+                    proxy_data
+                );
 
                 playlists = SpankbangTo.Playlist("sbg/vidosik", html);
             }
@@ -97,7 +102,11 @@ public class SpankbangController : BaseSisiController
             {
                 var headers = httpHeaders(init);
 
-                string html = await PlaywrightBrowser.Get(init, init.cors(url, headers, requestInfo), headers, proxy_data);
+                string html = await PlaywrightBrowser.Get(init,
+                    init.cors(url, headers, requestInfo),
+                    headers,
+                    proxy_data
+                );
 
                 stream_links = SpankbangTo.StreamLinks("sbg/vidosik", html);
             }

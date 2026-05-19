@@ -95,7 +95,7 @@ public class StorageController : BaseController
         {
             try
             {
-                using (var byteBuf = new BufferBytePool(BufferBytePool.sizeSmall))
+                using (var byteBuf = new BufferPool())
                 {
                     int bytesRead;
                     var memBuf = byteBuf.Memory;
@@ -228,7 +228,7 @@ public class StorageController : BaseController
         {
             try
             {
-                using (var byteBuf = new BufferBytePool(BufferBytePool.sizeSmall))
+                using (var byteBuf = new BufferPool())
                 {
                     int bytesRead;
                     var memBuf = byteBuf.Memory;

@@ -106,7 +106,7 @@ public class SakhTVController : BaseOnlineController<ModuleConf>
 
         if (string.IsNullOrEmpty(orid))
         {
-            var search = await InvokeCacheResult<SearchRoot>($"sakhtv:search:{title}:{original_title}", cacheTime(180), async e =>
+            var search = await InvokeCacheResult<SearchRoot>($"sakhtv:search:{title}:{original_title}", 180, async e =>
             {
                 var root = await httpHydra.Get<SearchRoot>($"{init.host}/v2/common/search?query={HttpUtility.UrlEncode(original_title)}&amount=20",
                     useDefaultHeaders: false,
@@ -146,7 +146,7 @@ public class SakhTVController : BaseOnlineController<ModuleConf>
                 orid = idResult.id;
             }
 
-            var tvshow = await InvokeCacheResult<Season[]>($"sakhtv:tvshow:{orid}", cacheTime(90), async e =>
+            var tvshow = await InvokeCacheResult<Season[]>($"sakhtv:tvshow:{orid}", 90, async e =>
             {
                 var root = await httpHydra.Get<TvshowDetails>($"{init.host}/v1/serials/get?tvshow={orid}",
                     useDefaultHeaders: false,
@@ -193,7 +193,7 @@ public class SakhTVController : BaseOnlineController<ModuleConf>
                     return OnError();
 
                 #region episodes
-                var episodes = await InvokeCacheResult<EpisodeDetails[]>($"sakhtv:episodes:{seasonId}", cacheTime(90), async e =>
+                var episodes = await InvokeCacheResult<EpisodeDetails[]>($"sakhtv:episodes:{seasonId}", 90, async e =>
                 {
                     var root = await httpHydra.Get<EpisodeDetails[]>($"{init.host}/v1/serials/get_episodes?season_id={seasonId}",
                         addheaders: bearer,
@@ -281,7 +281,7 @@ public class SakhTVController : BaseOnlineController<ModuleConf>
                 orid = idResult.id;
             }
 
-            var cache = await InvokeCacheResult<Source>($"sakhtv:movies:{orid}:{init.token}", cacheTime(20), async e =>
+            var cache = await InvokeCacheResult<Source>($"sakhtv:movies:{orid}:{init.token}", 20, async e =>
             {
                 var root = await httpHydra.Get<MovieDetails>($"{init.host}/v2/movie/{orid}",
                     useDefaultHeaders: false,
@@ -333,7 +333,7 @@ public class SakhTVController : BaseOnlineController<ModuleConf>
         }
 
     rhubFallback:
-        var cache = await InvokeCacheResult<Episode[]>($"sakhtv:video:{season_id}:{rg}:{init.token}", cacheTime(20), async e =>
+        var cache = await InvokeCacheResult<Episode[]>($"sakhtv:video:{season_id}:{rg}:{init.token}", 20, async e =>
         {
             var root = await httpHydra.Get<Episode[]>($"{init.host}/v1/serial/watch/get_playlist?season_id={season_id}&rg={rg}",
                 useDefaultHeaders: false,

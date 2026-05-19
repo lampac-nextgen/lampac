@@ -12,9 +12,10 @@ public static class OwnerTo
             if (encoding == null || msm == null || msm.Length == 0)
                 return;
 
-            int charCount = encoding.GetMaxCharCount((int)msm.Length);
-            if (charCount <= 0)
-                return;
+            // ASCII: 1 byte -> 1 char
+            // UTF-8: 2 byte -> 1 char
+            // msm.Length выше или равен charCount
+            int charCount = (int)msm.Length;
 
             using (var nbuf = new BufferCharPool(charCount))
             {
@@ -24,7 +25,7 @@ public static class OwnerTo
                     spanAction(nbuf.Span.Slice(0, actual));
             }
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             Serilog.Log.Error(ex, "{Class} {CatchId}", "OwnerTo", "id_1hrr99su");
         }
@@ -53,11 +54,7 @@ public static class OwnerTo
             int totalChars = 0;
             bool reachedEof = false;
 
-            int bufferSize = CoreInit.conf.lowMemoryMode
-                ? 1024
-                : PoolInvk.bufferSize;
-
-            Span<byte> buff = _thread ??= new byte[bufferSize];
+            Span<byte> buff = _thread ??= new byte[CoreInit.conf.lowMemoryMode ? 4096 : PoolInvk.bufferSize];
 
             while (totalChars < destination.Length)
             {

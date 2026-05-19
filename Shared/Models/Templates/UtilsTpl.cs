@@ -42,14 +42,14 @@ public static class UtilsTpl
         if (utf8.IsEmpty)
             return;
 
-        int charCount = Encoding.UTF8.GetMaxCharCount(utf8.Length);
-        if (charCount > BufferCharPool.sizeMedium)
-            charCount = Encoding.UTF8.GetCharCount(utf8);
+        // UTF-8: 2 byte -> 1 char
+        // структурные символы ({},": ), цифры, латиница и escape-последовательности — это ASCII, то есть 1 байт на 1 char
+        // utf8.Length выше или равен charCount
+        int charCount = utf8.Length;
 
         using (var charBuf = new BufferCharPool(charCount))
         {
-            int charsWritten = Encoding.UTF8.GetChars(utf8, charBuf.Span);
-            if (charsWritten > 0)
+            if (Encoding.UTF8.TryGetChars(utf8, charBuf.Span, out int charsWritten) && charsWritten > 0)
                 sb.Append(charBuf.Span.Slice(0, charsWritten));
         }
     }

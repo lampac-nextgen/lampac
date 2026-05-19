@@ -1,6 +1,5 @@
-using Microsoft.AspNetCore.Mvc;
+﻿using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
-using Newtonsoft.Json.Linq;
 using Shared;
 using Shared.Services;
 using System;
@@ -12,152 +11,164 @@ namespace ForkXML;
 
 public class CubController : BaseController
 {
-    class CubListCache
-    {
-        public List<TmdbMovie> movies { get; set; }
-
-        public int total_pages { get; set; }
-    }
-
     [HttpGet]
     [Route("fxml/cub")]
-    async public Task<ActionResult> Index(string search, string cat, string sort, int page = 1)
+    async public Task<ActionResult> Index(string search, string cat, string sort, int without_genres, int genre, int page = 1)
     {
-        string uri = $"{host}/fxml/cub";
-        string additionalArgs = AdditionalArgs();
+        string memkey = $"forkxml:list:{search}:{cat}:{sort}:{without_genres}:{genre}:{page}";
 
-        string memkey = $"forkxml:list:{search}:{cat}:{sort}:{page}{additionalArgs}";
-
-        if (!memoryCache.TryGetValue(memkey, out CubListCache cache) || cache == null)
+        if (!memoryCache.TryGetValue(memkey, out TmdbList cache))
         {
-            JObject root = await Http.Get<JObject>("http://tmdb.cub.red/" + $"?query={HttpUtility.UrlEncode(search)}&cat={cat}&sort={sort}&page={page}&results=60{additionalArgs}");
-
-            if (root == null || !root.ContainsKey("results"))
+            var root = await Http.Get<TmdbList>("http://tmdb.cub.red/" + $"?query={HttpUtility.UrlEncode(search)}&cat={cat}&sort={sort}&without_genres={without_genres}&genre={genre}&page={page}&results=60");
+            if (root?.results == null || root.results.Count == 0)
                 return BadRequest();
 
-            cache = new CubListCache()
-            {
-                movies = root.Value<JArray>("results")?.ToObject<List<TmdbMovie>>(),
-                total_pages = root.Value<int?>("total_pages") ?? 0
-            };
-
-            if (cache.movies == null || cache.movies.Count == 0)
-                return BadRequest();
-
-            memoryCache.Set(memkey, cache, DateTime.Now.AddMinutes(5));
+            cache = root;
+            memoryCache.Set(memkey, root, DateTime.Now.AddMinutes(5));
         }
 
-        var menu = new List<ForkPlaylistItem>();
         var playlists = new List<ForkPlaylistItem>();
 
-        foreach (var movie in cache.movies)
+        foreach (var movie in cache.results)
         {
             string title = movie.title ?? movie.name;
             string original_title = movie.original_title ?? movie.original_name;
             string end_title = string.IsNullOrEmpty(original_title) ? title : $"{title} / {original_title}";
             int serial = string.IsNullOrEmpty(movie.title ?? movie.original_title) ? 1 : 0;
 
-            string args = $"id={movie.id}&tmdb_id={movie.id}&imdb_id={movie.imdb_id}&kinopoisk_id={movie.kinopoisk_id}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&serial={serial}&original_language={movie.original_language}&year={(movie.release_date ?? movie.first_air_date)?.Split("-")?[0]}";
+            string release_date = movie.release_date ?? movie.first_air_date;
+            if (release_date != null)
+                release_date = release_date.Split("-")[0];
 
             playlists.Add(new ForkPlaylistItem()
             {
                 title = title ?? original_title,
-                description = Description(movie, end_title),
+                description = Utilities.Description(movie, end_title),
                 logo_30x30 = Icon.Folder,
-                playlist_url = $"{host}/lite/events?{args}",
+                playlist_url = $"{host}/lite/events?id={movie.id}&imdb_id={movie.imdb_id}&kinopoisk_id={movie.kinopoisk_id}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&serial={serial}&original_language={movie.original_language}&year={release_date}",
             });
         }
 
-        if (playlists.Count == 0)
-        {
-            if (string.IsNullOrWhiteSpace(search))
-                return BadRequest();
-        }
-
-        if (string.IsNullOrEmpty(search) && sort != "releases")
-        {
-            menu.Add(new ForkPlaylistItem()
-            {
-                title = $"Сортировка: {SortTitle(sort)}",
-                playlist_url = "submenu",
-                submenu = SortMenu(uri, search, cat, page, additionalArgs),
-                logo_30x30 = Icon.Filter
-            });
-        }
+        string uri = $"{host}/fxml/cub";
 
         return Json(new
         {
             title = "Lampac",
             align = "left",
-            menu = menu,
+            menu = BuilderMenu(uri, search, cat, sort, without_genres, genre, page),
             channels = playlists,
-            next_page_url = HasNextPage(playlists.Count) ? ListUrl(uri, search, cat, sort, page + 1, additionalArgs) : null
+            next_page_url = cache.total_pages > cache.page
+                ? $"{uri}?query={HttpUtility.UrlEncode(search)}&cat={cat}&sort={sort}&without_genres={without_genres}&genre={genre}&page={page + 1}"
+                : null
         });
     }
 
-    string AdditionalArgs()
+
+    static List<ForkPlaylistItem> BuilderMenu(string uri, string search, string cat, string sort, int without_genres, int genre, int page)
     {
-        string additionalArgs = "";
+        var menu = new List<ForkPlaylistItem>();
 
-        foreach (var q in Request.Query)
+        if (string.IsNullOrEmpty(search) && sort != "releases")
         {
-            if (q.Key == "search" || q.Key == "cat" || q.Key == "sort" || q.Key == "page")
-                continue;
+            #region Сортировка
+            var search_menu = new List<ForkPlaylistItem>()
+            {
+                new ForkPlaylistItem()
+                {
+                    title = "Новинки",
+                    playlist_url = $"{uri}?cat={cat}&without_genres={without_genres}&genre={genre}&page={page}&sort=now",
+                    logo_30x30 = Icon.Folder
+                },
+                new ForkPlaylistItem()
+                {
+                    title = "Популярное",
+                    playlist_url = $"{uri}?cat={cat}&without_genres={without_genres}&genre={genre}&page={page}&sort=top",
+                    logo_30x30 = Icon.Folder
+                },
+                new ForkPlaylistItem()
+                {
+                    title = "Cейчас смотрят",
+                    playlist_url = $"{uri}?cat={cat}&without_genres={without_genres}&genre={genre}&page={page}&sort=now_playing",
+                    logo_30x30 = Icon.Folder
+                }
+            };
 
-            foreach (var value in q.Value)
-                additionalArgs += $"&{HttpUtility.UrlEncode(q.Key)}={HttpUtility.UrlEncode(value)}";
+            if (cat == "tv")
+            {
+                search_menu.Add(new ForkPlaylistItem()
+                {
+                    title = "Онгоинги",
+                    playlist_url = $"{uri}?cat={cat}&without_genres={without_genres}&genre={genre}&page={page}&sort=airing",
+                    logo_30x30 = Icon.Folder
+                });
+            }
+
+            menu.Add(new ForkPlaylistItem()
+            {
+                title = $"Сортировка: {SortName(sort)}",
+                playlist_url = "submenu",
+                submenu = search_menu,
+                logo_30x30 = Icon.Filter
+            });
+            #endregion
+
+            #region Жанр
+            var genres_menu = new List<ForkPlaylistItem>();
+
+            foreach (var g in genre_db)
+            {
+                if (g.Key == 16 || g.Key == 99)
+                    continue;
+
+                genres_menu.Add(new ForkPlaylistItem()
+                {
+                    title = g.Value,
+                    playlist_url = $"{uri}?cat={cat}&without_genres={without_genres}&sort={sort}&page={page}&genre={g.Key}",
+                    logo_30x30 = Icon.Folder
+                });
+            }
+
+            menu.Add(new ForkPlaylistItem()
+            {
+                title = $"Жанр: {(genre == 0 ? "выбрать" : genre_db[genre])}",
+                playlist_url = "submenu",
+                submenu = genres_menu,
+                logo_30x30 = Icon.Filter
+            });
+            #endregion
         }
 
-        return additionalArgs;
+        return menu;
     }
 
-    static string ListUrl(string uri, string search, string cat, string sort, int page, string additionalArgs)
+    static string SortName(string sort) => sort switch
     {
-        string url = $"{uri}?search={HttpUtility.UrlEncode(search)}&cat={HttpUtility.UrlEncode(cat)}&sort={HttpUtility.UrlEncode(sort)}&page={page}";
-        return url + additionalArgs;
-    }
+        "now_playing" => "сейчас смотрят",
+        "airing" => "онгоинги",
+        "top" => "популярное",
+        "now" => "новинки",
+        _ => "выбрать"
+    };
 
-    static string SortTitle(string sort)
-        => sort switch
-        {
-            "now_playing" => "сейчас смотрят",
-            "update" => "новые серии",
-            "ongoing" => "онгоинги",
-            "top" => "популярное",
-            "rated" => "с высоким рейтингом",
-            "latest" => "последнее добавление",
-            "now" => "новинки этого года",
-            _ => "выбрать"
-        };
-
-    static List<ForkPlaylistItem> SortMenu(string uri, string search, string cat, int page, string additionalArgs)
+    static IReadOnlyDictionary<int, string> genre_db = new Dictionary<int, string>()
     {
-        return new List<ForkPlaylistItem>()
-        {
-            new ForkPlaylistItem()
-            {
-                title = "Новинки",
-                playlist_url = ListUrl(uri, search, cat, "now", page, additionalArgs),
-                logo_30x30 = Icon.Folder
-            },
-            new ForkPlaylistItem()
-            {
-                title = "Популярное",
-                playlist_url = ListUrl(uri, search, cat, "top", page, additionalArgs),
-                logo_30x30 = Icon.Folder
-            },
-            new ForkPlaylistItem()
-            {
-                title = "Сейчас смотрят",
-                playlist_url = ListUrl(uri, search, cat, "now_playing", page, additionalArgs),
-                logo_30x30 = Icon.Folder
-            }
-        };
-    }
-
-    static bool HasNextPage(int count) => count == 60;
-
-
-    static string Description(TmdbMovie movie, string end_title)
-        => $@"<div class=""description"" style=""display: block; top: 38px; max-height: 1042px;""><div id=""title"" style=""color: #699bbb;""><strong>{end_title}</strong></div><br><div id=""cover_div"" style=""float: left; margin: 0px 1.8% 0px 0px;""><img id=""cover_img"" style=""width: 184px; "" src=""http://image.tmdb.org/t/p/w200/{movie.poster_path}""></div><div><strong><span style=""color: #3974d0;"">Выход:</span></strong> {(movie.release_date ?? movie.first_air_date)?.Split("-")[0]}<br><strong><span style=""color: #339966;"">Качество:</span></strong> {movie.release_quality}<br><div id=""footer"" style=""clear: both;  ""><br>{movie.overview}</div></div></div>";
+        [28] = "боевик",
+        [12] = "приключения",
+        [16] = "мультфильм",
+        [35] = "комедия",
+        [80] = "криминал",
+        [99] = "документальный",
+        [18] = "драма",
+        [10751] = "семейный",
+        [14] = "фэнтези",
+        [36] = "история",
+        [27] = "ужасы",
+        [10402] = "музыка",
+        [9648] = "детектив",
+        [10749] = "мелодрама",
+        [878] = "фантастика",
+        [53] = "триллер",
+        [10752] = "военный",
+        [37] = "вестерн"
+    };
 }

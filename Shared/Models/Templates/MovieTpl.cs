@@ -4,7 +4,7 @@ using System.Text.Json.Serialization;
 
 namespace Shared.Models.Templates;
 
-public record MovieTplItem(string voiceOrQuality, string link, string method, string stream, StreamQualityTpl streamquality, SubtitleTpl subtitles, string voice_name, string year, string details, string quality, VastConf vast, List<HeadersModel> headers, int? hls_manifest_timeout, SegmentTpl segments, string subtitles_call);
+public record MovieTplItem(string voiceOrQuality, string link, string method, string stream, StreamQualityTpl streamquality, SubtitleTpl subtitles, string voice_name, string year, string details, string quality, VastConf vast, IReadOnlyList<HeadersModel> headers, int? hls_manifest_timeout, SegmentTpl segments, string subtitles_call);
 
 public class MovieTpl : ITplResult
 {
@@ -32,7 +32,7 @@ public class MovieTpl : ITplResult
     }
 
 
-    public void Append(string voiceOrQuality, string link, string method = "play", string stream = null, StreamQualityTpl streamquality = null, SubtitleTpl subtitles = null, string voice_name = null, string year = null, string details = null, string quality = null, VastConf vast = null, List<HeadersModel> headers = null, int? hls_manifest_timeout = null, SegmentTpl segments = null, string subtitles_call = null)
+    public void Append(string voiceOrQuality, string link, string method = "play", string stream = null, StreamQualityTpl streamquality = null, SubtitleTpl subtitles = null, string voice_name = null, string year = null, string details = null, string quality = null, VastConf vast = null, IReadOnlyList<HeadersModel> headers = null, int? hls_manifest_timeout = null, SegmentTpl segments = null, string subtitles_call = null)
     {
         if (!string.IsNullOrEmpty(voiceOrQuality) && !string.IsNullOrEmpty(link))
             data.Add(new MovieTplItem(voiceOrQuality, link, method, stream, streamquality, subtitles, voice_name, year, details, quality, vast, headers, hls_manifest_timeout, segments, subtitles_call));

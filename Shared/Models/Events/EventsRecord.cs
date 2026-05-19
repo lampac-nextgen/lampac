@@ -20,15 +20,15 @@ public record EventMiddleware(bool first, HttpContext httpContext);
 
 public record EventBadInitialization(BaseSettings init, bool? rch, RequestModel requestInfo, string host, HttpRequest request, HttpContext httpContext);
 
-public record EventSisiChannels(BaseController controller, HttpContext httpContext, IList<ChannelItem> channels);
+public record EventSisiChannels(BaseController controller, HttpContext httpContext, IReadOnlyList<ChannelItem> channels);
 
-public record EventSisiPlaylistResult(BaseController controller, BaseSettings init, HttpContext httpContext, IList<PlaylistItem> playlists, bool singleCache, IList<MenuItem> menu, int total_pages, List<HeadersModel> headers_stream, List<HeadersModel> headers_image);
+public record EventSisiPlaylistResult(BaseController controller, BaseSettings init, HttpContext httpContext, IReadOnlyList<PlaylistItem> playlists, bool singleCache, IReadOnlyList<MenuItem> menu, int total_pages, IReadOnlyList<HeadersModel> headers_stream, IReadOnlyList<HeadersModel> headers_image);
 
-public record EventSisiOnResult(BaseController controller, BaseSettings init, HttpContext httpContext, StreamItem stream_links, List<HeadersModel> headers_stream, List<HeadersModel> headers_image);
+public record EventSisiOnResult(BaseController controller, BaseSettings init, HttpContext httpContext, StreamItem stream_links, IReadOnlyList<HeadersModel> headers_stream, IReadOnlyList<HeadersModel> headers_image);
 
-public record EventSisiBookmarks(BaseController controller, HttpContext httpContext, IList<MenuItem> menu, IList<PlaylistItem> bookmarks, int pg, int pageSize, int total_pages);
+public record EventSisiBookmarks(BaseController controller, HttpContext httpContext, IReadOnlyList<MenuItem> menu, IReadOnlyList<PlaylistItem> bookmarks, int pg, int pageSize, int total_pages);
 
-public record EventSisiHistorys(BaseController controller, HttpContext httpContext, IList<PlaylistItem> historys, int pg, int pageSize);
+public record EventSisiHistorys(BaseController controller, HttpContext httpContext, IReadOnlyList<PlaylistItem> historys, int pg, int pageSize);
 
 public record EventCatalogChannels(BaseController controller, JObject channels, HttpContext httpContext);
 
@@ -40,9 +40,9 @@ public record EventAppReplace(string source, string token, string arg, string ho
 
 public record EventExternalids(string id, string imdb_id, string kinopoisk_id, int serial);
 
-public record EventHostStreamProxy(BaseSettings conf, string uri, List<HeadersModel> headers, WebProxy proxy, RequestModel requestInfo, HttpContext httpContext);
+public record EventHostStreamProxy(BaseSettings conf, string uri, IReadOnlyList<HeadersModel> headers, WebProxy proxy, RequestModel requestInfo, HttpContext httpContext);
 
-public record EventHostImgProxy(RequestModel requestInfo, HttpContext httpContext, string uri, int height, List<HeadersModel> headers, string plugin);
+public record EventHostImgProxy(RequestModel requestInfo, HttpContext httpContext, string uri, int height, IReadOnlyList<HeadersModel> headers, string plugin);
 
 public record EventMyLocalIp(RequestModel requestInfo, HttpRequest request, HttpContext httpContext);
 
@@ -54,7 +54,7 @@ public record EventStreamQualityFirts(IReadOnlyList<StreamQualityDto> data);
 
 public record EventVideoTpl(VideoDto video, HttpContext httpContext);
 
-public record EventOnline(BaseController controller, List<(string name, string url, string plugin, int index)> online, Shared.Models.Module.OnlineEventsModel moduleArgs, JObject kitconf, HttpContext httpContext);
+public record EventOnline(BaseController controller, IReadOnlyList<(string name, string url, string plugin, int index)> online, Shared.Models.Module.OnlineEventsModel moduleArgs, JObject kitconf, HttpContext httpContext);
 
 public record EventOnlineTpl(BaseController controller, BaseSettings init, HttpContext httpContext, bool rjson, ITplResult tpl);
 
@@ -62,13 +62,13 @@ public record EventOnlineApiQuality(string balanser, JObject kitconf);
 
 public record EventHttpHandler(string url, HttpClientHandler handler, WebProxy proxy, CookieContainer cookieContainer);
 
-public record EventHttpHeaders(string url, HttpRequestMessage client, string cookie, string referer, List<HeadersModel> headers, bool useDefaultHeaders);
+public record EventHttpHeaders(string url, HttpRequestMessage client, string cookie, string referer, IReadOnlyList<HeadersModel> headers, bool useDefaultHeaders);
 
 public record EventHttpResponse(string url, HttpClient client, HttpContent data, HttpResponseMessage response, string result);
 
-public record EventPlaywrightHttpResponse(string url, string method, int status, Dictionary<string, string> requestHeaders, Dictionary<string, string> responseHeaders, string result, string error);
+public record EventPlaywrightHttpResponse(string url, string method, int status, IReadOnlyDictionary<string, string> requestHeaders, IReadOnlyDictionary<string, string> responseHeaders, string result, string error);
 
-public record EventProxyApiCreateHttpRequest(ProxyLinkModel decryptLink, string plugin, HttpRequest request, List<HeadersModel> headers, Uri uri, HttpRequestMessage requestMessage);
+public record EventProxyApiCreateHttpRequest(ProxyLinkModel decryptLink, string plugin, HttpRequest request, IReadOnlyList<HeadersModel> headers, Uri uri, HttpRequestMessage requestMessage);
 
 public record EventProxyApiCacheStream(HttpContext httpContext, ProxyLinkModel decryptLink);
 

@@ -95,7 +95,7 @@ public class EbalovoController : BaseSisiController
                         return res.currentUrl;
                     }
 
-                    return await Http.GetLocation(init.cors(location, headers, requestInfo), timeoutSeconds: init.httptimeout, httpversion: init.httpversion, proxy: proxy, headers: httpHeaders(init));
+                    return await Http.GetLocation(init.cors(location, headers, requestInfo), timeoutSeconds: init.httptimeout, httpversion: init.httpversion, proxy: proxy, headers: headers);
                 }
             );
 

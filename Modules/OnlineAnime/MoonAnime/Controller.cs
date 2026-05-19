@@ -302,7 +302,7 @@ public class MoonAnimeController : BaseOnlineController
     {
         try
         {
-            int capacity = Encoding.UTF8.GetByteCount(base64Input);
+            int capacity = Encoding.UTF8.GetMaxByteCount(base64Input.Length);
 
             using (var nbuf = new BufferBytePool(capacity))
             {
@@ -335,7 +335,7 @@ public class MoonAnimeController : BaseOnlineController
         try
         {
             ReadOnlySpan<byte> key = "mAnK"u8;
-            int capacity = Encoding.UTF8.GetByteCount(e);
+            int capacity = Encoding.UTF8.GetMaxByteCount(e.Length);
 
             using (var nbuf = new BufferBytePool(capacity))
             {

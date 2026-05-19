@@ -46,7 +46,7 @@ public class StaticacheWriter
                     if (!_acquired)
                         return;
 
-                    string contentType = httpContext.Response.ContentType.Contains("application/json")
+                    string contentType = httpContext.Response.ContentType.StartsWith("application/json")
                         ? "application/json; charset=utf-8"
                         : "text/html; charset=utf-8";
 

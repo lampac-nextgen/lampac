@@ -14,6 +14,7 @@ using Shared.Models.SISI.OnResult;
 using Shared.Models.Templates;
 using Shared.Services;
 using Shared.Services.Kit;
+using System.Buffers.Text;
 using System.Net;
 using System.Security.Cryptography;
 using System.Text;
@@ -35,14 +36,14 @@ public class BaseController : Controller
     #region hybridCache
     private IHybridCache _hybridCache;
 
-    protected IHybridCache hybridCache
+    public IHybridCache hybridCache
         => _hybridCache ??= HybridCache.Get();
     #endregion
 
     #region memoryCache
     private IMemoryCache _memoryCache;
 
-    protected IMemoryCache memoryCache
+    public IMemoryCache memoryCache
     {
         get
         {
@@ -66,7 +67,7 @@ public class BaseController : Controller
     #region requestInfo
     private RequestModel _requestInfo;
 
-    protected RequestModel requestInfo
+    public RequestModel requestInfo
         => _requestInfo ??= HttpContext.Features.Get<RequestModel>();
     #endregion
 
@@ -119,28 +120,96 @@ public class BaseController : Controller
     #endregion
 
     #region httpHeaders
-    public List<HeadersModel> httpHeaders(BaseSettings init, List<HeadersModel> _startHeaders = null)
+    public IReadOnlyList<HeadersModel> httpHeaders(BaseSettings init, IReadOnlyList<HeadersModel> startHeaders = null)
     {
-        var headers = HeadersModel.Init(_startHeaders);
-        if (init.headers == null)
-            return headers;
+        if (init.headers == null || init.headers.Count == 0)
+        {
+            return httpHeaders(
+                init.host,
+                startHeaders
+            );
+        }
 
-        return httpHeaders(init.host, HeadersModel.Join(HeadersModel.Init(init.headers), headers));
+        if (startHeaders == null || startHeaders.Count == 0)
+        {
+            return httpHeaders(
+                init.host,
+                init.headersList
+            );
+        }
+
+        var joinResult = new List<HeadersModel>(init.headers.Count + startHeaders.Count);
+
+        foreach (var h in init.headers)
+        {
+            if (!string.IsNullOrEmpty(h.Value))
+                joinResult.Add(new(h.Key, h.Value));
+        }
+
+        foreach (var h in startHeaders)
+        {
+            if (!string.IsNullOrEmpty(h.val))
+                joinResult.Add(new(h.name, h.val));
+        }
+
+        return httpHeaders(
+            init.host,
+            joinResult
+        );
     }
 
-    public List<HeadersModel> httpHeaders(string site, Dictionary<string, string> headers)
+    public IReadOnlyList<HeadersModel> httpHeaders(string site, IReadOnlyList<HeadersModel> headers)
     {
-        return httpHeaders(site, HeadersModel.Init(headers));
+        if (ShouldModifyHttpHeaders(headers))
+            return httpHeadersMutable(site, headers);
+
+        return headers;
     }
 
-    public List<HeadersModel> httpHeaders(string site, List<HeadersModel> _headers)
+    public IReadOnlyList<HeadersModel> httpHeaders(string site, IReadOnlyDictionary<string, string> headers)
+    {
+        var result = HeadersModel.InitOrNull(headers);
+        if (ShouldModifyHttpHeaders(result))
+            return httpHeadersMutable(site, result);
+
+        return result;
+    }
+
+    static bool ShouldModifyHttpHeaders(IReadOnlyList<HeadersModel> _headers)
     {
         if (_headers == null || _headers.Count == 0)
-            return null;
+            return false;
 
-        var tempHeaders = new Dictionary<string, string>(_headers.Count, StringComparer.OrdinalIgnoreCase);
+        if (EventListener.HttpHeaders != null)
+            return true;
+
+        bool mutable = false;
 
         foreach (var h in _headers)
+        {
+            string val = h.val;
+
+            if (string.IsNullOrEmpty(val))
+                continue;
+
+            if (val.StartsWith("encrypt:") || val.Contains('{'))
+            {
+                mutable = true;
+                break;
+            }
+        }
+
+        return mutable;
+    }
+
+    IReadOnlyList<HeadersModel> httpHeadersMutable(string site, IReadOnlyList<HeadersModel> headers)
+    {
+        if (headers == null || headers.Count == 0)
+            return null;
+
+        var tempHeaders = new Dictionary<string, string>(headers.Count, StringComparer.OrdinalIgnoreCase);
+
+        foreach (var h in headers)
         {
             if (string.IsNullOrEmpty(h.val) || string.IsNullOrEmpty(h.name))
                 continue;
@@ -148,9 +217,10 @@ public class BaseController : Controller
             string val = h.val;
 
             if (val.StartsWith("encrypt:"))
+            {
                 val = BaseSettings.BaseDecrypt(val.Substring(8));
-
-            if (val.Contains('{'))
+            }
+            else if (val.Contains('{'))
             {
                 if (val.Contains("{account_email}"))
                     val = val.Replace("{account_email}", requestInfo.user_uid ?? string.Empty);
@@ -215,7 +285,7 @@ public class BaseController : Controller
     #endregion
 
     #region HostImgProxy
-    public string HostImgProxy(BaseSettings conf, string uri, int height = 0, List<HeadersModel> headers = null)
+    public string HostImgProxy(BaseSettings conf, string uri, int height = 0, IReadOnlyList<HeadersModel> headers = null)
     {
         if (!CoreInit.conf.sisi.rsize || string.IsNullOrWhiteSpace(uri))
             return uri;
@@ -230,7 +300,7 @@ public class BaseController : Controller
             {
                 u = uri,
                 p = conf.plugin,
-                h = httpHeaders(conf.host, headers)?.ToDictionary(),
+                h = httpHeaders(conf.host ?? conf.apihost, headers)?.ToDictionary(),
                 t = "img",
                 i = requestInfo.user_uid
             }));
@@ -270,12 +340,21 @@ public class BaseController : Controller
                     bypass_host = bypass_host.Replace("{uri}", Regex.Replace(uri, "^https?://", ""));
 
                 if (bypass_host.Contains("{encrypt_uri}"))
-                    bypass_host = bypass_host.Replace("{encrypt_uri}", ImgProxyToEncryptUri(HttpContext, uri, conf.plugin, requestInfo.IP, headers));
+                    bypass_host = bypass_host.Replace("{encrypt_uri}", ImgProxyToEncryptUri(HttpContext, uri, conf.plugin, requestInfo.IP, headers, null));
 
                 return bypass_host;
             }
-
-            return $"{host}/proxyimg/{ImgProxyToEncryptUri(HttpContext, uri, conf.plugin, requestInfo.IP, headers)}";
+            else
+            {
+                return ImgProxyToEncryptUri(
+                    HttpContext,
+                    uri,
+                    conf.plugin,
+                    requestInfo.IP,
+                    headers,
+                    [host, "/proxyimg/"]
+                );
+            }
         }
 
         if (!string.IsNullOrEmpty(init.rsize_host))
@@ -292,24 +371,42 @@ public class BaseController : Controller
                 rsize_host = rsize_host.Replace("{uri}", Regex.Replace(uri, "^https?://", ""));
 
             if (rsize_host.Contains("{encrypt_uri}"))
-                rsize_host = rsize_host.Replace("{encrypt_uri}", ImgProxyToEncryptUri(HttpContext, uri, conf.plugin, requestInfo.IP, headers));
+                rsize_host = rsize_host.Replace("{encrypt_uri}", ImgProxyToEncryptUri(HttpContext, uri, conf.plugin, requestInfo.IP, headers, null));
 
             return rsize_host;
         }
-
-        return $"{host}/proxyimg:{width}:{height}/{ImgProxyToEncryptUri(HttpContext, uri, conf.plugin, requestInfo.IP, headers)}";
+        else
+        {
+            return ImgProxyToEncryptUri(
+                HttpContext,
+                uri,
+                conf.plugin,
+                requestInfo.IP,
+                headers,
+                [host, $"/proxyimg:{width}:{height}/"]
+            );
+        }
     }
 
-    static string ImgProxyToEncryptUri(HttpContext httpContext, string uri, string plugin, string ip, List<HeadersModel> headers)
+    static string ImgProxyToEncryptUri(HttpContext httpContext, string uri, string plugin, string ip, IReadOnlyList<HeadersModel> headers, string[] prefix)
     {
-        var _head = headers != null && headers.Count > 0 ? headers : null;
-
-        return ProxyLink.Encrypt(uri, ip, _head, plugin: plugin, verifyip: false, ex: DateTime.Today.AddDays(2), IsProxyImg: true);
+        return ProxyLink.Encrypt(
+            uri,
+            ip,
+            headers != null && headers.Count > 0
+                ? headers
+                : null,
+            plugin: plugin,
+            verifyip: false,
+            ex: DateTime.Today.AddDays(2),
+            IsProxyImg: true,
+            prefix: prefix
+        );
     }
     #endregion
 
     #region HostStreamProxy
-    public string HostStreamProxy(BaseSettings conf, string uri, List<HeadersModel> headers = null, WebProxy proxy = null, bool force_streamproxy = false, RchClient rch = null, bool forceMd5 = false, object userdata = null)
+    public string HostStreamProxy(BaseSettings conf, string uri, IReadOnlyList<HeadersModel> headers = null, WebProxy proxy = null, bool force_streamproxy = false, RchClient rch = null, bool forceMd5 = false, object userdata = null)
     {
         if (!CoreInit.conf.serverproxy.enable || string.IsNullOrEmpty(uri) || conf == null)
         {
@@ -376,23 +473,44 @@ public class BaseController : Controller
             if (headers == null && conf.headers_stream != null && conf.headers_stream.Count > 0)
                 headers = HeadersModel.Init(conf.headers_stream);
 
-            uri = ProxyLink.Encrypt(uri, requestInfo.IP, httpHeaders(conf.host ?? conf.apihost, headers), conf != null && conf.useproxystream ? proxy : null, conf?.plugin, forceMd5: forceMd5, userdata: userdata);
-
-            return $"{host}/proxy/{uri}";
+            return ProxyLink.Encrypt(
+                uri,
+                requestInfo.IP,
+                httpHeaders(conf.host ?? conf.apihost, headers),
+                conf != null && conf.useproxystream
+                    ? proxy
+                    : null,
+                conf?.plugin,
+                forceMd5: forceMd5,
+                userdata: userdata,
+                prefix: [host, "/proxy/"]
+            );
         }
-
-        if (conf.url_reserve && !uri.Contains(" or ") && !uri.Contains("/proxy/") &&
-            !Regex.IsMatch(HttpContext.Request.QueryString.Value, "&play=true", RegexOptions.IgnoreCase))
+        else
         {
-            string url_reserve = ProxyLink.Encrypt(uri, requestInfo.IP, httpHeaders(conf.host ?? conf.apihost, headers), conf != null && conf.useproxystream ? proxy : null, conf?.plugin, forceMd5: forceMd5, userdata: userdata);
-
-            uri += $" or {host}/proxy/{url_reserve}";
+            if (conf.url_reserve && !uri.Contains(" or ") && !uri.Contains("/proxy/") &&
+                !Regex.IsMatch(HttpContext.Request.QueryString.Value, "&play=true", RegexOptions.IgnoreCase))
+            {
+                return ProxyLink.Encrypt(
+                    uri, requestInfo.IP,
+                    httpHeaders(conf.host ?? conf.apihost, headers),
+                    conf != null && conf.useproxystream
+                        ? proxy
+                        : null,
+                    conf?.plugin,
+                    forceMd5: forceMd5,
+                    userdata: userdata,
+                    prefix: [uri, " or ", host, "/proxy/"]
+                );
+            }
+            else
+            {
+                return uri;
+            }
         }
-
-        return uri;
     }
 
-    string apnlink(BaseSettings conf, ApnConf apn, string uri, string ip, List<HeadersModel> headers)
+    string apnlink(BaseSettings conf, ApnConf apn, string uri, string ip, IReadOnlyList<HeadersModel> headers)
     {
         string link = uri.Contains(" ") || uri.Contains("#")
             ? uri.Split(" ")[0].Split("#")[0].Trim()
@@ -400,37 +518,26 @@ public class BaseController : Controller
 
         if (apn.secure == "nginx")
         {
-            using (MD5 md5 = MD5.Create())
-            {
-                long ex = ((DateTimeOffset)DateTime.Now.AddHours(12)).ToUnixTimeSeconds();
-                string hash = Convert.ToBase64String(md5.ComputeHash(Encoding.UTF8.GetBytes($"{ex}{ip} {apn.secret}"))).Replace("=", "").Replace("+", "-").Replace("/", "_");
+            long ex = DateTimeOffset.UtcNow.AddHours(12).ToUnixTimeSeconds();
+            string security = $"{ex}{ip} {apn.secret}";
 
-                return $"{apn.host}/{hash}:{ex}/{link}";
-            }
-        }
-        else if (apn.secure == "cf")
-        {
-            using (var sha1 = SHA1.Create())
-            {
-                var data = Encoding.UTF8.GetBytes($"{ip}{link}{apn.secret}");
-                return Convert.ToBase64String(sha1.ComputeHash(data));
-            }
+            Span<byte> data = stackalloc byte[Encoding.UTF8.GetByteCount(security)];
+            int bytesWritten = Encoding.UTF8.GetBytes(security, data);
+
+            Span<byte> hashBytes = stackalloc byte[16];
+            MD5.HashData(data.Slice(0, bytesWritten), hashBytes);
+
+            return $"{apn.host}/{Base64Url.EncodeToString(hashBytes)}:{ex}/{link}";
         }
         else if (apn.secure == "lampac")
         {
-            string aes = AesTo.Encrypt(System.Text.Json.JsonSerializer.Serialize(new
-            {
-                u = link,
-                i = ip,
-                v = true,
-                e = DateTime.Now.AddHours(36),
-                h = httpHeaders(conf.host, headers)?.ToDictionary()
-            }));
-
-            if (uri.Contains(".m3u"))
-                aes += ".m3u8";
-
-            return $"{apn.host}/proxy/{aes}";
+            return ProxyLink.Encrypt(
+                uri,
+                ip,
+                httpHeaders(conf.host, headers),
+                plugin: conf?.plugin,
+                prefix: [apn.host, "/proxy/"]
+            );
         }
 
         if (apn.host.Contains("{encode_uri}") || apn.host.Contains("{uri}"))
@@ -438,19 +545,31 @@ public class BaseController : Controller
 
         if (apn.host.Contains("{payload}"))
         {
-            string aes = CrypTo.Base64(System.Text.Json.JsonSerializer.Serialize(new
+            var sb = StringBuilderPool.RentSmall();
+
+            try
             {
-                u = link,
-                p = conf.plugin,
-                h = httpHeaders(conf.host, headers)?.ToDictionary(),
-                t = "media",
-                i = requestInfo.user_uid
-            }));
+                CrypTo.Base64(
+                    System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        u = link,
+                        p = conf.plugin,
+                        h = httpHeaders(conf.host, headers)?.ToDictionary(),
+                        t = "media",
+                        i = requestInfo.user_uid,
+                    }),
+                    base64 => sb.Append(base64)
+                );
 
-            if (uri.Contains(".m3u"))
-                aes += ".m3u8";
+                if (uri.Contains(".m3u"))
+                    sb.Append(".m3u8");
 
-            return apn.host.Replace("{payload}", aes);
+                return apn.host.Replace("{payload}", sb.ToString());
+            }
+            finally
+            {
+                StringBuilderPool.Return(sb);
+            }
         }
 
         return $"{apn.host}/{link}";
@@ -956,12 +1075,13 @@ public class BaseController : Controller
     public string ipkey(string key, ProxyManager proxy, RchClient rch)
     {
         if (rch != null)
-            return $"{key}:{(rch.enable ? requestInfo.IP : proxy?.CurrentProxyIp)}";
+            return $"ipkey:{key}:{(rch.enable ? requestInfo.IP : proxy?.CurrentProxyIp)}";
 
-        return $"{key}:{proxy?.CurrentProxyIp}";
+        return $"ipkey:{key}:{proxy?.CurrentProxyIp}";
     }
 
-    public string ipkey(string key, RchClient rch) => rch?.enable == true ? $"{key}:{requestInfo.IP}" : key;
+    public string ipkey(string key, RchClient rch)
+        => rch?.enable == true ? $"ipkey:{key}:{requestInfo.IP}" : key;
     #endregion
 
     #region headerKeys

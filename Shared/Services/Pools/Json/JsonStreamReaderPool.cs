@@ -30,11 +30,11 @@ public class JsonStreamReaderPool : TextReader, IDisposable
     {
         get
         {
-            int bufferSize = CoreInit.conf.lowMemoryMode
-                ? 1024
-                : PoolInvk.bufferSize;
-
-            return _byteInstance ??= new byte[bufferSize];
+            return _byteInstance ??= new byte[
+                CoreInit.conf.lowMemoryMode
+                    ? 4096
+                    : PoolInvk.bufferSize
+            ];
         }
     }
 
@@ -42,11 +42,11 @@ public class JsonStreamReaderPool : TextReader, IDisposable
     {
         get
         {
-            int bufferSize = CoreInit.conf.lowMemoryMode
-                ? 1024
-                : PoolInvk.bufferSize;
-
-            return _charInstance ??= new char[Encoding.UTF8.GetMaxCharCount(bufferSize)];
+            return _charInstance ??= new char[Encoding.UTF8.GetMaxCharCount(
+                CoreInit.conf.lowMemoryMode
+                    ? 4096
+                    : PoolInvk.bufferSize
+            )];
         }
     }
 

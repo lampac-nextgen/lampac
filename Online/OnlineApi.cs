@@ -4,25 +4,25 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Shared;
+using Shared.Models.Base;
 using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Entrys;
-using System.Data;
-using System.Text;
-using System.Linq;
-using IO = System.IO;
-using Shared.Services.RxEnumerate;
-using Shared;
 using Shared.Services;
-using System.Text.RegularExpressions;
-using System;
-using System.Web;
-using System.Collections.Concurrent;
-using System.Threading.Tasks;
-using Shared.Models.Base;
-using System.Collections.Generic;
-using Shared.Services.Utilities;
 using Shared.Services.Pools;
+using Shared.Services.RxEnumerate;
+using Shared.Services.Utilities;
+using System;
+using System.Collections.Concurrent;
+using System.Collections.Generic;
+using System.Data;
+using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
+using System.Threading.Tasks;
+using System.Web;
+using IO = System.IO;
 
 namespace Online;
 
@@ -135,7 +135,7 @@ public class OnlineApiController : BaseController
     /// <summary>
     /// imdb_id, kinopoisk_id
     /// </summary>
-    static ConcurrentDictionary<string, string> externalids = null;
+    static ConcurrentDictionary<string, string> externalids = JsonConvert.DeserializeObject<ConcurrentDictionary<string, string>>(IO.File.ReadAllText("data/externalids.json"));
 
     [HttpGet]
     [Route("externalids")]
@@ -144,9 +144,6 @@ public class OnlineApiController : BaseController
         string memKey = $"OnlineApi:externalids:{id}:{imdb_id}:{kinopoisk_id}:{serial}";
         if (memoryCache.TryGetValue(memKey, out string jsonResult))
             return Content(jsonResult, "application/json; charset=utf-8");
-
-        if (externalids == null)
-            externalids = JsonConvert.DeserializeObject<ConcurrentDictionary<string, string>>(IO.File.ReadAllText("data/externalids.json"));
 
         #region KP_
         if (id != null && id.StartsWith("KP_"))
@@ -624,13 +621,13 @@ public class OnlineApiController : BaseController
     #endregion
 
     #region events
-    static readonly Regex chineseRegex = new Regex("[\u4E00-\u9FFF]"); // Диапазон для китайских иероглифов
-    static readonly Regex japaneseRegex = new Regex("[\u3040-\u30FF\uFF66-\uFF9F]"); // Хирагана, катакана и специальные символы
-    static readonly Regex koreanRegex = new Regex("[\uAC00-\uD7AF]"); // Диапазон для корейских хангыльских символов
+    static readonly Regex chineseRegex = new Regex("[\u4E00-\u9FFF]", RegexOptions.Compiled); // Диапазон для китайских иероглифов
+    static readonly Regex japaneseRegex = new Regex("[\u3040-\u30FF\uFF66-\uFF9F]", RegexOptions.Compiled); // Хирагана, катакана и специальные символы
+    static readonly Regex koreanRegex = new Regex("[\uAC00-\uD7AF]", RegexOptions.Compiled); // Диапазон для корейских хангыльских символов
 
     [HttpGet]
     [Route("lite/events")]
-    async public Task<ActionResult> Events(string id, string imdb_id, long kinopoisk_id, long tmdb_id, string title, string original_title, string original_language, int year, string source, string rchtype, int serial = -1, int anime = -1, bool life = false, bool islite = false, string account_email = null, string uid = null, string token = null, string nws_id = null)
+    async public Task<ActionResult> Events(string id, string imdb_id, long kinopoisk_id, long tmdb_id, string title, string original_title, string original_language, int year, string source, string rchtype, int serial = -1, int anime = -1, bool life = false, bool islite = false, string account_email = null, string uid = null, string token = null, string nws_id = null, bool external_ids = false)
     {
         var online = new List<(string name, string url, string plugin, int index)>(50);
         bool isanime = anime != -1 || original_language is "ja" or "zh";
@@ -647,7 +644,7 @@ public class OnlineApiController : BaseController
                     string memkey = $"themoviedb:fix_title:{serial}:{tmdbid}";
                     if (!memoryCache.TryGetValue(memkey, out string engName))
                     {
-                        var result = await Http.Get<JObject>($"http://api.themoviedb.org/3/{(serial == 1 ? "tv" : "movie")}/{tmdbid}?api_key={CoreInit.conf.cub.api_key}&language=en", timeoutSeconds: 4);
+                        var result = await Http.Get<JObject>($"http://api.themoviedb.org/3/{(serial == 1 ? "tv" : "movie")}/{tmdbid}?api_key={CoreInit.conf.cub.api_key}&language=en", timeoutSeconds: 5);
                         if (result != null)
                             engName = serial == 1 ? result.Value<string>("name") : result.Value<string>("title");
 
@@ -658,6 +655,35 @@ public class OnlineApiController : BaseController
                     {
                         title = engName;
                         fix_title = true;
+                    }
+                }
+            }
+        }
+        #endregion
+
+        #region external_ids
+        if (external_ids && string.IsNullOrEmpty(imdb_id) && (source is "tmdb" or "cub"))
+        {
+            if (long.TryParse(id, out long tmdbid) && tmdbid > 0)
+            {
+                string memkey = $"themoviedb:external_ids:{serial}:{tmdbid}";
+                if (!memoryCache.TryGetValue(memkey, out string externalImdb))
+                {
+                    var result = await Http.Get<JObject>($"http://api.themoviedb.org/3/{(serial == 1 ? "tv" : "movie")}/{tmdbid}/external_ids?api_key={CoreInit.conf.cub.api_key}", timeoutSeconds: 5);
+                    if (result != null)
+                        externalImdb = result.Value<string>("imdb_id");
+
+                    memoryCache.Set(memkey, externalImdb ?? string.Empty, DateTime.Now.AddDays(1));
+                }
+
+                if (!string.IsNullOrEmpty(externalImdb))
+                {
+                    imdb_id = externalImdb;
+
+                    if (kinopoisk_id == 0)
+                    {
+                        if (externalids.TryGetValue(imdb_id, out string kpid) && int.TryParse(kpid, out int _kpid) && _kpid > 0)
+                            kinopoisk_id = _kpid;
                     }
                 }
             }
@@ -811,7 +837,20 @@ public class OnlineApiController : BaseController
         #region checkOnlineSearch
         if (ModInit.conf.checkOnlineSearch && !string.IsNullOrEmpty(id))
         {
-            string memkey = CrypTo.md5($"checkOnlineSearch:{id}:{serial}:{source?.Replace("tmdb", "")?.Replace("cub", "")}:{online.Count}:{(IsKitConf ? requestInfo.user_uid : null)}");
+            string memkey = CrypTo.md5Builder(writer =>
+            {
+                writer.Append("checkOnlineSearch:");
+                writer.Append(id);
+                writer.Append(':');
+                writer.Append(serial);
+                writer.Append(':');
+                writer.Append(source is "tmdb" or "cub" ? string.Empty : (source ?? string.Empty));
+                writer.Append(':');
+                writer.Append(online.Count);
+                writer.Append(':');
+                writer.Append(IsKitConf ? requestInfo.user_uid : string.Empty);
+                writer.Append(':');
+            });
 
             if (!memoryCache.TryGetValue(memkey, out List<EventLinkItem> links))
             {

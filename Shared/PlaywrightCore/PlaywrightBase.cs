@@ -295,13 +295,13 @@ public class PlaywrightBase
     public static void ConsoleLog(Func<string> func)
         => ConsoleLog(() => (func.Invoke(), null));
 
-    public static void ConsoleLog(Func<(string value, List<HeadersModel> headers)> func)
+    public static void ConsoleLog(Func<(string value, IReadOnlyList<HeadersModel> headers)> func)
     {
         if (CoreInit.conf.chromium.consoleLog || CoreInit.conf.firefox.consoleLog)
         {
             var r = func.Invoke();
 
-            if (r.headers != null)
+            if (r.headers != null && r.headers.Count > 0)
             {
                 Console.WriteLine($"\n{r.value}\n{Newtonsoft.Json.JsonConvert.SerializeObject(r.headers.ToDictionary(), Newtonsoft.Json.Formatting.Indented)}\n");
             }

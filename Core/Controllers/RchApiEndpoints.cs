@@ -41,7 +41,7 @@ public static class RchApiEndpoints
 
         try
         {
-            using (var byteBuf = new BufferBytePool(BufferBytePool.sizeSmall))
+            using (var byteBuf = new BufferPool())
             {
                 int bytesRead;
                 var memBuf = byteBuf.Memory;
@@ -77,7 +77,7 @@ public static class RchApiEndpoints
         {
             using (var gzip = new GZipStream(context.Request.Body, CompressionMode.Decompress, leaveOpen: true))
             {
-                using (var byteBuf = new BufferBytePool(BufferBytePool.sizeSmall))
+                using (var byteBuf = new BufferPool())
                 {
                     int bytesRead;
                     var memBuf = byteBuf.Memory;

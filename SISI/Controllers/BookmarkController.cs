@@ -145,7 +145,12 @@ public class BookmarkController : BaseController
         if (md5user == null || data == null || string.IsNullOrEmpty(data?.bookmark?.site) || string.IsNullOrEmpty(data?.bookmark?.href))
             return StatusCode(403, "access denied");
 
-        string uid = CrypTo.md5($"{data.bookmark.site}:{data.bookmark.href}");
+        string uid = CrypTo.md5Builder(writer =>
+        {
+            writer.Append(data.bookmark.site);
+            writer.Append(':');
+            writer.Append(data.bookmark.href);
+        });
 
         await using (var sqlDb = SisiContext.Factory != null
             ? SisiContext.Factory.CreateDbContext()
@@ -284,7 +289,14 @@ public class BookmarkController : BaseController
 
         string profile_id = getProfileid();
         if (!string.IsNullOrEmpty(profile_id))
-            return CrypTo.md5($"{user_id}_{profile_id}");
+        {
+            return CrypTo.md5Builder(writer =>
+            {
+                writer.Append(user_id);
+                writer.Append('_');
+                writer.Append(profile_id);
+            });
+        }
 
         return CrypTo.md5(user_id);
     }

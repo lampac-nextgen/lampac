@@ -134,7 +134,7 @@ public struct FanCDNInvoke
     #endregion
 
     #region Html
-    public ITplResult Tpl(EmbedModel root, string imdb_id, long kinopoisk_id, string title, string original_title, VastConf vast = null, List<HeadersModel> headers = null)
+    public ITplResult Tpl(EmbedModel root, string imdb_id, long kinopoisk_id, string title, string original_title, VastConf vast = null, IReadOnlyList<HeadersModel> headers = null)
     {
         if (root == null)
             return default;

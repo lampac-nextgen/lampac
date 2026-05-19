@@ -6,15 +6,20 @@ using System.Threading.Tasks;
 
 namespace Core.Middlewares;
 
+partial class AnonymousRequestRegex
+{
+    [GeneratedRegex("^/[0-9a-zA-Z\\-]+\\.js", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    public static partial Regex Js();
+}
+
 public class AnonymousRequest
 {
     private readonly RequestDelegate _next;
+
     public AnonymousRequest(RequestDelegate next)
     {
         _next = next;
     }
-
-    static readonly Regex rexJs = new Regex("^/[0-9a-zA-Z\\-]+\\.js", RegexOptions.Compiled);
 
     public Task Invoke(HttpContext httpContext)
     {
@@ -26,7 +31,7 @@ public class AnonymousRequest
         {
             requestInfo.IsAnonymousRequest = true;
         }
-        else if (rexJs.IsMatch(httpContext.Request.Path.Value))
+        else if (AnonymousRequestRegex.Js().IsMatch(httpContext.Request.Path.Value))
         {
             requestInfo.IsAnonymousRequest = true;
         }

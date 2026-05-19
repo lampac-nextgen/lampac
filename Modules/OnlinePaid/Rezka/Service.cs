@@ -27,7 +27,7 @@ public class RezkaInvoke
     string apihost;
     bool usehls, userprem, usereserve;
     HttpHydra httpHydra;
-    List<HeadersModel> defaultHeaders;
+    IReadOnlyList<HeadersModel> defaultHeaders;
     Func<string, string> onstreamfile;
     bool safety = false;
     CookieContainer cookieContainer;
@@ -36,7 +36,7 @@ public class RezkaInvoke
 
     static readonly ConcurrentDictionary<long, string> basereferer = new();
 
-    public RezkaInvoke(string host, string route, RezkaSettings init, CookieContainer cookieContainer, bool safety, List<HeadersModel> defaultHeaders, HttpHydra httpHydra, Func<string, string> onstreamfile)
+    public RezkaInvoke(string host, string route, RezkaSettings init, CookieContainer cookieContainer, bool safety, IReadOnlyList<HeadersModel> defaultHeaders, HttpHydra httpHydra, Func<string, string> onstreamfile)
     {
         this.host = host != null ? $"{host}/" : null;
         this.route = route;
@@ -73,11 +73,15 @@ public class RezkaInvoke
             ("referer", $"{apihost}/")
         );
 
-        var newheaders = HeadersModel.Join(base_headers, defaultHeaders);
-
         result.search_uri = $"{apihost}/search/?do=search&subaction=search&q={HttpUtility.UrlEncode(clarification == 1 ? title : (original_title ?? title))}";
 
-        await httpHydra.GetSpan(result.search_uri, statusCodeOK: false, safety: safety, newheaders: newheaders, cookieContainer: cookieContainer, spanAction: search =>
+        await httpHydra.GetSpan(
+            result.search_uri,
+            statusCodeOK: false,
+            safety: safety,
+            newheaders: HeadersModel.JoinReadOnly(base_headers, defaultHeaders),
+            cookieContainer: cookieContainer,
+            spanAction: search =>
         {
             if (search.Contains("class=\"error-code\"", StringComparison.OrdinalIgnoreCase) && search.Contains("ошибка доступа", StringComparison.OrdinalIgnoreCase))
             {
@@ -189,15 +193,18 @@ public class RezkaInvoke
         if (!string.IsNullOrEmpty(search_uri))
             base_headers.Add(new HeadersModel("referer", search_uri));
 
-        var newheaders = HeadersModel.Join(base_headers, defaultHeaders);
-
         result.id = Regex.Match(href, "/([0-9]+)-[^/]+\\.html").Groups[1].Value;
         if (long.TryParse(result.id, out long id) && id > 0)
             basereferer.TryAdd(id, href);
 
         bool IsTrailer = false;
 
-        await httpHydra.GetSpan(href, safety: safety, cookieContainer: cookieContainer, newheaders: newheaders, spanAction: html =>
+        await httpHydra.GetSpan(
+            href,
+            safety: safety,
+            cookieContainer: cookieContainer,
+            newheaders: HeadersModel.JoinReadOnly(base_headers, defaultHeaders),
+            spanAction: html =>
         {
             IsTrailer = html.Contains("Ожидаем фильм в хорошем качестве", StringComparison.OrdinalIgnoreCase);
 
@@ -460,12 +467,15 @@ public class RezkaInvoke
         if (basereferer.TryGetValue(id, out string referer) && !string.IsNullOrEmpty(referer))
             base_headers.Add(new HeadersModel("referer", referer));
 
-        var newheaders = HeadersModel.Join(base_headers, defaultHeaders);
+        var root = await httpHydra.Post<Episodes>(
+            $"{apihost}/ajax/get_cdn_series/?t={((DateTimeOffset)DateTime.Now).ToUnixTimeSeconds()}{Random.Shared.Next(101, 999)}",
+            $"id={id}&translator_id={t}&action=get_episodes",
+            safety: safety,
+            cookieContainer: cookieContainer,
+            newheaders: HeadersModel.JoinReadOnly(base_headers, defaultHeaders),
+            textJson: true
+        );
 
-        string uri = $"{apihost}/ajax/get_cdn_series/?t={((DateTimeOffset)DateTime.Now).ToUnixTimeSeconds()}{Random.Shared.Next(101, 999)}";
-        string data = $"id={id}&translator_id={t}&action=get_episodes";
-
-        var root = await httpHydra.Post<Episodes>(uri, data, safety: safety, cookieContainer: cookieContainer, newheaders: newheaders, textJson: true);
         if (root == null)
             return null;
 
@@ -609,9 +619,13 @@ public class RezkaInvoke
         if (basereferer.TryGetValue(id, out string referer) && !string.IsNullOrEmpty(referer))
             base_headers.Add(new HeadersModel("referer", referer));
 
-        var newheaders = HeadersModel.Join(base_headers, defaultHeaders);
-
-        var root = await httpHydra.Post<Dictionary<string, object>>(uri, data, safety: safety, cookieContainer: cookieContainer, newheaders: newheaders);
+        var root = await httpHydra.Post<Dictionary<string, object>>(
+            uri,
+            data,
+            safety: safety,
+            cookieContainer: cookieContainer,
+            newheaders: HeadersModel.JoinReadOnly(base_headers, defaultHeaders)
+        );
 
         if (root == null)
             return null;
@@ -652,12 +666,15 @@ public class RezkaInvoke
             ("upgrade-insecure-requests", "1")
         );
 
-        var newheaders = HeadersModel.Join(base_headers, defaultHeaders);
-
         List<ApiModel> links = null;
         string subtitlehtml = null;
 
-        await httpHydra.GetSpan($"{apihost}/{href}", safety: safety, cookieContainer: cookieContainer, newheaders: newheaders, spanAction: html =>
+        await httpHydra.GetSpan(
+            $"{apihost}/{href}",
+            safety: safety,
+            cookieContainer: cookieContainer,
+            newheaders: HeadersModel.JoinReadOnly(base_headers, defaultHeaders),
+            spanAction: html =>
         {
             string url = Rx.Match(html, "\"streams\"\\s*:\\s*\"(.*?)\"\\s*,");
             if (string.IsNullOrEmpty(url) || url.Contains("false", StringComparison.OrdinalIgnoreCase))
@@ -745,7 +762,7 @@ public class RezkaInvoke
                         _data = _data.Replace($"//_//{trash}", "");
                 }
 
-                using (var nbuf = new BufferBytePool(Encoding.UTF8.GetByteCount(data)))
+                using (var nbuf = new BufferBytePool(Encoding.UTF8.GetMaxByteCount(data.Length)))
                 {
                     Span<byte> buffer = nbuf.Span;
 

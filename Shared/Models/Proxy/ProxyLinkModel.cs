@@ -10,7 +10,7 @@ public class ProxyLinkModel
         ex = DateTime.Today.AddDays(2);
     }
 
-    public ProxyLinkModel(string reqip, List<HeadersModel> headers, WebProxy proxy, string uri, string plugin = null, bool verifyip = true, DateTime ex = default, object userdata = null)
+    public ProxyLinkModel(string reqip, IReadOnlyList<HeadersModel> headers, WebProxy proxy, string uri, string plugin = null, bool verifyip = true, DateTime ex = default, object userdata = null)
     {
         this.ex = ex;
         this.reqip = reqip;
@@ -30,7 +30,7 @@ public class ProxyLinkModel
 
     public string reqip { get; set; }
 
-    public List<HeadersModel> headers { get; set; }
+    public IReadOnlyList<HeadersModel> headers { get; set; }
 
     [JsonIgnore]
     public WebProxy proxy { get; set; }

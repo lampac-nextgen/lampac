@@ -224,6 +224,7 @@ public class OpenStatController : BaseController
                 },
                 BufferByte = new
                 {
+                    extraSmall = BufferBytePool.FreeExtraSmall,
                     small = BufferBytePool.FreeSmall,
                     medium = BufferBytePool.FreeMedium,
                     large = BufferBytePool.FreeLarge,
@@ -231,6 +232,7 @@ public class OpenStatController : BaseController
                 },
                 BufferChar = new
                 {
+                    extraSmall = BufferCharPool.FreeExtraSmall,
                     small = BufferCharPool.FreeSmall,
                     medium = BufferCharPool.FreeMedium,
                     large = BufferCharPool.FreeLarge,

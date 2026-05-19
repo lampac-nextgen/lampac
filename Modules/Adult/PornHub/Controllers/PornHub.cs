@@ -68,6 +68,7 @@ public class PornHubController : BaseSisiController
                     entryCache = await hybridCache.EntryAsync(userKey, jsonType: jsonContext.PlaylistAndPage);
                     if (entryCache.success)
                         StatiCacheDisabled = true;
+
                     next = !entryCache.success;
                 }
 

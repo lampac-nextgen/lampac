@@ -49,7 +49,9 @@ public class TwoEmbedController : BaseENGController
             source,
             "English",
             vast: init.vast,
-            headers: init.streamproxy ? null : httpHeaders(init.host, init.headers_stream),
+            headers: init.streamproxy
+                ? null
+                : httpHeaders(init.host, init.headers_stream),
             httpContext: HttpContext
         ));
     }
@@ -67,7 +69,7 @@ public class TwoEmbedController : BaseENGController
             {
                 using (var browser = new Firefox())
                 {
-                    var page = await browser.NewPageAsync(init.plugin, httpHeaders(init).ToDictionary(), proxy_data);
+                    var page = await browser.NewPageAsync(init.plugin, httpHeaders(init)?.ToDictionary(), proxy_data);
                     if (page == null)
                         return default;
 

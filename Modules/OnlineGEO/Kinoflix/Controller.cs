@@ -123,8 +123,13 @@ public class KinoflixController : BaseOnlineController
         {
             var items = cache.Value.items;
 
-            var headers_stream = httpHeaders(init.host, init.headers_stream);
-            headers_stream = HeadersModel.Join(headers_stream, HeadersModel.Init("referer", cache.Value.referer));
+            var headers_stream = httpHeaders(
+                init.host,
+                HeadersModel.Init(
+                    init.headers_stream,
+                    ("referer", cache.Value.referer)
+                )
+            );
 
             if (items[0].folder != null)
             {

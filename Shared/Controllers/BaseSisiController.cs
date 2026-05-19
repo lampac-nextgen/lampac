@@ -25,7 +25,7 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
 {
     #region static
     static readonly EmptyResult _emptyResult = new();
-    static readonly List<MenuItem> emptyMenu = new();
+    static readonly IReadOnlyList<MenuItem> emptyMenu = new List<MenuItem>();
     public static readonly SisiJsonContext jsonContext = SisiJsonContext.Default;
 
     static readonly JsonWriterOptions jsonWriterOptions = new JsonWriterOptions
@@ -271,7 +271,7 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
         );
     }
 
-    public ActionResult PlaylistResult(CacheResult<List<PlaylistItem>> cache, IList<MenuItem> menu = null, int total_pages = 0)
+    public ActionResult PlaylistResult(CacheResult<List<PlaylistItem>> cache, IReadOnlyList<MenuItem> menu = null, int total_pages = 0)
     {
         if (!cache.IsSuccess)
             return OnError(cache.ErrorMsg);
@@ -284,7 +284,7 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
         );
     }
 
-    public ActionResult PlaylistResult(IList<PlaylistItem> playlists, bool singleCache, IList<MenuItem> menu, int total_pages = 0)
+    public ActionResult PlaylistResult(IReadOnlyList<PlaylistItem> playlists, bool singleCache, IReadOnlyList<MenuItem> menu, int total_pages = 0)
     {
         if (playlists == null || playlists.Count == 0)
             return OnError("playlists", false);
@@ -308,145 +308,185 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
             ? null
             : HttpContext.Features.Get<BufferWriterPool<byte>>();
 
-        if (singleCache && utf8Writer == null)
+        Response.ContentType = "application/json; charset=utf-8";
+        Response.Headers.CacheControl = "no-cache";
+
+        #region Json Writer
+        using (var writer = new Utf8JsonWriter(
+            utf8Writer ?? (IBufferWriter<byte>)new ChunkBufferWriter<byte>(Response.BodyWriter),
+            jsonWriterOptions
+        ))
         {
-            foreach (var pl in playlists)
-            {
-                pl.picture = HostImgProxy(init, pl.picture, 0, headers_image);
+            writer.WriteStartObject();
+            writer.WriteNumber("count"u8, playlists.Count);
+            writer.WriteNumber("total_pages"u8, total_pages);
 
-                if (!pl.video.StartsWith("http", StringComparison.OrdinalIgnoreCase))
-                {
-                    pl.video = $"{host}/{pl.video}";
-                }
-                else
-                {
-                    if (!pl.video.Contains(host, StringComparison.OrdinalIgnoreCase))
-                        pl.video = HostStreamProxy(pl.video, headers_stream);
-                }
-            }
+            #region menu
+            writer.WritePropertyName("menu"u8);
+            writer.WriteStartArray();
 
-            return Json(new Channel()
-            {
-                list = playlists,
-                menu = menu,
-                total_pages = total_pages
-            });
-        }
-        else
-        {
-            IBufferWriter<byte> bufferWriter = utf8Writer ?? (IBufferWriter<byte>)Response.BodyWriter;
-            bufferWriter.GetSpan(128 * 1024); // прогрев на одинаковые блоки
-
-            Response.ContentType = "application/json; charset=utf-8";
-            Response.Headers.CacheControl = "no-cache";
-
-            #region Json Writer
-            using (var writer = new Utf8JsonWriter(bufferWriter, jsonWriterOptions))
+            foreach (var item in menu ?? emptyMenu)
             {
                 writer.WriteStartObject();
-                writer.WriteNumber("count", playlists.Count);
-                writer.WriteNumber("total_pages", total_pages);
 
-                writer.WritePropertyName("menu");
-                JsonSerializer.Serialize(writer, menu ?? emptyMenu, SisiJsonContext.Default.ListMenuItem);
+                if (item.title != null)
+                    writer.WriteString("title"u8, item.title);
 
-                writer.WritePropertyName("list");
-                writer.WriteStartArray();
+                if (item.search_on != null)
+                    writer.WriteString("search_on"u8, item.search_on);
 
-                foreach (var pl in playlists)
+                if (item.playlist_url != null)
+                    writer.WriteString("playlist_url"u8, item.playlist_url);
+
+                if (item.submenu is { Count: > 0 })
                 {
-                    string video = pl.video.StartsWith("http", StringComparison.OrdinalIgnoreCase)
-                        ? pl.video
-                        : $"{host}/{pl.video}";
+                    writer.WritePropertyName("submenu"u8);
+                    writer.WriteStartArray();
 
-                    if (!video.Contains(host, StringComparison.OrdinalIgnoreCase))
-                        video = HostStreamProxy(video, headers_stream);
+                    foreach (var subItem in item.submenu)
+                    {
+                        writer.WriteStartObject();
 
+                        if (subItem.title != null)
+                            writer.WriteString("title"u8, subItem.title);
+
+                        if (subItem.playlist_url != null)
+                            writer.WriteString("playlist_url"u8, subItem.playlist_url);
+
+                        writer.WriteEndObject();
+                    }
+
+                    writer.WriteEndArray();
+                }
+
+                writer.WriteEndObject();
+            }
+
+            writer.WriteEndArray();
+            #endregion
+
+            #region playlists
+            writer.WritePropertyName("list"u8);
+            writer.WriteStartArray();
+
+            foreach (var pl in playlists)
+            {
+                string video = pl.video.StartsWith("http", StringComparison.OrdinalIgnoreCase)
+                    ? pl.video
+                    : $"{host}/{pl.video}";
+
+                if (!video.Contains(host, StringComparison.OrdinalIgnoreCase))
+                    video = HostStreamProxy(video, headers_stream);
+
+                writer.WriteStartObject();
+
+                writer.WriteString("video"u8, video);
+
+                if (pl.name != null)
+                    writer.WriteString("name"u8, pl.name);
+
+                if (pl.picture != null)
+                    writer.WriteString("picture"u8, HostImgProxy(init, pl.picture, 0, headers_image));
+
+                if (pl.preview != null)
+                    writer.WriteString("preview"u8, pl.preview);
+
+                if (pl.quality != null)
+                    writer.WriteString("quality"u8, pl.quality);
+
+                if (pl.time != null)
+                    writer.WriteString("time"u8, pl.time);
+
+                if (pl.myarg != null)
+                    writer.WriteString("myarg"u8, pl.myarg);
+
+                writer.WriteBoolean("json"u8, pl.json);
+                writer.WriteBoolean("hide"u8, pl.hide);
+                writer.WriteBoolean("related"u8, pl.related);
+
+                #region model
+                if (pl.model != null)
+                {
+                    writer.WritePropertyName("model"u8);
                     writer.WriteStartObject();
 
-                    writer.WriteString("video", video);
+                    if (pl.model.uri != null)
+                        writer.WriteString("uri"u8, pl.model.uri);
 
-                    if (pl.name != null)
-                        writer.WriteString("name", pl.name);
-
-                    if (pl.picture != null)
-                        writer.WriteString("picture", HostImgProxy(init, pl.picture, 0, headers_image));
-
-                    if (pl.preview != null)
-                        writer.WriteString("preview", pl.preview);
-
-                    if (pl.quality != null)
-                        writer.WriteString("quality", pl.quality);
-
-                    if (pl.time != null)
-                        writer.WriteString("time", pl.time);
-
-                    if (pl.myarg != null)
-                        writer.WriteString("myarg", pl.myarg);
-
-                    writer.WriteBoolean("json", pl.json);
-                    writer.WriteBoolean("hide", pl.hide);
-                    writer.WriteBoolean("related", pl.related);
-
-                    if (pl.model != null)
-                    {
-                        writer.WritePropertyName("model");
-                        writer.WriteStartObject();
-
-                        if (pl.model.uri != null)
-                            writer.WriteString("uri", pl.model.uri);
-
-                        if (pl.model.name != null)
-                            writer.WriteString("name", pl.model.name);
-
-                        writer.WriteEndObject();
-                    }
-
-                    if (pl.qualitys != null)
-                    {
-                        writer.WritePropertyName("qualitys");
-                        writer.WriteStartObject();
-                        foreach (var quality in pl.qualitys)
-                            writer.WriteString(quality.Key, quality.Value);
-                        writer.WriteEndObject();
-                    }
-
-                    if (pl.bookmark != null)
-                    {
-                        writer.WritePropertyName("bookmark");
-                        writer.WriteStartObject();
-
-                        if (pl.bookmark.uid != null)
-                            writer.WriteString("uid", pl.bookmark.uid);
-
-                        if (pl.bookmark.site != null)
-                            writer.WriteString("site", pl.bookmark.site);
-
-                        if (pl.bookmark.image != null)
-                            writer.WriteString("image", pl.bookmark.image);
-
-                        if (pl.bookmark.href != null)
-                            writer.WriteString("href", pl.bookmark.href);
-
-                        writer.WriteEndObject();
-                    }
+                    if (pl.model.name != null)
+                        writer.WriteString("name"u8, pl.model.name);
 
                     writer.WriteEndObject();
                 }
+                #endregion
 
-                writer.WriteEndArray();
+                #region qualitys
+                if (pl.qualitys != null)
+                {
+                    writer.WritePropertyName("qualitys"u8);
+                    writer.WriteStartObject();
+
+                    foreach (var quality in pl.qualitys)
+                        writer.WriteString(quality.Key, quality.Value);
+
+                    writer.WriteEndObject();
+                }
+                #endregion
+
+                #region bookmark
+                if (pl.bookmark != null)
+                {
+                    writer.WritePropertyName("bookmark"u8);
+                    writer.WriteStartObject();
+
+                    if (pl.bookmark.uid != null)
+                        writer.WriteString("uid"u8, pl.bookmark.uid);
+
+                    if (pl.bookmark.site != null)
+                        writer.WriteString("site"u8, pl.bookmark.site);
+
+                    if (pl.bookmark.image != null)
+                        writer.WriteString("image"u8, pl.bookmark.image);
+
+                    if (pl.bookmark.href != null)
+                        writer.WriteString("href"u8, pl.bookmark.href);
+
+                    writer.WriteEndObject();
+                }
+                #endregion
+
                 writer.WriteEndObject();
             }
+
+            writer.WriteEndArray();
             #endregion
 
-            if (utf8Writer != null)
-            {
-                Response.BodyWriter.GetSpan(128 * 1024); // прогрев на одинаковые блоки
-                Response.BodyWriter.Write(utf8Writer.WrittenSpan);
-            }
-
-            return _emptyResult;
+            writer.WriteEndObject();
         }
+        #endregion
+
+        #region Дублируем Staticache в Response.BodyWriter
+        if (utf8Writer != null)
+        {
+            const int chunkSize = 32 * 1024;
+            var source = utf8Writer.WrittenSpan;
+
+            while (!source.IsEmpty)
+            {
+                int bytesToWrite = Math.Min(source.Length, chunkSize);
+
+                ReadOnlySpan<byte> chunk = source.Slice(0, bytesToWrite);
+                Span<byte> destination = Response.BodyWriter.GetSpan(chunkSize);
+
+                chunk.CopyTo(destination);
+                Response.BodyWriter.Advance(bytesToWrite);
+
+                source = source.Slice(bytesToWrite);
+            }
+        }
+        #endregion
+
+        return _emptyResult;
     }
     #endregion
 
@@ -497,42 +537,55 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
             ? null
             : HttpContext.Features.Get<BufferWriterPool<byte>>();
 
-        IBufferWriter<byte> bufferWriter = utf8Writer ?? (IBufferWriter<byte>)Response.BodyWriter;
-        bufferWriter.GetSpan(128 * 1024); // прогрев на одинаковые блоки
-
         #region Json Writer
-        using (var writer = new Utf8JsonWriter(bufferWriter, jsonWriterOptions))
+        using (var writer = new Utf8JsonWriter(
+             utf8Writer ?? (IBufferWriter<byte>)new ChunkBufferWriter<byte>(Response.BodyWriter),
+             jsonWriterOptions
+         ))
         {
             writer.WriteStartObject();
 
-            writer.WritePropertyName("qualitys");
+            #region qualitys
+            writer.WritePropertyName("qualitys"u8);
             writer.WriteStartObject();
+
             foreach (var quality in stream_links.qualitys)
                 writer.WriteString(quality.Key, HostStreamProxy(quality.Value, headers_stream));
-            writer.WriteEndObject();
 
+            writer.WriteEndObject();
+            #endregion
+
+            #region qualitys_proxy
             if (!init.streamproxy && init.qualitys_proxy)
             {
-                writer.WritePropertyName("qualitys_proxy");
+                writer.WritePropertyName("qualitys_proxy"u8);
                 writer.WriteStartObject();
+
                 foreach (var quality in stream_links.qualitys)
                     writer.WriteString(quality.Key, HostStreamProxy(quality.Value, headers_stream, force_streamproxy: true));
+
                 writer.WriteEndObject();
             }
+            #endregion
 
+            #region headers_stream
             var head_stream = init.streamproxy ? null : Http.NormalizeHeaders(init.headers_stream);
             if (head_stream != null)
             {
-                writer.WritePropertyName("headers_stream");
+                writer.WritePropertyName("headers_stream"u8);
                 writer.WriteStartObject();
+
                 foreach (var header in head_stream)
                     writer.WriteString(header.Key, header.Value);
+
                 writer.WriteEndObject();
             }
+            #endregion
 
+            #region recomends
             if (stream_links.recomends != null && stream_links.recomends.Count > 0)
             {
-                writer.WritePropertyName("recomends");
+                writer.WritePropertyName("recomends"u8);
                 writer.WriteStartArray();
 
                 foreach (var pl in stream_links.recomends)
@@ -543,31 +596,47 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
                     writer.WriteStartObject();
 
                     if (pl.name != null)
-                        writer.WriteString("name", pl.name);
+                        writer.WriteString("name"u8, pl.name);
 
                     if (pl.video != null)
-                        writer.WriteString("video", pl.video.StartsWith("http") ? pl.video : $"{host}/{pl.video}");
+                        writer.WriteString("video"u8, pl.video.StartsWith("http") ? pl.video : $"{host}/{pl.video}");
 
                     if (pl.picture != null)
-                        writer.WriteString("picture", HostImgProxy(init, pl.picture, 110, headers_image));
+                        writer.WriteString("picture"u8, HostImgProxy(init, pl.picture, 110, headers_image));
 
-                    writer.WriteBoolean("json", pl.json);
+                    writer.WriteBoolean("json"u8, pl.json);
 
                     writer.WriteEndObject();
                 }
 
                 writer.WriteEndArray();
             }
+            #endregion
 
             writer.WriteEndObject();
         }
         #endregion
 
+        #region Дублируем Staticache в Response.BodyWriter
         if (utf8Writer != null)
         {
-            Response.BodyWriter.GetSpan(128 * 1024); // прогрев на одинаковые блоки
-            Response.BodyWriter.Write(utf8Writer.WrittenSpan);
+            const int chunkSize = 32 * 1024;
+            var source = utf8Writer.WrittenSpan;
+
+            while (!source.IsEmpty)
+            {
+                int bytesToWrite = Math.Min(source.Length, chunkSize);
+
+                ReadOnlySpan<byte> chunk = source.Slice(0, bytesToWrite);
+                Span<byte> destination = Response.BodyWriter.GetSpan(chunkSize);
+
+                chunk.CopyTo(destination);
+                Response.BodyWriter.Advance(bytesToWrite);
+
+                source = source.Slice(bytesToWrite);
+            }
         }
+        #endregion
 
         return _emptyResult;
     }
@@ -620,7 +689,7 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
     #endregion
 
     #region HostStreamProxy
-    public string HostStreamProxy(string uri, List<HeadersModel> headers = null, bool force_streamproxy = false, bool forceMd5 = false, object userdata = null)
+    public string HostStreamProxy(string uri, IReadOnlyList<HeadersModel> headers = null, bool force_streamproxy = false, bool forceMd5 = false, object userdata = null)
         => HostStreamProxy(init, uri, headers, proxy, force_streamproxy, rch, forceMd5, userdata);
     #endregion
 

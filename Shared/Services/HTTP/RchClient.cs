@@ -6,6 +6,7 @@ using Shared.Models;
 using Shared.Models.Events;
 using Shared.Services.Pools.Json;
 using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
@@ -24,6 +25,7 @@ public class RchClientInfo
 public class RchClient
 {
     #region static
+    static bool logEnable => CoreInit.conf.serilog;
     static readonly Serilog.ILogger Log = Serilog.Log.ForContext<RchClient>();
 
     static readonly JsonSerializerOptions jsonTextOptions = new JsonSerializerOptions
@@ -32,8 +34,31 @@ public class RchClient
         ReadCommentHandling = JsonCommentHandling.Skip
     };
 
+    static readonly JsonSerializerSettings newtonsoftIgnoreErrorsSettings = new()
+    {
+        Error = static (se, ev) => { ev.ErrorContext.Handled = true; }
+    };
+
+    static readonly FrozenSet<string> excludedSendHeaders = new[]
+    {
+        "user-agent",
+        "cookie",
+        "referer",
+        "origin",
+        "accept",
+        "accept-language",
+        "accept-encoding",
+        "cache-control",
+        "dnt",
+        "pragma",
+        "priority",
+        "upgrade-insecure-requests",
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     static readonly ConcurrentDictionary<string, string> connectionsMsg = new();
-    public static string ErrorMsg => CoreInit.conf.rch.enable ? "rhub не работает с данным балансером" : "Включите rch в init.conf";
+
+    public static string ErrorMsg
+        => CoreInit.conf.rch.enable ? "rhub не работает с данным балансером" : "Включите rch в init.conf";
 
     public record class hubEntry(string connectionId, string rchId, string url, string data, Dictionary<string, string> headers, bool returnHeaders);
 
@@ -46,7 +71,6 @@ public class RchClient
     public record class rchIdEntry(MemoryStream ms, TaskCompletionSource<string> tcs, CancellationToken ct);
 
     public static readonly ConcurrentDictionary<string, rchIdEntry> rchIds = new();
-
 
     public static void Registry(string ip, string connectionId, string host = null, RchClientInfo info = null, NwsConnection connection = null)
     {
@@ -99,9 +123,11 @@ public class RchClient
 
     public string connectionMsg { get; private set; }
 
-    public string ipkey(string key) => enableRhub ? $"{key}:{ip}" : key;
+    public string ipkey(string key)
+        => enableRhub ? $"ipkey:{key}:{ip}" : key;
 
-    public string ipkey(string key, ProxyManager proxy) => $"{key}:{(enableRhub ? ip : proxy?.CurrentProxyIp)}";
+    public string ipkey(string key, ProxyManager proxy)
+        => $"ipkey:{key}:{(enableRhub ? ip : proxy?.CurrentProxyIp)}";
 
     public RchClient(string connectionId)
     {
@@ -156,9 +182,7 @@ public class RchClient
     }
 
     public Task<string> Eval(string data)
-    {
-        return SendHub("eval", data);
-    }
+        => SendHub("eval", data);
 
     async public Task<T> Eval<T>(string data, bool IgnoreDeserializeObject = false)
     {
@@ -178,16 +202,17 @@ public class RchClient
                         })
                         {
                             var serializer = IgnoreDeserializeObject
-                                ? Newtonsoft.Json.JsonSerializer.Create(new JsonSerializerSettings { Error = (se, ev) => { ev.ErrorContext.Handled = true; } })
+                                ? Newtonsoft.Json.JsonSerializer.Create(newtonsoftIgnoreErrorsSettings)
                                 : Newtonsoft.Json.JsonSerializer.CreateDefault();
 
                             result = serializer.Deserialize<T>(jsonReader);
                         }
                     }
                 }
-                catch (System.Exception ex)
+                catch (Exception ex)
                 {
-                    Log.Error(ex, "CatchId={CatchId}", "id_3c999oy2");
+                    if (logEnable)
+                        Log.Error(ex, "CatchId={CatchId}", "id_3c999oy2");
                 }
             }).ConfigureAwait(false);
 
@@ -201,7 +226,7 @@ public class RchClient
     #endregion
 
     #region Headers
-    async public Task<(JObject headers, string currentUrl, string body)> Headers(string url, string data, List<HeadersModel> headers = null, bool useDefaultHeaders = true)
+    async public Task<(JObject headers, string currentUrl, string body)> Headers(string url, string data, IReadOnlyList<HeadersModel> headers = null, bool useDefaultHeaders = true)
     {
         try
         {
@@ -231,9 +256,10 @@ public class RchClient
                         }
                     }
                 }
-                catch (System.Exception ex)
+                catch (Exception ex)
                 {
-                    Log.Error(ex, "CatchId={CatchId}", "id_1zqgz3gk");
+                    if (logEnable)
+                        Log.Error(ex, "CatchId={CatchId}", "id_1zqgz3gk");
                 }
             }).ConfigureAwait(false);
 
@@ -247,12 +273,10 @@ public class RchClient
     #endregion
 
     #region Get
-    public Task<string> Get(string url, List<HeadersModel> headers = null, bool useDefaultHeaders = true)
-    {
-        return SendHub(url, null, headers, useDefaultHeaders);
-    }
+    public Task<string> Get(string url, IReadOnlyList<HeadersModel> headers = null, bool useDefaultHeaders = true)
+        => SendHub(url, null, headers, useDefaultHeaders);
 
-    async public Task<T> Get<T>(string url, List<HeadersModel> headers = null, bool IgnoreDeserializeObject = false, bool useDefaultHeaders = true, bool textJson = false)
+    async public Task<T> Get<T>(string url, IReadOnlyList<HeadersModel> headers = null, bool IgnoreDeserializeObject = false, bool useDefaultHeaders = true, bool textJson = false)
     {
         try
         {
@@ -274,7 +298,7 @@ public class RchClient
                             })
                             {
                                 var serializer = IgnoreDeserializeObject
-                                    ? Newtonsoft.Json.JsonSerializer.Create(new JsonSerializerSettings { Error = (se, ev) => { ev.ErrorContext.Handled = true; } })
+                                    ? Newtonsoft.Json.JsonSerializer.Create(newtonsoftIgnoreErrorsSettings)
                                     : Newtonsoft.Json.JsonSerializer.CreateDefault();
 
                                 result = serializer.Deserialize<T>(jsonReader);
@@ -282,9 +306,10 @@ public class RchClient
                         }
                     }
                 }
-                catch (System.Exception ex)
+                catch (Exception ex)
                 {
-                    Log.Error(ex, "CatchId={CatchId}", "id_gznrsr3e");
+                    if (logEnable)
+                        Log.Error(ex, "CatchId={CatchId}", "id_gznrsr3e");
                 }
             }).ConfigureAwait(false);
 
@@ -298,24 +323,18 @@ public class RchClient
     #endregion
 
     #region Span
-    public Task GetSpan(string url, Action<ReadOnlySpan<char>> spanAction, List<HeadersModel> headers = null, bool useDefaultHeaders = true)
-    {
-        return SendHub(url, null, headers, useDefaultHeaders, spanAction: spanAction);
-    }
+    public Task GetSpan(string url, Action<ReadOnlySpan<char>> spanAction, IReadOnlyList<HeadersModel> headers = null, bool useDefaultHeaders = true)
+        => SendHub(url, null, headers, useDefaultHeaders, spanAction: spanAction);
 
-    public Task PostSpan(string url, Action<ReadOnlySpan<char>> spanAction, string data, List<HeadersModel> headers = null, bool useDefaultHeaders = true)
-    {
-        return SendHub(url, data, headers, useDefaultHeaders, spanAction: spanAction);
-    }
+    public Task PostSpan(string url, Action<ReadOnlySpan<char>> spanAction, string data, IReadOnlyList<HeadersModel> headers = null, bool useDefaultHeaders = true)
+        => SendHub(url, data, headers, useDefaultHeaders, spanAction: spanAction);
     #endregion
 
     #region Post
-    public Task<string> Post(string url, string data, List<HeadersModel> headers = null, bool useDefaultHeaders = true)
-    {
-        return SendHub(url, data, headers, useDefaultHeaders);
-    }
+    public Task<string> Post(string url, string data, IReadOnlyList<HeadersModel> headers = null, bool useDefaultHeaders = true)
+        => SendHub(url, data, headers, useDefaultHeaders);
 
-    async public Task<T> Post<T>(string url, string data, List<HeadersModel> headers = null, bool IgnoreDeserializeObject = false, bool useDefaultHeaders = true, bool textJson = false)
+    async public Task<T> Post<T>(string url, string data, IReadOnlyList<HeadersModel> headers = null, bool IgnoreDeserializeObject = false, bool useDefaultHeaders = true, bool textJson = false)
     {
         try
         {
@@ -337,7 +356,7 @@ public class RchClient
                             })
                             {
                                 var serializer = IgnoreDeserializeObject
-                                    ? Newtonsoft.Json.JsonSerializer.Create(new JsonSerializerSettings { Error = (se, ev) => { ev.ErrorContext.Handled = true; } })
+                                    ? Newtonsoft.Json.JsonSerializer.Create(newtonsoftIgnoreErrorsSettings)
                                     : Newtonsoft.Json.JsonSerializer.CreateDefault();
 
                                 result = serializer.Deserialize<T>(jsonReader);
@@ -345,9 +364,10 @@ public class RchClient
                         }
                     }
                 }
-                catch (System.Exception ex)
+                catch (Exception ex)
                 {
-                    Log.Error(ex, "CatchId={CatchId}", "id_6gloiffn");
+                    if (logEnable)
+                        Log.Error(ex, "CatchId={CatchId}", "id_6gloiffn");
                 }
             }).ConfigureAwait(false);
 
@@ -361,20 +381,18 @@ public class RchClient
     #endregion
 
     #region SendHub
-    async Task<string> SendHub(string url, string data = null, List<HeadersModel> headers = null, bool useDefaultHeaders = true, bool returnHeaders = false, bool waiting = true, Action<ReadOnlySpan<char>> spanAction = null, Action<MemoryStream> msAction = null)
+    async Task<string> SendHub(string url, string data = null, IReadOnlyList<HeadersModel> headers = null, bool useDefaultHeaders = true, bool returnHeaders = false, bool waiting = true, Action<ReadOnlySpan<char>> spanAction = null, Action<MemoryStream> msAction = null)
     {
         if (hub == null)
             return null;
 
         var clientInfo = SocketClient();
-
-        if (string.IsNullOrEmpty(connectionId) || !clients.ContainsKey(connectionId))
-            connectionId = clientInfo.connectionId;
+        connectionId = clientInfo.connectionId;
 
         if (string.IsNullOrEmpty(connectionId))
             return null;
 
-        string rchId = Guid.NewGuid().ToString();
+        string rchId = Guid.NewGuid().ToString("N");
 
         var ms = PoolInvk.msm.GetStream();
         CancellationTokenSource cts = null;
@@ -391,7 +409,8 @@ public class RchClient
 
         try
         {
-            var rchHub = rchIds.GetOrAdd(rchId, _ => new rchIdEntry(ms, new TaskCompletionSource<string>(), cts.Token));
+            var rchHub = new rchIdEntry(ms, new TaskCompletionSource<string>(), cts.Token);
+            rchIds[rchId] = rchHub;
 
             #region send_headers
             Dictionary<string, string> send_headers = null;
@@ -415,28 +434,14 @@ public class RchClient
 
             if (send_headers != null && send_headers.Count > 0 && clientInfo.data?.info?.rchtype != "apk")
             {
-                var new_headers = new Dictionary<string, string>(Math.Min(10, send_headers.Count));
+                var new_headers = new Dictionary<string, string>(send_headers.Count);
 
                 foreach (var h in send_headers)
                 {
-                    var key = h.Key;
+                    string key = h.Key;
 
-                    if (key.StartsWith("sec-ch-", StringComparison.OrdinalIgnoreCase) ||
-                        key.StartsWith("sec-fetch-", StringComparison.OrdinalIgnoreCase))
-                        continue;
-
-                    if (key.Equals("user-agent", StringComparison.OrdinalIgnoreCase) ||
-                        key.Equals("cookie", StringComparison.OrdinalIgnoreCase) ||
-                        key.Equals("referer", StringComparison.OrdinalIgnoreCase) ||
-                        key.Equals("origin", StringComparison.OrdinalIgnoreCase) ||
-                        key.Equals("accept", StringComparison.OrdinalIgnoreCase) ||
-                        key.Equals("accept-language", StringComparison.OrdinalIgnoreCase) ||
-                        key.Equals("accept-encoding", StringComparison.OrdinalIgnoreCase) ||
-                        key.Equals("cache-control", StringComparison.OrdinalIgnoreCase) ||
-                        key.Equals("dnt", StringComparison.OrdinalIgnoreCase) ||
-                        key.Equals("pragma", StringComparison.OrdinalIgnoreCase) ||
-                        key.Equals("priority", StringComparison.OrdinalIgnoreCase) ||
-                        key.Equals("upgrade-insecure-requests", StringComparison.OrdinalIgnoreCase))
+                    if (key.StartsWith("sec-", StringComparison.OrdinalIgnoreCase) ||
+                        excludedSendHeaders.Contains(key))
                         continue;
 
                     new_headers[key] = h.Value;

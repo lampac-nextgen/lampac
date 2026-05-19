@@ -14,12 +14,20 @@ using System.Threading.Tasks;
 
 namespace Core.Middlewares;
 
+partial class AccsdbRegex
+{
+    [GeneratedRegex("^/(stats|weblog|admin)/", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    public static partial Regex Authorize();
+
+    [GeneratedRegex(@"\.(js|css|ico|png|svg|jpe?g|woff|webmanifest)$", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    public static partial Regex StaticAssets();
+
+    [GeneratedRegex("^/(lifeevents|externalids|sisi/(bookmark|history))", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant)]
+    public static partial Regex LockBypass();
+}
+
 public class Accsdb
 {
-    static readonly Regex rexAuthorize = new Regex("^/(stats|weblog|admin)/", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    static readonly Regex rexStaticAssets = new Regex("\\.(js|css|ico|png|svg|jpe?g|woff|webmanifest)", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-    static readonly Regex rexLockBypass = new Regex("^/(lifeevents|externalids|sisi/(bookmark|history))", RegexOptions.Compiled | RegexOptions.IgnoreCase);
-
     static Accsdb()
     {
         Directory.CreateDirectory("logs/accsdb");
@@ -40,7 +48,7 @@ public class Accsdb
         var requestInfo = httpContext.Features.Get<RequestModel>();
 
         #region Authorization
-        bool IsAuthorize = rexAuthorize.IsMatch(httpContext.Request.Path.Value);
+        bool IsAuthorize = AccsdbRegex.Authorize().IsMatch(httpContext.Request.Path.Value);
         if (IsAuthorize == false && endpoint != null)
         {
             IsAuthorize =
@@ -125,7 +133,7 @@ public class Accsdb
                 || user.ban
                 || DateTime.Now > user.expires)
             {
-                if (rexStaticAssets.IsMatch(httpContext.Request.Path.Value))
+                if (AccsdbRegex.StaticAssets().IsMatch(httpContext.Request.Path.Value))
                 {
                     httpContext.Response.StatusCode = 404;
                     httpContext.Response.ContentType = "application/octet-stream";
@@ -181,7 +189,13 @@ public class Accsdb
                 }
                 #endregion
 
-                return httpContext.Response.WriteAsJsonAsync(new { accsdb = true, msg, denymsg, user });
+                return httpContext.Response.WriteAsJsonAsync(new
+                {
+                    accsdb = true,
+                    msg,
+                    denymsg,
+                    user
+                });
             }
         }
 
@@ -198,7 +212,7 @@ public class Accsdb
             return islock;
         }
 
-        if (rexLockBypass.IsMatch(uri))
+        if (AccsdbRegex.LockBypass().IsMatch(uri))
         {
             islock = false;
             return islock;

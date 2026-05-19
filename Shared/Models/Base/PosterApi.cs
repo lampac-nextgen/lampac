@@ -1,4 +1,5 @@
-﻿using System.Text.RegularExpressions;
+﻿using Shared.Services;
+using System.Text.RegularExpressions;
 
 namespace Shared.Models.Base;
 
@@ -6,13 +7,11 @@ public static class PosterApi
 {
     static string omdbapi_key;
     static PosterApiConf init;
-    static IProxyLink iproxy;
 
-    public static void Initialization(string omdbkey, PosterApiConf conf, IProxyLink _iproxy)
+    public static void Initialization(string omdbkey, PosterApiConf conf)
     {
         omdbapi_key = omdbkey;
         init = conf;
-        iproxy = _iproxy;
     }
 
     public static string Find(long? kpid, string imdb)
@@ -45,15 +44,29 @@ public static class PosterApi
 
     public static string Size(string uri)
     {
-        if (string.IsNullOrEmpty(uri) || iproxy == null || init == null || !init.rsize || (init.width == 0 && init.height == 0))
+        if (string.IsNullOrEmpty(uri) || init == null || !init.rsize || (init.width == 0 && init.height == 0))
             return uri?.Split(" or ")?[0];
 
         if (!string.IsNullOrEmpty(init.disable_rsize) && Regex.IsMatch(uri, init.disable_rsize, RegexOptions.IgnoreCase))
             return uri?.Split(" or ")?[0];
 
         if (!string.IsNullOrEmpty(init.bypass) && Regex.IsMatch(uri, init.bypass, RegexOptions.IgnoreCase))
-            return $"{init.host}/proxyimg/{iproxy.Encrypt(uri, "posterapi", IsProxyImg: true)}";
-
-        return $"{init.host}/proxyimg:{init.width}:{init.height}/{iproxy.Encrypt(uri, "posterapi", IsProxyImg: true)}";
+        {
+            return ProxyLink.Encrypt(
+                uri,
+                "posterapi",
+                IsProxyImg: true,
+                prefix: [init.host, "/proxyimg/"]
+            );
+        }
+        else
+        {
+            return ProxyLink.Encrypt(
+                uri,
+                "posterapi",
+                IsProxyImg: true,
+                prefix: [init.host, "proxyimg", $":{init.width}:{init.height}/"]
+            );
+        }
     }
 }

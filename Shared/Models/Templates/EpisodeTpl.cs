@@ -24,7 +24,7 @@ public class EpisodeTpl : ITplResult
     }
 
 
-    public void Append(string name, string title, string s, string e, string link, string method = "play", StreamQualityTpl streamquality = null, SubtitleTpl subtitles = null, string streamlink = null, string voice_name = null, VastConf vast = null, List<HeadersModel> headers = null, int? hls_manifest_timeout = null, SegmentTpl segments = null, string subtitles_call = null)
+    public void Append(string name, string title, string s, string e, string link, string method = "play", StreamQualityTpl streamquality = null, SubtitleTpl subtitles = null, string streamlink = null, string voice_name = null, VastConf vast = null, IReadOnlyList<HeadersModel> headers = null, int? hls_manifest_timeout = null, SegmentTpl segments = null, string subtitles_call = null)
     {
         if (!string.IsNullOrEmpty(name) && !string.IsNullOrEmpty(link))
         {

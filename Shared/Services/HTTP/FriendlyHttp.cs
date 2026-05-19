@@ -1,6 +1,8 @@
 using System.Collections.Concurrent;
 using System.Net;
 using System.Net.Http;
+using System.Net.Security;
+using System.Security.Cryptography.X509Certificates;
 using System.Threading;
 
 namespace Shared.Services;
@@ -12,7 +14,12 @@ public static class FriendlyHttp
 
     record HttpClientModel(DateTime lifetime, HttpClient http);
 
-    static ConcurrentDictionary<string, HttpClientModel> _clients = new ConcurrentDictionary<string, HttpClientModel>();
+    static ConcurrentDictionary<string, HttpClientModel> _clients = new();
+
+    static bool AcceptAnyCertificateHandler(object sender, X509Certificate certificate, X509Chain chain, SslPolicyErrors sslPolicyErrors)
+        => true;
+
+    static readonly RemoteCertificateValidationCallback AcceptAnyCertificate = AcceptAnyCertificateHandler;
 
     static FriendlyHttp()
     {
@@ -54,7 +61,7 @@ public static class FriendlyHttp
     #endregion
 
     #region MessageClient
-    public static HttpClient MessageClient(string factoryClient, HttpClientHandler handler, long MaxResponseContentBufferSize = -1, HttpClient httpClient = null)
+    public static HttpClient MessageClient(string factoryClient, HttpClientHandler handler, out bool disposeHttpClient, long MaxResponseContentBufferSize = -1, HttpClient httpClient = null)
     {
         // 10MB
         long maxBufferSize = 10_000_000;
@@ -63,12 +70,14 @@ public static class FriendlyHttp
 
         if ((handler?.CookieContainer != null && handler.CookieContainer.Count > 0) || Http.httpClientFactory == null)
         {
+            disposeHttpClient = true;
             return new HttpClient(handler)
             {
                 MaxResponseContentBufferSize = maxBufferSize
             };
         }
 
+        disposeHttpClient = false;
         var webProxy = handler?.Proxy as WebProxy;
 
         if (webProxy == null)
@@ -121,19 +130,21 @@ public static class FriendlyHttp
     #region CreateHttp2Client
     public static HttpClient CreateHttp2Client(bool useCookies = true)
     {
-        return new HttpClient(new SocketsHttpHandler
+        var handler = new SocketsHttpHandler
         {
             AllowAutoRedirect = true,
             AutomaticDecompression = DecompressionMethods.Brotli | DecompressionMethods.GZip | DecompressionMethods.Deflate,
-            MaxConnectionsPerServer = 128,
             PooledConnectionLifetime = TimeSpan.FromMinutes(10),
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
             EnableMultipleHttp2Connections = true,
             EnableMultipleHttp3Connections = true,
-            SslOptions = { RemoteCertificateValidationCallback = (sender, cert, chain, sslPolicyErrors) => true },
             CookieContainer = useCookies ? new CookieContainer() : null,
             UseCookies = useCookies
-        })
+        };
+
+        handler.SslOptions.RemoteCertificateValidationCallback = AcceptAnyCertificate;
+
+        return new HttpClient(handler)
         {
             MaxResponseContentBufferSize = 10_000_000,
             DefaultRequestVersion = HttpVersion.Version20,
@@ -145,17 +156,19 @@ public static class FriendlyHttp
     #region CreateHttpClient
     public static HttpClient CreateHttpClient(bool useCookies = true)
     {
-        return new HttpClient(new SocketsHttpHandler
+        var handler = new SocketsHttpHandler
         {
             AllowAutoRedirect = true,
             AutomaticDecompression = DecompressionMethods.Brotli | DecompressionMethods.GZip | DecompressionMethods.Deflate,
-            MaxConnectionsPerServer = 128,
             PooledConnectionLifetime = TimeSpan.FromMinutes(10),
             PooledConnectionIdleTimeout = TimeSpan.FromMinutes(2),
-            SslOptions = { RemoteCertificateValidationCallback = (sender, cert, chain, sslPolicyErrors) => true },
             CookieContainer = useCookies ? new CookieContainer() : null,
             UseCookies = useCookies
-        })
+        };
+
+        handler.SslOptions.RemoteCertificateValidationCallback = AcceptAnyCertificate;
+
+        return new HttpClient(handler)
         {
             MaxResponseContentBufferSize = 10_000_000,
             DefaultRequestVersion = HttpVersion.Version11,

@@ -177,41 +177,63 @@ public class CorseuController : BaseController
             var handler = Http.Handler(url, proxyManager.Get());
             handler.AllowAutoRedirect = autoRedirect;
 
-            var client = FriendlyHttp.MessageClient(httpVersion == 2 ? "http2" : "base", handler);
+            var client = FriendlyHttp.MessageClient(
+                httpVersion switch
+                {
+                    2 => "http2",
+                    3 => "http3",
+                    _ => "base"
+                },
+                handler,
+                out bool disposeHttpClient
+            );
 
-            using (var request = new HttpRequestMessage(new HttpMethod(method), url))
+            try
             {
-                request.Version = httpVersion == 2 ? HttpVersion.Version20 : HttpVersion.Version11;
-
-                if (!string.IsNullOrEmpty(data))
+                using (var request = new HttpRequestMessage(new HttpMethod(method), url))
                 {
-                    var encoding = string.IsNullOrEmpty(encodingName)
-                        ? Encoding.UTF8
-                        : Encoding.GetEncoding(encodingName);
-
-                    var content = new StringContent(data, encoding);
-
-                    if (!string.IsNullOrEmpty(contentType))
-                        content.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
-
-                    request.Content = content;
-                }
-
-                var headersModel = headers.Count > 0 ? HeadersModel.Init(headers) : null;
-                Http.DefaultRequestHeaders(url, request, null, null, headersModel, useDefaultHeaders);
-
-                using (var cts = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted))
-                {
-                    cts.CancelAfter(TimeSpan.FromSeconds(Math.Max(5, timeout)));
-
-                    using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false))
+                    request.Version = httpVersion switch
                     {
-                        proxyManager.Success();
+                        2 => HttpVersion.Version20,
+                        3 => HttpVersion.Version30,
+                        _ => HttpVersion.Version11
+                    };
 
-                        await CopyResponseAsync(response, headersOnly).ConfigureAwait(false);
-                        return new EmptyResult();
+                    if (!string.IsNullOrEmpty(data))
+                    {
+                        var encoding = string.IsNullOrEmpty(encodingName)
+                            ? Encoding.UTF8
+                            : Encoding.GetEncoding(encodingName);
+
+                        var content = new StringContent(data, encoding);
+
+                        if (!string.IsNullOrEmpty(contentType))
+                            content.Headers.ContentType = MediaTypeHeaderValue.Parse(contentType);
+
+                        request.Content = content;
+                    }
+
+                    var headersModel = headers.Count > 0 ? HeadersModel.Init(headers) : null;
+                    Http.DefaultRequestHeaders(url, request, null, null, headersModel, useDefaultHeaders);
+
+                    using (var cts = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted))
+                    {
+                        cts.CancelAfter(TimeSpan.FromSeconds(Math.Max(5, timeout)));
+
+                        using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false))
+                        {
+                            proxyManager.Success();
+
+                            await CopyResponseAsync(response, headersOnly).ConfigureAwait(false);
+                            return new EmptyResult();
+                        }
                     }
                 }
+            }
+            finally
+            {
+                if (disposeHttpClient)
+                    client.Dispose();
             }
         }
         catch (OperationCanceledException)

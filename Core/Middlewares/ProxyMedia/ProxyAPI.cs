@@ -5,7 +5,7 @@ using Shared.Models.Events;
 using Shared.Services;
 using Shared.Services.Utilities;
 using System;
-using System.Collections.Concurrent;
+using System.Buffers;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net;
@@ -19,8 +19,6 @@ namespace Core.Middlewares;
 public partial class ProxyAPI
 {
     #region static
-    static readonly ConcurrentDictionary<string, Dictionary<string, string[]>> cacheDefaultRequestHeaders = new();
-
     static CacheFileWatcher fileWatcher;
 
     public static int Stat_ContCacheFiles
@@ -44,7 +42,10 @@ public partial class ProxyAPI
         var init = CoreInit.conf.serverproxy;
         if (!init.enable)
         {
-            httpContext.Response.StatusCode = 404;
+            httpContext.Response.ContentType = "text/plain; charset=utf-8";
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            httpContext.Response.BodyWriter.Write("decryptLink"u8);
+            await httpContext.Response.BodyWriter.FlushAsync(httpContext.RequestAborted).ConfigureAwait(false);
             return;
         }
 
@@ -61,9 +62,12 @@ public partial class ProxyAPI
 
         string servUri = decryptLink?.uri;
 
-        if (string.IsNullOrWhiteSpace(servUri) || !servUri.StartsWith("http"))
+        if (string.IsNullOrEmpty(servUri) || !servUri.StartsWith("http"))
         {
-            httpContext.Response.StatusCode = 404;
+            httpContext.Response.ContentType = "text/plain; charset=utf-8";
+            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
+            httpContext.Response.BodyWriter.Write("servUri empty"u8);
+            await httpContext.Response.BodyWriter.FlushAsync(httpContext.RequestAborted).ConfigureAwait(false);
             return;
         }
         #endregion
@@ -126,7 +130,13 @@ public partial class ProxyAPI
 
                     if (RangeHeaderValue.TryParse(httpContext.Request.Headers["Range"], out var range))
                     {
-                        var rangeItem = range.Ranges.FirstOrDefault();
+                        RangeItemHeaderValue rangeItem = null;
+                        foreach (var r in range.Ranges)
+                        {
+                            rangeItem = r;
+                            break;
+                        }
+
                         if (rangeItem != null)
                         {
                             long start = rangeItem.From ?? 0;
@@ -193,39 +203,55 @@ public partial class ProxyAPI
 
                     try
                     {
-                        var hdlr = new HttpClientHandler()
+                        var hdlr = new HttpClientHandler
                         {
-                            AllowAutoRedirect = true
+                            AllowAutoRedirect = true,
+                            ServerCertificateCustomValidationCallback = Http.AlwaysAllowCertificate
                         };
-
-                        hdlr.ServerCertificateCustomValidationCallback = Http.AlwaysAllowCertificate;
 
                         if (decryptLink.proxy != null)
                         {
                             hdlr.UseProxy = true;
                             hdlr.Proxy = decryptLink.proxy;
                         }
-                        else { hdlr.UseProxy = false; }
-
-                        var clientor = FriendlyHttp.MessageClient("base", hdlr);
-
-                        using (var requestor = CreateProxyHttpRequest(decryptLink.plugin, httpContext, decryptLink.headers, new Uri(servUri)))
+                        else
                         {
-                            if (EventListener.ProxyApiCreateHttpRequest != null)
-                            {
-                                var em = new EventProxyApiCreateHttpRequest(decryptLink, decryptLink.plugin, httpContext.Request, decryptLink.headers, new Uri(servUri), requestor);
-                                await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
-                            }
+                            hdlr.UseProxy = false;
+                        }
 
-                            using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(7)))
+                        var clientor = FriendlyHttp.MessageClient(
+                            "base",
+                            hdlr,
+                            out bool disposeHttpClientor
+                        );
+
+                        try
+                        {
+                            var reqUri = new Uri(servUri);
+
+                            using (var requestor = CreateProxyHttpRequest(decryptLink.plugin, httpContext, decryptLink.headers, reqUri))
                             {
-                                using (var response = await clientor.SendAsync(requestor, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false))
+                                if (EventListener.ProxyApiCreateHttpRequest != null)
                                 {
-                                    if ((int)response.StatusCode is 200 or 206) { }
-                                    else
-                                        servUri = links[1].Trim();
+                                    var em = new EventProxyApiCreateHttpRequest(decryptLink, decryptLink.plugin, httpContext.Request, decryptLink.headers, reqUri, requestor);
+                                    await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
+                                }
+
+                                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(7)))
+                                {
+                                    using (var response = await clientor.SendAsync(requestor, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false))
+                                    {
+                                        if ((int)response.StatusCode is 200 or 206) { }
+                                        else
+                                            servUri = links[1].Trim();
+                                    }
                                 }
                             }
+                        }
+                        finally
+                        {
+                            if (disposeHttpClientor)
+                                clientor.Dispose();
                         }
                     }
                     catch
@@ -233,7 +259,6 @@ public partial class ProxyAPI
                         servUri = links[1].Trim();
                     }
 
-                    servUri = servUri.Split(" ")[0].Trim();
                     decryptLink.uri = servUri;
 
                     if (init.showOrigUri)
@@ -241,80 +266,104 @@ public partial class ProxyAPI
                 }
                 #endregion
 
-                var client = FriendlyHttp.MessageClient("proxy", proxyHandler ?? baseHandler);
+                var client = FriendlyHttp.MessageClient(
+                    "proxy",
+                    proxyHandler ?? baseHandler,
+                    out bool disposeHttpClient
+                );
 
-                using (var request = CreateProxyHttpRequest(decryptLink.plugin, httpContext, decryptLink.headers, new Uri(servUri)))
+                try
                 {
-                    if (EventListener.ProxyApiCreateHttpRequest != null)
+                    var reqUri = new Uri(servUri);
+
+                    using (var request = CreateProxyHttpRequest(decryptLink.plugin, httpContext, decryptLink.headers, reqUri))
                     {
-                        var em = new EventProxyApiCreateHttpRequest(decryptLink, decryptLink.plugin, httpContext.Request, decryptLink.headers, new Uri(servUri), request);
-                        await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
-                    }
+                        if (EventListener.ProxyApiCreateHttpRequest != null)
+                        {
+                            var em = new EventProxyApiCreateHttpRequest(decryptLink, decryptLink.plugin, httpContext.Request, decryptLink.headers, reqUri, request);
+                            await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
+                        }
 
-                    using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(httpContext.RequestAborted))
-                    {
-                        if (ctsHttp.IsCancellationRequested)
-                            return;
-
-                        ctsHttp.CancelAfter(TimeSpan.FromSeconds(30));
-
-                        if (init.showOrigUri)
-                            httpContext.Response.Headers["PX-Req"] = request.RequestUri.ToString();
-
-                        using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ctsHttp.Token).ConfigureAwait(false))
+                        using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(httpContext.RequestAborted))
                         {
                             if (ctsHttp.IsCancellationRequested)
                                 return;
 
-                            if ((int)response.StatusCode is 301 or 302 or 303 or 0 || response.Headers.Location != null)
+                            ctsHttp.CancelAfter(TimeSpan.FromSeconds(30));
+
+                            if (init.showOrigUri)
+                                httpContext.Response.Headers["PX-Req"] = request.RequestUri.ToString();
+
+                            using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ctsHttp.Token).ConfigureAwait(false))
                             {
-                                httpContext.Response.Redirect($"{CoreInit.Host(httpContext)}/proxy/{ProxyLink.Encrypt(response.Headers.Location.AbsoluteUri, decryptLink)}");
-                                return;
-                            }
+                                if (ctsHttp.IsCancellationRequested)
+                                    return;
 
-                            string contentType = null;
-                            if (response.Content?.Headers != null && response.Content.Headers.TryGetValues("Content-Type", out IEnumerable<string> _contentType))
-                                contentType = _contentType?.FirstOrDefault();
-
-                            bool ists =
-                                servPath.EndsWith(".ts", StringComparison.OrdinalIgnoreCase) ||
-                                servPath.EndsWith(".m4s", StringComparison.OrdinalIgnoreCase);
-
-                            bool ism3u = servPath.Contains(".m3u", StringComparison.OrdinalIgnoreCase);
-
-                            if (!ism3u)
-                            {
-                                if (contentType != null)
+                                if ((int)response.StatusCode is 301 or 302 or 303 or 0 || response.Headers.Location != null)
                                 {
-                                    ism3u =
-                                        contentType.StartsWith("application/x-mpegurl", StringComparison.OrdinalIgnoreCase) ||
-                                        contentType.StartsWith("application/vnd.apple.mpegurl", StringComparison.OrdinalIgnoreCase) ||
-                                        contentType.StartsWith("text/plain", StringComparison.OrdinalIgnoreCase);
-                                }
-                            }
+                                    httpContext.Response.Redirect(
+                                        ProxyLink.Encrypt(
+                                            response.Headers.Location.AbsoluteUri,
+                                            decryptLink,
+                                            prefix: [CoreInit.Host(httpContext), "/proxy/"]
+                                        )
+                                    );
 
-                            if (!ists && ism3u)
-                            {
-                                await ProxyM3u8(httpContext, init, decryptLink, response, contentType, ctsHttp);
-                            }
-                            else if (servPath.Contains(".mpd", StringComparison.OrdinalIgnoreCase) || contentType?.StartsWith("application/dash+xml") == true)
-                            {
-                                await ProxyMpd(httpContext, init, decryptLink, response, contentType, ctsHttp);
-                            }
-                            else
-                            {
-                                httpContext.Response.Headers["PX-Cache"] = cacheStream.uriKey != null ? "MISS" : "BYPASS";
-                                await CopyProxyHttpResponse(httpContext, response, cacheStream.uriKey, ctsHttp.Token).ConfigureAwait(false);
+                                    return;
+                                }
+
+                                string contentType = null;
+                                if (response.Content?.Headers != null && response.Content.Headers.TryGetValues("Content-Type", out IEnumerable<string> _contentType))
+                                    contentType = _contentType?.FirstOrDefault();
+
+                                bool ists =
+                                    servPath.EndsWith(".ts", StringComparison.OrdinalIgnoreCase) ||
+                                    servPath.EndsWith(".m4s", StringComparison.OrdinalIgnoreCase);
+
+                                bool ism3u = servPath.Contains(".m3u", StringComparison.OrdinalIgnoreCase);
+
+                                if (!ism3u)
+                                {
+                                    if (contentType != null)
+                                    {
+                                        ism3u =
+                                            contentType.StartsWith("application/x-mpegurl", StringComparison.OrdinalIgnoreCase) ||
+                                            contentType.StartsWith("application/vnd.apple.mpegurl", StringComparison.OrdinalIgnoreCase) ||
+                                            contentType.StartsWith("text/plain", StringComparison.OrdinalIgnoreCase);
+                                    }
+                                }
+
+                                if (!ists && ism3u)
+                                {
+                                    await ProxyM3u8(httpContext, init, decryptLink, response, contentType, ctsHttp);
+                                }
+                                else if (servPath.Contains(".mpd", StringComparison.OrdinalIgnoreCase) || contentType?.StartsWith("application/dash+xml") == true)
+                                {
+                                    await ProxyMpd(httpContext, init, decryptLink, response, contentType, ctsHttp);
+                                }
+                                else
+                                {
+                                    httpContext.Response.Headers["PX-Cache"] = cacheStream.uriKey != null ? "MISS" : "BYPASS";
+                                    await CopyProxyHttpResponse(httpContext, response, cacheStream.uriKey, ctsHttp.Token).ConfigureAwait(false);
+                                }
                             }
                         }
                     }
                 }
+                finally
+                {
+                    if (disposeHttpClient)
+                        client.Dispose();
+                }
             }
         }
-        catch (TaskCanceledException) { }
-        catch (System.Exception ex)
+        catch (TaskCanceledException)
         {
-            Serilog.Log.Error(ex, "CatchId={CatchId}", "id_1wmuzgfc");
+        }
+        catch (Exception ex)
+        {
+            if (CoreInit.conf.serilog)
+                Serilog.Log.Error(ex, "CatchId={CatchId}", "id_1wmuzgfc");
         }
     }
 }

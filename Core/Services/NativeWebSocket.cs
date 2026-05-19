@@ -373,7 +373,8 @@ public class NativeWebSocket : INws
                     JsonSerializer.Serialize(
                         writer,
                         new NwsSendModel(method, args ?? Array.Empty<object>()),
-                        serializerOptions);
+                        serializerOptions
+                    );
                 }
 
                 using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10)))

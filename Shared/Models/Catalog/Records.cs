@@ -18,4 +18,4 @@ public record CatalogNodeValue(string value, string host);
 
 public record CatalogInitUrlCard(string host, string args, string uri, IQueryCollection query, string type);
 
-public record CatalogInitHeader(string url, List<HeadersModel> headers);
+public record CatalogInitHeader(string url, IReadOnlyList<HeadersModel> headers);

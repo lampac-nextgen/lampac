@@ -21,7 +21,21 @@ public class CoreInit
     #region static
     public static string rootPasswd;
 
-    public static readonly HashSet<string> CompressionMimeTypes = ResponseCompressionDefaults.MimeTypes.Concat(["image/svg+xml"]).ToHashSet();
+    public static readonly HashSet<string> CompressionMimeTypes
+        = ResponseCompressionDefaults.MimeTypes.Concat(["image/svg+xml"]).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+    public static bool ContainsMimeTypes(string contentType)
+    {
+        if (string.IsNullOrEmpty(contentType))
+            return false;
+
+        int semicolonIndex = contentType.IndexOf(';');
+
+        if (semicolonIndex >= 0)
+            contentType = contentType[..semicolonIndex];
+
+        return CompressionMimeTypes.Contains(contentType.Trim());
+    }
 
     public static bool Win32NT => Environment.OSVersion.Platform == PlatformID.Win32NT;
 
@@ -140,7 +154,7 @@ public class CoreInit
             }
         }
 
-        PosterApi.Initialization(conf.omdbapi_key, conf.posterApi, new ProxyLink());
+        PosterApi.Initialization(conf.omdbapi_key, conf.posterApi);
     }
 
     static void updateYamlConf()
@@ -172,7 +186,7 @@ public class CoreInit
                 }
             }
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             Serilog.Log.Error(ex, "CatchId={CatchId}", "id_ae3dd533");
             Console.WriteLine($"DeserializeObject Exception init.yaml:\n{ex}\n\n");
@@ -181,19 +195,19 @@ public class CoreInit
     #endregion
 
     #region Host
-    public static string Host(HttpContext httpContext)
+    public static string Host(HttpContext httpContext, string suffix = null)
     {
         string scheme = string.IsNullOrEmpty(conf.listen.scheme) ? httpContext.Request.Scheme : conf.listen.scheme;
         if (httpContext.Request.Headers.TryGetValue("xscheme", out var xscheme) && xscheme.Count > 0)
             scheme = xscheme;
 
         if (!string.IsNullOrEmpty(conf.listen.host))
-            return $"{scheme}://{conf.listen.host}";
+            return $"{scheme}://{conf.listen.host}{suffix}";
 
         if (httpContext.Request.Headers.TryGetValue("xhost", out var xhost) && xhost.Count > 0)
-            return $"{scheme}://{Regex.Replace(xhost, "^https?://", "")}";
+            return $"{scheme}://{Regex.Replace(xhost, "^https?://", "")}{suffix}";
 
-        return $"{scheme}://{httpContext.Request.Host.Value}";
+        return $"{scheme}://{httpContext.Request.Host.Value}{suffix}";
     }
     #endregion
 
@@ -203,8 +217,8 @@ public class CoreInit
         localhost = "127.0.0.1",
         port = 9118,
         ResponseCancelAfter = 5,
-        compression = false,
-        frontend = null // cloudflare|nginx
+        compression = true,
+        frontend = null     // cloudflare|nginx
     };
 
     public bool lowMemoryMode;

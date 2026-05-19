@@ -7,10 +7,10 @@ using Shared.Services;
 using Shared.Services.Pools;
 using Shared.Services.Utilities;
 using System;
-using System.Buffers;
+using System.Collections.Concurrent;
+using System.Collections.Frozen;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
 using System.Net;
 using System.Net.Http;
 using System.Net.Http.Headers;
@@ -23,6 +23,9 @@ namespace Core.Middlewares;
 
 public partial class ProxyAPI
 {
+    #region static
+    static readonly ConcurrentDictionary<string, IReadOnlyDictionary<string, string[]>> cacheDefaultRequestHeaders = new();
+
     static readonly HttpClientHandler baseHandler = new HttpClientHandler()
     {
         ServerCertificateCustomValidationCallback = Http.AlwaysAllowCertificate,
@@ -31,21 +34,36 @@ public partial class ProxyAPI
         UseProxy = false
     };
 
+    static readonly FrozenSet<string> responseHeaders = new[]
+    {
+        "accept-encoding",
+        "accept-ranges",
+        "content-range",
+        "content-length",
+        "content-type"
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     static async Task InvokeProxyApiCreateHttpRequestHandlers(EventProxyApiCreateHttpRequest eventArgs)
     {
         foreach (Func<EventProxyApiCreateHttpRequest, Task> handler in EventListener.ProxyApiCreateHttpRequest.GetInvocationList())
             await handler(eventArgs).ConfigureAwait(false);
     }
+    #endregion
 
     #region CreateProxyHttpRequest
-    static HttpRequestMessage CreateProxyHttpRequest(string plugin, HttpContext context, List<HeadersModel> headers, Uri uri)
+    static HttpRequestMessage CreateProxyHttpRequest(string plugin, HttpContext context, IReadOnlyList<HeadersModel> headers, Uri uri)
     {
         var request = context.Request;
-        var requestMethod = request.Method;
+
+        var requestMethod = HttpMethods.IsGet(request.Method)
+            ? HttpMethod.Get
+            : HttpMethods.IsPost(request.Method)
+                ? HttpMethod.Post
+                : new HttpMethod(request.Method);
 
         var requestMessage = new HttpRequestMessage();
 
-        if (HttpMethods.IsPost(requestMethod))
+        if (requestMethod == HttpMethod.Post)
         {
             var streamContent = new StreamContent(request.Body);
             requestMessage.Content = streamContent;
@@ -88,7 +106,7 @@ public partial class ProxyAPI
             var normalizeHeaders = Http.NormalizeHeaders(addHeaders);
 
             if (range.Count == 0 && plugin != null)
-                cacheDefaultRequestHeaders.AddOrUpdate(plugin, normalizeHeaders, (k, v) => normalizeHeaders);
+                cacheDefaultRequestHeaders[plugin] = normalizeHeaders;
 
             foreach (var h in normalizeHeaders)
             {
@@ -103,7 +121,7 @@ public partial class ProxyAPI
 
         requestMessage.Headers.Host = uri.Authority;
         requestMessage.RequestUri = uri;
-        requestMessage.Method = new HttpMethod(request.Method);
+        requestMessage.Method = requestMethod;
 
         //requestMessage.Version = new Version(2, 0);
         //Console.WriteLine(JsonConvert.SerializeObject(requestMessage.Headers, Formatting.Indented));
@@ -124,24 +142,35 @@ public partial class ProxyAPI
         #region UpdateHeaders
         void UpdateHeaders(HttpHeaders headers)
         {
+            if (headers == null)
+                return;
+
             foreach (var header in headers)
             {
-                var key = header.Key.AsSpan();
+                string key = header.Key;
 
-                if (key.Equals("accept-encoding", StringComparison.OrdinalIgnoreCase) ||
-                    key.Equals("accept-ranges", StringComparison.OrdinalIgnoreCase) ||
-                    key.Equals("content-range", StringComparison.OrdinalIgnoreCase) ||
-                    key.Equals("content-length", StringComparison.OrdinalIgnoreCase) ||
-                    key.Equals("content-type", StringComparison.OrdinalIgnoreCase))
+                if (responseHeaders.Contains(key))
                 {
-                    response.Headers[header.Key] = header.Value.ToArray();
+                    var values = header.Value;
+
+                    using (var e = values.GetEnumerator())
+                    {
+                        if (!e.MoveNext())
+                            continue;
+
+                        var first = e.Current;
+
+                        response.Headers[key] = e.MoveNext()
+                            ? string.Join("; ", values)
+                            : first;
+                    }
                 }
             }
         }
         #endregion
 
         UpdateHeaders(responseMessage.Headers);
-        UpdateHeaders(responseMessage.Content.Headers);
+        UpdateHeaders(responseMessage.Content?.Headers);
 
         await using (var responseStream = await responseMessage.Content.ReadAsStreamAsync(ct).ConfigureAwait(false))
         {

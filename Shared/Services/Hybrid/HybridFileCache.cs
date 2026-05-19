@@ -229,14 +229,14 @@ public class HybridFileCache : BaseHybridCache, IHybridCache
                     {
                         File.Delete(filePath);
                     }
-                    catch (System.Exception ex)
+                    catch (Exception ex)
                     {
                         Log.Error(ex, "CatchId={CatchId}; CacheKey={CacheKey}; CachePath={CachePath}", "id_m4678k3z_item", cache.Key, filePath);
                     }
                 }
             }
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             Log.Error(ex, "CatchId={CatchId}", "id_m4678k3z");
         }
@@ -390,7 +390,7 @@ public class HybridFileCache : BaseHybridCache, IHybridCache
                             {
                                 await using (var gzip = new GZipStream(fs, CompressionMode.Decompress, leaveOpen: true))
                                 {
-                                    using (var byteBuf = new BufferBytePool(BufferBytePool.sizeSmall))
+                                    using (var byteBuf = new BufferPool())
                                     {
                                         int bytesRead;
                                         var memBuf = byteBuf.Memory;
@@ -529,10 +529,15 @@ public class HybridFileCache : BaseHybridCache, IHybridCache
             }
 
             /// защита от асинхронных rch запросов которые приходят в рамках 12 секунд
-            /// дополнительный кеш для сериалов, что бы выборка сезонов/озвучки не дергала sql
-            var extend = now.AddSeconds(Math.Max(15, CoreInit.conf.cache.extend));
+            /// дополнительный кеш для сериалов, что бы выборка сезонов/озвучки не дергала IO
+            DateTimeOffset extend = now.AddSeconds(Math.Max(15, CoreInit.conf.cache.extend));
 
-            if (extend >= absoluteExpiration || now.AddSeconds(CoreInit.conf.cache.extend + 60) >= absoluteExpiration)
+            /// ограничиваем время хранение кеша в RAM для быстрого сброса в IO
+            /// не меньше 15s, но не больше 60s
+            if (CoreInit.conf.lowMemoryMode || key.StartsWith("ipkey:"))
+                extend = now.AddSeconds(Math.Max(15, Math.Min(60, CoreInit.conf.cache.extend)));
+
+            if (extend.AddSeconds(60) >= absoluteExpiration)
             {
                 memoryCache.Set(key, value, absoluteExpiration);
                 return true;
@@ -548,7 +553,7 @@ public class HybridFileCache : BaseHybridCache, IHybridCache
             tempDb.TryAdd(md5key, new TempEntry(extend, IsSerialize, textJson, absoluteExpiration, value));
             return true;
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
             Log.Error(ex, "CatchId={CatchId}", "id_yypxq9n6");
             return false;

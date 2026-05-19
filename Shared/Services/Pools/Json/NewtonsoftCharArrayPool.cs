@@ -15,7 +15,7 @@ public class NewtonsoftCharArrayPool : IArrayPool<char>
     #region pool
     [ThreadStatic]
     private static char[] _threadSmall;
-    public static readonly int sizeSmall = 32 * 1024;
+    public static readonly int sizeSmall = 32 * 1024; // 64kb
 
     public static readonly int sizeMedium = 128 * 1024; // 128 char ~ 256kb
     static readonly ConcurrentBag<char[]> _poolMedium = new();
@@ -47,20 +47,20 @@ public class NewtonsoftCharArrayPool : IArrayPool<char>
 
     public char[] Rent(int minimumLength)
     {
-        if (sizeSmall >= minimumLength && CoreInit.conf.lowMemoryMode == false)
+        if (sizeSmall >= minimumLength)
         {
             return _threadSmall ??= new char[sizeSmall];
         }
-        else if (sizeMedium >= minimumLength && mediumMaxCount > _poolMedium.Count)
+        else if (sizeMedium >= minimumLength)
         {
-            if (_poolMedium.TryTake(out char[] _array))
+            if (mediumMaxCount > _poolMedium.Count && _poolMedium.TryTake(out char[] _array))
                 return _array;
 
             return new char[sizeMedium];
         }
-        else if (sizeLarge >= minimumLength && largeMaxCount > _poolLarge.Count)
+        else if (sizeLarge >= minimumLength)
         {
-            if (_poolLarge.TryTake(out char[] _array))
+            if (largeMaxCount > _poolLarge.Count && _poolLarge.TryTake(out char[] _array))
                 return _array;
 
             return new char[sizeLarge];

@@ -8,7 +8,7 @@ namespace Shared.Models.Templates;
 
 public static class VideoTpl
 {
-    public static string ToJson(string method, string url, string title, StreamQualityTpl streamquality = null, SubtitleTpl subtitles = null, string quality = null, VastConf vast = null, List<HeadersModel> headers = null, int? hls_manifest_timeout = null, SegmentTpl segments = null, string subtitles_call = null, HttpContext httpContext = null)
+    public static string ToJson(string method, string url, string title, StreamQualityTpl streamquality = null, SubtitleTpl subtitles = null, string quality = null, VastConf vast = null, IReadOnlyList<HeadersModel> headers = null, int? hls_manifest_timeout = null, SegmentTpl segments = null, string subtitles_call = null, HttpContext httpContext = null)
     {
         var _vast = vast ?? CoreInit.conf.vast;
 

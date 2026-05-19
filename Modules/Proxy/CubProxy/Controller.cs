@@ -9,6 +9,8 @@ using Shared.Services.Hybrid;
 using Shared.Services.Pools;
 using Shared.Services.Utilities;
 using System;
+using System.Buffers;
+using System.Collections.Frozen;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -69,9 +71,11 @@ public class CubProxyController : BaseController
 
             if (domain.StartsWith("geo", StringComparison.OrdinalIgnoreCase))
             {
+                // если geo клиента не определен, то скорее всего локальный ip
                 string country = requestInfo.Country;
                 if (country == null)
                 {
+                    // узнаем ip машины (которая скорее всего стоит локально)
                     var ipify = await Http.Get<JObject>("https://api.ipify.org/?format=json");
                     if (ipify != null || !string.IsNullOrEmpty(ipify.Value<string>("ip")))
                         country = GeoIP2.Country(ipify.Value<string>("ip"));
@@ -104,7 +108,10 @@ public class CubProxyController : BaseController
                     }
                 }
 
-                await HttpContext.Response.WriteAsync("ok", ctsHttp.Token);
+                HttpContext.Response.ContentType = "text/plain; charset=utf-8";
+                HttpContext.Response.StatusCode = StatusCodes.Status200OK;
+                HttpContext.Response.BodyWriter.Write("ok"u8);
+                await HttpContext.Response.BodyWriter.FlushAsync(ctsHttp.Token).ConfigureAwait(false);
                 return;
             }
             #endregion
@@ -113,7 +120,9 @@ public class CubProxyController : BaseController
             if (uri.StartsWith("api/plugins/blacklist", StringComparison.OrdinalIgnoreCase))
             {
                 HttpContext.Response.ContentType = "application/json; charset=utf-8";
-                await HttpContext.Response.WriteAsync("[]", ctsHttp.Token);
+                HttpContext.Response.StatusCode = StatusCodes.Status200OK;
+                HttpContext.Response.BodyWriter.Write("[]"u8);
+                await HttpContext.Response.BodyWriter.FlushAsync(ctsHttp.Token).ConfigureAwait(false);
                 return;
             }
             #endregion
@@ -121,7 +130,10 @@ public class CubProxyController : BaseController
             #region ads/log/metric
             if (uri.StartsWith("api/metric/", StringComparison.OrdinalIgnoreCase) || uri.StartsWith("api/ad/stat", StringComparison.OrdinalIgnoreCase))
             {
-                await HttpContext.Response.WriteAsJsonAsync(new { secuses = true });
+                HttpContext.Response.ContentType = "application/json; charset=utf-8";
+                HttpContext.Response.StatusCode = StatusCodes.Status200OK;
+                HttpContext.Response.BodyWriter.Write("{\"secuses\":true}"u8);
+                await HttpContext.Response.BodyWriter.FlushAsync(ctsHttp.Token).ConfigureAwait(false);
                 return;
             }
 
@@ -149,7 +161,13 @@ public class CubProxyController : BaseController
                 HttpContext.Request.Headers.ContainsKey("token") || HttpContext.Request.Headers.ContainsKey("profile"))
             {
                 #region bypass or media cache
-                string md5key = CrypTo.md5($"{domain}:{uri}");
+                string md5key = CrypTo.md5Builder(writer =>
+                {
+                    writer.Append(domain);
+                    writer.Append(':');
+                    writer.Append(uri);
+                });
+
                 string outFile = ModInit.fileWatcher.OutFile(md5key);
 
                 if (ModInit.fileWatcher.TryGetValue(md5key, out var _fileCache))
@@ -176,93 +194,109 @@ public class CubProxyController : BaseController
                     handler.UseProxy = true;
                     handler.Proxy = proxy;
                 }
-                else { handler.UseProxy = false; }
-
-                var client = FriendlyHttp.MessageClient("proxyRedirect", handler);
-                var request = CreateProxyHttpRequest(HttpContext, new Uri($"{init.scheme}://{domain}/{uri}"), requestInfo, init.viewru && path.Split(".")[0] == "tmdb");
-
-                using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ctsHttp.Token).ConfigureAwait(false))
+                else
                 {
-                    if (init.cache_img > 0 && isMedia && HttpMethods.IsGet(HttpContext.Request.Method) && response.StatusCode == HttpStatusCode.OK)
+                    handler.UseProxy = false;
+                }
+
+                var client = FriendlyHttp.MessageClient(
+                    "proxyRedirect",
+                    handler,
+                    out bool disposeHttpClient
+                );
+
+                try
+                {
+                    var request = CreateProxyHttpRequest(HttpContext, new Uri($"{init.scheme}://{domain}/{uri}"), requestInfo, init.viewru && path.Split(".")[0] == "tmdb");
+
+                    using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ctsHttp.Token).ConfigureAwait(false))
                     {
-                        #region cache
-                        HttpContext.Response.ContentType = getContentType(uri);
-                        HttpContext.Response.Headers["X-Cache-Status"] = "MISS";
-
-                        if (init.responseContentLength && response.Content?.Headers?.ContentLength > 0)
+                        if (init.cache_img > 0 && isMedia && HttpMethods.IsGet(HttpContext.Request.Method) && response.StatusCode == HttpStatusCode.OK)
                         {
-                            if (!CoreInit.CompressionMimeTypes.Contains(HttpContext.Response.ContentType))
-                                HttpContext.Response.ContentLength = response.Content.Headers.ContentLength.Value;
-                        }
+                            #region cache
+                            HttpContext.Response.ContentType = getContentType(uri);
+                            HttpContext.Response.Headers["X-Cache-Status"] = "MISS";
 
-                        var semaphore = new SemaphorManager(outFile, ctsHttp.Token);
-
-                        try
-                        {
-                            bool _acquired = await semaphore.WaitAsync().ConfigureAwait(false);
-                            if (!_acquired)
-                                return;
-
-                            using (var nbuf = new BufferPool())
+                            if (init.responseContentLength && response.Content?.Headers?.ContentLength > 0)
                             {
-                                try
+                                if (!CoreInit.ContainsMimeTypes(HttpContext.Response.ContentType))
+                                    HttpContext.Response.ContentLength = response.Content.Headers.ContentLength.Value;
+                            }
+
+                            var semaphore = new SemaphorManager(outFile, ctsHttp.Token);
+
+                            try
+                            {
+                                bool _acquired = await semaphore.WaitAsync().ConfigureAwait(false);
+                                if (!_acquired)
+                                    return;
+
+                                using (var nbuf = new BufferPool())
                                 {
-                                    int cacheLength = 0;
-                                    var memBuf = nbuf.Memory;
-
-                                    ModInit.fileWatcher.EnsureDirectory(md5key);
-
-                                    await using (var cacheStream = new FileStream(outFile, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: PoolInvk.bufferSize, options: FileOptions.Asynchronous))
+                                    try
                                     {
-                                        await using (var responseStream = await response.Content.ReadAsStreamAsync(ctsHttp.Token).ConfigureAwait(false))
+                                        int cacheLength = 0;
+                                        var memBuf = nbuf.Memory;
+
+                                        ModInit.fileWatcher.EnsureDirectory(md5key);
+
+                                        await using (var cacheStream = new FileStream(outFile, FileMode.Create, FileAccess.Write, FileShare.None, bufferSize: PoolInvk.bufferSize, options: FileOptions.Asynchronous))
                                         {
-                                            int bytesRead;
-
-                                            while ((bytesRead = await responseStream.ReadAsync(memBuf, ctsHttp.Token).ConfigureAwait(false)) > 0)
+                                            await using (var responseStream = await response.Content.ReadAsStreamAsync(ctsHttp.Token).ConfigureAwait(false))
                                             {
-                                                if (ctsHttp.IsCancellationRequested)
-                                                    break;
+                                                int bytesRead;
 
-                                                cacheLength += bytesRead;
-                                                await cacheStream.WriteAsync(memBuf.Slice(0, bytesRead)).ConfigureAwait(false);
-                                                await HttpContext.Response.Body.WriteAsync(memBuf.Slice(0, bytesRead), ctsHttp.Token).ConfigureAwait(false);
+                                                while ((bytesRead = await responseStream.ReadAsync(memBuf, ctsHttp.Token).ConfigureAwait(false)) > 0)
+                                                {
+                                                    if (ctsHttp.IsCancellationRequested)
+                                                        break;
+
+                                                    cacheLength += bytesRead;
+                                                    await cacheStream.WriteAsync(memBuf.Slice(0, bytesRead)).ConfigureAwait(false);
+                                                    await HttpContext.Response.Body.WriteAsync(memBuf.Slice(0, bytesRead), ctsHttp.Token).ConfigureAwait(false);
+                                                }
                                             }
                                         }
-                                    }
 
-                                    if (response.Content.Headers.ContentLength.HasValue)
-                                    {
-                                        if (response.Content.Headers.ContentLength.Value == cacheLength)
+                                        if (response.Content.Headers.ContentLength.HasValue)
                                         {
-                                            ModInit.fileWatcher.Add(md5key, cacheLength);
+                                            if (response.Content.Headers.ContentLength.Value == cacheLength)
+                                            {
+                                                ModInit.fileWatcher.Add(md5key, cacheLength);
+                                            }
+                                            else
+                                            {
+                                                System.IO.File.Delete(outFile);
+                                            }
                                         }
                                         else
                                         {
-                                            System.IO.File.Delete(outFile);
+                                            ModInit.fileWatcher.Add(md5key, cacheLength);
                                         }
                                     }
-                                    else
+                                    catch
                                     {
-                                        ModInit.fileWatcher.Add(md5key, cacheLength);
+                                        System.IO.File.Delete(outFile);
                                     }
                                 }
-                                catch
-                                {
-                                    System.IO.File.Delete(outFile);
-                                }
                             }
+                            finally
+                            {
+                                semaphore.Release();
+                            }
+                            #endregion
                         }
-                        finally
+                        else
                         {
-                            semaphore.Release();
+                            HttpContext.Response.Headers["X-Cache-Status"] = "bypass";
+                            await CopyProxyHttpResponse(HttpContext, response, ctsHttp.Token).ConfigureAwait(false);
                         }
-                        #endregion
                     }
-                    else
-                    {
-                        HttpContext.Response.Headers["X-Cache-Status"] = "bypass";
-                        await CopyProxyHttpResponse(HttpContext, response, ctsHttp.Token).ConfigureAwait(false);
-                    }
+                }
+                finally
+                {
+                    if (disposeHttpClient)
+                        client.Dispose();
                 }
                 #endregion
             }
@@ -279,8 +313,11 @@ public class CubProxyController : BaseController
                     bool _acquired = await semaphore.WaitAsync().ConfigureAwait(false);
                     if (!_acquired)
                     {
-                        HttpContext.Response.StatusCode = 502;
-                        await HttpContext.Response.WriteAsync("502 Bad Gateway", ctsHttp.Token).ConfigureAwait(false);
+                        HttpContext.Response.ContentType = "text/plain; charset=utf-8";
+                        HttpContext.Response.StatusCode = StatusCodes.Status502BadGateway;
+                        HttpContext.Response.BodyWriter.Write("502 Bad Gateway"u8);
+                        await HttpContext.Response.BodyWriter.FlushAsync(ctsHttp.Token).ConfigureAwait(false);
+                        return;
                     }
 
                     if (!hybridCache.TryGetValue(memkey, out cache))
@@ -354,7 +391,7 @@ public class CubProxyController : BaseController
                     semaphore.Release();
                 }
 
-                if (!CoreInit.CompressionMimeTypes.Contains(cache.contentType))
+                if (!CoreInit.ContainsMimeTypes(cache.contentType))
                     HttpContext.Response.ContentLength = cache.content.Length;
 
                 HttpContext.Response.StatusCode = cache.statusCode;
@@ -386,6 +423,15 @@ public class CubProxyController : BaseController
     #endregion
 
     #region CreateProxyHttpRequest
+    static readonly FrozenSet<string> excludedRequestHeaders = new[]
+    {
+        "host",
+        "origin",
+        "referer",
+        "content-disposition",
+        "accept-encoding"
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     HttpRequestMessage CreateProxyHttpRequest(HttpContext context, Uri uri, RequestModel requestInfo, bool viewru)
     {
         var request = context.Request;
@@ -413,11 +459,7 @@ public class CubProxyController : BaseController
         {
             string key = header.Key;
 
-            if (key.Equals("host", StringComparison.OrdinalIgnoreCase) ||
-                key.Equals("origin", StringComparison.OrdinalIgnoreCase) ||
-                key.Equals("referer", StringComparison.OrdinalIgnoreCase) ||
-                key.Equals("content-disposition", StringComparison.OrdinalIgnoreCase) ||
-                key.Equals("accept-encoding", StringComparison.OrdinalIgnoreCase))
+            if (excludedRequestHeaders.Contains(key))
                 continue;
 
             if (viewru && key.Equals("cookie", StringComparison.OrdinalIgnoreCase))
@@ -436,14 +478,29 @@ public class CubProxyController : BaseController
 
         requestMessage.Headers.Host = uri.Authority;
         requestMessage.RequestUri = uri;
-        requestMessage.Method = new HttpMethod(request.Method);
         //requestMessage.Version = new Version(2, 0);
+
+        requestMessage.Method = HttpMethods.IsGet(request.Method)
+            ? HttpMethod.Get
+            : HttpMethods.IsPost(request.Method)
+                ? HttpMethod.Post
+                : new HttpMethod(request.Method);
 
         return requestMessage;
     }
     #endregion
 
     #region CopyProxyHttpResponse
+    static readonly FrozenSet<string> excludedResponseHeaders = new[]
+    {
+        "server",
+        "transfer-encoding",
+        "etag",
+        "connection",
+        "content-security-policy",
+        "content-disposition"
+    }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
+
     async Task CopyProxyHttpResponse(HttpContext context, HttpResponseMessage responseMessage, CancellationToken cancellationToken)
     {
         var response = context.Response;
@@ -452,16 +509,14 @@ public class CubProxyController : BaseController
         #region UpdateHeaders
         void UpdateHeaders(HttpHeaders headers)
         {
+            if (headers == null)
+                return;
+
             foreach (var header in headers)
             {
                 string key = header.Key;
 
-                if (key.Equals("server", StringComparison.OrdinalIgnoreCase) ||
-                    key.Equals("transfer-encoding", StringComparison.OrdinalIgnoreCase) ||
-                    key.Equals("etag", StringComparison.OrdinalIgnoreCase) ||
-                    key.Equals("connection", StringComparison.OrdinalIgnoreCase) ||
-                    key.Equals("content-security-policy", StringComparison.OrdinalIgnoreCase) ||
-                    key.Equals("content-disposition", StringComparison.OrdinalIgnoreCase))
+                if (excludedResponseHeaders.Contains(key))
                     continue;
 
                 if (key.StartsWith("x-", StringComparison.OrdinalIgnoreCase) ||
@@ -489,7 +544,7 @@ public class CubProxyController : BaseController
         #endregion
 
         UpdateHeaders(responseMessage.Headers);
-        UpdateHeaders(responseMessage.Content.Headers);
+        UpdateHeaders(responseMessage.Content?.Headers);
 
         await using (var responseStream = await responseMessage.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
         {

@@ -299,7 +299,7 @@ public class AnimeLibController : BaseOnlineController
 
 
     #region goStreams
-    IReadOnlyList<StreamQualityDto> goStreams(Player[] players, string _voice, List<HeadersModel> headers_stream)
+    IReadOnlyList<StreamQualityDto> goStreams(Player[] players, string _voice, IReadOnlyList<HeadersModel> headers_stream)
     {
         var _streams = new List<StreamQualityDto>(20);
 

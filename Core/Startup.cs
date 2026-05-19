@@ -27,6 +27,7 @@ using Shared.Services;
 using Shared.Services.Hybrid;
 using Shared.Services.Pools;
 using System;
+using System.Buffers;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -519,7 +520,7 @@ public class Startup
 
                             await _exceptionLogWriter.WriteAsync(sb.ToString());
                         }
-                        catch (System.Exception ex)
+                        catch (Exception ex)
                         {
                             Serilog.Log.Error(ex, "{Class} {CatchId}", "Startup", "id_v7q7awx1");
                         }
@@ -534,9 +535,10 @@ public class Startup
                     StringBuilderPool.Return(sb);
                 }
 
+                context.Response.ContentType = "application/json; charset=utf-8";
                 context.Response.StatusCode = StatusCodes.Status500InternalServerError;
-                context.Response.ContentType = "application/json";
-                await context.Response.WriteAsync("{\"error\":\"Internal server error\"}", context.RequestAborted);
+                context.Response.BodyWriter.Write("{\"error\":\"Internal server error\"}"u8);
+                await context.Response.BodyWriter.FlushAsync(context.RequestAborted).ConfigureAwait(false);
             });
         });
         #endregion

@@ -21,58 +21,83 @@ public class ProxyLink : IProxyLink
 
     public static int Stat_ContLinks
         => links.IsEmpty ? 0 : links.Count;
+
+    static readonly JsonWriterOptions _jsonWriterOptions = new JsonWriterOptions
+    {
+        Indented = false,
+        SkipValidation = true
+    };
     #endregion
 
 
     #region Encrypt
-    public string Encrypt(string uri, string plugin, DateTime ex = default, bool IsProxyImg = false)
+    public string Encrypt(ReadOnlySpan<char> uri, string plugin, DateTime ex = default, bool IsProxyImg = false)
         => Encrypt(uri, null, verifyip: false, ex: ex, plugin: plugin, IsProxyImg: IsProxyImg);
 
-    public static string Encrypt(string uri, ProxyLinkModel p, bool forceMd5 = false)
-        => Encrypt(uri, p.reqip, p.headers, p.proxy, p.plugin, p.verifyip, forceMd5: p.md5 || forceMd5, userdata: p.userdata);
+    public static string Encrypt(ReadOnlySpan<char> uri, ProxyLinkModel p, bool forceMd5 = false, string[] prefix = null, Action<StringBuilder> sbWriter = null)
+        => Encrypt(uri, p.reqip, p.headers, p.proxy, p.plugin, p.verifyip, default, p.md5 || forceMd5, false, prefix, p.userdata, sbWriter);
 
-    public static string Encrypt(string uri, string reqip, List<HeadersModel> headers = null, WebProxy proxy = null, string plugin = null, bool verifyip = true, DateTime ex = default, bool forceMd5 = false, bool IsProxyImg = false, object userdata = null)
+    public static string Encrypt(ReadOnlySpan<char> uri, string reqip, IReadOnlyList<HeadersModel> headers = null, WebProxy proxy = null, string plugin = null, bool verifyip = true, DateTime ex = default, bool forceMd5 = false, bool IsProxyImg = false, string[] prefix = null, object userdata = null, Action<StringBuilder> sbWriter = null)
     {
-        if (string.IsNullOrWhiteSpace(uri))
+        if (uri.IsEmpty)
             return string.Empty;
 
-        string uri_clear = uri.Contains("#") ? uri.Split("#")[0].Trim() : uri.Trim();
-
-        StringBuilder hash = _threadHashBuilder ??= new StringBuilder(CoreInit.conf.lowMemoryMode ? 0 : 1024);
+        StringBuilder hash = _threadHashBuilder ??= new StringBuilder(1024);
         hash.Clear();
+
+        if (prefix != null)
+        {
+            foreach (string pfx in prefix)
+            {
+                if (pfx != null)
+                    hash.Append(pfx);
+            }
+        }
+
+        int sharpIndex = uri.IndexOf('#');
+        ReadOnlySpan<char> uri_clear = sharpIndex >= 0
+            ? uri[..sharpIndex].Trim()
+            : uri.Trim();
 
         if (plugin == "posterapi")
         {
-            return SerializePayload(hash, IsProxyImg, uri_clear, uri, plugin, null, false, default, null);
+            return SerializePayload(hash, IsProxyImg, uri_clear, uri, plugin, null, false, default, null, sbWriter);
         }
-        else if (!forceMd5 && proxy == null && userdata == null && !uri_clear.Contains(" or "))
+        else if (!forceMd5 && proxy == null && userdata == null && !uri_clear.Contains(" or ", StringComparison.Ordinal))
         {
             if (verifyip && CoreInit.conf.serverproxy.verifyip)
             {
-                return SerializePayload(hash, IsProxyImg, uri_clear, uri, plugin, reqip, true, DateTime.Today.AddDays(2), headers?.ToDictionary());
+                return SerializePayload(hash, IsProxyImg, uri_clear, uri, plugin, reqip, true, DateTime.Today.AddDays(2), headers?.ToDictionary(), sbWriter);
             }
             else
             {
-                return SerializePayload(hash, IsProxyImg, uri_clear, uri, plugin, null, false, default, headers?.ToDictionary());
+                return SerializePayload(hash, IsProxyImg, uri_clear, uri, plugin, null, false, default, headers?.ToDictionary(), sbWriter);
             }
         }
         else
         {
+            string uclear = uri_clear.ToString();
+
             CrypTo.md5Writer(
-                uri_clear + (verifyip && CoreInit.conf.serverproxy.verifyip ? reqip : string.Empty),
-                hash
+                plain: verifyip && CoreInit.conf.serverproxy.verifyip
+                 ? uclear + reqip
+                 : uclear,
+                sbWriter: hash
             );
 
             WriteExtension(hash, uri, IsProxyImg);
 
             string link = hash.ToString();
 
-            var md = new ProxyLinkModel(verifyip ? reqip : null, headers, proxy, uri_clear, plugin, verifyip, ex, userdata)
+            var md = new ProxyLinkModel(verifyip ? reqip : null, headers, proxy, uclear, plugin, verifyip, ex, userdata)
             {
                 md5 = true
             };
 
             links.AddOrUpdate(link, md, (d, u) => md);
+
+            if (sbWriter != null)
+                sbWriter.Invoke(hash);
 
             return link;
         }
@@ -80,13 +105,7 @@ public class ProxyLink : IProxyLink
     #endregion
 
     #region SerializePayload
-    static readonly JsonWriterOptions _jsonWriterOptions = new JsonWriterOptions
-    {
-        Indented = false,
-        SkipValidation = true
-    };
-
-    static string SerializePayload(StringBuilder sbhash, bool isProxyImg, string uri_clear, string uri, string plugin, string reqip, bool verifyip, DateTime e, Dictionary<string, string> h)
+    static string SerializePayload(StringBuilder sbhash, bool isProxyImg, ReadOnlySpan<char> uri_clear, ReadOnlySpan<char> uri, string plugin, string reqip, bool verifyip, DateTime e, IReadOnlyDictionary<string, string> h, Action<StringBuilder> sbWriter)
     {
         using (var utf8Buf = new BufferWriterPool<byte>())
         {
@@ -96,23 +115,23 @@ public class ProxyLink : IProxyLink
                 //JsonSerializer.Serialize(writer, payload, ProxyLinkJsonContext.Default.AesPayload);
 
                 writer.WriteStartObject();
-                writer.WriteString("u", uri_clear);
+                writer.WriteString("u"u8, uri_clear);
 
                 if (plugin != null)
-                    writer.WriteString("p", plugin);
+                    writer.WriteString("p"u8, plugin);
 
                 if (reqip != null)
-                    writer.WriteString("i", reqip);
+                    writer.WriteString("i"u8, reqip);
 
                 if (verifyip)
-                    writer.WriteBoolean("v", true);
+                    writer.WriteBoolean("v"u8, true);
 
                 if (e != default)
-                    writer.WriteString("e", e.ToUniversalTime());
+                    writer.WriteString("e"u8, e.ToUniversalTime());
 
                 if (h != null && h.Count > 0)
                 {
-                    writer.WritePropertyName("h");
+                    writer.WritePropertyName("h"u8);
                     writer.WriteStartObject();
 
                     foreach (var kv in h)
@@ -192,6 +211,12 @@ public class ProxyLink : IProxyLink
 
                         sbhash.Append(base64);
                         WriteExtension(sbhash, uri, isProxyImg);
+
+                        if (sbWriter != null)
+                        {
+                            sbWriter.Invoke(sbhash);
+                            return null;
+                        }
 
                         return sbhash.ToString();
                     }
@@ -302,7 +327,7 @@ public class ProxyLink : IProxyLink
                             aeshash[i] = c;
                     }
 
-                    int capacity = Encoding.UTF8.GetByteCount(aeshash);
+                    int capacity = Encoding.UTF8.GetMaxByteCount(aeshash.Length);
 
                     BufferBytePool cipherBuf = null;
                     if (capacity > aesinst.ByteSize)

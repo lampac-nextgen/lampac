@@ -39,7 +39,8 @@ public sealed class BufferWriterPool<T> : IBufferWriter<T>, IDisposable where T 
 
     public BufferWriterPool(bool largePool = false)
     {
-        _large = largePool;
+        if (CoreInit.conf.lowMemoryMode == false)
+            _large = largePool;
     }
 
     public ReadOnlySpan<T> WrittenSpan
@@ -79,10 +80,22 @@ public sealed class BufferWriterPool<T> : IBufferWriter<T>, IDisposable where T 
 
         if (_nbuf == null)
         {
-            if (_large && largeMaxCount > _poolLarge.Count && CoreInit.conf.lowMemoryMode == false)
+            const int minrent = 128 * 1024;
+
+            if (_large)
             {
-                if (!_poolLarge.TryTake(out _nbuf))
-                    _nbuf = new NativeBuffer<T>(sizeLargePool);
+                if (largeMaxCount > _poolLarge.Count && CoreInit.conf.lowMemoryMode == false)
+                {
+                    if (!_poolLarge.TryTake(out _nbuf))
+                        _nbuf = new NativeBuffer<T>(sizeLargePool);
+                }
+                else
+                {
+                    if (minrent > sizeHint)
+                        sizeHint = minrent;
+
+                    _nbuf = new NativeBuffer<T>(sizeHint);
+                }
             }
             else if (smailMaxCount > _pool.Count)
             {
@@ -91,7 +104,6 @@ public sealed class BufferWriterPool<T> : IBufferWriter<T>, IDisposable where T 
             }
             else
             {
-                const int minrent = 128 * 1024;
                 if (minrent > sizeHint)
                     sizeHint = minrent;
 

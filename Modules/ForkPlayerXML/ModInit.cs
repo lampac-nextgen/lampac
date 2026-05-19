@@ -61,6 +61,24 @@ public class ModInit : IModuleLoaded
     {
         if (Utilities.IsForkPlayer(e.httpContext))
         {
+#warning костыль для rchstreamproxy, надо орентироваться на &platform=
+
+            /*
+             * пример реализации
+             * 
+            string platform = "apk"; // cors, web
+            if (e.init.rchstreamproxy != null && e.init.rchstreamproxy.Contains(platform))
+            {
+                e.init.rhub = false;
+                e.init.streamproxy = true;
+            }
+            else
+            {
+                e.init.rhub = false;
+                e.init.rchstreamproxy = null;
+            }
+            */
+
             e.init.rhub = false;
             e.init.streamproxy = true;
         }

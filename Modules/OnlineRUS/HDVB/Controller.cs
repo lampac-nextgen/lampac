@@ -246,7 +246,9 @@ public class HDVBController : BaseOnlineController
         if (play)
             return RedirectToPlay(m3u8);
 
-        var headers_stream = init.streamproxy ? null : httpHeaders(init.host, init.headers_stream);
+        var headers_stream = init.streamproxy
+            ? null
+            : httpHeaders(init.host, init.headers_stream);
 
         return ContentTo(VideoTpl.ToJson(
             "play",
@@ -405,7 +407,9 @@ public class HDVBController : BaseOnlineController
         if (play)
             return Redirect(m3u8);
 
-        var headers_stream = init.streamproxy ? null : httpHeaders(init.host, init.headers_stream);
+        var headers_stream = init.streamproxy
+            ? null
+            : httpHeaders(init.host, init.headers_stream);
 
         return ContentTo(VideoTpl.ToJson(
             "play",

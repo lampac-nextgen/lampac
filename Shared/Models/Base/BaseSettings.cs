@@ -75,18 +75,29 @@ public class BaseSettings : Iproxy, Istreamproxy, Icors, Igroup, ICloneable
                 return null;
         }
 
-        var noAccess = new List<string>(3);
+        int mask = 0;
 
-        if (!rch_access.Contains("apk"))
-            noAccess.Add("apk");
+        if (!rch_access.Contains("apk", StringComparison.Ordinal))
+            mask |= 1;
 
-        if (!rch_access.Contains("cors"))
-            noAccess.Add("cors");
+        if (!rch_access.Contains("cors", StringComparison.Ordinal))
+            mask |= 2;
 
-        if (!rch_access.Contains("web"))
-            noAccess.Add("web");
+        if (!rch_access.Contains("web", StringComparison.Ordinal))
+            mask |= 4;
 
-        return noAccess.Count > 0 ? string.Join(",", noAccess) : null;
+        return mask switch
+        {
+            0 => null,
+            1 => "apk",
+            2 => "cors",
+            3 => "apk,cors",
+            4 => "web",
+            5 => "apk,web",
+            6 => "cors,web",
+            7 => "apk,cors,web",
+            _ => null
+        };
     }
 
     public bool rip { get; set; }
@@ -119,23 +130,48 @@ public class BaseSettings : Iproxy, Istreamproxy, Icors, Igroup, ICloneable
 
     public string token { get; set; }
 
+    #region headers
+    [JsonIgnore]
+    IReadOnlyDictionary<string, string> _headers;
+
     [JsonProperty("headers",
         ObjectCreationHandling = ObjectCreationHandling.Replace,   // ← заменить, а не дополнять
         NullValueHandling = NullValueHandling.Ignore               // ← не затирать null-ом
     )]
-    public Dictionary<string, string> headers { get; set; }
+    public IReadOnlyDictionary<string, string> headers
+    {
+        get => _headers;
+        set
+        {
+            if (value == null)
+                return;
 
+            _headers = value;
+            headersList = HeadersModel.InitOrNull(_headers);
+        }
+    }
+
+    [JsonIgnore]
+    public IReadOnlyList<HeadersModel> headersList
+    {
+        get;
+        private set;
+    }
+    #endregion
+
+    #region headers_stream / headers_image
     [JsonProperty("headers_stream",
         ObjectCreationHandling = ObjectCreationHandling.Replace,   // ← заменить, а не дополнять
         NullValueHandling = NullValueHandling.Ignore               // ← не затирать null-ом
     )]
-    public Dictionary<string, string> headers_stream { get; set; }
+    public IReadOnlyDictionary<string, string> headers_stream { get; set; }
 
     [JsonProperty("headers_image",
         ObjectCreationHandling = ObjectCreationHandling.Replace,   // ← заменить, а не дополнять
         NullValueHandling = NullValueHandling.Ignore               // ← не затирать null-ом
     )]
-    public Dictionary<string, string> headers_image { get; set; }
+    public IReadOnlyDictionary<string, string> headers_image { get; set; }
+    #endregion
 
     public VastConf vast { get; set; }
 
@@ -191,18 +227,29 @@ public class BaseSettings : Iproxy, Istreamproxy, Icors, Igroup, ICloneable
             }
         }
 
-        var noAccess = new List<string>(3);
+        int mask = 0;
 
-        if (!stream_access.Contains("apk"))
-            noAccess.Add("apk");
+        if (!stream_access.Contains("apk", StringComparison.Ordinal))
+            mask |= 1;
 
-        if (!stream_access.Contains("cors"))
-            noAccess.Add("cors");
+        if (!stream_access.Contains("cors", StringComparison.Ordinal))
+            mask |= 2;
 
-        if (!stream_access.Contains("web"))
-            noAccess.Add("web");
+        if (!stream_access.Contains("web", StringComparison.Ordinal))
+            mask |= 4;
 
-        return noAccess.Count > 0 ? string.Join(",", noAccess) : null;
+        return mask switch
+        {
+            0 => null,
+            1 => "apk",
+            2 => "cors",
+            3 => "apk,cors",
+            4 => "web",
+            5 => "apk,web",
+            6 => "cors,web",
+            7 => "apk,cors,web",
+            _ => null
+        };
     }
     #endregion
 
@@ -220,7 +267,7 @@ public class BaseSettings : Iproxy, Istreamproxy, Icors, Igroup, ICloneable
         return true;
     }
 
-    public string cors(string uri, List<HeadersModel> headers = null, RequestModel requestInfo = null)
+    public string cors(string uri, IReadOnlyList<HeadersModel> headers = null, RequestModel requestInfo = null)
     {
         string crhost = !string.IsNullOrWhiteSpace(webcorshost) ? webcorshost : corseu ? CoreInit.conf.corsehost : null;
         if (string.IsNullOrWhiteSpace(crhost) || string.IsNullOrWhiteSpace(uri))

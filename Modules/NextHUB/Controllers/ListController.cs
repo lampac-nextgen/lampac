@@ -353,7 +353,11 @@ public class ListController : BaseSisiController<NxtSettings>
                 #region preview
                 if (preview != null)
                 {
-                    preview = preview.Replace("&amp;", "&").Replace("\\", "");
+                    if (preview.Contains("&amp;"))
+                        preview = preview.Replace("&amp;", "&");
+
+                    if (preview.Contains("\\"))
+                        preview = preview.Replace("\\", "");
 
                     if (preview.StartsWith("../"))
                         preview = $"{init.host}/{preview.Replace("../", "")}";
@@ -365,7 +369,15 @@ public class ListController : BaseSisiController<NxtSettings>
                         preview = $"{init.host}/{preview}";
 
                     if (init.streamproxy_preview)
-                        preview = $"{host}/proxy/{ProxyLink.Encrypt(preview, string.Empty, verifyip: false, ex: DateTime.Today.AddDays(2))}";
+                    {
+                        preview = ProxyLink.Encrypt(
+                            preview,
+                            string.Empty,
+                            verifyip: false,
+                            ex: DateTime.Today.AddDays(2),
+                            prefix: [host, "/proxy/"]
+                        );
+                    }
                 }
                 #endregion
 
@@ -402,7 +414,14 @@ public class ListController : BaseSisiController<NxtSettings>
                     pl = CSharpEval.Execute<PlaylistItem>(eval, new NxtChangePlaylis(init, plugin, host, html, nodes, pl, row), Root.playlistOptions);
 
                 if (pl.json == false && (init.streamproxy || (init.geostreamproxy != null && requestInfo.Country != null && init.geostreamproxy.Contains(requestInfo.Country))))
-                    pl.video = $"{host}/proxy/{ProxyLink.Encrypt(pl.video, requestInfo.IP, HeadersModel.Init(init.headers_stream))}";
+                {
+                    pl.video = ProxyLink.Encrypt(
+                        pl.video,
+                        requestInfo.IP,
+                        HeadersModel.Init(init.headers_stream),
+                        prefix: [host, "/proxy/"]
+                    );
+                }
 
                 if (pl != null)
                     playlists.Add(pl);
@@ -414,7 +433,7 @@ public class ListController : BaseSisiController<NxtSettings>
     #endregion
 
     #region ContentAsync
-    async Task<string> ContentAsync(NxtSettings init, string url, List<HeadersModel> headers, (string ip, string username, string password) proxy, string search, string sort, string cat, string model, int pg)
+    async Task<string> ContentAsync(NxtSettings init, string url, IReadOnlyList<HeadersModel> headers, (string ip, string username, string password) proxy, string search, string sort, string cat, string model, int pg)
     {
         try
         {
@@ -589,6 +608,9 @@ public class ListController : BaseSisiController<NxtSettings>
             url = CSharpEval.Execute<string>(init.route.eval, new NxtMenuRoute(init.host, plugin, url, search, cat, sort, model, HttpContext.Request.Query, pg));
         #endregion
 
+        var headers = httpHeaders(init);
+        string targetHost = init.cors(url.Replace("{page}", pg.ToString()), headers, requestInfo);
+
         if (!string.IsNullOrEmpty(data))
         {
             if (!string.IsNullOrEmpty(search))
@@ -599,18 +621,12 @@ public class ListController : BaseSisiController<NxtSettings>
 
             data = data.Replace("{page}", pg.ToString());
 
-            var headers = httpHeaders(init);
-            string targetHost = init.cors(url.Replace("{page}", pg.ToString()), headers, requestInfo);
-
             return init.rhub == true
                 ? await rch.Post(targetHost, data, headers)
                 : await Http.Post(targetHost, data, encoding: encodingResponse, headers: headers, proxy: proxy, timeoutSeconds: init.timeout, httpversion: init.httpversion);
         }
         else
         {
-            var headers = httpHeaders(init);
-            string targetHost = init.cors(url.Replace("{page}", pg.ToString()), headers, requestInfo);
-
             return init.rhub == true
                 ? await rch.Get(targetHost, headers)
                 : init.priorityBrowser == "http" ? await Http.Get(targetHost, encoding: encodingResponse, headers: headers, proxy: proxy, timeoutSeconds: init.timeout, httpversion: init.httpversion)

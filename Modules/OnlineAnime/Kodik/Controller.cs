@@ -31,7 +31,9 @@ public class KodikController : BaseOnlineController<ModuleConf>
     {
         byte[] arraykey = keyBytes.GetOrAdd(key, _ => Encoding.UTF8.GetBytes(key));
 
-        using (var msgBuf = new BufferBytePool(Encoding.UTF8.GetByteCount(message)))
+        int maxbytes = Encoding.UTF8.GetMaxByteCount(message.Length);
+
+        using (var msgBuf = new BufferBytePool(maxbytes))
         {
             Span<byte> hash = stackalloc byte[32];
             Span<char> hex = stackalloc char[64];
@@ -39,16 +41,19 @@ public class KodikController : BaseOnlineController<ModuleConf>
             int bytesWritten = Encoding.UTF8.GetBytes(message, msgBuf.Span);
 
             using (var hmac = new HMACSHA256(arraykey))
-                hmac.TryComputeHash(msgBuf.Span.Slice(0, bytesWritten), hash, out _);
-
-            for (int i = 0; i < 32; i++)
             {
-                byte b = hash[i];
-                hex[i * 2] = hexChars[b >> 4];
-                hex[i * 2 + 1] = hexChars[b & 0xF];
-            }
+                if (!hmac.TryComputeHash(msgBuf.Span.Slice(0, bytesWritten), hash, out _))
+                    return null;
 
-            return new string(hex);
+                for (int i = 0; i < 32; i++)
+                {
+                    byte b = hash[i];
+                    hex[i * 2] = hexChars[b >> 4];
+                    hex[i * 2 + 1] = hexChars[b & 0xF];
+                }
+
+                return new string(hex);
+            }
         }
     }
     #endregion
