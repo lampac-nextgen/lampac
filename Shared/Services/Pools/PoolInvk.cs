@@ -31,7 +31,7 @@ public static class PoolInvk
                 : 81920;
 
             if (CoreInit.conf.lowMemoryMode) // max 32Kb
-                size = Math.Min(size, 32000);
+                size = Math.Min(size, 32768);
 
             if (4096 > size)
                 size = 4096;
@@ -39,26 +39,5 @@ public static class PoolInvk
             _bufferSize = size;
             return size;
         }
-    }
-
-    static readonly int[] sizesRent =
-    {
-        128 * 1024,
-        512 * 1024,
-        1024 * 1024,
-        5 * 1024 * 1024,
-        10 * 1024 * 1024,
-        20 * 1024 * 1024
-    };
-
-    public static int RentedLen(int length = 0)
-    {
-        for (int i = 0; i < sizesRent.Length; i++)
-        {
-            if (sizesRent[i] >= length)
-                return sizesRent[i];
-        }
-
-        throw new ArgumentException("large rent");
     }
 }

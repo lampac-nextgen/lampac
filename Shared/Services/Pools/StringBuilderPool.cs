@@ -16,14 +16,14 @@ public static class StringBuilderPool
 
     #region pool
     [ThreadStatic]
-    private static StringBuilder _threadSmall;
+    static StringBuilder _threadSmall;
 
     static readonly ConcurrentBag<StringBuilder> _poolSmall = new();
     static readonly ConcurrentBag<StringBuilder> _poolLarge = new();
 
-    static readonly int capacity = 32 * 1024; // 1 char == 2 byte (64кб, ниже LOH лимита ~85кб)
-    static readonly int rentSmall = 128 * 1024;
-    static readonly int rentLarge = 2 * 1024 * 1024;
+    const int capacity = 32 * 1024; // 1 char == 2 byte (64кб, ниже LOH лимита ~85кб)
+    const int rentSmall = 128 * 1024;
+    const int rentLarge = 2 * 1024 * 1024;
     #endregion
 
     #region OpenStat
@@ -69,8 +69,9 @@ public static class StringBuilderPool
         if (sb == null)
             return;
 
-        int smallMaxCount = CoreInit.conf.pool.StringBuilderSmallMaxCount;
-        int largeMaxCount = CoreInit.conf.pool.StringBuilderLargeMaxCount;
+        var pool = CoreInit.conf.pool;
+        int smallMaxCount = pool.StringBuilderSmallMaxCount;
+        int largeMaxCount = pool.StringBuilderLargeMaxCount;
 
         if (rentSmall >= sb.Capacity && smallMaxCount > _poolSmall.Count)
         {

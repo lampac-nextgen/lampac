@@ -22,13 +22,20 @@ public static class FileReaderPool
             FileAccess.Read,
             FileShare.Read,
             bufferSize: PoolInvk.bufferSize,
-            options: FileOptions.SequentialScan);
+            options: FileOptions.SequentialScan
+        );
     }
 
     public static void Return(string filePath, FileStream fs)
     {
         if (fs == null)
             return;
+
+        if (!fs.CanRead)
+        {
+            fs.Close();
+            return;
+        }
 
         var bag = _pool.GetOrAdd(filePath, _ => new ConcurrentBag<FileStream>());
         bag.Add(fs);

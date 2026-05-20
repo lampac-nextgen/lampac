@@ -267,18 +267,20 @@ public class CoreInit
     {
         BufferValidityMinutes = 180,
         BufferMax = 500_000000, // 500mb
+        BufferByteTinyMaxCount = 100,
+        BufferByteExtraSmallMaxCount = 100,
         BufferByteSmallMaxCount = 100,
         BufferByteLargeMaxCount = 100,
         BufferByteMediumMaxCount = 100,
+        BufferCharTinyMaxCount = 100,
+        BufferCharExtraSmallMaxCount = 100,
         BufferCharSmallMaxCount = 100,
         BufferCharLargeMaxCount = 100,
         BufferCharMediumMaxCount = 100,
         BufferWriterSmallMaxCount = 100,
         BufferWriterLargeMaxCount = 100,
         StringBuilderSmallMaxCount = 10,
-        StringBuilderLargeMaxCount = 20,
-        NewtonsoftCharMediumMaxCount = 15,
-        NewtonsoftCharLargeMaxCount = 10
+        StringBuilderLargeMaxCount = 20
     };
 
     public ApnConf apn { get; set; } = new ApnConf() { secure = "none" };

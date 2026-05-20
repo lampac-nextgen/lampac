@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Memory;
+using Shared;
 using Shared.Models.SISI.Base;
 using Shared.Services.Hybrid;
 using Shared.Services.RxEnumerate;
@@ -98,7 +99,8 @@ public static class RunetkiTo
             }
         };
 
-        memoryCache.Set(menuKey, menu, TimeSpan.FromDays(1));
+        if (CoreInit.conf.lowMemoryMode == false)
+            memoryCache.Set(menuKey, menu, TimeSpan.FromDays(1));
 
         return menu;
     }

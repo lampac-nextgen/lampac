@@ -27,28 +27,10 @@ public class JsonStreamReaderPool : TextReader, IDisposable
     int _disposed; // 0 = alive, 1 = disposed
 
     public Span<byte> ByteBuffer
-    {
-        get
-        {
-            return _byteInstance ??= new byte[
-                CoreInit.conf.lowMemoryMode
-                    ? 4096
-                    : PoolInvk.bufferSize
-            ];
-        }
-    }
+        => _byteInstance ??= new byte[PoolInvk.bufferSize];
 
     public Span<char> CharBuffer
-    {
-        get
-        {
-            return _charInstance ??= new char[Encoding.UTF8.GetMaxCharCount(
-                CoreInit.conf.lowMemoryMode
-                    ? 4096
-                    : PoolInvk.bufferSize
-            )];
-        }
-    }
+        => _charInstance ??= new char[PoolInvk.bufferSize];
 
     public JsonStreamReaderPool(Stream stream, Encoding encoding, bool leaveOpen)
     {

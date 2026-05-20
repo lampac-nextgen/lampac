@@ -44,8 +44,12 @@ public static class UtilsTpl
 
         // UTF-8: 2 byte -> 1 char
         // структурные символы ({},": ), цифры, латиница и escape-последовательности — это ASCII, то есть 1 байт на 1 char
-        // utf8.Length выше или равен charCount
+        // utf8.Length всегда выше или равен charCount
         int charCount = utf8.Length;
+
+        // если json большой, то считаем точное количество символов
+        if (utf8.Length > (CoreInit.conf.lowMemoryMode ? BufferCharPool.sizeMedium : BufferCharPool.sizeLarge))
+            charCount = Encoding.UTF8.GetCharCount(utf8);
 
         using (var charBuf = new BufferCharPool(charCount))
         {

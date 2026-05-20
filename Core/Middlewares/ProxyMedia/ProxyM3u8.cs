@@ -68,12 +68,16 @@ public partial class ProxyAPI
                         #region Пишем данные в BodyWriter
                         OwnerTo.Span(msmHls, Encoding.UTF8, spanHls =>
                         {
-                            using (var charBuffer = new BufferCharPool(BufferCharPool.sizeExtraSmall))
+                            using (var charBuffer = new BufferCharPool(BufferCharPool.sizeTiny))
                             {
                                 #region writePipe
                                 void writePipe(ReadOnlySpan<char> chars)
                                 {
-                                    const int chunkSize = 4 * 1024;
+                                    /// UTF-16: 1 char -> 2 bytes
+                                    /// Кириллица: 1 char -> 2-4 bytes
+                                    int chunkSize = chars.Length > 1360 // возьмем середину 1 char -> 3 bytes
+                                        ? 16384
+                                        : 4096;
 
                                     while (!chars.IsEmpty)
                                     {
@@ -105,6 +109,9 @@ public partial class ProxyAPI
                                 void writeUri(ReadOnlySpan<char> prefix, ReadOnlySpan<char> uri)
                                 {
                                     int size = prefix.Length + uri.Length;
+                                    if (size > charBuffer.Span.Length)
+                                        charBuffer.Ensure(size);
+
                                     Span<char> joinUri = charBuffer.Span.Slice(0, size);
 
                                     prefix.CopyTo(joinUri);
@@ -196,7 +203,7 @@ public partial class ProxyAPI
                                     }
                                     else
                                     {
-                                        if (line.Contains("#", StringComparison.Ordinal) ||
+                                        if (line.StartsWith("#", StringComparison.Ordinal) ||
                                             line.Contains("\"", StringComparison.Ordinal))
                                         {
                                             writePipe(line);

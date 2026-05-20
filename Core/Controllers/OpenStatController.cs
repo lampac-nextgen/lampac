@@ -224,6 +224,7 @@ public class OpenStatController : BaseController
                 },
                 BufferByte = new
                 {
+                    tiny = BufferBytePool.FreeTiny,
                     extraSmall = BufferBytePool.FreeExtraSmall,
                     small = BufferBytePool.FreeSmall,
                     medium = BufferBytePool.FreeMedium,
@@ -232,6 +233,7 @@ public class OpenStatController : BaseController
                 },
                 BufferChar = new
                 {
+                    tiny = BufferCharPool.FreeTiny,
                     extraSmall = BufferCharPool.FreeExtraSmall,
                     small = BufferCharPool.FreeSmall,
                     medium = BufferCharPool.FreeMedium,
@@ -251,8 +253,7 @@ public class OpenStatController : BaseController
                 },
                 Json = new
                 {
-                    medium = NewtonsoftCharArrayPool.FreeMedium,
-                    large = NewtonsoftCharArrayPool.FreeLarge,
+                    current = NewtonsoftCharArrayPool.FreeCurrent,
                     dispose = NewtonsoftCharArrayPool.DisposeCount
                 }
             }

@@ -45,6 +45,9 @@
   <Folder Name="/Modules/ForkPlayerXML/">
     <Project Path="Modules/ForkPlayerXML/ForkXML.csproj" />
   </Folder>
+  <Folder Name="/Modules/LogUserRequest-Lite/">
+    <Project Path="Modules/LogUserRequest-Lite/LogUserRequest.csproj" />
+  </Folder>
   <Folder Name="/Modules/OnlineAnime/">
     <Project Path="Modules/OnlineAnime/AniLiberty/AniLiberty.csproj" />
     <Project Path="Modules/OnlineAnime/AniLibria/AniLibria.csproj" />

@@ -1,15 +1,16 @@
 using Microsoft.Extensions.Caching.Memory;
-using Shared.Services.Pools;
-using Shared.Services.RxEnumerate;
-using Shared.Services.Hybrid;
+using Shared;
 using Shared.Models.SISI.Base;
 using Shared.Models.SISI.OnResult;
+using Shared.Services.Hybrid;
+using Shared.Services.Pools;
+using Shared.Services.RxEnumerate;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
-using System.Text.Json;
 using System.Web;
 
 namespace XvideosRED;
@@ -310,7 +311,8 @@ public static class XvideosTo
 
         menu.Insert(1, menusort);
 
-        memoryCache.Set(menuKey, menu, TimeSpan.FromDays(1));
+        if (CoreInit.conf.lowMemoryMode == false)
+            memoryCache.Set(menuKey, menu, TimeSpan.FromDays(1));
 
         return menu;
     }

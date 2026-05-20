@@ -1,4 +1,5 @@
 using Microsoft.IO;
+using System.Buffers;
 using System.Text;
 
 namespace Shared.Services.Pools;
@@ -14,8 +15,12 @@ public static class OwnerTo
 
             // ASCII: 1 byte -> 1 char
             // UTF-8: 2 byte -> 1 char
-            // msm.Length выше или равен charCount
+            // msm.Length всегда выше или равен charCount
             int charCount = (int)msm.Length;
+
+            // если html большой, то считаем точное количество символов
+            if (msm.Length > (CoreInit.conf.lowMemoryMode ? BufferCharPool.sizeMedium : BufferCharPool.sizeLarge))
+                charCount = GetUtf8CharCount(msm);
 
             using (var nbuf = new BufferCharPool(charCount))
             {
@@ -29,6 +34,25 @@ public static class OwnerTo
         {
             Serilog.Log.Error(ex, "{Class} {CatchId}", "OwnerTo", "id_1hrr99su");
         }
+    }
+
+    static int GetUtf8CharCount(RecyclableMemoryStream msm)
+    {
+        ReadOnlySequence<byte> seq = msm.GetReadOnlySequence();
+
+        if (seq.IsSingleSegment)
+            return Encoding.UTF8.GetCharCount(seq.FirstSpan);
+
+        var decoder = Encoding.UTF8.GetDecoder();
+        int charCount = 0;
+
+        foreach (ReadOnlyMemory<byte> segment in seq)
+        {
+            bool flush = seq.End.Equals(seq.GetPosition(segment.Length, seq.GetPosition(0)));
+            charCount += decoder.GetCharCount(segment.Span, flush);
+        }
+
+        return charCount;
     }
 
 
@@ -54,7 +78,7 @@ public static class OwnerTo
             int totalChars = 0;
             bool reachedEof = false;
 
-            Span<byte> buff = _thread ??= new byte[CoreInit.conf.lowMemoryMode ? 4096 : PoolInvk.bufferSize];
+            Span<byte> buff = _thread ??= new byte[PoolInvk.bufferSize];
 
             while (totalChars < destination.Length)
             {

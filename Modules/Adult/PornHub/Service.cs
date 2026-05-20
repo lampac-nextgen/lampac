@@ -1,8 +1,9 @@
 ﻿using Microsoft.Extensions.Caching.Memory;
+using Shared;
 using Shared.Models.SISI.Base;
 using Shared.Models.SISI.OnResult;
-using Shared.Services.Hybrid;
 using Shared.Services.HTML;
+using Shared.Services.Hybrid;
 using Shared.Services.Pools;
 using Shared.Services.RxEnumerate;
 using System;
@@ -510,7 +511,8 @@ public static class PornHubTo
             });
         }
 
-        memoryCache.Set(menuKey, menu, TimeSpan.FromDays(1));
+        if (CoreInit.conf.lowMemoryMode == false)
+            memoryCache.Set(menuKey, menu, TimeSpan.FromDays(1));
 
         return menu;
     }
@@ -530,7 +532,7 @@ public static class PornHubTo
         if (html.IsEmpty)
             return null;
 
-        var qualitys = new Dictionary<string, string>();
+        var qualitys = new Dictionary<string, string>(4);
 
         foreach (string q in new string[] { "1080", "720", "480", "240" })
         {

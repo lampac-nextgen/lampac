@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Memory;
+using Shared;
 using Shared.Models.SISI.Base;
 using Shared.Services.Hybrid;
 using Shared.Services.Pools;
@@ -290,7 +291,8 @@ public static class PorntrexTo
             submenu = catmenu
         });
 
-        memoryCache.Set(menuKey, menu, TimeSpan.FromDays(1));
+        if (CoreInit.conf.lowMemoryMode == false)
+            memoryCache.Set(menuKey, menu, TimeSpan.FromDays(1));
 
         return menu;
     }

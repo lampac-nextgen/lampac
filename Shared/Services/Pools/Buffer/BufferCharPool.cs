@@ -7,35 +7,40 @@ namespace Shared.Services.Pools;
 public sealed class BufferCharPool : IDisposable
 {
     #region pool
-    public const int sizeExtraSmall = 32 * 1024; // 64kb
-    static readonly ConcurrentBag<NativeBuffer<char>> _poolExtraSmall = new();
-
-    public const int sizeSmall = 1024 * 1024; // 2Mb
-    static readonly ConcurrentBag<NativeBuffer<char>> _poolSmall = new();
-
+    public const int sizeTiny = 32 * 1024;         // 64Kb
+    public const int sizeExtraSmall = 128 * 1024;  // 256Kb
+    public const int sizeSmall = 1024 * 1024;      // 2Mb
     public const int sizeMedium = 4 * 1024 * 1024; // 8Mb
-    static readonly ConcurrentBag<NativeBuffer<char>> _poolMedium = new();
-
     public const int sizeLarge = 10 * 1024 * 1024; // 20Mb
-    static readonly ConcurrentBag<NativeBuffer<char>> _poolLarge = new();
+
+    static readonly ConcurrentDictionary<byte, BufferPoolInfo<char>> pool = new ConcurrentDictionary<byte, BufferPoolInfo<char>>
+    {
+        [1] = new BufferPoolInfo<char>(sizeTiny, CoreInit.conf.pool.BufferCharTinyMaxCount),             // хеш операции, aes, crypto, SearchName
+        [2] = new BufferPoolInfo<char>(sizeExtraSmall, CoreInit.conf.pool.BufferCharExtraSmallMaxCount), // base64, tpl
+        [3] = new BufferPoolInfo<char>(sizeSmall, CoreInit.conf.pool.BufferCharSmallMaxCount),
+        [4] = new BufferPoolInfo<char>(sizeMedium, CoreInit.conf.pool.BufferCharMediumMaxCount),
+        [5] = new BufferPoolInfo<char>(sizeLarge, CoreInit.conf.pool.BufferCharLargeMaxCount)
+    };
     #endregion
 
     #region OpenStat
-    public static int FreeExtraSmall
-        => _poolExtraSmall.Count;
+    public static long FreeTiny
+        => pool[1].currentCount;
 
-    public static int FreeSmall
-        => _poolSmall.Count;
+    public static long FreeExtraSmall
+        => pool[2].currentCount;
 
-    public static int FreeMedium
-        => _poolMedium.Count;
+    public static long FreeSmall
+        => pool[3].currentCount;
 
-    public static int FreeLarge
-        => _poolLarge.Count;
+    public static long FreeMedium
+        => pool[4].currentCount;
 
-    static long _disposeCountStat;
+    public static long FreeLarge
+        => pool[5].currentCount;
+
     public static long DisposeCount
-        => Interlocked.Read(ref _disposeCountStat);
+        => pool.Sum(i => i.Value.disposeCount);
     #endregion
 
     private NativeBuffer<char> _nbuf;
@@ -45,57 +50,21 @@ public sealed class BufferCharPool : IDisposable
 
     public BufferCharPool(int capacity)
     {
-        var pool = CoreInit.conf.pool;
+        foreach (var p in pool)
+        {
+            if (CoreInit.conf.lowMemoryMode && p.Value.sizePool == sizeLarge)
+                continue;
 
-        if (sizeExtraSmall >= capacity)
-        {
-            _typepool = 1;
-            if (!_poolExtraSmall.TryTake(out _nbuf))
-                _nbuf = new NativeBuffer<char>(sizeExtraSmall);
-        }
-        else if (sizeSmall >= capacity)
-        {
-            if (pool.BufferCharSmallMaxCount > _poolSmall.Count)
+            if (p.Value.sizePool >= capacity)
             {
-                _typepool = 2;
-                if (!_poolSmall.TryTake(out _nbuf))
-                    _nbuf = new NativeBuffer<char>(sizeSmall);
-            }
-            else
-            {
-                _nbuf = new NativeBuffer<char>(capacity);
+                _typepool = p.Key;
+                _nbuf = p.Value.Rent(capacity);
+                return;
             }
         }
-        else if (sizeMedium >= capacity)
-        {
-            if (pool.BufferCharMediumMaxCount > _poolMedium.Count)
-            {
-                _typepool = 3;
-                if (!_poolMedium.TryTake(out _nbuf))
-                    _nbuf = new NativeBuffer<char>(sizeMedium);
-            }
-            else
-            {
-                _nbuf = new NativeBuffer<char>(capacity);
-            }
-        }
-        else if (sizeLarge >= capacity)
-        {
-            if (CoreInit.conf.lowMemoryMode == false && pool.BufferCharLargeMaxCount > _poolLarge.Count)
-            {
-                _typepool = 4;
-                if (!_poolLarge.TryTake(out _nbuf))
-                    _nbuf = new NativeBuffer<char>(sizeLarge);
-            }
-            else
-            {
-                _nbuf = new NativeBuffer<char>(capacity);
-            }
-        }
-        else
-        {
+
+        if (_nbuf == null)
             _nbuf = new NativeBuffer<char>(capacity);
-        }
     }
 
     public Span<char> Span
@@ -109,41 +78,23 @@ public sealed class BufferCharPool : IDisposable
         _index += count;
     }
 
+    public void Ensure(int sizeHint)
+    {
+        _nbuf.Ensure(sizeHint);
+    }
+
     public void Dispose()
     {
         if (Interlocked.Exchange(ref _disposed, 1) != 0)
             return;
 
-        if (_nbuf.IsExpires)
+        if (_typepool == 0)
         {
             ((IDisposable)_nbuf).Dispose();
             return;
         }
 
-        switch (_typepool)
-        {
-            case 1:
-                _poolExtraSmall.Add(_nbuf);
-                break;
-            case 2:
-                _poolSmall.Add(_nbuf);
-                break;
-            case 3:
-                _poolMedium.Add(_nbuf);
-                break;
-            case 4:
-                _poolLarge.Add(_nbuf);
-                break;
-            default:
-                int bufferSize = _nbuf.Memory.Length;
-                Interlocked.Increment(ref _disposeCountStat);
-                ((IDisposable)_nbuf).Dispose();
-                Serilog.Log.Error(
-                    "dispose buffer size. CatchId={CatchId} Size={BufferSize}",
-                    "id_yEYWayZF",
-                    bufferSize
-                );
-                break;
-        }
+        var p = pool[_typepool];
+        p.Return(_nbuf);
     }
 }

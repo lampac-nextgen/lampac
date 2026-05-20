@@ -6,9 +6,9 @@ namespace Shared.Services.Pools;
 
 public sealed class BufferPool : IDisposable
 {
-    #region static
     static readonly ConcurrentBag<NativeBuffer<byte>> _pool = new();
 
+    #region maxCount
     static int? _maxCount;
 
     /// <summary>

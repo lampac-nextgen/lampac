@@ -13,28 +13,21 @@ public static class NewtonsoftPool
 public class NewtonsoftCharArrayPool : IArrayPool<char>
 {
     #region pool
-    [ThreadStatic]
-    private static char[] _threadSmall;
-    public static readonly int sizeSmall = 32 * 1024; // 64kb
+    const int maxSize = 256 * 1024;
 
-    public static readonly int sizeMedium = 128 * 1024; // 128 char ~ 256kb
-    static readonly ConcurrentBag<char[]> _poolMedium = new();
-
-    public static readonly int sizeLarge = 256 * 1024;
-    static readonly ConcurrentBag<char[]> _poolLarge = new();
-
-    static int mediumMaxCount
-        => CoreInit.conf.pool.NewtonsoftCharMediumMaxCount;
-    static int largeMaxCount
-        => CoreInit.conf.pool.NewtonsoftCharLargeMaxCount;
+    static readonly ConcurrentDictionary<int, ConcurrentBag<char[]>> pool = new ConcurrentDictionary<int, ConcurrentBag<char[]>>
+    {
+        [4 * 1024] = new ConcurrentBag<char[]>(),
+        [16 * 1024] = new ConcurrentBag<char[]>(),
+        [32 * 1024] = new ConcurrentBag<char[]>(),
+        [128 * 1024] = new ConcurrentBag<char[]>(),
+        [maxSize] = new ConcurrentBag<char[]>()
+    };
     #endregion
 
     #region OpenStat
-    public static int FreeMedium
-        => _poolMedium.Count;
-
-    public static int FreeLarge
-        => _poolLarge.Count;
+    public static int FreeCurrent
+        => pool.Sum(i => i.Value.Count);
 
     static long _disposeCount;
     public static long DisposeCount
@@ -45,30 +38,23 @@ public class NewtonsoftCharArrayPool : IArrayPool<char>
     {
     }
 
-    public char[] Rent(int minimumLength)
+    public char[] Rent(int sizeHint)
     {
-        if (sizeSmall >= minimumLength)
+        if (maxSize >= sizeHint)
         {
-            return _threadSmall ??= new char[sizeSmall];
-        }
-        else if (sizeMedium >= minimumLength)
-        {
-            if (mediumMaxCount > _poolMedium.Count && _poolMedium.TryTake(out char[] _array))
-                return _array;
+            foreach (var p in pool)
+            {
+                if (p.Key >= sizeHint)
+                {
+                    if (!p.Value.TryTake(out char[] buf))
+                        buf = new char[p.Key];
 
-            return new char[sizeMedium];
+                    return buf;
+                }
+            }
         }
-        else if (sizeLarge >= minimumLength)
-        {
-            if (largeMaxCount > _poolLarge.Count && _poolLarge.TryTake(out char[] _array))
-                return _array;
 
-            return new char[sizeLarge];
-        }
-        else
-        {
-            return new char[minimumLength];
-        }
+        return new char[sizeHint];
     }
 
     public void Return(char[] array)
@@ -76,27 +62,21 @@ public class NewtonsoftCharArrayPool : IArrayPool<char>
         if (array == null)
             return;
 
-        if (array.Length == sizeSmall)
-        {
-            // ThreadStatic
-        }
-        else if (array.Length == sizeMedium)
-        {
-            if (mediumMaxCount > _poolMedium.Count)
-                _poolMedium.Add(array);
-            else
-                Interlocked.Increment(ref _disposeCount);
-        }
-        else if (array.Length == sizeLarge)
-        {
-            if (largeMaxCount > _poolLarge.Count)
-                _poolLarge.Add(array);
-            else
-                Interlocked.Increment(ref _disposeCount);
-        }
-        else
+        if (array.Length < 4096 || array.Length > maxSize)
         {
             Interlocked.Increment(ref _disposeCount);
+            return;
         }
+
+        foreach (var p in pool)
+        {
+            if (p.Key == array.Length)
+            {
+                p.Value.Add(array);
+                return;
+            }
+        }
+
+        Interlocked.Increment(ref _disposeCount);
     }
 }

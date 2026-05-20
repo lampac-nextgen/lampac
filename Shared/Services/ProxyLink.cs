@@ -77,29 +77,26 @@ public class ProxyLink : IProxyLink
         else
         {
             string uclear = uri_clear.ToString();
-
-            CrypTo.md5Writer(
-                plain: verifyip && CoreInit.conf.serverproxy.verifyip
-                 ? uclear + reqip
-                 : uclear,
-                sbWriter: hash
+            string md5key = CrypTo.md5(verifyip && CoreInit.conf.serverproxy.verifyip
+                ? uclear + reqip
+                : uclear
             );
 
-            WriteExtension(hash, uri, IsProxyImg);
+            var extension = new StringBuilder();
+            WriteExtension(extension, uri, IsProxyImg);
 
-            string link = hash.ToString();
+            hash.Append(md5key);
+            hash.Append(extension);
 
-            var md = new ProxyLinkModel(verifyip ? reqip : null, headers, proxy, uclear, plugin, verifyip, ex, userdata)
+            links[md5key + extension.ToString()] = new ProxyLinkModel(verifyip ? reqip : null, headers, proxy, uclear, plugin, verifyip, ex, userdata)
             {
                 md5 = true
             };
 
-            links.AddOrUpdate(link, md, (d, u) => md);
-
             if (sbWriter != null)
                 sbWriter.Invoke(hash);
 
-            return link;
+            return hash.ToString();
         }
     }
     #endregion

@@ -1,4 +1,5 @@
 using Microsoft.Extensions.Caching.Memory;
+using Shared;
 using Shared.Models.SISI.Base;
 using Shared.Services;
 using Shared.Services.Hybrid;
@@ -210,7 +211,8 @@ public static class HQpornerTo
             submenu = catmenu
         });
 
-        memoryCache.Set(menuKey, menu, TimeSpan.FromDays(1));
+        if (CoreInit.conf.lowMemoryMode == false)
+            memoryCache.Set(menuKey, menu, TimeSpan.FromDays(1));
 
         return menu;
     }

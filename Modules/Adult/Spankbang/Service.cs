@@ -1,8 +1,9 @@
 using Microsoft.Extensions.Caching.Memory;
+using Shared;
 using Shared.Models.SISI.Base;
 using Shared.Models.SISI.OnResult;
-using Shared.Services.Hybrid;
 using Shared.Services.HTML;
+using Shared.Services.Hybrid;
 using Shared.Services.Pools;
 using Shared.Services.RxEnumerate;
 using System;
@@ -132,7 +133,8 @@ public static class SpankbangTo
             }
         };
 
-        memoryCache.Set(menuKey, menu, TimeSpan.FromDays(1));
+        if (CoreInit.conf.lowMemoryMode == false)
+            memoryCache.Set(menuKey, menu, TimeSpan.FromDays(1));
 
         return menu;
     }
