@@ -1,3 +1,4 @@
+global using Microsoft.AspNetCore.Authorization;
 global using Microsoft.AspNetCore.Builder;
 global using Microsoft.AspNetCore.Http;
 global using Microsoft.AspNetCore.Mvc;
@@ -5,7 +6,10 @@ global using Microsoft.EntityFrameworkCore;
 global using Microsoft.Extensions.Caching.Memory;
 global using Microsoft.Extensions.DependencyInjection;
 global using Shared;
+global using Shared.Attributes;
 global using Shared.Models;
+global using Shared.Models.Base;
+global using Shared.Models.Events;
 global using Shared.Models.Module;
 global using Shared.Models.Module.Interfaces;
 global using System;
