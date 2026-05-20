@@ -7,30 +7,39 @@ using Microsoft.Extensions.Caching.Memory;
 
 namespace LogUserRequest;
 
-public class ModInit : IModuleLoaded
+public class ModInit : IModuleLoaded, IModuleConfigure
 {
     public static InitspaceModel init { get; set; } = null!;
     public static (int logDay, string adminPassword) conf = (90, "");
     public static object? stats = null;
     static Timer? _statsTimer, _clearJurnalTimer, _updateDbTimer;
-    
+
     private static int _updatingStats = 0;
     private static int _updatingDb = 0;
     private static readonly MemoryCache _sessionTokens = new(new MemoryCacheOptions { SizeLimit = 10000 });
     private static readonly TimeSpan _sessionLifetime = TimeSpan.FromDays(30);
-    
-    // Динамические пути
+
     private static string _workPath = AppContext.BaseDirectory;
     private static string _dbDirectory = Path.Combine(AppContext.BaseDirectory, "database", "LogUserRequest");
     private static string _dbPath = Path.Combine(AppContext.BaseDirectory, "database", "LogUserRequest", "userlog.db");
     private static string _passwdPath = Path.Combine(AppContext.BaseDirectory, "database", "LogUserRequest", "passlogreg");
-    
+
+    // === IModuleConfigure ===
+    public void Configure(ConfigureModel app)
+    {
+        app.services.AddDbContextFactory<AppDbContext>(options =>
+        {
+            options.UseSqlite($"Data Source={_dbPath};Cache=Shared");
+            options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
+        });
+    }
+
     public static bool ValidateSessionToken(string token)
     {
         if (string.IsNullOrEmpty(token)) return false;
         return _sessionTokens.TryGetValue(token, out _);
     }
-    
+
     public static string CreateSessionToken()
     {
         var token = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
@@ -42,7 +51,7 @@ public class ModInit : IModuleLoaded
         });
         return token;
     }
-    
+
     public static void RevokeSessionToken(string token) => _sessionTokens.Remove(token);
 
     private static string GenerateRandomPassword(int length = 36)
@@ -56,12 +65,10 @@ public class ModInit : IModuleLoaded
 
     private static string GetOrCreateAdminPassword()
     {
-        // 1. Проверяем ENV
         var envPassword = Environment.GetEnvironmentVariable("LOGUSER_ADMIN_PASSWORD");
         if (!string.IsNullOrEmpty(envPassword))
             return envPassword;
 
-        // 2. Проверяем файл в папке модуля
         if (File.Exists(_passwdPath))
         {
             try
@@ -73,7 +80,6 @@ public class ModInit : IModuleLoaded
             catch { }
         }
 
-        // 3. Проверяем старый путь (для обратной совместимости)
         var oldPasswdPath = Path.Combine(_workPath, "passlogreg");
         if (File.Exists(oldPasswdPath))
         {
@@ -82,7 +88,6 @@ public class ModInit : IModuleLoaded
                 var filePassword = File.ReadAllText(oldPasswdPath).Trim();
                 if (!string.IsNullOrEmpty(filePassword))
                 {
-                    // Переносим в новую папку
                     Directory.CreateDirectory(Path.GetDirectoryName(_passwdPath)!);
                     File.Move(oldPasswdPath, _passwdPath);
                     return filePassword;
@@ -91,14 +96,13 @@ public class ModInit : IModuleLoaded
             catch { }
         }
 
-        // 4. Создаём новый пароль
         var newPassword = GenerateRandomPassword(36);
         try
         {
             var passwdDir = Path.GetDirectoryName(_passwdPath);
             if (!string.IsNullOrEmpty(passwdDir))
                 Directory.CreateDirectory(passwdDir);
-            
+
             File.WriteAllText(_passwdPath, newPassword);
             try { File.SetUnixFileMode(_passwdPath, UnixFileMode.UserRead | UnixFileMode.UserWrite); } catch { }
         }
@@ -113,17 +117,16 @@ public class ModInit : IModuleLoaded
     public void Loaded(InitspaceModel initspace)
     {
         init = initspace;
-        
-        // Инициализация путей
+
         _workPath = AppContext.BaseDirectory;
         _dbDirectory = Path.Combine(_workPath, "database", "LogUserRequest");
         _dbPath = Path.Combine(_dbDirectory, "userlog.db");
         _passwdPath = Path.Combine(_dbDirectory, "passlogreg");
-        
+
         Console.WriteLine($"[LogUserRequest-Lite] Work path: {_workPath}");
         Console.WriteLine($"[LogUserRequest-Lite] DB path: {_dbPath}");
         Console.WriteLine($"[LogUserRequest-Lite] Password path: {_passwdPath}");
-        
+
         try
         {
             Directory.CreateDirectory(_dbDirectory);
@@ -141,9 +144,9 @@ public class ModInit : IModuleLoaded
             try { sqlDb.Database.ExecuteSqlRaw("ALTER TABLE jurnal ADD COLUMN duration_ms INTEGER DEFAULT 0;"); } catch { }
             try { sqlDb.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_jurnal_uid ON jurnal(uid);"); } catch { }
             try { sqlDb.Database.ExecuteSqlRaw("CREATE INDEX IF NOT EXISTS IX_jurnal_time ON jurnal(time);"); } catch { }
-            
-            try 
-            { 
+
+            try
+            {
                 sqlDb.Database.ExecuteSqlRaw("PRAGMA journal_mode = WAL;");
                 sqlDb.Database.ExecuteSqlRaw("PRAGMA synchronous = NORMAL;");
                 sqlDb.Database.ExecuteSqlRaw("PRAGMA cache_size = -64000;");
@@ -166,37 +169,35 @@ public class ModInit : IModuleLoaded
         _statsTimer = new Timer(UpdateStatsCallback, null, TimeSpan.FromSeconds(10), TimeSpan.FromMinutes(5));
         _updateDbTimer = new Timer(UpdateDbCallback, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30));
 
-        var services = init.services;
-        services.AddDbContext<AppDbContext>(options =>
-        {
-            options.UseSqlite($"Data Source={_dbPath};Cache=Shared");
-            options.UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking);
-        }, ServiceLifetime.Scoped);
+        // === Подписка на EventListener вместо app.UseMiddleware ===
+        EventListener.Middleware -= LogUserRequestListener.InvokeAsync;
+        EventListener.Middleware += LogUserRequestListener.InvokeAsync;
 
-        var app = init.app;
-        app.UseMiddleware<LogUserRequestMiddleware>();
-        
         Console.WriteLine($"[LogUserRequest-Lite] Module loaded (logDay={conf.logDay})");
     }
 
     public void Dispose()
     {
+        // === Отписка ===
+        EventListener.Middleware -= LogUserRequestListener.InvokeAsync;
+
         _clearJurnalTimer?.Dispose();
         _statsTimer?.Dispose();
         _updateDbTimer?.Dispose();
         _sessionTokens.Dispose();
     }
 
+    // ... остальные методы (ClearJurnal, UpdateStats, UpdateDb) без изменений
     static void ClearJurnal(object? state)
     {
         try
         {
             using var sqlDb = new AppDbContext();
             var cutoff = DateTime.UtcNow.AddDays(-conf.logDay);
-            
+
             const int batchSize = 5000;
             int totalDeleted = 0;
-            
+
             while (true)
             {
                 var idsToDelete = sqlDb.jurnal
@@ -205,23 +206,23 @@ public class ModInit : IModuleLoaded
                     .Select(j => j.Id)
                     .Take(batchSize)
                     .ToList();
-                
+
                 if (idsToDelete.Count == 0) break;
-                
+
                 sqlDb.jurnal.Where(j => idsToDelete.Contains(j.Id)).ExecuteDelete();
                 totalDeleted += idsToDelete.Count;
-                
+
                 if (idsToDelete.Count < batchSize) break;
             }
-            
+
             if (totalDeleted > 0)
             {
                 var usedUnfo = sqlDb.jurnal.Select(j => j.unfo).Distinct().Take(50000).ToHashSet();
                 var usedHeaders = sqlDb.jurnal.Select(j => j.header).Distinct().Take(50000).ToHashSet();
-                
+
                 sqlDb.unfo.Where(u => !usedUnfo.Contains(u.Id)).Take(batchSize).ExecuteDelete();
                 sqlDb.headers.Where(h => !usedHeaders.Contains(h.Id)).Take(batchSize).ExecuteDelete();
-                
+
                 Console.WriteLine($"[LogUserRequest-Lite] Cleaned {totalDeleted} old records");
             }
         }
@@ -240,18 +241,18 @@ public class ModInit : IModuleLoaded
         {
             using var sqlDb = new AppDbContext();
             var now = DateTime.UtcNow;
-            
+
             var monthStart = new DateTime(now.Year, now.Month, 1);
             var todayStart = new DateTime(now.Year, now.Month, now.Day);
             var tomorrowStart = todayStart.AddDays(1);
-            
+
             var monthQuery = sqlDb.jurnal.Where(j => j.time >= monthStart);
-            
+
             int today = monthQuery.Count(j => j.time >= todayStart && j.time < tomorrowStart);
             int month = monthQuery.Count();
-            
+
             var unfoIds = monthQuery.Select(j => j.unfo).Distinct().Take(10000).ToList();
-            
+
             if (unfoIds.Count > 0)
             {
                 var unfoData = sqlDb.unfo
@@ -259,17 +260,17 @@ public class ModInit : IModuleLoaded
                     .Select(u => new { u.IP, u.UserAgent })
                     .Take(10000)
                     .ToList();
-                
+
                 int uniqueUserAgent = unfoData.Select(u => u.UserAgent).Distinct().Count();
                 int uniqueIp = unfoData.Select(u => u.IP).Where(ip => !string.IsNullOrEmpty(ip)).Distinct().Count();
-                
+
                 var topUsers = monthQuery
                     .GroupBy(j => j.uid)
                     .Select(g => new { uid = g.Key, count = g.Count() })
                     .OrderByDescending(x => x.count)
                     .Take(20)
                     .ToArray();
-                
+
                 var topBalancers = monthQuery
                     .Where(j => j.balancer != null)
                     .GroupBy(j => j.balancer)
@@ -277,12 +278,12 @@ public class ModInit : IModuleLoaded
                     .OrderByDescending(x => x.count)
                     .Take(50)
                     .ToArray();
-                
+
                 stats = new { today, month, uniqueUserAgent, uniqueIp, topUsers, topBalancers };
             }
             else
             {
-                stats = new { today = 0, month = 0, uniqueUserAgent = 0, uniqueIp = 0, 
+                stats = new { today = 0, month = 0, uniqueUserAgent = 0, uniqueIp = 0,
                     topUsers = Array.Empty<object>(), topBalancers = Array.Empty<object>() };
             }
         }
@@ -302,26 +303,26 @@ public class ModInit : IModuleLoaded
         {
             using var sqlDb = new AppDbContext();
             sqlDb.ChangeTracker.AutoDetectChangesEnabled = false;
-            
+
             var batch = new List<(LogModelSql jurnal, UserInfoModelSql unfo, HeaderModelSql header)>();
-            
+
             int batchSize = 1000;
-            while (LogUserRequestMiddleware.Queue.TryDequeue(out var item) && batch.Count < batchSize)
+            while (LogUserRequestListener.Queue.TryDequeue(out var item) && batch.Count < batchSize)
             {
                 batch.Add(item);
-                LogUserRequestMiddleware.DequeueItem();
+                LogUserRequestListener.DequeueItem();
             }
 
             if (batch.Count == 0) return;
 
             var unfoIds = batch.Select(b => b.unfo.Id).Distinct().ToList();
             var headerIds = batch.Select(b => b.header.Id).Distinct().ToList();
-            
+
             var existingUnfo = sqlDb.unfo
                 .Where(u => unfoIds.Contains(u.Id))
                 .Select(u => u.Id)
                 .ToHashSet();
-                
+
             var existingHeaders = sqlDb.headers
                 .Where(h => headerIds.Contains(h.Id))
                 .Select(h => h.Id)
@@ -351,7 +352,7 @@ public class ModInit : IModuleLoaded
                     status_code = item.jurnal.status_code
                 });
             }
-            
+
             sqlDb.SaveChanges();
         }
         catch (Exception ex)
