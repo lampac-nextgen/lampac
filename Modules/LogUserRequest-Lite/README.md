@@ -2,14 +2,13 @@
 
 1. Скачайте архив с модулем  
 2. Распакуйте папку `LogUserRequest-Lite` в `/lampac/mods/`
-3. Отредактируйте init.conf
-4. Разрешите доступ к странице админки LogUserRequest-Lite:  
+3. Отредактируйте init.conf. Разрешите доступ к странице админки LogUserRequest-Lite:  
   "accsdb": {  
     "enable": true,  
     "whitepattern": "^/lite/logrequest"  
   },
-5. Перезапустите Lampac
-6. Админка: http://ваш_сервер/lite/logrequest  
+4. Перезапустите Lampac
+5. Админка: http://ваш_сервер/lite/logrequest  
 
 ## Настройка модуля:  
 1. Конфигурация в manifest.json:  
@@ -71,84 +70,118 @@ docker restart lampac
 // В коде используется  
 AbsoluteExpiration = DateTime.Today.AddDays(1)  
 
-## Инструкция по настройке фильтрации в Lite-версии  
-📁 Где находятся фильтры  
-Все фильтры находятся в файле LogUserRequestMiddleware.cs в самом начале класса.  
+## Инструкция по настройке фильтрации в Lite-версии
 
-### 🔧 Способы фильтрации  
-1. Чёрный список путей (_blacklistPaths)  
+### Где находятся фильтры
 
-private static readonly HashSet<string> _blacklistPaths = new(StringComparer.OrdinalIgnoreCase)  
+Все фильтры находятся в файле `LogUserRequestListener.cs` в начале класса `LogUserRequestListener`.
+
+### Как работает фильтрация
+
+Модуль использует **три уровня фильтрации**:
+
+1. **Автоматическая (EventListener lampac)** — отсеивает анонимные запросы, локальные IP, служебные эндпоинты ядра
+2. **Список префиксов (`_skipPrefixes`)** — пути, которые начинаются с указанных строк
+3. **Список расширений (`_skipExtensions`)** — статические файлы по расширению
+
+Попадание в любой из фильтров — запрос не логируется.
+
+---
+
+### 1. Список пропускаемых префиксов (`_skipPrefixes`)
+
+private static readonly string[] _skipPrefixes =  
 {  
-    "/.well-known", "/admin/health", "/admin/ping", "/testaccsdb", "/nws",  
-    "/lifeevents", "/proxyimg", "/lite/logrequest",   
-    "/lite/events", "/nexthub?plugin", "/externalids",  
-    "/lampa-main", "/lite/withsearch", "/lite/mirage/trans/master.m3u8",  
-    "/timecode", "/bookmark", "/storage", "/sisi/bookmarks?box_mac"  
-};  
+    "/.well-known",  
+    "/admin/health",  
+    "/admin/ping",  
+    "/testaccsdb",  
+    "/nws",  
+    "/lifeevents",  
+    "/proxyimg",  
+    "/lite/logrequest",  
+    "/lite/events",  
+    "/nexthub",  
+    "/externalids",  
+    "/lampa-main",  
+    "/lite/withsearch",  
+    "/timecode",  
+    "/bookmark",  
+    "/storage",  
+    "/cub",  
+	"/cub/",  
+    "/sisi/bookmarks",  
+    "/proxy/"   
+};   
 
-Как добавить новый путь:  
+#### Как добавить новый путь:  
 
-private static readonly HashSet<string> _blacklistPaths = new(StringComparer.OrdinalIgnoreCase)  
+private static readonly string[] _skipPrefixes =  
 {  
     // ... существующие ...  
-    "/ваш_путь", // Точное совпадение  
-    "/ваш_префикс", // Будет блокировать всё что начинается с этого  
-    "/путь?параметр" // Блокирует путь с параметром  
+    "/ваш_путь",     // Блокирует /ваш_путь и /ваш_путь/что-угодно  
+    "/api/internal", // Ещё один пример  
 };  
 
-2. Чёрный список параметров (_blacklistParams)
+### 2. Список расширений (_skipExtensions)  
 
-private static readonly HashSet<string> _blacklistParams = new(StringComparer.OrdinalIgnoreCase)  
+private static readonly string[] _skipExtensions =  
 {  
-    "box_mac"  
+    ".js", ".css", ".svg", ".png", ".jpg", ".jpeg",  
+    ".woff", ".woff2", ".ogg", ".ico", ".map"  
 };  
 
-Как добавить новый параметр:  
+**Как добавить новое расширение:**  
 
-private static readonly HashSet<string> _blacklistParams = new(StringComparer.OrdinalIgnoreCase)  
+private static readonly string[] _skipExtensions =  
 {  
-    "box_mac",  
-    "ваш_параметр"   // Блокирует любой URL с ?параметр= или &параметр=  
+    // ... существующие ...  
+    ".php",   // Блокирует все .php файлы  
+    ".webp",  // Блокирует .webp изображения  
 };  
 
-3. Быстрый отсев в InvokeAsync  
+### 3. Rate Limit (ограничение частоты запросов)   
 
-if (path == "/" || path == "/favicon.ico" ||  
-    path.EndsWith(".js") || path.EndsWith(".css") || path.EndsWith(".svg") ||   
-    path.EndsWith(".png") || path.EndsWith(".jpg") || path.EndsWith(".woff") ||   
-    path.EndsWith(".woff2") || path.EndsWith(".ogg") ||  
-    path.StartsWith("/proxy/"))  
+_rateLimitCache.Set(realIP, DateTime.UtcNow, new MemoryCacheEntryOptions  
 {  
-    return;  
-}  
+    AbsoluteExpirationRelativeToNow = TimeSpan.FromMilliseconds(33), // ← интервал  
+    Size = 1  
+});  
 
-Как добавить:  
+**Как изменить интервал:**   
 
-if (path == "/" || path == "/favicon.ico" ||  
-    path.StartsWith("/ваш_префикс/") ||   // ← Добавить  
-    path.EndsWith(".js") || ...)  
-{  
-    return;  
-}  
+TimeSpan.FromMilliseconds(33) — ~30 запросов/сек с одного IP  
+TimeSpan.FromMilliseconds(100) — 10 запросов/сек  
+TimeSpan.FromSeconds(1) — 1 запрос/сек  
 
-📋 Примеры фильтрации  
+### 4. Максимальный размер очереди  
+
+private const int MaxQueueSize = 20000;  
+
+При превышении лимита новые записи отбрасываются с throttled-логом (не чаще раза в минуту).  
+
+#### 📋 Примеры фильтрации  
 
 | Что хотите заблокировать | Куда добавить | Код |
 |---|---|---|
-| Конкретный путь /api/test | _blacklistPaths | "/api/test" |
-| Все пути с префиксом /api/ | _blacklistPaths | "/api" |
-| Путь с параметром /video?source= | _blacklistPaths | "/video?source" |
-| Любой URL с ?token= | _blacklistParams | "token" |
-| Все .php файлы | Быстрый отсев | path.EndsWith(".php") |
+| Конкретный путь /api/test | _skipPrefixes | "/api/test" |
+| Все пути с префиксом /bot/ | _skipPrefixes | "/bot" |
+| Все .php файлы | _skipExtensions | ".php" |
+| Слишком частые запросы | Rate Limit | Увеличить FromMilliseconds(33) до FromMilliseconds(100) |
 
-⚡ Оптимизация  
-Модуль использует кэш _skipPathCache — результат проверки пути сохраняется на 10 минут. Это ускоряет повторные запросы к тому же пути.  
+#### Что фильтруется автоматически (EventListener lampac)  
 
-⚠️ Важные замечания  
+Это не нужно добавлять в списки — lampac делает это сам:  
+Статические файлы (js, css, png, svg, woff)  
+Анонимные запросы  
+Локальные IP (127.0.0.1, ::1)  
+Служебные эндпоинты lampac  
+Запросы до авторизации  
+
+#### ⚠️ Важные замечания  
 После изменения файла нужна перекомпиляция модуля  
 Синтаксис C# чувствителен к регистру и запятым  
-Не удаляйте существующие фильтры без необходимости  
+Не удаляйте /lite/logrequest из _skipPrefixes — иначе страница модуля будет логировать саму себя  
 При ошибке в синтаксисе модуль не загрузится  
 
 ## База данных  
@@ -160,20 +193,22 @@ if (path == "/" || path == "/favicon.ico" ||
   "logDay": 90  
 }  
 
-Как работает:  
+### Как работает:  
 Записи старше logDay дней удаляются раз в сутки  
-Проверка запускается при старте модуля и затем каждые 24 часа  
-Код в ModInit.cs:  
+Проверка запускается через 1 минуту после старта модуля и затем каждые 24 часа  
+Удаление происходит батчами по 5000 записей для защиты от блокировки SQLite при больших объёмах  
+После удаления старых записей также удаляются неиспользуемые unfo и headers  
 
-static void ClearJurnal(object? state)  
-{  
-    using var sqlDb = new AppDbContext();  
-    var cutoff = DateTime.UtcNow.AddDays(-conf.logDay);  
-    var deleted = sqlDb.jurnal.Where(j => j.time < cutoff).ExecuteDelete();  
-    // ... также удаляются неиспользуемые unfo и headers  
-}  
+**Код в ModInit.cs:**  
 
-Рекомендуемые значения  
+Код находится в ModInit.cs, метод ClearJurnal. Удаление происходит батчами по 5000 записей.
+
+**Почему батчами:**  
+SQLite блокирует всю таблицу при удалении  
+При большом количестве записей (100 000+) одиночный DELETE может занять секунды  
+Батчи по 5000 позволяют другим операциям (запись логов, чтение админки) работать между удалениями  
+
+### Рекомендуемые значения  
 
 | Сценарий | logDay: |
 |---|---|
