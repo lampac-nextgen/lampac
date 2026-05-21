@@ -120,7 +120,7 @@ public class ApiController : ControllerBase
     [HttpGet("api")]
     public async Task<IActionResult> Api(string? uid, int skip = 0, int take = 200)
     {
-        if (!IsAuthorized()) return Unauthorized();
+        if (!IsAuthorized()) return UnauthorizedResponse();
         take = Math.Min(take, 500);
 
         await using var dbContext = await _contextFactory.CreateDbContextAsync();
@@ -151,7 +151,7 @@ public class ApiController : ControllerBase
     [HttpGet("premium-chart")]
     public async Task<IActionResult> PremiumChart(int days = 7)
     {
-        if (!IsAuthorized()) return Unauthorized();
+        if (!IsAuthorized()) return UnauthorizedResponse();
 
         days = Math.Min(days, 3);
 
@@ -178,7 +178,7 @@ public class ApiController : ControllerBase
     [HttpGet("stats")]
     public async Task<IActionResult> Stats(string? uid)
     {
-        if (!IsAuthorized()) return Unauthorized();
+        if (!IsAuthorized()) return UnauthorizedResponse();
 
         await using var dbContext = await _contextFactory.CreateDbContextAsync();
         var query = dbContext.jurnal.AsNoTracking();
@@ -216,6 +216,6 @@ public class ApiController : ControllerBase
         }));
     }
 
-    private IActionResult Unauthorized() => StatusCode(401, ApiResponse<object>.Fail("Unauthorized"));
+    private IActionResult UnauthorizedResponse() => StatusCode(401, ApiResponse<object>.Fail("Unauthorized"));
     private IActionResult Ok<T>(ApiResponse<T> response) => new JsonResult(response);
 }
