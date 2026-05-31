@@ -100,8 +100,12 @@ RUN apt-get update \
     chromium \
     curl \
     fontconfig \
+    imagemagick \
     libicu76 \
+    libjpeg-dev \
     libnspr4 \
+    libpng-dev \
+    libwebp-dev \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf \
