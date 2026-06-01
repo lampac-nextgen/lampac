@@ -45,7 +45,14 @@ public class ModInit : IModuleLoaded, IModuleOnline
             stream_access = "apk,cors",
             httpversion = 2,
             headers = HeadersModel.Init(Http.defaultFullHeaders,
-                ("referer", "https://hdkino.pub/"),
+                ("referer", "http://lostfilm5.org"),
+                ("sec-fetch-dest", "empty"),
+                ("sec-fetch-mode", "cors"),
+                ("sec-fetch-site", "cross-site")
+            ).ToDictionary(),
+            headers_stream = HeadersModel.Init(Http.defaultFullHeaders,
+                ("origin", "https://player.cdnvideohub.com"),
+                ("referer", "https://player.cdnvideohub.com/"),
                 ("sec-fetch-dest", "empty"),
                 ("sec-fetch-mode", "cors"),
                 ("sec-fetch-site", "cross-site")

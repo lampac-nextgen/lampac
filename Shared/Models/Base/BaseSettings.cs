@@ -216,8 +216,11 @@ public class BaseSettings : Iproxy, Istreamproxy, Icors, Igroup, ICloneable
 
         if (nocheck == false)
         {
-            if (CoreInit.conf.serverproxy.forced_apn && !string.IsNullOrWhiteSpace(CoreInit.conf?.apn?.host))
-                return null;
+            if (CoreInit.conf.serverproxy.forced_apn)
+            {
+                if (!string.IsNullOrWhiteSpace(CoreInit.conf?.apn?.host) && CoreInit.conf?.apn?.hosts == null)
+                    return null;
+            }
 
             if (rhub && !rhub_streamproxy && !rhub_fallback && rhub_geo_disable == null) { }
             else

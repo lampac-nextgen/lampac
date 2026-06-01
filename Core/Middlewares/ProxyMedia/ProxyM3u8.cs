@@ -131,7 +131,18 @@ public partial class ProxyAPI
                             string proxyhost = CoreInit.Host(httpContext, "/proxy");
                             ReadOnlySpan<char> decrypturl = decryptLink.uri.AsSpan();
                             ReadOnlySpan<char> hlshost = FindHlsHost(decrypturl);
+
+                            #region hlspatch
                             ReadOnlySpan<char> hlspatch = FindHlsPath(decrypturl);
+                            if (!hlspatch.EndsWith('/'))
+                            {
+                                hlspatch = string.Create(hlspatch.Length + 1, hlspatch, static (dst, src) =>
+                                {
+                                    src.CopyTo(dst);
+                                    dst[^1] = '/';
+                                });
+                            }
+                            #endregion
 
                             foreach (var range in spanHls.Split('\n'))
                             {
@@ -190,7 +201,7 @@ public partial class ProxyAPI
                                     {
                                         writePipe(proxyhost);
                                         writePipe("/");
-                                        writeUri(hlspatch, urlSpan.Slice(1));
+                                        writeUri(hlshost, urlSpan);
                                     }
                                     else
                                     {
@@ -230,7 +241,7 @@ public partial class ProxyAPI
                                     {
                                         writePipe(proxyhost);
                                         writePipe("/");
-                                        writeUri(hlshost, line.Slice(1));
+                                        writeUri(hlshost, line);
                                     }
                                     else
                                     {

@@ -558,18 +558,18 @@ public class ProxyImg
     #region NetVipsImage
     static bool _initNetVips = false;
 
-    private bool NetVipsImage(string href, Stream inArray, Stream outArray, int width, int height)
+    static bool NetVipsImage(string href, Stream inArray, Stream outArray, int width, int height)
     {
         if (_initNetVips == false)
         {
             _initNetVips = true;
-            if (CoreInit.conf.serverproxy.image.NetVipsCache == false || CoreInit.conf.lowMemoryMode)
-            {
-                NetVips.Cache.Max = 0;      // 0 операций в кэше
-                NetVips.Cache.MaxMem = 0;   // 0 байт памяти под кэш
-                NetVips.Cache.MaxFiles = 0; // 0 файлов в файловом кэше
-                NetVips.Cache.Trace = false;
-            }
+            NetVips.Cache.Max = 0;      // 0 операций в кэше
+            NetVips.Cache.MaxMem = 0;   // 0 байт памяти под кэш
+            NetVips.Cache.MaxFiles = 0; // 0 файлов в файловом кэше
+            NetVips.Cache.Trace = false;
+            NetVips.NetVips.Leak = false;
+            NetVips.NetVips.Profile = false;
+            NetVips.NetVips.Concurrency = 1;
         }
 
         try

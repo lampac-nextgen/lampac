@@ -546,10 +546,10 @@ public class BaseController : Controller
         {
             if (CoreInit.conf.serverproxy.forced_apn || conf.apnstream)
             {
-                if (!string.IsNullOrEmpty(conf.apn?.host) && conf.apn.host.StartsWith("http"))
+                if (conf.apn?.hosts != null || !string.IsNullOrEmpty(conf.apn?.host))
                     return apnlink(conf, conf.apn, uri, requestInfo.IP, headers);
 
-                if (!string.IsNullOrEmpty(CoreInit.conf?.apn?.host) && CoreInit.conf.apn.host.StartsWith("http"))
+                if (CoreInit.conf?.apn?.hosts != null || !string.IsNullOrEmpty(CoreInit.conf?.apn?.host))
                     return apnlink(conf, CoreInit.conf.apn, uri, requestInfo.IP, headers);
 
                 return uri;
@@ -605,6 +605,10 @@ public class BaseController : Controller
     {
         string link = ClearStreamUri(uri);
 
+        string apnhost = apn.host;
+        if (apn.hosts != null && apn.hosts.Length > 0)
+            apnhost = apn.hosts[Random.Shared.Next(0, apn.hosts.Length)];
+
         if (apn.secure == "nginx")
         {
             long ex = DateTimeOffset.UtcNow.AddHours(12).ToUnixTimeSeconds();
@@ -616,7 +620,7 @@ public class BaseController : Controller
             Span<byte> hashBytes = stackalloc byte[16];
             MD5.HashData(data.Slice(0, bytesWritten), hashBytes);
 
-            return $"{apn.host}/{Base64Url.EncodeToString(hashBytes)}:{ex}/{link}";
+            return $"{apnhost}/{Base64Url.EncodeToString(hashBytes)}:{ex}/{link}";
         }
         else if (apn.secure == "lampac")
         {
@@ -625,15 +629,15 @@ public class BaseController : Controller
                 ip,
                 httpHeaders(conf.host, headers),
                 plugin: conf?.plugin,
-                prefix: [apn.host, "/proxy/"],
+                prefix: [apnhost, "/proxy/"],
                 writeHeaders: true
             );
         }
 
-        if (apn.host.Contains("{encode_uri}") || apn.host.Contains("{uri}"))
-            return apn.host.Replace("{encode_uri}", HttpUtility.UrlEncode(link)).Replace("{uri}", link);
+        if (apnhost.Contains("{encode_uri}") || apnhost.Contains("{uri}"))
+            return apnhost.Replace("{encode_uri}", HttpUtility.UrlEncode(link)).Replace("{uri}", link);
 
-        if (apn.host.Contains("{payload}"))
+        if (apnhost.Contains("{payload}"))
         {
             using (var utf8Buf = new BufferWriterPool<byte>(BufferWriterPoolType.Tiny))
             {
@@ -674,7 +678,7 @@ public class BaseController : Controller
 
                 ReadOnlySpan<byte> json = utf8Buf.WrittenSpan;
                 if (json.IsEmpty)
-                    return apn.host;
+                    return apnhost;
 
                 int base64Len = ((json.Length + 2) / 3) * 4;
 
@@ -696,13 +700,13 @@ public class BaseController : Controller
                     if (uri.Contains(".m3u"))
                         payload.Append(".m3u8");
 
-                    return apn.host.Replace("{payload}", payload.ToString());
+                    return apnhost.Replace("{payload}", payload.ToString());
                 }
             }
         }
         else
         {
-            return $"{apn.host}/{link}";
+            return $"{apnhost}/{link}";
         }
     }
 

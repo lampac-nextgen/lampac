@@ -428,7 +428,6 @@ public class CoreInit
         image = new ServerproxyImageConf()
         {
             enable = true,
-            NetVipsCache = true,
             cache = true,
             cache_rsize = true,
             cache_time = 60 * 24 // 24h
