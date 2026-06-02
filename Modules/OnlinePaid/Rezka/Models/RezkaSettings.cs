@@ -26,6 +26,8 @@ public class RezkaSettings : BaseSettings, ICloneable
 
     public bool? ajax { get; set; }
 
+    public bool PizdatoeDb { get; set; }
+
 
     public RezkaSettings Clone()
     {

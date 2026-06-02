@@ -4,8 +4,6 @@ public class ServerproxyImageConf : Iproxy
 {
     public bool enable { get; set; }
 
-    public bool NetVipsCache { get; set; }
-
 
     public bool cache { get; set; }
 

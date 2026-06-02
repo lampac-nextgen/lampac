@@ -701,7 +701,7 @@ public class RezkaInvoke
     public string Movie(MovieModel md, string title, string original_title, bool play, HttpContext httpContext, VastConf vast = null)
     {
         if (play)
-            return onstreamfile(md.links[0].stream_url!);
+            return onstreamfile(md.links[0].stream_url);
 
         #region subtitles
         var subtitles = new SubtitleTpl();
@@ -728,11 +728,11 @@ public class RezkaInvoke
 
         var streamquality = new StreamQualityTpl();
         foreach (var l in md.links)
-            streamquality.Append(onstreamfile(l.stream_url!), l.title);
+            streamquality.Append(onstreamfile(l.stream_url), l.title);
 
         return VideoTpl.ToJson(
             "play",
-            onstreamfile(md.links[0].stream_url!),
+            onstreamfile(md.links[0].stream_url),
             (title ?? original_title ?? "auto"),
             streamquality: streamquality,
             subtitles: subtitles,

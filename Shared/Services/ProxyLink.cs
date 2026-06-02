@@ -207,13 +207,11 @@ public class ProxyLink : IProxyLink
         {
             var aesinst = AesPool.Instance;
 
-            // EncryptCbc сам делает PKCS7 padding, paddedLen считать не нужно
-            // destination должен быть достаточно большой: json.Length + blockSize
-            int requiredCipherLen = ((json.Length / AesInstance.BlockSize) + 1) * AesInstance.BlockSize;
+            int paddedLen = aesinst.Aes.GetCiphertextLengthCbc(json.Length, PaddingMode.PKCS7);
 
             BufferBytePool destBuf = null;
-            if (requiredCipherLen > AesInstance.ByteSize)
-                destBuf = new BufferBytePool(requiredCipherLen);
+            if (paddedLen > AesInstance.ByteSize)
+                destBuf = new BufferBytePool(paddedLen);
 
             try
             {

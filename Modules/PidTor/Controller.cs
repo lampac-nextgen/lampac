@@ -1,5 +1,5 @@
 using Microsoft.AspNetCore.Mvc;
-using Newtonsoft.Json;
+using Microsoft.Extensions.Caching.Memory;
 using Shared;
 using Shared.Attributes;
 using Shared.Models.Base;
@@ -9,11 +9,14 @@ using Shared.Services;
 using Shared.Services.Pools;
 using Shared.Services.Utilities;
 using System;
+using System.Buffers.Text;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web;
@@ -31,7 +34,10 @@ public class PiTor : BaseOnlineController
             return StatusCode(403);
 
         if (NoAccessGroup(init, out string error_msg))
-            return Json(new { accsdb = true, error_msg });
+            return Json(new { accsdb = true, msg = error_msg });
+
+        if (init.workinghours != null && !init.workinghours.Contains(DateTime.UtcNow.Hour))
+            return Json(new { accsdb = true, msg = "Временно недоступен, попробуйте через несколько часов" });
 
         var cache = await InvokeCacheResult<List<Torrent>>($"pidtor:{title}:{original_title}:{year}:{original_language}:{serial}", 40, textJson: true, onget: async e =>
         {
@@ -371,7 +377,10 @@ public class PiTor : BaseOnlineController
             return StatusCode(403);
 
         if (NoAccessGroup(init, out string error_msg))
-            return Json(new { accsdb = true, error_msg });
+            return Json(new { accsdb = true, msg = error_msg });
+
+        if (init.workinghours != null && !init.workinghours.Contains(DateTime.UtcNow.Hour))
+            return Json(new { accsdb = true, msg = "Временно недоступен, попробуйте через несколько часов" });
 
         string tr = Regex.Replace(HttpContext.Request.QueryString.Value.Remove(0, 1), "&(account_email|uid|token|nws_id|rjson|title|original_title|s)=[^&]+", "");
 
@@ -471,7 +480,10 @@ public class PiTor : BaseOnlineController
             return StatusCode(403);
 
         if (NoAccessGroup(init, out string error_msg))
-            return Json(new { accsdb = true, error_msg });
+            return Json(new { accsdb = true, msg = error_msg });
+
+        if (init.workinghours != null && !init.workinghours.Contains(DateTime.UtcNow.Hour))
+            return Json(new { accsdb = true, msg = "Временно недоступен, попробуйте через несколько часов" });
 
         short index = tsid != -1 ? tsid : (short)1;
         string magnet = $"magnet:?xt=urn:btih:{id}&" + Regex.Replace(HttpContext.Request.QueryString.Value.Remove(0, 1), "&(account_email|uid|token|nws_id|tsid)=[^&]+", "");
@@ -479,12 +491,33 @@ public class PiTor : BaseOnlineController
         #region auth_stream
         async Task<ActionResult> auth_stream(string host, string login, string passwd, bool aes, string uhost = null, Dictionary<string, string> addheaders = null)
         {
+            if (aes)
+            {
+                string top = await Http.Get($"{uhost ?? host}/top", timeoutSeconds: 2);
+                if (top != null && top.Contains("mem: ") && top.Contains("cpu: "))
+                {
+                    string mem = Regex.Match(top, "mem: ([0-9]+)").Groups[1].Value;
+                    string cpu = Regex.Match(top, "cpu: ([0-9]+)").Groups[1].Value;
+                    if (short.TryParse(mem, out short _mem) && short.TryParse(cpu, out short _cpu))
+                    {
+                        if (_mem > 95 || _cpu > 90)
+                        {
+                            string overloaded = $"{ModInit.modpath}/overloaded.mp4";
+                            if (System.IO.File.Exists(overloaded))
+                                return File(System.IO.File.OpenRead(overloaded), "video/mp4", true);
+
+                            return StatusCode(503, $"{uhost ?? host} перегружен");
+                        }
+                    }
+                }
+            }
+
             login = login
                 .Replace("{user_uid}", requestInfo.user_uid ?? string.Empty)
                 .Replace("{user_ip}", requestInfo.IP);
 
             string memKey = $"pidtor:auth_stream:{id}:{uhost ?? host}";
-            if (!hybridCache.TryGetValue(memKey, out string hash))
+            if (!memoryCache.TryGetValue(memKey, out string hash))
             {
                 hash = await Http.Post(
                     $"{host}/torrents",
@@ -503,7 +536,7 @@ public class PiTor : BaseOnlineController
                 if (string.IsNullOrEmpty(hash))
                     return StatusCode(503, "hash null");
 
-                hybridCache.Set(memKey, hash, DateTime.Now.AddMinutes(1));
+                memoryCache.Set(memKey, hash, DateTime.Now.AddMinutes(1));
             }
 
             if (aes)
@@ -532,7 +565,7 @@ public class PiTor : BaseOnlineController
         if (init.auth_torrs?.FirstOrDefault(i => i.enable) != null)
         {
             string tskey = $"pidtor:ts2:{id}:{requestInfo.IP}";
-            if (!hybridCache.TryGetValue(tskey, out PidTorAuthTS ts))
+            if (!memoryCache.TryGetValue(tskey, out PidTorAuthTS ts))
             {
                 string country = requestInfo.Country;
                 var tors = init.auth_torrs.Where(i => i.enable).ToList();
@@ -541,7 +574,7 @@ public class PiTor : BaseOnlineController
                     tors = tors.Where(i => i.country == null || i.country.Contains(country)).Where(i => i.no_country == null || !i.no_country.Contains(country)).ToList();
 
                 ts = tors[Random.Shared.Next(0, tors.Count)];
-                hybridCache.Set(tskey, ts, DateTime.Now.AddHours(4));
+                memoryCache.Set(tskey, ts, DateTime.Now.AddHours(4));
             }
 
             return await auth_stream(ts.host, ts.login, ts.passwd, ts.aes, addheaders: ts.headers);
@@ -551,20 +584,20 @@ public class PiTor : BaseOnlineController
             if (init.base_auth?.enable == true)
             {
                 string tskey = $"pidtor:ts3:{id}:{requestInfo.IP}";
-                if (!hybridCache.TryGetValue(tskey, out string ts))
+                if (!memoryCache.TryGetValue(tskey, out string ts))
                 {
                     ts = init.torrs[Random.Shared.Next(0, init.torrs.Length)];
-                    hybridCache.Set(tskey, ts, DateTime.Now.AddHours(4));
+                    memoryCache.Set(tskey, ts, DateTime.Now.AddHours(4));
                 }
 
                 return await auth_stream(ts, init.base_auth.login, init.base_auth.passwd, init.base_auth.aes, addheaders: init.base_auth.headers);
             }
 
             string key = $"pidtor:ts4:{id}:{requestInfo.IP}";
-            if (!hybridCache.TryGetValue(key, out string tshost))
+            if (!memoryCache.TryGetValue(key, out string tshost))
             {
                 tshost = init.torrs[Random.Shared.Next(0, init.torrs.Length)];
-                hybridCache.Set(key, tshost, DateTime.Now.AddHours(4));
+                memoryCache.Set(key, tshost, DateTime.Now.AddHours(4));
             }
 
             return Redirect($"{tshost}/stream?link={HttpUtility.UrlEncode(magnet)}&index={index}&play");
@@ -573,51 +606,67 @@ public class PiTor : BaseOnlineController
 
 
     #region Matrix.API - onlyAes authorization
+    static readonly ConcurrentDictionary<string, (byte[] Key, byte[] IV)> aesKeys = new();
+
+    static readonly JsonWriterOptions _jsonWriterOptions = new JsonWriterOptions
+    {
+        Indented = false,
+        SkipValidation = true
+    };
+
     static string aesRequest(string login, string aeskey, string reqUri)
     {
         try
         {
-            string plainText = JsonConvert.SerializeObject(new
+            using (var jsonBuff = new BufferWriterPool<byte>(BufferWriterPoolType.Tiny))
             {
-                login,
-                reqUri
-            });
-
-            using (var aes = Aes.Create())
-            {
-                aes.Mode = CipherMode.CBC;
-                aes.Padding = PaddingMode.PKCS7;
-
-                var i = aeskey.Split("/");
-                aes.Key = Encoding.UTF8.GetBytes(i[0]);
-                aes.IV = Encoding.UTF8.GetBytes(i[1]);
-
-                using (var plainBuf = new BufferBytePool(Encoding.UTF8.GetMaxByteCount(plainText.Length)))
+                using (var writer = new Utf8JsonWriter(jsonBuff, _jsonWriterOptions))
                 {
-                    Span<byte> plainBytes = plainBuf.Span;
+                    writer.WriteStartObject();
+                    writer.WriteString("login"u8, login);
+                    writer.WriteString("reqUri"u8, reqUri);
+                    writer.WriteEndObject();
+                }
 
-                    int writtenPlain = Encoding.UTF8.GetBytes(plainText, plainBytes);
-                    if (writtenPlain <= 0)
-                        return string.Empty;
+                ReadOnlySpan<byte> json = jsonBuff.WrittenSpan;
+                if (json.IsEmpty)
+                    return string.Empty;
 
-                    int blockSize = aes.BlockSize / 8;
-                    int paddedLen = ((writtenPlain / blockSize) + 1) * blockSize;
+                using (var aes = Aes.Create())
+                {
+                    aes.Mode = CipherMode.CBC;
+                    aes.Padding = PaddingMode.PKCS7;
 
-                    Span<byte> encrypted = new byte[paddedLen];
+                    if (aesKeys.TryGetValue(aeskey, out var _keys))
+                    {
+                        aes.Key = _keys.Key;
+                        aes.IV = _keys.IV;
+                    }
+                    else
+                    {
+                        var i = aeskey.Split("/");
+                        aes.Key = Encoding.UTF8.GetBytes(i[0]);
+                        aes.IV = Encoding.UTF8.GetBytes(i[1]);
+                        aesKeys[aeskey] = (aes.Key, aes.IV);
+                    }
 
-                    int cipherLen = aes.EncryptCbc(
-                        plainBytes.Slice(0, writtenPlain),
-                        aes.IV,
-                        encrypted,
-                        PaddingMode.PKCS7);
+                    int cipherBufferLen = aes.GetCiphertextLengthCbc(json.Length, PaddingMode.PKCS7);
 
-                    if (cipherLen <= 0)
-                        return string.Empty;
+                    using (var encryptedBuff = new BufferBytePool(cipherBufferLen))
+                    {
+                        Span<byte> encrypted = encryptedBuff.Span;
 
-                    return Convert.ToBase64String(encrypted.Slice(0, cipherLen))
-                        .Replace('+', '-')
-                        .Replace('/', '_')
-                        .TrimEnd('=');
+                        int cipherLen = aes.EncryptCbc(
+                            json,
+                            aes.IV,
+                            encrypted,
+                            PaddingMode.PKCS7);
+
+                        if (cipherLen <= 0)
+                            return string.Empty;
+
+                        return Base64Url.EncodeToString(encrypted.Slice(0, cipherLen));
+                    }
                 }
             }
         }

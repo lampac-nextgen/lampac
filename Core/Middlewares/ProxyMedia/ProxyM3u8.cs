@@ -1,11 +1,11 @@
 ﻿using Microsoft.AspNetCore.Http;
 using Shared;
+using Shared.Models.Base;
 using Shared.Models.Proxy;
 using Shared.Models.ServerProxy;
 using Shared.Services;
 using Shared.Services.Pools;
 using System;
-using System.Buffers;
 using System.Net;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
@@ -25,278 +25,282 @@ public partial class ProxyAPI
         {
             if (response.Content?.Headers?.ContentLength > init.maxlength_m3u)
             {
-                httpContext.Response.ContentType = "text/plain; charset=utf-8";
-                httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
-                httpContext.Response.BodyWriter.Write("bigfile"u8);
+                httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
                 return;
             }
 
             int m3u8Length = 0;
             var encoder = Encoding.UTF8.GetEncoder();
 
-            await using (var stream = await content.ReadAsStreamAsync(ctsHttp.Token).ConfigureAwait(false))
+            using (var writer = new LazyMsm())
             {
-                if (ctsHttp.IsCancellationRequested)
-                    return;
-
-                var writer = httpContext.Response.BodyWriter;
-
-                #region Меняем ссылки в hls
-                using (var msmHls = PoolInvk.msm.GetStream())
+                await using (var stream = await content.ReadAsStreamAsync(ctsHttp.Token).ConfigureAwait(false))
                 {
-                    #region Получаем m3u8 в msm
-                    using (var nbuf = new BufferPool())
-                    {
-                        int bytesRead;
-                        var memBuf = nbuf.Memory;
-
-                        while ((bytesRead = await stream.ReadAsync(memBuf, ctsHttp.Token).ConfigureAwait(false)) > 0)
-                        {
-                            if (ctsHttp.IsCancellationRequested)
-                                break;
-
-                            msmHls.Write(memBuf.Span.Slice(0, bytesRead));
-                        }
-                    }
-                    #endregion
-
                     if (ctsHttp.IsCancellationRequested)
                         return;
 
-                    msmHls.Position = 0;
-
-                    #region Пишем данные в BodyWriter
-                    OwnerTo.Span(msmHls, Encoding.UTF8, spanHls =>
+                    #region Меняем ссылки в hls
+                    using (var msmHls = PoolInvk.msm.GetStream())
                     {
-                        using (var charBuffer = new BufferCharPool(BufferCharPool.sizeTiny))
+                        #region Получаем m3u8 в msm
+                        using (var nbuf = new BufferPool())
                         {
-                            #region writePipe
-                            void writePipe(ReadOnlySpan<char> chars)
+                            int bytesRead;
+                            var memBuf = nbuf.Memory;
+
+                            while ((bytesRead = await stream.ReadAsync(memBuf, ctsHttp.Token).ConfigureAwait(false)) > 0)
                             {
-                                /// UTF-16: 1 char -> 2 bytes
-                                /// Кириллица: 1 char -> 2-4 bytes
-                                int chunkSize = chars.Length > 1360 // возьмем середину 1 char -> 3 bytes
-                                    ? PoolInvk._chunk16
-                                    : PoolInvk._chunk4;
+                                if (ctsHttp.IsCancellationRequested)
+                                    break;
 
-                                while (!chars.IsEmpty)
+                                msmHls.Write(memBuf.Span.Slice(0, bytesRead));
+                            }
+                        }
+                        #endregion
+
+                        if (ctsHttp.IsCancellationRequested)
+                            return;
+
+                        #region Пишем данные в writer
+                        OwnerTo.Span(msmHls, Encoding.UTF8, spanHls =>
+                        {
+                            using (var charBuffer = new BufferCharPool(BufferCharPool.sizeTiny))
+                            {
+                                #region writePipe
+                                void writePipe(ReadOnlySpan<char> chars)
                                 {
-                                    Span<byte> dest = writer.GetSpan(chunkSize);
-
-                                    encoder.Convert(
-                                        chars,
-                                        dest,
-                                        flush: false,
-                                        out int charsUsed,
-                                        out int bytesUsed,
-                                        out bool completed);
-
-                                    if (bytesUsed > 0)
+                                    while (!chars.IsEmpty)
                                     {
-                                        m3u8Length += bytesUsed;
-                                        writer.Advance(bytesUsed);
+                                        Span<byte> dest = writer.Stream.GetSpan(PoolInvk._chunk8);
+
+                                        encoder.Convert(
+                                            chars,
+                                            dest,
+                                            flush: false,
+                                            out int charsUsed,
+                                            out int bytesUsed,
+                                            out bool completed);
+
+                                        if (bytesUsed > 0)
+                                        {
+                                            m3u8Length += bytesUsed;
+                                            writer.Stream.Advance(bytesUsed);
+                                        }
+
+                                        if (completed)
+                                            break;
+
+                                        if (charsUsed == 0 && bytesUsed == 0)
+                                            break;
+
+                                        chars = chars.Slice(charsUsed);
                                     }
-
-                                    if (completed)
-                                        break;
-
-                                    if (charsUsed == 0 && bytesUsed == 0)
-                                        break;
-
-                                    chars = chars.Slice(charsUsed);
                                 }
-                            }
-                            #endregion
+                                #endregion
 
-                            #region writeUri
-                            void writeUri(ReadOnlySpan<char> prefix, ReadOnlySpan<char> uri)
-                            {
-                                int size = prefix.Length + uri.Length;
-                                if (size > charBuffer.Span.Length)
-                                    charBuffer.Ensure(size);
-
-                                Span<char> joinUri = charBuffer.Span.Slice(0, size);
-
-                                prefix.CopyTo(joinUri);
-                                uri.CopyTo(joinUri[prefix.Length..]);
-
-                                ProxyLink.Encrypt(joinUri, decryptLink, sbWriter: result =>
+                                #region writeUri
+                                void writeUri(ReadOnlySpan<char> prefix, ReadOnlySpan<char> uri)
                                 {
-                                    foreach (var chunk in result.GetChunks())
-                                        writePipe(chunk.Span);
-                                });
-                            }
-                            #endregion
+                                    int size = prefix.Length + uri.Length;
+                                    if (size > charBuffer.Span.Length)
+                                        charBuffer.Ensure(size);
 
-                            string proxyhost = CoreInit.Host(httpContext, "/proxy");
-                            ReadOnlySpan<char> decrypturl = decryptLink.uri.AsSpan();
-                            ReadOnlySpan<char> hlshost = FindHlsHost(decrypturl);
-                            ReadOnlySpan<char> hlspatch = FindHlsPath(decrypturl);
+                                    Span<char> joinUri = charBuffer.Span.Slice(0, size);
 
-                            foreach (var range in spanHls.Split('\n'))
-                            {
-                                ReadOnlySpan<char> line = spanHls[range].Trim();
+                                    prefix.CopyTo(joinUri);
+                                    uri.CopyTo(joinUri[prefix.Length..]);
 
-                                if (line.IsEmpty || (line.Length == 1 && (line[0] is '\r' or '\n' or '\t')))
-                                {
-                                    writePipe("\n");
-                                    continue;
-                                }
-
-                                if (TryFindHttpUrl(line, out Range urlRange))
-                                {
-                                    #region https?://[^\n\r\"\# ]+
-                                    // prefix
-                                    writePipe(line[..urlRange.Start]);
-
-                                    // url
-                                    ReadOnlySpan<char> urlSpan = line[urlRange];
-
-                                    writePipe(proxyhost);
-                                    writePipe("/");
-
-                                    ProxyLink.Encrypt(urlSpan, decryptLink, sbWriter: result =>
+                                    ProxyLink.Encrypt(joinUri, decryptLink, sbWriter: result =>
                                     {
                                         foreach (var chunk in result.GetChunks())
                                             writePipe(chunk.Span);
                                     });
-
-                                    // suffix
-                                    writePipe(line[urlRange.End..]);
-                                    writePipe("\n");
-                                    #endregion
                                 }
-                                else if (TryFindUriAttribute(line, out urlRange))
+                                #endregion
+
+                                string proxyhost = CoreInit.Host(httpContext, "/proxy");
+                                ReadOnlySpan<char> decrypturl = decryptLink.uri.AsSpan();
+                                ReadOnlySpan<char> hlshost = FindHlsHost(decrypturl);
+
+                                #region hlspatch
+                                ReadOnlySpan<char> hlspatch = FindHlsPath(decrypturl);
+                                if (!hlspatch.EndsWith('/'))
                                 {
-                                    #region URI="([^\"]+)"
-                                    ReadOnlySpan<char> urlSpan = line[urlRange];
-
-                                    // prefix
-                                    writePipe(line[..urlRange.Start]);
-
-                                    if (urlSpan.StartsWith("//"))
+                                    hlspatch = string.Create(hlspatch.Length + 1, hlspatch, static (dst, src) =>
                                     {
-                                        writePipe(proxyhost);
-                                        writePipe("/");
-                                        writeUri("https:", urlSpan);
-                                    }
-                                    else if (urlSpan.StartsWith("./"))
-                                    {
-                                        writePipe(proxyhost);
-                                        writePipe("/");
-                                        writeUri(hlspatch, urlSpan.Slice(2));
-                                    }
-                                    else if (urlSpan.StartsWith("/"))
-                                    {
-                                        writePipe(proxyhost);
-                                        writePipe("/");
-                                        writeUri(hlspatch, urlSpan.Slice(1));
-                                    }
-                                    else
-                                    {
-                                        writePipe(proxyhost);
-                                        writePipe("/");
-                                        writeUri(hlspatch, urlSpan);
-                                    }
-
-                                    // suffix
-                                    writePipe(line[urlRange.End..]);
-                                    writePipe("\n");
-                                    #endregion
+                                        src.CopyTo(dst);
+                                        dst[^1] = '/';
+                                    });
                                 }
-                                else
+                                #endregion
+
+                                foreach (var range in spanHls.Split('\n'))
                                 {
-                                    if (line.StartsWith("#", StringComparison.Ordinal) ||
-                                        line.Contains("\"", StringComparison.Ordinal))
+                                    ReadOnlySpan<char> line = spanHls[range].Trim();
+
+                                    if (line.IsEmpty || (line.Length == 1 && (line[0] is '\r' or '\n' or '\t')))
                                     {
-                                        writePipe(line);
                                         writePipe("\n");
                                         continue;
                                     }
 
-                                    if (line.StartsWith("//"))
+                                    if (TryFindHttpUrl(line, out Range urlRange))
                                     {
+                                        #region https?://[^\n\r\"\# ]+
+                                        // prefix
+                                        writePipe(line[..urlRange.Start]);
+
+                                        // url
+                                        ReadOnlySpan<char> urlSpan = line[urlRange];
+
                                         writePipe(proxyhost);
                                         writePipe("/");
-                                        writeUri("https:", line);
+
+                                        ProxyLink.Encrypt(urlSpan, decryptLink, sbWriter: result =>
+                                        {
+                                            foreach (var chunk in result.GetChunks())
+                                                writePipe(chunk.Span);
+                                        });
+
+                                        // suffix
+                                        writePipe(line[urlRange.End..]);
+                                        writePipe("\n");
+                                        #endregion
                                     }
-                                    else if (line.StartsWith("./"))
+                                    else if (TryFindUriAttribute(line, out urlRange))
                                     {
-                                        writePipe(proxyhost);
-                                        writePipe("/");
-                                        writeUri(hlspatch, line.Slice(2));
-                                    }
-                                    else if (line.StartsWith("/"))
-                                    {
-                                        writePipe(proxyhost);
-                                        writePipe("/");
-                                        writeUri(hlshost, line.Slice(1));
+                                        #region URI="([^\"]+)"
+                                        ReadOnlySpan<char> urlSpan = line[urlRange];
+
+                                        // prefix
+                                        writePipe(line[..urlRange.Start]);
+
+                                        if (urlSpan.StartsWith("//"))
+                                        {
+                                            writePipe(proxyhost);
+                                            writePipe("/");
+                                            writeUri("https:", urlSpan);
+                                        }
+                                        else if (urlSpan.StartsWith("./"))
+                                        {
+                                            writePipe(proxyhost);
+                                            writePipe("/");
+                                            writeUri(hlspatch, urlSpan.Slice(2));
+                                        }
+                                        else if (urlSpan.StartsWith("/"))
+                                        {
+                                            writePipe(proxyhost);
+                                            writePipe("/");
+                                            writeUri(hlshost, urlSpan);
+                                        }
+                                        else
+                                        {
+                                            writePipe(proxyhost);
+                                            writePipe("/");
+                                            writeUri(hlspatch, urlSpan);
+                                        }
+
+                                        // suffix
+                                        writePipe(line[urlRange.End..]);
+                                        writePipe("\n");
+                                        #endregion
                                     }
                                     else
                                     {
-                                        writePipe(proxyhost);
-                                        writePipe("/");
-                                        writeUri(hlspatch, line);
-                                    }
+                                        if (line.StartsWith("#", StringComparison.Ordinal) ||
+                                            line.Contains("\"", StringComparison.Ordinal))
+                                        {
+                                            writePipe(line);
+                                            writePipe("\n");
+                                            continue;
+                                        }
 
-                                    writePipe("\n");
+                                        if (line.StartsWith("//"))
+                                        {
+                                            writePipe(proxyhost);
+                                            writePipe("/");
+                                            writeUri("https:", line);
+                                        }
+                                        else if (line.StartsWith("./"))
+                                        {
+                                            writePipe(proxyhost);
+                                            writePipe("/");
+                                            writeUri(hlspatch, line.Slice(2));
+                                        }
+                                        else if (line.StartsWith("/"))
+                                        {
+                                            writePipe(proxyhost);
+                                            writePipe("/");
+                                            writeUri(hlshost, line);
+                                        }
+                                        else
+                                        {
+                                            writePipe(proxyhost);
+                                            writePipe("/");
+                                            writeUri(hlspatch, line);
+                                        }
+
+                                        writePipe("\n");
+                                    }
                                 }
                             }
-                        }
-                    });
+                        });
+                        #endregion
+                    }
+                    #endregion
+
+                    #region Ошибка
+                    if (m3u8Length == 0)
+                    {
+                        httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
+                        return;
+                    }
+                    #endregion
+
+                    #region Headers
+                    httpContext.Response.StatusCode = (int)response.StatusCode;
+
+                    httpContext.Response.ContentType = contentType != null && contentType.StartsWith("application/x-mpegurl", StringComparison.OrdinalIgnoreCase)
+                        ? "application/x-mpegurl"
+                        : "application/vnd.apple.mpegurl";
+
+                    if (httpContext.Response.StatusCode is 206 or 416)
+                    {
+                        httpContext.Response.Headers["accept-ranges"] = "bytes";
+
+                        if (httpContext.Response.StatusCode == 206)
+                            httpContext.Response.Headers["content-range"] = $"bytes 0-{m3u8Length - 1}/{m3u8Length}";
+
+                        if (httpContext.Response.StatusCode == 416)
+                            httpContext.Response.Headers["content-range"] = $"bytes */{m3u8Length}";
+                    }
+                    else
+                    {
+                        if (!CoreInit.ContainsMimeTypes(httpContext.Response.ContentType))
+                            httpContext.Response.ContentLength = m3u8Length;
+                    }
+                    #endregion
+
+                    #region границы чанков/суррогаты
+                    Span<byte> tail = writer.Stream.GetSpan(128);
+
+                    encoder.Convert(
+                        ReadOnlySpan<char>.Empty,
+                        tail,
+                        flush: true,
+                        out int _,
+                        out int bytesUsed,
+                        out bool _);
+
+                    writer.Stream.Advance(bytesUsed);
                     #endregion
                 }
-                #endregion
 
-                #region Ошибка
-                if (m3u8Length == 0)
+                if (!writer.IsEmpty)
                 {
-                    httpContext.Response.ContentType = "text/plain; charset=utf-8";
-                    httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
-                    httpContext.Response.BodyWriter.Write("m3u8 length empty"u8);
-                    return;
+                    writer.Stream.Position = 0;
+                    await writer.Stream.CopyToAsync(httpContext.Response.Body, ctsHttp.Token).ConfigureAwait(false);
                 }
-                #endregion
-
-                #region Headers
-                httpContext.Response.StatusCode = (int)response.StatusCode;
-
-                httpContext.Response.ContentType = contentType != null && contentType.StartsWith("application/x-mpegurl", StringComparison.OrdinalIgnoreCase)
-                    ? "application/x-mpegurl"
-                    : "application/vnd.apple.mpegurl";
-
-                if (httpContext.Response.StatusCode is 206 or 416)
-                {
-                    httpContext.Response.Headers["accept-ranges"] = "bytes";
-
-                    if (httpContext.Response.StatusCode == 206)
-                        httpContext.Response.Headers["content-range"] = $"bytes 0-{m3u8Length - 1}/{m3u8Length}";
-
-                    if (httpContext.Response.StatusCode == 416)
-                        httpContext.Response.Headers["content-range"] = $"bytes */{m3u8Length}";
-                }
-                else
-                {
-                    if (!CoreInit.ContainsMimeTypes(httpContext.Response.ContentType))
-                        httpContext.Response.ContentLength = m3u8Length;
-                }
-                #endregion
-
-                #region границы чанков/суррогаты
-                Span<byte> tail = writer.GetSpan(128);
-
-                encoder.Convert(
-                    ReadOnlySpan<char>.Empty,
-                    tail,
-                    flush: true,
-                    out int _,
-                    out int bytesUsed,
-                    out bool _);
-
-                writer.Advance(bytesUsed);
-                #endregion
-
-                //await writer.FlushAsync(ctsHttp.Token).ConfigureAwait(false);
             }
         }
         else

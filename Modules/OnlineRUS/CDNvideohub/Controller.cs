@@ -224,7 +224,10 @@ public class CDNvideohubController : BaseOnlineController
             link,
             title,
             vast: init.vast,
-            httpContext: HttpContext
+            httpContext: HttpContext,
+            headers: init.streamproxy
+                ? null
+                : httpHeaders(init.host, init.headers_stream)
         ));
     }
     #endregion

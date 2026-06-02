@@ -73,6 +73,8 @@ public class AnimeLibController : BaseOnlineController
                     return e.Fail(string.Empty, refresh_proxy: true);
 
                 string stitle = SearchNameTo.Convert(title);
+                string soriginal = SearchNameTo.Convert(original_title);
+
                 var catalog = new List<(string title, string year, string uri, bool coincidence, string cover)>(result.Length);
 
                 foreach (var anime in result)
@@ -82,11 +84,10 @@ public class AnimeLibController : BaseOnlineController
 
                     var model = ($"{anime.rus_name} / {anime.eng_name}", (anime.releaseDate != null ? anime.releaseDate.Split("-")[0] : "0"), anime.slug_url, false, anime.cover.@default);
 
-                    if (SearchNameTo.Equals(anime.rus_name, stitle) || SearchNameTo.Equals(anime.eng_name, stitle))
-                    {
-                        if (!string.IsNullOrEmpty(anime.releaseDate) && anime.releaseDate.StartsWith(year.ToString()))
-                            model.Item4 = true;
-                    }
+                    if (SearchNameTo.StartsWith(anime.rus_name, stitle) ||
+                        SearchNameTo.StartsWith(anime.eng_name, stitle) ||
+                        SearchNameTo.StartsWith(anime.eng_name, soriginal))
+                        model.Item4 = true;
 
                     catalog.Add(model);
                 }
@@ -117,7 +118,7 @@ public class AnimeLibController : BaseOnlineController
                     res.year,
                     string.Empty,
                     $"{host}/lite/animelib?rjson={rjson}&title={HttpUtility.UrlEncode(title)}&uri={HttpUtility.UrlEncode(res.uri)}",
-                    PosterApi.Size(res.cover)
+                    PosterApi.Size(res.cover, HeadersModel.InitOrNull(init.headers_image))
                 );
 
             }

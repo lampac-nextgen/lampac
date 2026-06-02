@@ -1,11 +1,12 @@
 using Shared.Models.Base;
 using Shared.Models.Templates;
 using Shared.Services;
+using Shared.Services.Pools;
 using Shared.Services.RxEnumerate;
-using Shared.Services.Utilities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -38,40 +39,34 @@ public struct TortugaInvoke
             if (!content.Contains("file:", StringComparison.Ordinal))
                 return;
 
-            string file = Rx.Match(content, "file: ?.([^'\"]+)==('|\")");
-            string decoded = null;
+            ReadOnlySpan<char> file = Rx.Slice(content, "file: \"", "==\"");
 
-            CrypTo.DecodeBase64(file, base64 =>
+            using (var nbuf = new BufferBytePool((file.Length + 3) / 4 * 3))
             {
-                decoded = string.Create(base64.Length, base64, static (span, src) =>
+                ReadOnlySpan<byte> decoded = DecodeJson(file, nbuf.Span);
+                if (decoded.IsEmpty)
+                    return;
+
+                if (decoded.StartsWith("http"u8))
                 {
-                    for (int i = 0; i < src.Length; i++)
-                        span[i] = src[src.Length - 1 - i];
-                });
-            });
-
-            if (decoded == null)
-                return;
-
-            if (decoded.StartsWith("http"))
-            {
-                result.hls = decoded;
-            }
-            else
-            {
-                try
-                {
-                    var root = JsonSerializer.Deserialize<List<Voice>>(decoded, new JsonSerializerOptions
-                    {
-                        AllowTrailingCommas = true
-                    });
-
-                    if (root != null && root.Count > 0)
-                        result.serial = root;
+                    result.hls = Encoding.UTF8.GetString(decoded);
                 }
-                catch (Exception ex)
+                else
                 {
-                    Serilog.Log.Error(ex, "{Class} {CatchId}", "Tortuga", "id_frqb3um1");
+                    try
+                    {
+                        var root = JsonSerializer.Deserialize<List<Voice>>(decoded, new JsonSerializerOptions
+                        {
+                            AllowTrailingCommas = true
+                        });
+
+                        if (root != null && root.Count > 0)
+                            result.serial = root;
+                    }
+                    catch (Exception ex)
+                    {
+                        Serilog.Log.Error(ex, "{Class} {CatchId}", "Tortuga", "id_frqb3um1");
+                    }
                 }
             }
         });
@@ -140,18 +135,41 @@ public struct TortugaInvoke
 
                     foreach (var episode in episodes)
                     {
-                        foreach (var voice in episode.folder)
+                        if (episode.folder != null)
                         {
-                            if (hashVoice.Add(voice.title))
+                            foreach (var voice in episode.folder)
                             {
-                                if (string.IsNullOrEmpty(t))
-                                    t = voice.title;
+                                if (hashVoice.Add(voice.title))
+                                {
+                                    if (string.IsNullOrEmpty(t))
+                                        t = voice.title;
 
-                                vtpl.Append(
-                                    voice.title,
-                                    t == voice.title,
-                                    host + $"lite/tortuga?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&uri={enc_uri}&s={s}&t={voice.title}"
-                                );
+                                    vtpl.Append(
+                                        voice.title,
+                                        t == voice.title,
+                                        host + $"lite/tortuga?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&uri={enc_uri}&s={s}&t={voice.title}"
+                                    );
+                                }
+                            }
+                        }
+                        else
+                        {
+                            var match = new Regex("\\{([^\\}]+)\\}").Match(episode.file ?? string.Empty);
+                            while (match.Success)
+                            {
+                                if (hashVoice.Add(match.Groups[1].Value))
+                                {
+                                    if (string.IsNullOrEmpty(t))
+                                        t = match.Groups[1].Value;
+
+                                    vtpl.Append(
+                                        match.Groups[1].Value,
+                                        t == match.Groups[1].Value,
+                                        host + $"lite/tortuga?rjson={rjson}&title={enc_title}&original_title={enc_original_title}&uri={enc_uri}&s={s}&t={match.Groups[1].Value}"
+                                    );
+                                }
+
+                                match = match.NextMatch();
                             }
                         }
                     }
@@ -161,33 +179,70 @@ public struct TortugaInvoke
 
                     foreach (var episode in episodes)
                     {
-                        var video = episode.folder.FirstOrDefault(i => i.title == t);
-                        if (video?.file == null)
-                            continue;
-
-                        #region subtitle
-                        var subtitles = new SubtitleTpl();
-
-                        if (!string.IsNullOrEmpty(video.subtitle))
+                        if (episode.folder != null)
                         {
-                            var match = new Regex("\\[([^\\]]+)\\](https?://[^\\,]+)").Match(video.subtitle);
-                            while (match.Success)
-                            {
-                                subtitles.Append(match.Groups[1].Value, onstreamfile.Invoke(match.Groups[2].Value));
-                                match = match.NextMatch();
-                            }
-                        }
-                        #endregion
+                            var video = episode.folder.FirstOrDefault(i => i.title == t);
+                            if (video?.file == null)
+                                continue;
 
-                        etpl.Append(
-                            episode.title,
-                            title ?? original_title,
-                            s,
-                            episode.number,
-                            onstreamfile.Invoke(video.file),
-                            subtitles: subtitles,
-                            vast: vast
-                        );
+                            #region subtitle
+                            var subtitles = new SubtitleTpl();
+
+                            if (!string.IsNullOrEmpty(video.subtitle))
+                            {
+                                var match = new Regex("\\[([^\\]]+)\\](https?://[^\\,]+)").Match(video.subtitle);
+                                while (match.Success)
+                                {
+                                    subtitles.Append(match.Groups[1].Value, onstreamfile.Invoke(match.Groups[2].Value));
+                                    match = match.NextMatch();
+                                }
+                            }
+                            #endregion
+
+                            etpl.Append(
+                                episode.title,
+                                title ?? original_title,
+                                s,
+                                episode.number,
+                                onstreamfile.Invoke(video.file),
+                                subtitles: subtitles,
+                                vast: vast
+                            );
+                        }
+                        else
+                        {
+                            string video = Regex.Match(episode.file, $"\\{{{t}\\}}(https?://[^\\{{\n\r\t\"; ]+.m3u8)").Groups[1].Value;
+                            if (string.IsNullOrEmpty(video))
+                            {
+                                video = Regex.Match(episode.file, "\\{[^\\}]+\\}(https?://[^\\{\n\r\t\"; ]+.m3u8)").Groups[1].Value;
+                                if (string.IsNullOrEmpty(video))
+                                    continue;
+                            }
+
+                            #region subtitle
+                            var subtitles = new SubtitleTpl();
+
+                            if (!string.IsNullOrEmpty(episode.subtitle))
+                            {
+                                var match = new Regex("\\[([^\\]]+)\\](https?://[^\\,]+)").Match(episode.subtitle);
+                                while (match.Success)
+                                {
+                                    subtitles.Append(match.Groups[1].Value, onstreamfile.Invoke(match.Groups[2].Value));
+                                    match = match.NextMatch();
+                                }
+                            }
+                            #endregion
+
+                            etpl.Append(
+                                episode.title,
+                                title ?? original_title,
+                                s,
+                                episode.number,
+                                onstreamfile.Invoke(video),
+                                subtitles: subtitles,
+                                vast: vast
+                            );
+                        }
                     }
 
                     return etpl;
@@ -201,4 +256,25 @@ public struct TortugaInvoke
         }
     }
     #endregion
+
+
+    static Span<byte> DecodeJson(ReadOnlySpan<char> base64, Span<byte> packed)
+    {
+        if (!Convert.TryFromBase64Chars(base64, packed, out int packedLength) || packedLength < 1)
+            return default;
+
+        int seed = packed[0];
+
+        Span<byte> output = packed.Slice(1, packedLength - 1);
+
+        for (int i = 0; i < output.Length; i++)
+            output[i] = (byte)(output[i] ^ Key(seed, i));
+
+        return output;
+    }
+
+    static int Key(int seed, int index)
+    {
+        return (seed + 7 * index + 13) & 0xFF;
+    }
 }

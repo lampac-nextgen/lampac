@@ -3,13 +3,13 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Newtonsoft.Json.Linq;
+using Shared.Attributes;
 using Shared.Models;
 using Shared.Models.Events;
 using Shared.Models.SISI;
 using Shared.Models.SISI.Base;
 using Shared.Models.SISI.OnResult;
 using Shared.Services;
-using System.Buffers;
 using System.Net;
 using System.Text.Json;
 using System.Text.Json.Serialization.Metadata;
@@ -162,12 +162,6 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
             }
         }
 
-        if (NoAccessGroup(init, out string error_msg))
-        {
-            badInitMsg = OnError(error_msg, rcache: false, statusCode: 401);
-            return ValueTask.FromResult(true);
-        }
-
         if (requestInitializationAsync != null || EventListener.BadInitializationAsync != null || IsOverridehost(init))
             return IsRequestBlockedAsync(rch, rch_keepalive, rch_check);
 
@@ -209,6 +203,18 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
         if (!init.enable || init.rip)
         {
             badInitMsg = OnError("disable", rcache: false, statusCode: 403);
+            return true;
+        }
+
+        if (NoAccessGroup(init, out string error_msg))
+        {
+            badInitMsg = OnError(error_msg, rcache: false, statusCode: 401);
+            return true;
+        }
+
+        if (init.workinghours != null && !init.workinghours.Contains(DateTime.UtcNow.Hour))
+        {
+            badInitMsg = new JsonResult(new { accsdb = true, msg = "Временно недоступен, попробуйте через несколько часов" });
             return true;
         }
 
@@ -332,13 +338,11 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
             }
         }
 
-        IBufferWriter<byte> utf8Writer = StaticacheOrBodyWriter();
-
         Response.ContentType = "application/json; charset=utf-8";
         Response.Headers.CacheControl = "no-cache";
 
         using (var writer = new Utf8JsonWriter(
-            utf8Writer,
+            msmWriter,
             jsonWriterOptions
         ))
         {
@@ -488,6 +492,9 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
             writer.WriteEndObject();
         }
 
+        if (StatiCacheDisabled)
+            HttpContext.Features.Set(new StatiCacheEntry(default, false));
+
         return _emptyResult;
     }
     #endregion
@@ -535,10 +542,8 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
         Response.ContentType = "application/json; charset=utf-8";
         Response.Headers.CacheControl = "no-cache";
 
-        IBufferWriter<byte> utf8Writer = StaticacheOrBodyWriter();
-
         using (var writer = new Utf8JsonWriter(
-             utf8Writer,
+             msmWriter,
              jsonWriterOptions
          ))
         {
@@ -614,6 +619,9 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
 
             writer.WriteEndObject();
         }
+
+        if (StatiCacheDisabled)
+            HttpContext.Features.Set(new StatiCacheEntry(default, false));
 
         return _emptyResult;
     }

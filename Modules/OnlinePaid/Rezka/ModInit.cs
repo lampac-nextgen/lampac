@@ -1,18 +1,21 @@
 using Microsoft.AspNetCore.Http;
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
+using Shared;
 using Shared.Models.Base;
 using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
 using Shared.Services;
 using System.Collections.Generic;
-using Shared;
+using System.IO;
 
 namespace Rezka;
 
 public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
 {
     public static RezkaSettings conf;
+    public static IReadOnlyDictionary<string, DbModel> database;
 
     public List<ModuleOnlineItem> Invoke(HttpContext httpContext, RequestModel requestInfo, string host, OnlineEventsModel args)
     {
@@ -37,6 +40,9 @@ public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
         updateConf();
         EventListener.UpdateInitFile += updateConf;
         EventListener.OnlineApiQuality += onlineApiQuality;
+
+        if (conf.PizdatoeDb)
+            database = JsonConvert.DeserializeObject<Dictionary<string, DbModel>>(File.ReadAllText("data/PizdatoeDb.json"));
     }
 
     public void Dispose()

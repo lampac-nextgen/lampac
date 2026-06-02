@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
-using Microsoft.IO;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Shared.Attributes;
@@ -80,6 +79,13 @@ public class BaseController : Controller
 
     public RequestModel requestInfo
         => _requestInfo ??= HttpContext.Features.Get<RequestModel>();
+    #endregion
+
+    #region msmWriter
+    private IBufferWriter<byte> _msmWriter;
+
+    public IBufferWriter<byte> msmWriter
+        => _msmWriter ??= HttpContext.Features.Get<LazyMsm>().Stream;
     #endregion
 
     #region host
@@ -546,10 +552,10 @@ public class BaseController : Controller
         {
             if (CoreInit.conf.serverproxy.forced_apn || conf.apnstream)
             {
-                if (!string.IsNullOrEmpty(conf.apn?.host) && conf.apn.host.StartsWith("http"))
+                if (conf.apn?.hosts != null || !string.IsNullOrEmpty(conf.apn?.host))
                     return apnlink(conf, conf.apn, uri, requestInfo.IP, headers);
 
-                if (!string.IsNullOrEmpty(CoreInit.conf?.apn?.host) && CoreInit.conf.apn.host.StartsWith("http"))
+                if (CoreInit.conf?.apn?.hosts != null || !string.IsNullOrEmpty(CoreInit.conf?.apn?.host))
                     return apnlink(conf, CoreInit.conf.apn, uri, requestInfo.IP, headers);
 
                 return uri;
@@ -605,6 +611,10 @@ public class BaseController : Controller
     {
         string link = ClearStreamUri(uri);
 
+        string apnhost = apn.host;
+        if (apn.hosts != null && apn.hosts.Length > 0)
+            apnhost = apn.hosts[Random.Shared.Next(0, apn.hosts.Length)];
+
         if (apn.secure == "nginx")
         {
             long ex = DateTimeOffset.UtcNow.AddHours(12).ToUnixTimeSeconds();
@@ -616,7 +626,7 @@ public class BaseController : Controller
             Span<byte> hashBytes = stackalloc byte[16];
             MD5.HashData(data.Slice(0, bytesWritten), hashBytes);
 
-            return $"{apn.host}/{Base64Url.EncodeToString(hashBytes)}:{ex}/{link}";
+            return $"{apnhost}/{Base64Url.EncodeToString(hashBytes)}:{ex}/{link}";
         }
         else if (apn.secure == "lampac")
         {
@@ -625,15 +635,15 @@ public class BaseController : Controller
                 ip,
                 httpHeaders(conf.host, headers),
                 plugin: conf?.plugin,
-                prefix: [apn.host, "/proxy/"],
+                prefix: [apnhost, "/proxy/"],
                 writeHeaders: true
             );
         }
 
-        if (apn.host.Contains("{encode_uri}") || apn.host.Contains("{uri}"))
-            return apn.host.Replace("{encode_uri}", HttpUtility.UrlEncode(link)).Replace("{uri}", link);
+        if (apnhost.Contains("{encode_uri}") || apnhost.Contains("{uri}"))
+            return apnhost.Replace("{encode_uri}", HttpUtility.UrlEncode(link)).Replace("{uri}", link);
 
-        if (apn.host.Contains("{payload}"))
+        if (apnhost.Contains("{payload}"))
         {
             using (var utf8Buf = new BufferWriterPool<byte>(BufferWriterPoolType.Tiny))
             {
@@ -674,7 +684,7 @@ public class BaseController : Controller
 
                 ReadOnlySpan<byte> json = utf8Buf.WrittenSpan;
                 if (json.IsEmpty)
-                    return apn.host;
+                    return apnhost;
 
                 int base64Len = ((json.Length + 2) / 3) * 4;
 
@@ -696,13 +706,13 @@ public class BaseController : Controller
                     if (uri.Contains(".m3u"))
                         payload.Append(".m3u8");
 
-                    return apn.host.Replace("{payload}", payload.ToString());
+                    return apnhost.Replace("{payload}", payload.ToString());
                 }
             }
         }
         else
         {
-            return $"{apn.host}/{link}";
+            return $"{apnhost}/{link}";
         }
     }
 
@@ -1250,77 +1260,54 @@ public class BaseController : Controller
                 : "text/html; charset=utf-8";
         }
 
-        var stcWriter = StatiCacheDisabled
-            ? null
-            : HttpContext.Features.Get<RecyclableMemoryStream>();
+        var response = HttpContext.Response;
+        response.ContentType = contentType;
 
-        if (stcWriter != null)
+        var encoder = Encoding.UTF8.GetEncoder();
+        ReadOnlySpan<char> chars = html.AsSpan();
+
+        while (!chars.IsEmpty)
         {
-            var response = HttpContext.Response;
-            response.ContentType = contentType;
-
-            var encoder = Encoding.UTF8.GetEncoder();
-            ReadOnlySpan<char> chars = html.AsSpan();
-
-            int chunkSize = PoolInvk.ChunkSizeBodyWriter(Encoding.UTF8.GetMaxByteCount(chars.Length));
-
-            while (!chars.IsEmpty)
-            {
-                Span<byte> span = stcWriter.GetSpan(chunkSize);
-
-                encoder.Convert(
-                    chars,
-                    span,
-                    flush: false,
-                    out int charsUsed,
-                    out int bytesUsed,
-                    out bool completed);
-
-                if (bytesUsed > 0)
-                {
-                    stcWriter.Advance(bytesUsed);
-                    chars = chars.Slice(charsUsed);
-                }
-
-                if (completed)
-                    break;
-
-                if (charsUsed == 0 && bytesUsed == 0)
-                    break;
-            }
-
-            Span<byte> tail = stcWriter.GetSpan(128);
+            Span<byte> span = msmWriter.GetSpan(PoolInvk.msmBlockSize);
 
             encoder.Convert(
-                ReadOnlySpan<char>.Empty,
-                tail,
-                flush: true,
-                out int _,
-                out int _bytesUsed,
-                out bool _);
+                chars,
+                span,
+                flush: false,
+                out int charsUsed,
+                out int bytesUsed,
+                out bool completed);
 
-            if (_bytesUsed > 0)
-                stcWriter.Advance(_bytesUsed);
+            if (bytesUsed > 0)
+            {
+                msmWriter.Advance(bytesUsed);
+                chars = chars.Slice(charsUsed);
+            }
 
-            return _emptyResult;
+            if (completed)
+                break;
+
+            if (charsUsed == 0 && bytesUsed == 0)
+                break;
         }
 
-        return Content(html, contentType);
-    }
-    #endregion
+        Span<byte> tail = msmWriter.GetSpan(128);
 
-    #region StaticacheOrBodyWriter
-    public IBufferWriter<byte> StaticacheOrBodyWriter()
-    {
-        IBufferWriter<byte> staticWriter = default;
+        encoder.Convert(
+            ReadOnlySpan<char>.Empty,
+            tail,
+            flush: true,
+            out int _,
+            out int _bytesUsed,
+            out bool _);
 
-        if (!StatiCacheDisabled)
-            staticWriter = HttpContext.Features.Get<RecyclableMemoryStream>();
+        if (_bytesUsed > 0)
+            msmWriter.Advance(_bytesUsed);
 
-        if (staticWriter != null)
-            return staticWriter;
+        if (StatiCacheDisabled)
+            HttpContext.Features.Set(new StatiCacheEntry(default, false));
 
-        return new ChunkBufferWriter<byte>(HttpContext.Response.BodyWriter);
+        return _emptyResult;
     }
     #endregion
 

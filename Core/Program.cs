@@ -341,10 +341,6 @@ public class Program
                 _usersKeyUpdate = keyUpdate;
                 CoreInit.conf.accsdb.RefreshUsers(_usersKeyUpdate);
             }
-            else
-            {
-                CoreInit.conf.accsdb.RefreshUsers(CoreInit.conf?.guid);
-            }
         }
         catch (Exception ex)
         {

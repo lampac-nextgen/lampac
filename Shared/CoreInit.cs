@@ -108,6 +108,8 @@ public class CoreInit
                             updateConf();
                             updateYamlConf();
 
+                            conf.accsdb.RefreshUsers(conf?.guid);
+
                             CurrentConf = JObject.FromObject(conf);
                             lastUpdateConf = lwtConf > lwtYaml ? lwtConf : lwtYaml;
 
@@ -130,12 +132,12 @@ public class CoreInit
                             });
 
                             Directory.CreateDirectory("database/backup/init");
-                            File.WriteAllText($"database/backup/init/{DateTime.Now.ToString("dd-MM-yyyy.HH")}.conf", init);
+                            File.WriteAllText($"database/backup/init/{DateTime.UtcNow:dd-MM-yyyy.HH}.conf", init);
                             File.WriteAllText("current.conf", JsonConvert.SerializeObject(CurrentConf, Formatting.Indented));
                         }
                     }
                 }
-                catch (System.Exception ex)
+                catch (Exception ex)
                 {
                     Serilog.Log.Error(ex, "CatchId={CatchId}", "id_b0raq9ux");
                 }
@@ -214,6 +216,28 @@ public class CoreInit
                                 Console.WriteLine($"DeserializeObject Exception init.yaml:\n{ev.ErrorContext.Error}\n\n");
                             }
                         });
+
+                        if (conf.accsdb.accounts != null)
+                        {
+                            foreach (var u in conf.accsdb.accounts)
+                            {
+                                if (conf.accsdb.findUser(u.Key) is AccsUser user)
+                                {
+                                    if (u.Value > user.expires)
+                                        user.expires = u.Value;
+                                }
+                                else
+                                {
+                                    conf.accsdb.users.Add(new AccsUser()
+                                    {
+                                        id = u.Key.ToLowerAndTrim(),
+                                        expires = u.Value
+                                    });
+                                }
+                            }
+                        }
+
+                        PosterApi.Initialization(conf.omdbapi_key, conf.posterApi);
                     }
                 }
             }
@@ -351,8 +375,8 @@ public class CoreInit
 
     public HybridCacheConf cache = new HybridCacheConf()
     {
-        type = "fdb", // mem|fdb
-        extend = 600, // 10m
+        type = "fdb",     // mem|fdb
+        extend = 60 * 45, // 45m
         memExtend = true
     };
 
@@ -406,7 +430,8 @@ public class CoreInit
         enable = true,
         Headless = true,
         Args = ["--disable-blink-features=AutomationControlled"], // , "--window-position=-2000,100"
-        context = new KeepopenContext() { keepopen = true, keepalive = 20, min = 0, max = 4 }
+        context = new KeepopenContext() { keepopen = true, keepalive = 20, min = 0, max = 4 },
+        //NODE_OPTIONS = "--max-old-space-size=128 --max-semi-space-size=4"
     };
 
     public PuppeteerConf firefox = new PuppeteerConf()
@@ -428,7 +453,6 @@ public class CoreInit
         image = new ServerproxyImageConf()
         {
             enable = true,
-            NetVipsCache = true,
             cache = true,
             cache_rsize = true,
             cache_time = 60 * 24 // 24h

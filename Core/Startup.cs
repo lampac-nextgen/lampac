@@ -246,7 +246,6 @@ public class Startup
                 {
                     context.HttpContext.Response.Headers.RetryAfter = "1";
                     context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
-                    context.HttpContext.Response.BodyWriter.Write("Too many concurrent requests"u8);
                     return ValueTask.CompletedTask;
                 };
             });
@@ -716,7 +715,7 @@ public class Startup
         if (init.openstat.enable)
             app.UseResponseAvgStatistics();
 
-        app.UseStaticacheWriter();
+        app.UseStcOrBodyWriter();
 
         app.UseEndpoints(endpoints =>
         {

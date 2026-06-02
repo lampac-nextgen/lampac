@@ -17,6 +17,10 @@ public class Season
 
     public string number { get; set; }
 
+    public string file { get; set; }
+
+    public string subtitle { get; set; }
+
     public Series[] folder { get; set; }
 }
 

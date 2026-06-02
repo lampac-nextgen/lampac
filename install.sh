@@ -334,9 +334,10 @@ install_os_packages() {
   local icu_pkg
   icu_pkg="$(pick_libicu_package)"
 
-  run_quiet "Installing system packages (chromium, curl, fonts, ICU, unzip)" \
+  run_quiet "Installing system packages (chromium, curl, fonts, ICU, ImageMagick, unzip)" \
     env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      ca-certificates curl chromium fontconfig libnspr4 unzip "$icu_pkg"
+      ca-certificates curl chromium fontconfig imagemagick libjpeg-dev libnspr4 \
+      libpng-dev libwebp-dev unzip "$icu_pkg"
   apt-get clean -qq 2>/dev/null || true
   rm -rf /var/lib/apt/lists/*
 }

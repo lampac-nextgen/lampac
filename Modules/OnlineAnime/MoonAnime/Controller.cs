@@ -271,7 +271,7 @@ public class MoonAnimeController : BaseOnlineController
         if (!string.IsNullOrEmpty(cache.Value.subtitle))
             subtitles.Append("По умолчанию", cache.Value.subtitle);
 
-        string file = HostStreamProxy(cache.Value.file, headers: HeadersModel.Init(
+        var headers_stream = HeadersModel.Init(
             ("accept", "*/*"),
             ("accept-language", "ru,en;q=0.9,en-GB;q=0.8,en-US;q=0.7"),
             ("dnt", "1"),
@@ -283,7 +283,9 @@ public class MoonAnimeController : BaseOnlineController
             ("sec-fetch-mode", "cors"),
             ("sec-fetch-site", "cross-site"),
             ("user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/130.0.0.0 Safari/537.36 Edg/130.0.0.0")
-        ));
+        );
+
+        string file = HostStreamProxy(cache.Value.file, headers: headers_stream);
 
         if (play)
             return RedirectToPlay(file);
@@ -294,7 +296,8 @@ public class MoonAnimeController : BaseOnlineController
             (title ?? original_title),
             subtitles: subtitles,
             vast: init.vast,
-            httpContext: HttpContext
+            httpContext: HttpContext,
+            headers: init.streamproxy ? null : headers_stream
         ));
     }
     #endregion

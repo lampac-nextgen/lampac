@@ -38,23 +38,19 @@ public class ApiController : BaseController
 
     #region Index
     [HttpGet, AllowAnonymous]
+    [Staticache(5, always: true)]
     [Route("/")]
     public ActionResult Index()
     {
-        if (string.IsNullOrWhiteSpace(ModInit.conf.index))
+        if (string.IsNullOrEmpty(ModInit.conf.index))
             return Content("api work", contentType: "text/plain; charset=utf-8");
 
         if (ModInit.conf.basetag && Regex.IsMatch(ModInit.conf.index, "/[^\\./]+\\.html$"))
         {
-            if (!memoryCache.TryGetValue($"LampaWeb.index:{ModInit.conf.index}", out string html))
-            {
-                html = IO.File.ReadAllText($"wwwroot/{ModInit.conf.index}");
-                html = html.Replace("<head>", $"<head><base href=\"/{Regex.Match(ModInit.conf.index, "^([^/]+)/").Groups[1].Value}/\" />");
+            string html = IO.File.ReadAllText($"wwwroot/{ModInit.conf.index}");
+            html = html.Replace("<head>", $"<head><base href=\"/{Regex.Match(ModInit.conf.index, "^([^/]+)/").Groups[1].Value}/\" />");
 
-                memoryCache.Set($"LampaWeb.index:{ModInit.conf.index}", html, DateTime.Now.AddMinutes(1));
-            }
-
-            return Content(html, "text/html; charset=utf-8");
+            return ContentTo(html, "text/html; charset=utf-8");
         }
 
         return LocalRedirect($"/{ModInit.conf.index}");
@@ -63,12 +59,13 @@ public class ApiController : BaseController
 
     #region Extensions
     [HttpGet, AllowAnonymous]
+    [Staticache(5, always: true)]
     [Route("/extensions")]
     public ActionResult Extensions()
     {
         SetHeadersNoCache();
 
-        string extensions = FileCache.ReadAllText($"{ModInit.modpath}/plugins/extensions.json", "extensions.json")
+        string extensions = FileCache.ReadAllText($"{ModInit.modpath}/plugins/extensions.json", "extensions.json", saveCache: false)
             .Replace("{localhost}", host)
             .Replace("\n", "")
             .Replace("\r", "");

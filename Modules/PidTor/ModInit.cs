@@ -12,6 +12,7 @@ namespace PidTor;
 
 public class ModInit : IModuleLoaded, IModuleOnline
 {
+    public static string modpath;
     public static PidTorSettings conf;
     public static int tsport;
 
@@ -28,6 +29,7 @@ public class ModInit : IModuleLoaded, IModuleOnline
                 plugin = "PidTor",
                 enable = conf.enable,
                 enabled = conf.enable,
+                workinghours = conf.workinghours,
                 displayname = conf.displayname,
                 displayindex = conf.displayindex,
                 group = conf.group,
@@ -42,6 +44,7 @@ public class ModInit : IModuleLoaded, IModuleOnline
 
     public void Loaded(InitspaceModel baseconf)
     {
+        modpath = baseconf.path;
         CoreInit.conf.online.with_search.Add("pidtor");
 
         updateConf();

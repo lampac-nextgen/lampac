@@ -104,7 +104,6 @@ public class TmdbProxyController : BaseController
     [Route("tmdb/api/{*suffix}")]
     async public Task TmdbAPI()
     {
-        IBufferWriter<byte> bodyWriter = StaticacheOrBodyWriter();
         HttpContext.Response.ContentType = "application/json; charset=utf-8";
 
         var proxyManager = ModInit.conf.proxyapi?.useproxy == true
@@ -114,7 +113,7 @@ public class TmdbProxyController : BaseController
         ReadOnlySpan<char> path = RequestPath(HttpContext.Request.Path.Value, "/tmdb/api/");
 
         var result = await Http.BaseGetReaderAsync(
-            e => CopyStream(bodyWriter, e.stream, e.ct),
+            e => CopyStream(msmWriter, e.stream, e.ct),
             url: RequestUri(tmdbApiHost, path, HttpContext.Request.Query),
             timeoutSeconds: 15,
             httpversion: ModInit.conf.httpversion,
@@ -142,7 +141,7 @@ public class TmdbProxyController : BaseController
         {
             proxyManager?.Refresh();
             HttpContext.Response.StatusCode = StatusCodes.Status408RequestTimeout;
-            bodyWriter.Write("{\"status_code\":1,\"status_message\":\"408 Request Timeout\",\"success\":false}"u8);
+            msmWriter.Write("{\"status_code\":1,\"status_message\":\"408 Request Timeout\",\"success\":false}"u8);
         }
     }
     #endregion
@@ -153,8 +152,6 @@ public class TmdbProxyController : BaseController
     [Route("tmdb/img/{*suffix}")]
     async public Task TmdbIMG()
     {
-        IBufferWriter<byte> bodyWriter = StaticacheOrBodyWriter();
-
         ReadOnlySpan<char> path = RequestPath(HttpContext.Request.Path.Value, "/tmdb/img/");
         string uri = RequestUri(tmdbImgHost, path, HttpContext.Request.Query);
 
@@ -163,7 +160,7 @@ public class TmdbProxyController : BaseController
             : null;
 
         var result = await Http.BaseGetReaderAsync(
-            e => CopyStream(bodyWriter, e.stream, e.ct),
+            e => CopyStream(msmWriter, e.stream, e.ct),
             url: uri,
             headers: headersImg,
             timeoutSeconds: 15,

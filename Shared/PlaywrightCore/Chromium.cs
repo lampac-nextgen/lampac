@@ -120,6 +120,9 @@ public class Chromium : PlaywrightBase, IDisposable
 
             Console.WriteLine("Chromium: Initialization");
 
+            if (!string.IsNullOrEmpty(init.NODE_OPTIONS))
+                Environment.SetEnvironmentVariable("NODE_OPTIONS", init.NODE_OPTIONS);
+
             playwright = await Playwright.CreateAsync();
 
             Console.WriteLine("Chromium: CreateAsync");

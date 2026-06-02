@@ -50,6 +50,7 @@ public class ModInit : IModuleLoaded, IModuleOnline
             streamproxy = true,
             rch_access = "apk,cors",
             stream_access = "apk,cors",
+            rchstreamproxy = "web",
             headers = HeadersModel.Init(Http.defaultFullHeaders,
                 ("origin", "https://vkvideo.ru"),
                 ("referer", "https://vkvideo.ru/")

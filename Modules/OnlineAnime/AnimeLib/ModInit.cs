@@ -66,6 +66,14 @@ public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
                 ("sec-fetch-mode", "cors"),
                 ("sec-fetch-site", "cross-site")
             ).ToDictionary(),
+            headers_image = HeadersModel.Init(Http.defaultFullHeaders,
+                ("accept-encoding", "identity;q=1, *;q=0"),
+                ("origin", "https://anilib.me"),
+                ("referer", "https://anilib.me/"),
+                ("sec-fetch-dest", "video"),
+                ("sec-fetch-mode", "cors"),
+                ("sec-fetch-site", "same-site")
+            ).ToDictionary(),
             headers_stream = HeadersModel.Init(Http.defaultFullHeaders,
                 ("accept-encoding", "identity;q=1, *;q=0"),
                 ("origin", "https://anilib.me"),
