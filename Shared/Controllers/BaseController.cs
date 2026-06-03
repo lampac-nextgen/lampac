@@ -81,11 +81,22 @@ public class BaseController : Controller
         => _requestInfo ??= HttpContext.Features.Get<RequestModel>();
     #endregion
 
-    #region msmWriter
-    private IBufferWriter<byte> _msmWriter;
+    #region BodyWriter
+    private IBufferWriter<byte> _bodyWriter;
 
-    public IBufferWriter<byte> msmWriter
-        => _msmWriter ??= HttpContext.Features.Get<LazyMsm>().Stream;
+    public IBufferWriter<byte> BodyWriter
+    {
+        get
+        {
+            if (_bodyWriter != null)
+                return _bodyWriter;
+
+            if (StatiCacheDisabled || HttpContext.Features.Get<StaticacheFeature>() == null)
+                return _bodyWriter ??= new ChunkBufferWriter<byte>(HttpContext.Response.BodyWriter);
+
+            return _bodyWriter ??= HttpContext.Features.Get<LazyMsm>().Stream;
+        }
+    }
     #endregion
 
     #region host
@@ -1263,12 +1274,15 @@ public class BaseController : Controller
         var response = HttpContext.Response;
         response.ContentType = contentType;
 
+        if (StatiCacheDisabled || HttpContext.Features.Get<StaticacheFeature>() == null)
+            return Content(html, contentType);
+
         var encoder = Encoding.UTF8.GetEncoder();
         ReadOnlySpan<char> chars = html.AsSpan();
 
         while (!chars.IsEmpty)
         {
-            Span<byte> span = msmWriter.GetSpan(PoolInvk.msmBlockSize);
+            Span<byte> span = BodyWriter.GetSpan(PoolInvk._chunk32);
 
             encoder.Convert(
                 chars,
@@ -1280,7 +1294,7 @@ public class BaseController : Controller
 
             if (bytesUsed > 0)
             {
-                msmWriter.Advance(bytesUsed);
+                BodyWriter.Advance(bytesUsed);
                 chars = chars.Slice(charsUsed);
             }
 
@@ -1291,7 +1305,7 @@ public class BaseController : Controller
                 break;
         }
 
-        Span<byte> tail = msmWriter.GetSpan(128);
+        Span<byte> tail = BodyWriter.GetSpan(128);
 
         encoder.Convert(
             ReadOnlySpan<char>.Empty,
@@ -1302,10 +1316,7 @@ public class BaseController : Controller
             out bool _);
 
         if (_bytesUsed > 0)
-            msmWriter.Advance(_bytesUsed);
-
-        if (StatiCacheDisabled)
-            HttpContext.Features.Set(new StatiCacheEntry(default, false));
+            BodyWriter.Advance(_bytesUsed);
 
         return _emptyResult;
     }

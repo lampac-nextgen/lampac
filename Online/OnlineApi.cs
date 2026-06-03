@@ -634,7 +634,7 @@ public class OnlineApiController : BaseController
             #endregion
 
             Response.ContentType = "application/json; charset=utf-8";
-            msmWriter.Write(writer.WrittenSpan);
+            BodyWriter.Write(writer.WrittenSpan);
 
             return _emptyResult;
         }
@@ -922,7 +922,7 @@ public class OnlineApiController : BaseController
         {
             Response.ContentType = "application/json; charset=utf-8";
 
-            using (var json = new Utf8JsonWriter(msmWriter))
+            using (var json = new Utf8JsonWriter(BodyWriter))
             {
                 json.WriteStartArray();
 

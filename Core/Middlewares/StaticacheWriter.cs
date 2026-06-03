@@ -1,9 +1,6 @@
 using Microsoft.AspNetCore.Http;
-using Microsoft.AspNetCore.Http.Features;
-using Microsoft.IO;
 using Microsoft.Net.Http.Headers;
 using Microsoft.Win32.SafeHandles;
-using Shared;
 using Shared.Attributes;
 using Shared.Models.AppConf;
 using Shared.Models.Base;
@@ -17,11 +14,11 @@ using System.Threading.Tasks;
 
 namespace Core.Middlewares;
 
-public class StcOrBodyWriter
+public class StaticacheWriter
 {
     private readonly RequestDelegate _next;
 
-    public StcOrBodyWriter(RequestDelegate next)
+    public StaticacheWriter(RequestDelegate next)
     {
         _next = next;
     }
@@ -31,14 +28,7 @@ public class StcOrBodyWriter
         var stc = httpContext.Features.Get<StaticacheFeature>();
         if (stc == null)
         {
-            using (var msm = new LazyMsm())
-            {
-                httpContext.Features.Set(msm);
-                await _next(httpContext);
-
-                if (!msm.IsEmpty)
-                    await FlushAsync(msm.Stream, httpContext).ConfigureAwait(false);
-            }
+            await _next(httpContext).ConfigureAwait(false);
         }
         else
         {
@@ -111,8 +101,36 @@ public class StcOrBodyWriter
                         httpContext.Response.Headers[HeaderNames.CacheControl] = "public,max-age=86400,immutable";
                     #endregion
 
-                    // Сбрасываем поток клиенту
-                    await FlushAsync(msm.Stream, httpContext);
+                    #region Сбрасываем поток клиенту
+                    msm.Stream.Position = 0;
+
+                    if (contentLength > 0)
+                    {
+                        /// один overhead "write && flush" при наличии content-length
+                        await msm.Stream.CopyToAsync(httpContext.Response.Body, httpContext.RequestAborted);
+                    }
+                    else
+                    {
+                        /// что-бы не было два overhead "write > flush", пишем через BodyWriter
+                        var bodyWriter = httpContext.Response.BodyWriter;
+
+                        do
+                        {
+                            int chunkSize = PoolInvk.ChunkSizeBodyWriter((int)(msm.Stream.Length - msm.Stream.Position));
+                            Span<byte> destination = bodyWriter.GetSpan(chunkSize);
+
+                            int bytesRead = msm.Stream.Read(destination);
+                            if (bytesRead == 0)
+                                break;
+
+                            bodyWriter.Advance(bytesRead);
+                        }
+                        while (msm.Stream.Position < msm.Stream.Length);
+
+                        /// write && flush в один overhead
+                        await httpContext.Response.CompleteAsync();
+                    }
+                    #endregion
 
                     #region Сохраняем на диск
                     if ((cacheEntry != null && cacheEntry.saveCache == false) || DateTimeOffset.Now > ex)
@@ -169,44 +187,6 @@ public class StcOrBodyWriter
                     #endregion
                 }
             }
-        }
-    }
-
-    public Task FlushAsync(RecyclableMemoryStream msm, HttpContext httpContext)
-    {
-        msm.Position = 0;
-        long contentLength = httpContext.Response?.ContentLength ?? 0;
-
-        if (contentLength > 0 || CoreInit.conf.lowMemoryMode)
-        {
-            // конец запроса, headers записан, буферизация тут лишняя
-            httpContext.Features
-                .Get<IHttpResponseBodyFeature>()?
-                .DisableBuffering();
-
-            /// один overhead "write && flush" при наличии content-length
-            return msm.CopyToAsync(httpContext.Response.Body, httpContext.RequestAborted);
-        }
-        else
-        {
-            /// что-бы не было два overhead "write > flush", пишем через BodyWriter
-            var bodyWriter = httpContext.Response.BodyWriter;
-
-            do
-            {
-                int chunkSize = PoolInvk.ChunkSizeBodyWriter((int)(msm.Length - msm.Position));
-                Span<byte> destination = bodyWriter.GetSpan(chunkSize);
-
-                int bytesRead = msm.Read(destination);
-                if (bytesRead == 0)
-                    break;
-
-                bodyWriter.Advance(bytesRead);
-            }
-            while (msm.Position < msm.Length);
-
-            /// write && flush в один overhead
-            return httpContext.Response.CompleteAsync();
         }
     }
 }

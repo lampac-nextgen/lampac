@@ -60,7 +60,7 @@ jobs:
           echo "Checking out ref: $REF"
 
       - name: Checkout
-        uses: actions/checkout@v6.0.2
+        uses: actions/checkout@v6
         with:
           ref: ${{ steps.checkout_ref.outputs.ref }}
 

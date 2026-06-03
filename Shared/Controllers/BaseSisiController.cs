@@ -342,7 +342,7 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
         Response.Headers.CacheControl = "no-cache";
 
         using (var writer = new Utf8JsonWriter(
-            msmWriter,
+            BodyWriter,
             jsonWriterOptions
         ))
         {
@@ -543,7 +543,7 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
         Response.Headers.CacheControl = "no-cache";
 
         using (var writer = new Utf8JsonWriter(
-             msmWriter,
+             BodyWriter,
              jsonWriterOptions
          ))
         {

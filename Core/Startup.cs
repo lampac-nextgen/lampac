@@ -715,7 +715,7 @@ public class Startup
         if (init.openstat.enable)
             app.UseResponseAvgStatistics();
 
-        app.UseStcOrBodyWriter();
+        app.UseStaticacheWriter();
 
         app.UseEndpoints(endpoints =>
         {

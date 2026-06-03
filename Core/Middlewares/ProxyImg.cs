@@ -278,43 +278,53 @@ public class ProxyImg
 
                             try
                             {
-                                using (HttpResponseMessage response = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ctsHttp.Token).ConfigureAwait(false))
-                                {
-                                    #region url_reserve
-                                    if (response.StatusCode != HttpStatusCode.OK)
-                                    {
-                                        if (url_reserve != null)
-                                        {
-                                            decryptLink.uri = url_reserve;
+                                bool isFullyRead = false;
+                                long contentLength = -1;
 
-                                            httpContext.Response.Redirect(
-                                                ProxyLink.Encrypt(
-                                                    url_reserve,
-                                                    decryptLink,
-                                                    prefix: [CoreInit.Host(httpContext), "/proxyimg/"]
-                                                )
-                                            );
+                                using (var msm = new LazyMsm())
+                                {
+                                    using (HttpResponseMessage response = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, ctsHttp.Token).ConfigureAwait(false))
+                                    {
+                                        #region url_reserve
+                                        if (response.StatusCode != HttpStatusCode.OK)
+                                        {
+                                            if (url_reserve != null)
+                                            {
+                                                decryptLink.uri = url_reserve;
+
+                                                httpContext.Response.Redirect(
+                                                    ProxyLink.Encrypt(
+                                                        url_reserve,
+                                                        decryptLink,
+                                                        prefix: [CoreInit.Host(httpContext), "/proxyimg/"]
+                                                    )
+                                                );
+                                            }
+
+                                            if (cacheimg)
+                                                MarkDownloadError(href);
+
+                                            proxyManager?.Refresh();
+                                            httpContext.Response.Redirect(href);
+                                            return;
+                                        }
+                                        #endregion
+
+                                        if (!cacheimg)
+                                            proxyManager?.Success();
+
+                                        httpContext.Response.StatusCode = (int)response.StatusCode;
+
+                                        if (response.Content.Headers.ContentLength.HasValue)
+                                        {
+                                            contentLength = response.Content.Headers.ContentLength.Value;
+                                            httpContext.Response.ContentLength = contentLength;
                                         }
 
-                                        if (cacheimg)
-                                            MarkDownloadError(href);
-
-                                        proxyManager?.Refresh();
-                                        httpContext.Response.Redirect(href);
-                                        return;
-                                    }
-                                    #endregion
-
-                                    httpContext.Response.StatusCode = (int)response.StatusCode;
-
-                                    if (response.Content.Headers.TryGetValues("Content-Type", out var contype))
-                                        httpContext.Response.ContentType = contype?.FirstOrDefault() ?? contentType;
-                                    else
-                                        httpContext.Response.ContentType = contentType;
-
-                                    using (var msm = new LazyMsm())
-                                    {
-                                        bool isFullyRead = false;
+                                        if (response.Content.Headers.TryGetValues("Content-Type", out var contype))
+                                            httpContext.Response.ContentType = contype?.FirstOrDefault() ?? contentType;
+                                        else
+                                            httpContext.Response.ContentType = contentType;
 
                                         await using (var responseStream = await response.Content.ReadAsStreamAsync(ctsHttp.Token).ConfigureAwait(false))
                                         {
@@ -334,32 +344,40 @@ public class ProxyImg
                                                     if (ctsHttp.IsCancellationRequested)
                                                         break;
 
-                                                    msm.Stream.Write(nbuf.Span.Slice(0, bytesRead));
+                                                    if (cacheimg)
+                                                        msm.Stream.Write(nbuf.Span.Slice(0, bytesRead));
+                                                    else
+                                                        await httpContext.Response.Body.WriteAsync(nbuf.Memory.Slice(0, bytesRead), ctsHttp.Token).ConfigureAwait(false);
                                                 }
                                             }
                                         }
+                                    }
 
-                                        if (!msm.IsEmpty)
+                                    if (!msm.IsEmpty)
+                                    {
+                                        if (isFullyRead)
+                                            httpContext.Response.ContentLength = msm.Stream.Length;
+
+                                        msm.Stream.Position = 0;
+                                        await msm.Stream.CopyToAsync(httpContext.Response.Body, ctsHttp.Token).ConfigureAwait(false);
+
+                                        if (isFullyRead)
                                         {
-                                            if (isFullyRead)
-                                                httpContext.Response.ContentLength = msm.Stream.Length;
-
-                                            msm.Stream.Position = 0;
-                                            await msm.Stream.CopyToAsync(httpContext.Response.Body, ctsHttp.Token).ConfigureAwait(false);
-
-                                            if (!isFullyRead && cacheimg)
-                                                MarkDownloadError(href);
-
-                                            if (isFullyRead && cacheimg)
+                                            if (contentLength > 0 && contentLength != msm.Stream.Length)
                                             {
-                                                if (response.Content.Headers.ContentLength.HasValue && response.Content.Headers.ContentLength.Value != msm.Stream.Length)
-                                                {
-                                                    MarkDownloadError(href);
-                                                    return;
-                                                }
-
+                                                proxyManager?.Refresh();
+                                                MarkDownloadError(href);
+                                            }
+                                            else
+                                            {
+                                                proxyManager?.Success();
                                                 await fileWatcher.TrySave(fileName, msm.Stream).ConfigureAwait(false);
                                             }
+                                        }
+                                        else
+                                        {
+                                            proxyManager?.Refresh();
+                                            MarkDownloadError(href);
                                         }
                                     }
                                 }
@@ -447,13 +465,15 @@ public class ProxyImg
                                     }
                                 }
 
-                                if (successConvert)
-                                    proxyManager?.Success();
-
                                 var resultArray = successConvert ? outArray : inArray;
                                 if (resultArray.IsEmpty)
+                                {
+                                    MarkDownloadError(href);
+                                    proxyManager?.Refresh();
                                     return;
+                                }
 
+                                proxyManager?.Success();
                                 httpContext.Response.ContentLength = resultArray.Stream.Length;
 
                                 try

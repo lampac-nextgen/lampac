@@ -355,7 +355,7 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
 
                 while (!chars.IsEmpty)
                 {
-                    Span<byte> span = msmWriter.GetSpan(PoolInvk.msmBlockSize);
+                    Span<byte> span = BodyWriter.GetSpan(PoolInvk._chunk32);
 
                     encoder.Convert(
                         chars,
@@ -367,7 +367,7 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
 
                     if (bytesUsed > 0)
                     {
-                        msmWriter.Advance(bytesUsed);
+                        BodyWriter.Advance(bytesUsed);
                         chars = chars.Slice(charsUsed);
                     }
 
@@ -385,7 +385,7 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
         }
 
         /// границы чанков/суррогаты
-        Span<byte> tail = msmWriter.GetSpan(128);
+        Span<byte> tail = BodyWriter.GetSpan(128);
 
         encoder.Convert(
             ReadOnlySpan<char>.Empty,
@@ -396,7 +396,7 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
             out bool _);
 
         if (_bytesUsed > 0)
-            msmWriter.Advance(_bytesUsed);
+            BodyWriter.Advance(_bytesUsed);
 
         if (StatiCacheDisabled)
             HttpContext.Features.Set(new StatiCacheEntry(default, false));

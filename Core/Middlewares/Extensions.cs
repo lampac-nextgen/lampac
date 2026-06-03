@@ -64,8 +64,8 @@ public static class Extensions
         return builder.UseMiddleware<Staticache>();
     }
 
-    public static IApplicationBuilder UseStcOrBodyWriter(this IApplicationBuilder builder)
+    public static IApplicationBuilder UseStaticacheWriter(this IApplicationBuilder builder)
     {
-        return builder.UseMiddleware<StcOrBodyWriter>();
+        return builder.UseMiddleware<StaticacheWriter>();
     }
 }
