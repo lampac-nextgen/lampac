@@ -116,7 +116,7 @@ jobs:
       tags: ${{ steps.meta.outputs.tags }}
       digest: ${{ steps.build.outputs.digest }}
     steps:
-      - uses: actions/checkout@v6.0.2
+      - uses: actions/checkout@v6
         with:
           ref: ${{ inputs.checkout_ref != '' && inputs.checkout_ref || github.ref }}
           fetch-depth: 0
