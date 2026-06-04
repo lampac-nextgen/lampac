@@ -21,7 +21,7 @@ jobs:
           token: ${{ secrets.LAMPAC_PAT || github.token }}
 
       - name: Setup .NET
-        uses: actions/setup-dotnet@v5.2.0
+        uses: actions/setup-dotnet@v5.3.0
         with:
           dotnet-version: ${{ vars.DOTNET_VERSION || '10.0.x' }}
 
