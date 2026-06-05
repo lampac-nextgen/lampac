@@ -19,4 +19,6 @@ public class PuppeteerConf
     public string executablePath { get; set; }
 
     public string[] Args { get; set; }
+
+    public string NODE_OPTIONS { get; set; }
 }

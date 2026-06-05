@@ -42,8 +42,7 @@ public class TorrServerController : BaseController
     #endregion
 
     #region ts.js
-    [HttpGet]
-    [AllowAnonymous]
+    [HttpGet, AllowAnonymous]
     [Route("ts.js")]
     [Route("ts/js/{token}")]
     public ActionResult Plugin(string token)
@@ -62,8 +61,7 @@ public class TorrServerController : BaseController
 
 
     #region Main
-    [HttpGet]
-    [AllowAnonymous]
+    [HttpGet, AllowAnonymous]
     [Route("ts")]
     [Route("ts/static/js/{suffix}")]
     async public Task<ActionResult> Main()
@@ -105,8 +103,7 @@ public class TorrServerController : BaseController
     #endregion
 
     #region TorAPI
-    [HttpGet]
-    [HttpPost]
+    [HttpGet, HttpPost]
     [AllowAnonymous]
     [Route("ts/{*suffix}")]
     async public Task Index()
@@ -202,9 +199,7 @@ public class TorrServerController : BaseController
             {
                 if (HttpContext.Request.Method != "POST")
                 {
-                    HttpContext.Response.ContentType = "text/plain; charset=utf-8";
                     HttpContext.Response.StatusCode = StatusCodes.Status403Forbidden;
-                    HttpContext.Response.BodyWriter.Write("403 Forbidden"u8);
                     return;
                 }
 

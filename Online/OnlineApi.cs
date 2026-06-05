@@ -448,6 +448,9 @@ public class OnlineApiController : BaseController
             if (init == null || !init.spider || !init.enable || init.rip)
                 return;
 
+            if (init.workinghours != null && !init.workinghours.Contains(DateTime.UtcNow.Hour))
+                return;
+
             if (init.geo_hide != null)
             {
                 if (requestInfo.Country != null && init.geo_hide.Contains(requestInfo.Country))
@@ -631,7 +634,7 @@ public class OnlineApiController : BaseController
             #endregion
 
             Response.ContentType = "application/json; charset=utf-8";
-            Response.BodyWriter.Write(writer.WrittenSpan);
+            BodyWriter.Write(writer.WrittenSpan);
 
             return _emptyResult;
         }
@@ -723,6 +726,9 @@ public class OnlineApiController : BaseController
         void send(BaseSettings _init, string plugin = null, string name = null, string arg_title = null, string arg_url = null, string myurl = null)
         {
             var init = loadKit(_init, kitconf);
+
+            if (init.workinghours != null && !init.workinghours.Contains(DateTime.UtcNow.Hour))
+                return;
 
             if (rchtype != null)
             {
@@ -916,7 +922,7 @@ public class OnlineApiController : BaseController
         {
             Response.ContentType = "application/json; charset=utf-8";
 
-            using (var json = new Utf8JsonWriter(new ChunkBufferWriter<byte>(Response.BodyWriter)))
+            using (var json = new Utf8JsonWriter(BodyWriter))
             {
                 json.WriteStartArray();
 

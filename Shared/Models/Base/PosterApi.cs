@@ -42,7 +42,7 @@ public static class PosterApi
         return host + img;
     }
 
-    public static string Size(string uri)
+    public static string Size(string uri, IReadOnlyList<HeadersModel> headers = null)
     {
         if (string.IsNullOrEmpty(uri) || init == null || !init.rsize || (init.width == 0 && init.height == 0))
         {
@@ -67,6 +67,7 @@ public static class PosterApi
                 null,
                 plugin: "posterapi",
                 IsProxyImg: true,
+                headers: headers,
                 prefix: [init.host, "/proxyimg/"]
             );
         }
@@ -77,6 +78,7 @@ public static class PosterApi
                 null,
                 plugin: "posterapi",
                 IsProxyImg: true,
+                headers: headers,
                 prefix: [init.host, "/proxyimg", $":{init.width}:{init.height}/"]
             );
         }

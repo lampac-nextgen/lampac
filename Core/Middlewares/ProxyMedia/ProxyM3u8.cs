@@ -5,7 +5,6 @@ using Shared.Models.ServerProxy;
 using Shared.Services;
 using Shared.Services.Pools;
 using System;
-using System.Buffers;
 using System.Net;
 using System.Net.Http;
 using System.Runtime.CompilerServices;
@@ -25,21 +24,18 @@ public partial class ProxyAPI
         {
             if (response.Content?.Headers?.ContentLength > init.maxlength_m3u)
             {
-                httpContext.Response.ContentType = "text/plain; charset=utf-8";
-                httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
-                httpContext.Response.BodyWriter.Write("bigfile"u8);
+                httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
                 return;
             }
 
             int m3u8Length = 0;
             var encoder = Encoding.UTF8.GetEncoder();
+            var writer = httpContext.Response.BodyWriter;
 
             await using (var stream = await content.ReadAsStreamAsync(ctsHttp.Token).ConfigureAwait(false))
             {
                 if (ctsHttp.IsCancellationRequested)
                     return;
-
-                var writer = httpContext.Response.BodyWriter;
 
                 #region Меняем ссылки в hls
                 using (var msmHls = PoolInvk.msm.GetStream())
@@ -63,9 +59,7 @@ public partial class ProxyAPI
                     if (ctsHttp.IsCancellationRequested)
                         return;
 
-                    msmHls.Position = 0;
-
-                    #region Пишем данные в BodyWriter
+                    #region Пишем данные в writer
                     OwnerTo.Span(msmHls, Encoding.UTF8, spanHls =>
                     {
                         using (var charBuffer = new BufferCharPool(BufferCharPool.sizeTiny))
@@ -73,15 +67,9 @@ public partial class ProxyAPI
                             #region writePipe
                             void writePipe(ReadOnlySpan<char> chars)
                             {
-                                /// UTF-16: 1 char -> 2 bytes
-                                /// Кириллица: 1 char -> 2-4 bytes
-                                int chunkSize = chars.Length > 1360 // возьмем середину 1 char -> 3 bytes
-                                    ? PoolInvk._chunk16
-                                    : PoolInvk._chunk4;
-
                                 while (!chars.IsEmpty)
                                 {
-                                    Span<byte> dest = writer.GetSpan(chunkSize);
+                                    Span<byte> dest = writer.GetSpan(PoolInvk._chunk8);
 
                                     encoder.Convert(
                                         chars,
@@ -262,9 +250,7 @@ public partial class ProxyAPI
                 #region Ошибка
                 if (m3u8Length == 0)
                 {
-                    httpContext.Response.ContentType = "text/plain; charset=utf-8";
                     httpContext.Response.StatusCode = StatusCodes.Status500InternalServerError;
-                    httpContext.Response.BodyWriter.Write("m3u8 length empty"u8);
                     return;
                 }
                 #endregion
@@ -306,8 +292,6 @@ public partial class ProxyAPI
 
                 writer.Advance(bytesUsed);
                 #endregion
-
-                //await writer.FlushAsync(ctsHttp.Token).ConfigureAwait(false);
             }
         }
         else

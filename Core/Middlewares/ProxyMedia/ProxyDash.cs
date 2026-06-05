@@ -26,18 +26,14 @@ public partial class ProxyAPI
         {
             if (response.Content?.Headers?.ContentLength > init.maxlength_m3u)
             {
-                httpContext.Response.ContentType = "text/plain; charset=utf-8";
-                httpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                httpContext.Response.BodyWriter.Write("bigfile"u8);
+                httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
                 return;
             }
 
             string mpd = await content.ReadAsStringAsync(ctsHttp.Token).ConfigureAwait(false);
             if (mpd == null)
             {
-                httpContext.Response.ContentType = "text/plain; charset=utf-8";
                 httpContext.Response.StatusCode = StatusCodes.Status503ServiceUnavailable;
-                httpContext.Response.BodyWriter.Write("error array mpd"u8);
                 return;
             }
 

@@ -1,4 +1,7 @@
 ﻿using Newtonsoft.Json;
+using Shared.Services.Buckets;
+using System.Buffers.Text;
+using System.Text.Json;
 using System.Web;
 
 namespace Shared.Models.Base;
@@ -25,6 +28,11 @@ public class BaseSettings : Iproxy, Istreamproxy, Icors, Igroup, ICloneable
     public bool enabled { get; set; }
 
     public bool spider { get; set; } = true;
+
+    /// <summary>
+    /// [0,1,2,3,4,5,6,7,8,9,10,11,12,13,14,15,16,17,18,19,20,21,22,23,24]
+    /// </summary>
+    public int[] workinghours { get; set; }
 
 
     public bool kit { get; set; } = true;
@@ -283,14 +291,66 @@ public class BaseSettings : Iproxy, Istreamproxy, Icors, Igroup, ICloneable
 
         if (crhost.Contains("{payload}"))
         {
-            return crhost.Replace("{payload}", CrypTo.Base64(System.Text.Json.JsonSerializer.Serialize(new
+            using (var utf8Buf = new BufferWriterPool<byte>(BufferWriterPoolType.Tiny))
             {
-                u = uri,
-                p = plugin,
-                h = headers?.ToDictionary(),
-                t = "cors",
-                i = requestInfo.user_uid
-            })));
+                using (var writer = new Utf8JsonWriter(utf8Buf, new JsonWriterOptions
+                {
+                    Indented = false,
+                    SkipValidation = true
+                }))
+                {
+                    writer.WriteStartObject();
+                    writer.WriteString("u"u8, uri);
+
+                    if (plugin != null)
+                        writer.WriteString("p"u8, plugin);
+
+                    if (headers != null && headers.Count > 0)
+                    {
+                        writer.WriteNumber("hb"u8, BucketHeaders.Hash("cors", headers));
+                        writer.WriteNumber("hc"u8, headers.Count);
+
+                        writer.WritePropertyName("h"u8);
+                        writer.WriteStartObject();
+
+                        foreach (var h in headers)
+                        {
+                            if (h.name != null && h.val != null)
+                                writer.WriteString(h.name, h.val);
+                        }
+
+                        writer.WriteEndObject();
+                    }
+
+                    writer.WriteString("t"u8, "cors"u8);
+
+                    if (requestInfo.user_uid != null)
+                        writer.WriteString("i"u8, requestInfo.user_uid);
+
+                    writer.WriteEndObject();
+                    writer.Flush();
+                }
+
+                ReadOnlySpan<byte> json = utf8Buf.WrittenSpan;
+                if (json.IsEmpty)
+                    return crhost;
+
+                int maxchars = Base64Url.GetEncodedLength(json.Length);
+
+                using (var bufChars = new BufferCharPool(maxchars))
+                {
+                    Span<char> base64Chars = bufChars.Span;
+
+                    if (!Base64Url.TryEncodeToChars(json, base64Chars, out int charsWritten))
+                        return crhost;
+
+                    ReadOnlySpan<char> encoded = base64Chars[..charsWritten];
+                    if (encoded.IsEmpty)
+                        return crhost;
+
+                    return crhost.Replace("{payload}", encoded.ToString());
+                }
+            }
         }
 
         return $"{crhost}/{uri}";

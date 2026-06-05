@@ -4,12 +4,12 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Primitives;
 using Newtonsoft.Json.Linq;
+using Shared.Attributes;
 using Shared.Models;
 using Shared.Models.Events;
 using Shared.Models.Online.Settings;
 using Shared.Models.Templates;
 using Shared.Services;
-using System.Buffers;
 using System.Net;
 using System.Text;
 using System.Text.Json;
@@ -150,12 +150,6 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
             }
         }
 
-        if (NoAccessGroup(init, out string error_msg))
-        {
-            badInitMsg = new JsonResult(new { accsdb = true, msg = error_msg });
-            return ValueTask.FromResult(true);
-        }
-
         if (requestInitializationAsync != null || EventListener.BadInitializationAsync != null || IsOverridehost(init))
             return IsRequestBlockedAsync(rch, rch_keepalive, rch_check);
 
@@ -197,6 +191,18 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
         if (!init.enable || init.rip)
         {
             badInitMsg = OnError("disable", gbcache: false, statusCode: 403);
+            return true;
+        }
+
+        if (NoAccessGroup(init, out string error_msg))
+        {
+            badInitMsg = new JsonResult(new { accsdb = true, msg = error_msg });
+            return true;
+        }
+
+        if (init.workinghours != null && !init.workinghours.Contains(DateTime.UtcNow.Hour))
+        {
+            badInitMsg = new JsonResult(new { accsdb = true, msg = "Временно недоступен, попробуйте через несколько часов" });
             return true;
         }
 
@@ -341,8 +347,6 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
             ? tpl.ToBuilderJson()
             : tpl.ToBuilderHtml();
 
-        IBufferWriter<byte> bodyWriter = StaticacheOrBodyWriter();
-
         try
         {
             foreach (var chunk in sb.GetChunks())
@@ -351,8 +355,7 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
 
                 while (!chars.IsEmpty)
                 {
-                    int maxBytes = Encoding.UTF8.GetMaxByteCount(chars.Length);
-                    Span<byte> span = bodyWriter.GetSpan(maxBytes);
+                    Span<byte> span = BodyWriter.GetSpan(PoolInvk._chunk32);
 
                     encoder.Convert(
                         chars,
@@ -364,7 +367,7 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
 
                     if (bytesUsed > 0)
                     {
-                        bodyWriter.Advance(bytesUsed);
+                        BodyWriter.Advance(bytesUsed);
                         chars = chars.Slice(charsUsed);
                     }
 
@@ -382,7 +385,7 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
         }
 
         /// границы чанков/суррогаты
-        Span<byte> tail = bodyWriter.GetSpan(128);
+        Span<byte> tail = BodyWriter.GetSpan(128);
 
         encoder.Convert(
             ReadOnlySpan<char>.Empty,
@@ -393,7 +396,10 @@ public class BaseOnlineController<T> : BaseController where T : BaseSettings, IC
             out bool _);
 
         if (_bytesUsed > 0)
-            bodyWriter.Advance(_bytesUsed);
+            BodyWriter.Advance(_bytesUsed);
+
+        if (StatiCacheDisabled)
+            HttpContext.Features.Set(new StatiCacheEntry(default, false));
 
         return _emptyResult;
     }

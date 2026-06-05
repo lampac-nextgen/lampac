@@ -7,6 +7,19 @@ namespace Shared.Services.Pools;
 
 public static class OwnerTo
 {
+    public static string String(RecyclableMemoryStream msm, Encoding encoding)
+    {
+        string result = null;
+
+        Span(msm, encoding, span =>
+        {
+            if (!span.IsEmpty)
+                result = span.ToString();
+        });
+
+        return result;
+    }
+
     public static void Span(RecyclableMemoryStream msm, Encoding encoding, Action<ReadOnlySpan<char>> spanAction)
     {
         try

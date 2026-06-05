@@ -31,7 +31,7 @@ public static class AesTo
                 if (!Encoding.UTF8.TryGetBytes(plainText, cipher, out int writtenPlain) || writtenPlain == 0)
                     return string.Empty;
 
-                int paddedLen = ((writtenPlain / AesInstance.BlockSize) + 1) * AesInstance.BlockSize;
+                int paddedLen = aesinst.Aes.GetCiphertextLengthCbc(plainText.Length, PaddingMode.PKCS7);
 
                 BufferBytePool destBuf = null;
                 if (paddedLen > AesInstance.ByteSize)

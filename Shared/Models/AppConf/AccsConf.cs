@@ -42,19 +42,16 @@ public class AccsConf
 
 
     private static IReadOnlyDictionary<string, AccsUser> _searchUsers;
-    private static string _keyUpdate;
 
-    public void RefreshUsers(string keyUpdate)
+    public void RefreshUsers()
     {
-        if (keyUpdate == _keyUpdate)
-            return;
-
-        _keyUpdate = keyUpdate;
-
         try
         {
             if (users == null || users.Count == 0)
+            {
+                _searchUsers = null;
                 return;
+            }
 
             Dictionary<string, AccsUser> _users = new();
 

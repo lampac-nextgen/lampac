@@ -4,7 +4,6 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Primitives;
-using Microsoft.IO;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Shared.Attributes;
@@ -80,6 +79,24 @@ public class BaseController : Controller
 
     public RequestModel requestInfo
         => _requestInfo ??= HttpContext.Features.Get<RequestModel>();
+    #endregion
+
+    #region BodyWriter
+    private IBufferWriter<byte> _bodyWriter;
+
+    public IBufferWriter<byte> BodyWriter
+    {
+        get
+        {
+            if (_bodyWriter != null)
+                return _bodyWriter;
+
+            if (StatiCacheDisabled || HttpContext.Features.Get<StaticacheFeature>() == null)
+                return _bodyWriter ??= new ChunkBufferWriter<byte>(HttpContext.Response.BodyWriter);
+
+            return _bodyWriter ??= HttpContext.Features.Get<LazyMsm>().Stream;
+        }
+    }
     #endregion
 
     #region host
@@ -1254,77 +1271,54 @@ public class BaseController : Controller
                 : "text/html; charset=utf-8";
         }
 
-        var stcWriter = StatiCacheDisabled
-            ? null
-            : HttpContext.Features.Get<RecyclableMemoryStream>();
+        var response = HttpContext.Response;
+        response.ContentType = contentType;
 
-        if (stcWriter != null)
+        if (StatiCacheDisabled || HttpContext.Features.Get<StaticacheFeature>() == null)
+            return Content(html, contentType);
+
+        var encoder = Encoding.UTF8.GetEncoder();
+        ReadOnlySpan<char> chars = html.AsSpan();
+
+        while (!chars.IsEmpty)
         {
-            var response = HttpContext.Response;
-            response.ContentType = contentType;
-
-            var encoder = Encoding.UTF8.GetEncoder();
-            ReadOnlySpan<char> chars = html.AsSpan();
-
-            int chunkSize = PoolInvk.ChunkSizeBodyWriter(Encoding.UTF8.GetMaxByteCount(chars.Length));
-
-            while (!chars.IsEmpty)
-            {
-                Span<byte> span = stcWriter.GetSpan(chunkSize);
-
-                encoder.Convert(
-                    chars,
-                    span,
-                    flush: false,
-                    out int charsUsed,
-                    out int bytesUsed,
-                    out bool completed);
-
-                if (bytesUsed > 0)
-                {
-                    stcWriter.Advance(bytesUsed);
-                    chars = chars.Slice(charsUsed);
-                }
-
-                if (completed)
-                    break;
-
-                if (charsUsed == 0 && bytesUsed == 0)
-                    break;
-            }
-
-            Span<byte> tail = stcWriter.GetSpan(128);
+            Span<byte> span = BodyWriter.GetSpan(PoolInvk._chunk32);
 
             encoder.Convert(
-                ReadOnlySpan<char>.Empty,
-                tail,
-                flush: true,
-                out int _,
-                out int _bytesUsed,
-                out bool _);
+                chars,
+                span,
+                flush: false,
+                out int charsUsed,
+                out int bytesUsed,
+                out bool completed);
 
-            if (_bytesUsed > 0)
-                stcWriter.Advance(_bytesUsed);
+            if (bytesUsed > 0)
+            {
+                BodyWriter.Advance(bytesUsed);
+                chars = chars.Slice(charsUsed);
+            }
 
-            return _emptyResult;
+            if (completed)
+                break;
+
+            if (charsUsed == 0 && bytesUsed == 0)
+                break;
         }
 
-        return Content(html, contentType);
-    }
-    #endregion
+        Span<byte> tail = BodyWriter.GetSpan(128);
 
-    #region StaticacheOrBodyWriter
-    public IBufferWriter<byte> StaticacheOrBodyWriter()
-    {
-        IBufferWriter<byte> staticWriter = default;
+        encoder.Convert(
+            ReadOnlySpan<char>.Empty,
+            tail,
+            flush: true,
+            out int _,
+            out int _bytesUsed,
+            out bool _);
 
-        if (!StatiCacheDisabled)
-            staticWriter = HttpContext.Features.Get<RecyclableMemoryStream>();
+        if (_bytesUsed > 0)
+            BodyWriter.Advance(_bytesUsed);
 
-        if (staticWriter != null)
-            return staticWriter;
-
-        return new ChunkBufferWriter<byte>(HttpContext.Response.BodyWriter);
+        return _emptyResult;
     }
     #endregion
 

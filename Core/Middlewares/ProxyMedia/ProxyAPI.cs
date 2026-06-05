@@ -40,9 +40,7 @@ public partial class ProxyAPI
         var init = CoreInit.conf.serverproxy;
         if (!init.enable)
         {
-            httpContext.Response.ContentType = "text/plain; charset=utf-8";
             httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
-            httpContext.Response.BodyWriter.Write("decryptLink"u8);
             return;
         }
 
@@ -61,9 +59,7 @@ public partial class ProxyAPI
 
         if (string.IsNullOrEmpty(servUri) || !servUri.StartsWith("http"))
         {
-            httpContext.Response.ContentType = "text/plain; charset=utf-8";
-            httpContext.Response.StatusCode = StatusCodes.Status404NotFound;
-            httpContext.Response.BodyWriter.Write("servUri empty"u8);
+            httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
             return;
         }
         #endregion

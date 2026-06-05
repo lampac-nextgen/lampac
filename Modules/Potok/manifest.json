@@ -1,0 +1,8 @@
+{
+  "enable": false,
+  "dynamic": true,
+  "tree": [
+    "SisiController.cs",
+    "ModInit.cs"
+  ]
+}

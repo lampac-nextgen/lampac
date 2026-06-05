@@ -232,19 +232,9 @@ public class ListController : BaseSisiController<NxtSettings>
                 return null;
 
             if (msm != null && msm.Length > 0)
-            {
-                List<PlaylistItem> pl = null;
-                OwnerTo.Span(msm, Encoding.UTF8, span =>
-                {
-                    pl = CSharpEval.Execute<List<PlaylistItem>>(eval, new NxtPlaylist(init, plugin, host, span.ToString(), doc, new List<PlaylistItem>()), Root.playlistOptions);
-                });
+                html = OwnerTo.String(msm, Encoding.UTF8);
 
-                return pl;
-            }
-            else
-            {
-                return CSharpEval.Execute<List<PlaylistItem>>(eval, new NxtPlaylist(init, plugin, host, html, doc, new List<PlaylistItem>()), Root.playlistOptions);
-            }
+            return CSharpEval.Execute<List<PlaylistItem>>(eval, new NxtPlaylist(init, plugin, host, html, doc, new List<PlaylistItem>()), Root.playlistOptions);
         }
         #endregion
 
@@ -455,16 +445,9 @@ public class ListController : BaseSisiController<NxtSettings>
                 if (eval != null)
                 {
                     if (msm != null && msm.Length > 0)
-                    {
-                        OwnerTo.Span(msm, Encoding.UTF8, span =>
-                        {
-                            pl = CSharpEval.Execute<PlaylistItem>(eval, new NxtChangePlaylis(init, plugin, host, span.ToString(), nodes, pl, row), Root.playlistOptions);
-                        });
-                    }
-                    else
-                    {
-                        pl = CSharpEval.Execute<PlaylistItem>(eval, new NxtChangePlaylis(init, plugin, host, html, nodes, pl, row), Root.playlistOptions);
-                    }
+                        html = OwnerTo.String(msm, Encoding.UTF8);
+
+                    pl = CSharpEval.Execute<PlaylistItem>(eval, new NxtChangePlaylis(init, plugin, host, html, nodes, pl, row), Root.playlistOptions);
                 }
                 #endregion
 
