@@ -89,6 +89,8 @@ public class CoreInit
         if (File.Exists("init.yaml") && File.GetLastWriteTime("init.yaml") > lastUpdateConf)
             lastUpdateConf = File.GetLastWriteTime("init.yaml");
 
+        conf.accsdb.RefreshUsers();
+
         #region watcherInit
         ThreadPool.QueueUserWorkItem(async _ =>
         {
@@ -108,7 +110,7 @@ public class CoreInit
                             updateConf();
                             updateYamlConf();
 
-                            conf.accsdb.RefreshUsers(conf?.guid);
+                            conf.accsdb.RefreshUsers();
 
                             CurrentConf = JObject.FromObject(conf);
                             lastUpdateConf = lwtConf > lwtYaml ? lwtConf : lwtYaml;

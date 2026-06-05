@@ -339,7 +339,7 @@ public class Program
                 }
 
                 _usersKeyUpdate = keyUpdate;
-                CoreInit.conf.accsdb.RefreshUsers(_usersKeyUpdate);
+                CoreInit.conf.accsdb.RefreshUsers();
             }
         }
         catch (Exception ex)
