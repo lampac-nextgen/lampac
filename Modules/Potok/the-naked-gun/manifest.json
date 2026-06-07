@@ -1,0 +1,22 @@
+{
+  "id": "the-naked-gun",
+  "name": "The Naked Gun",
+  "version": "1.0.0",
+  "entrypoint": "index.js",
+  "permissions": [
+    "http-proxy",
+    "ui-notifications"
+  ],
+  "slots": [
+    {
+      "id": "the-naked-gun",
+      "slotName": "extension-page",
+      "title": "The Naked Gun"
+    },
+    {
+      "id": "the-naked-gun-media-actions",
+      "slotName": "media-actions",
+      "title": "The Naked Gun"
+    }
+  ]
+}

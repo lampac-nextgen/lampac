@@ -202,6 +202,7 @@ function buildPageLayout() {
     return VStack()
         .id('catalog-page')
         .spacing(12)
+        .padding(20)
         .children(pageChildren);
 }
 

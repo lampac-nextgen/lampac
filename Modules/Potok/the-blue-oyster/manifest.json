@@ -1,0 +1,24 @@
+{
+  "id": "the-blue-oyster",
+  "name": "The Blue Oyster",
+  "version": "1.0.2",
+  "description": "",
+  "author": "lampac",
+  "entrypoint": "index.js",
+  "permissions": [
+    "storage",
+    "ui-notifications"
+  ],
+  "slots": [
+    {
+      "id": "the-blue-oyster",
+      "slotName": "extension-page",
+      "title": "The Blue Oyster"
+    },
+    {
+      "id": "the-blue-oyster-sidebar",
+      "slotName": "sidebar-menu",
+      "title": "The Blue Oyster"
+    }
+  ]
+}

@@ -3,6 +3,7 @@
   "dynamic": true,
   "tree": [
     "SisiController.cs",
+    "OnlineController.cs",
     "ModInit.cs"
   ]
 }

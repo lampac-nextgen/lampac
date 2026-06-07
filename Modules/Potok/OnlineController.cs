@@ -6,14 +6,14 @@ using Shared.Services;
 
 namespace Potok;
 
-public class SisiController : BaseController
+public class OnlineController : BaseController
 {
     [HttpGet, AllowAnonymous]
     [Staticache(5, always: true, setHeadersNoCache: true)]
-    [Route("blue-oyster/{file}")]
+    [Route("naked-gun/{file}")]
     public ActionResult Index(string file)
     {
-        string plugin = FileCache.ReadAllText($"{ModInit.modpath}/the-blue-oyster/{file}", $"blue-oyster_{file}", saveCache: false)
+        string plugin = FileCache.ReadAllText($"{ModInit.modpath}/the-naked-gun/{file}", $"naked-gun_{file}", saveCache: false)
             .Replace("{localhost}", host);
 
         string type = file.EndsWith(".json")

@@ -11,9 +11,13 @@
   </ItemGroup>
 
   <ItemGroup>
-    <None Update="the-blue-oyster.js">
+    <None Update="the-blue-oyster\index.js">
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <Folder Include="the-naked-gun\" />
   </ItemGroup>
 
 </Project>
