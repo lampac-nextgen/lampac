@@ -18,8 +18,10 @@ jobs:
       - uses: actions/stale@v10
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          days-before-stale: 7
-          days-before-close: 3
+          days-before-issue-stale: 7
+          days-before-issue-close: 3
+          days-before-pr-stale: -1
+          days-before-pr-close: -1
           stale-issue-label: stale
           exempt-issue-labels: pinned,security
           stale-issue-message: >
