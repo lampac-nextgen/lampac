@@ -32,7 +32,13 @@ public class BaseENGController : BaseOnlineController
             #region Сериал
             var tmdb = await InvokeCacheResult<JToken>($"tmdb:seasons:{id}", TimeSpan.FromHours(4), async e =>
             {
-                var root = await Http.Get<JObject>($"{CoreInit.conf.cub.scheme}://tmdb.{CoreInit.conf.cub.mirror}/3/tv/{id}?api_key={CoreInit.conf.cub.api_key}");
+                var cub = CoreInit.conf.cub;
+
+                var proxyManager = cub.useproxy
+                    ? new ProxyManager("cub_api", cub)
+                    : null;
+
+                var root = await Http.Get<JObject>($"{cub.scheme}://tmdb.{cub.mirror}/3/tv/{id}?api_key={cub.api_key}", proxy: proxyManager?.Get());
 
                 if (root == null || !root.ContainsKey("seasons"))
                     return e.Fail("seasons");

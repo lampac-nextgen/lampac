@@ -37,7 +37,6 @@ export async function openMedia(media) {
             await selectSource(sources[0].url);
         }
     } catch (error) {
-        console.error('[The Naked Gun] openMedia failed:', error);
 
         patchState({
             error: getErrorMessage(error),
@@ -106,7 +105,6 @@ export async function selectSource(sourceUrl) {
 
         throw new Error(`Unsupported source response type: ${json.type}`);
     } catch (error) {
-        console.error('[The Naked Gun] selectSource failed:', error);
 
         patchState({
             error: getErrorMessage(error),
@@ -149,7 +147,6 @@ export async function selectSeason(seasonUrl) {
             voiceValue: activeVoice?.url || ''
         });
     } catch (error) {
-        console.error('[The Naked Gun] selectSeason failed:', error);
 
         patchState({
             error: getErrorMessage(error),
@@ -189,7 +186,6 @@ export async function selectVoice(voiceUrl) {
             voiceValue: activeVoice?.url || voiceUrl
         });
     } catch (error) {
-        console.error('[The Naked Gun] selectVoice failed:', error);
 
         patchState({
             error: error instanceof Error ? error.message : String(error || 'Unknown error'),
@@ -200,20 +196,19 @@ export async function selectVoice(voiceUrl) {
     }
 }
 
-export function openPopup() {
-    patchState({ popupOpen: true });
-}
+export async function playMovieFile(file) {
+    var streamUrl = file.stream || file.url;
+    if (!file.stream && file.method === 'call') {
+        const response = await fetch(file.url);
+        var call = await response.json();
+        streamUrl = call.url;
+    }
 
-export function closePopup() {
-    patchState({ popupOpen: false });
-}
-
-export function playMovieFile(file) {
     PotokSDK.ui.playVideo({
-        streamUrl: file.stream || file.url,
-        streamType: file.url.includes('.m3u8')
+        streamUrl: streamUrl,
+        streamType: streamUrl.includes('.m3u8')
             ? 'm3u8'
-            : file.url.includes('.mpd')
+            : streamUrl.includes('.mpd')
                 ? 'dash'
                 : 'mp4',
         title: file.title,
@@ -221,12 +216,19 @@ export function playMovieFile(file) {
     });
 }
 
-export function playEpisodeFile(file) {
+export async function playEpisodeFile(file) {
+    var streamUrl = file.stream || file.url;
+    if (!file.stream && file.method === 'call') {
+        const response = await fetch(file.url);
+        var call = await response.json();
+        streamUrl = call.url;
+    }
+
     PotokSDK.ui.playVideo({
-        streamUrl: file.stream ||file.url,
-        streamType: file.url.includes('.m3u8')
+        streamUrl: streamUrl,
+        streamType: streamUrl.includes('.m3u8')
             ? 'm3u8'
-            : file.url.includes('.mpd')
+            : streamUrl.includes('.mpd')
                 ? 'dash'
                 : 'mp4',
         title: file.title,
@@ -267,7 +269,7 @@ function getTmdbId() {
 
 function getSelectedSeasonNumber() {
     const selected = state.seasons.find((item) => item.url === state.seasonValue);
-    return Number(selected?.season || selected?.s || 1);
+    return Number(selected?.id || selected?.s || 1);
 }
 
 function getErrorMessage(error) {

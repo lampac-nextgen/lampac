@@ -1,7 +1,7 @@
 {
   "id": "the-naked-gun",
   "name": "The Naked Gun",
-  "version": "1.0.0",
+  "version": "1.0.3",
   "entrypoint": "index.js",
   "permissions": [
     "http-proxy",

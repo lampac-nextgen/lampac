@@ -1,7 +1,7 @@
 {
   "id": "the-blue-oyster",
   "name": "The Blue Oyster",
-  "version": "1.0.2",
+  "version": "1.0.4",
   "description": "",
   "author": "lampac",
   "entrypoint": "index.js",
@@ -17,7 +17,7 @@
     },
     {
       "id": "the-blue-oyster-sidebar",
-      "slotName": "sidebar-menu",
+      "slotName": "sidebar-menu-home",
       "title": "The Blue Oyster"
     }
   ]

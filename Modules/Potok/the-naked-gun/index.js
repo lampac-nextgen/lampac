@@ -4,6 +4,8 @@ import { buildPage } from './ui.js';
 import { openMedia } from './actions.js';
 import { mediaFromMediaActionProps } from './media.js';
 
+await PotokSDK.storage.local.setItem('disableHttpProxy', true);
+
 PotokSDK.registerSlotContribution({
     id: 'the-naked-gun',
     slotName: 'extension-page',

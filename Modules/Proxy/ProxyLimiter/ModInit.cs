@@ -13,44 +13,63 @@ namespace ProxyLimiter;
 public class ModInit : IModuleLoaded
 {
     static ConcurrentBag<PartitionedRateLimiter<string>> rates;
+    static bool subscribed = false;
 
     public void Loaded(InitspaceModel baseconf)
     {
         updateConf();
         EventListener.UpdateInitFile += updateConf;
-        EventListener.ProxyApiOverride += ProxyApiOverride;
     }
 
     public void Dispose()
     {
         EventListener.UpdateInitFile -= updateConf;
-        EventListener.ProxyApiOverride -= ProxyApiOverride;
+
+        if (subscribed)
+            EventListener.ProxyApiOverride -= ProxyApiOverride;
     }
 
     void updateConf()
     {
         var limiters = ModuleInvoke.Init("ProxyLimiter", new List<ModuleConf>());
+
         if (limiters == null || limiters.Count == 0)
         {
             rates = null;
-            return;
+
+            if (subscribed)
+            {
+                EventListener.ProxyApiOverride -= ProxyApiOverride;
+                subscribed = false;
+            }
         }
-
-        rates = new ConcurrentBag<PartitionedRateLimiter<string>>();
-
-        foreach (var limit in limiters)
+        else
         {
-            var rate = PartitionedRateLimiter.Create<string, string>(ip =>
-                RateLimitPartition.GetSlidingWindowLimiter(ip,
-                _ => new SlidingWindowRateLimiterOptions
-                {
-                    PermitLimit = limit.PermitLimit,
-                    Window = TimeSpan.FromSeconds(limit.Window),
-                    SegmentsPerWindow = limit.SegmentsPerWindow,
-                    QueueLimit = limit.QueueLimit
-                }));
+            var newRates = new ConcurrentBag<PartitionedRateLimiter<string>>();
 
-            rates.Add(rate);
+            foreach (var limit in limiters)
+            {
+                var rate = PartitionedRateLimiter.Create<string, string>(ip =>
+                    RateLimitPartition.GetSlidingWindowLimiter(
+                        ip,
+                        _ => new SlidingWindowRateLimiterOptions
+                        {
+                            PermitLimit = limit.PermitLimit,
+                            Window = TimeSpan.FromSeconds(limit.Window),
+                            SegmentsPerWindow = limit.SegmentsPerWindow,
+                            QueueLimit = limit.QueueLimit
+                        }));
+
+                newRates.Add(rate);
+            }
+
+            rates = newRates;
+
+            if (!subscribed)
+            {
+                EventListener.ProxyApiOverride += ProxyApiOverride;
+                subscribed = true;
+            }
         }
     }
 
@@ -63,9 +82,11 @@ public class ModInit : IModuleLoaded
 
         foreach (var rate in rates)
         {
-            using var lease = await rate.AcquireAsync(ip, 1);
-            if (!lease.IsAcquired)
-                return false;
+            using (var lease = await rate.AcquireAsync(ip, 1))
+            {
+                if (!lease.IsAcquired)
+                    return false;
+            }
         }
 
         return true;

@@ -36,7 +36,6 @@ export function registerTheNakedGunStreamSource() {
         async getEpisodes(stream, context) {
             const media = await mediaFromWatchQuery(context);
             const root = await fetchSourceJson(stream.providerId, media);
-
             if (root.type !== 'season') {
                 return {
                     episodes: [],
@@ -87,7 +86,6 @@ export function registerTheNakedGunStreamSource() {
             if (root.type === 'movie') {
                 const file = root.data[0];
                 var stream = file.stream || file.url;
-
                 return {
                     streamUrl: stream,
                     streamType: stream.includes('.m3u8')

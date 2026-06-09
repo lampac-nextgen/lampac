@@ -21,10 +21,6 @@ export function buildMediaParams(media) {
     params.set('year', String(media.year));
     params.set('rjson', 'true');
 
-    if (media.anime) {
-        params.set('anime', '1');
-    }
-
     return params;
 }
 

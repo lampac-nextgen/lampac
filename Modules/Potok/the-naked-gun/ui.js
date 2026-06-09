@@ -17,7 +17,8 @@ const {
     Button,
     Divider,
     LoadingSpinner,
-    EpisodeCard
+    EpisodeCard,
+    Spacer
 } = PotokSDK.ui.components;
 
 function buildSourceSelect() {
@@ -60,7 +61,7 @@ function buildMovieFiles() {
 function buildEpisodeFiles() {
     return Grid()
         .minWidth('375px')
-        .gap('35px')
+        .gap('30px')
         .children(
             state.episodeFiles.map((file, index) =>
                 buildEpisodeCard(file, index)
@@ -165,7 +166,6 @@ export function buildPage() {
     }
 
     return VStack()
-        .spacing(16)
-        .padding(20)
+        .spacing(15)
         .children(children);
 }
