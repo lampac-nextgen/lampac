@@ -6,6 +6,7 @@ using System;
 using System.Linq;
 using Shared.Services.Utilities;
 using Shared.Services;
+using Shared.Attributes;
 
 namespace Core.Controllers;
 
@@ -106,18 +107,16 @@ public class ApiController : BaseController
     #endregion
 
     #region nws-client-es5.js
-    [HttpGet]
-    [AllowAnonymous]
+    [HttpGet, AllowAnonymous]
+    [Staticache(10, always: true, setHeadersNoCache: true)]
     [Route("nws-client-es5.js")]
     [Route("js/nws-client-es5.js")]
     public ActionResult NwsClient()
     {
-        SetHeadersNoCache();
-
         string source = FileCache.ReadAllText("plugins/nws-client-es5.js", "nws-client-es5.js")
             .Replace("{localhost}", host);
 
-        return Content(source, "application/javascript; charset=utf-8");
+        return ContentTo(source, "application/javascript; charset=utf-8");
     }
     #endregion
 }

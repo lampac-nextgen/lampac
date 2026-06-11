@@ -262,10 +262,8 @@ public class TmdbProxyController : BaseController
         using (var byteBuf = new BufferPool())
         {
             int bytesRead;
-            var memBuf = byteBuf.Memory;
-
-            while ((bytesRead = await stream.ReadAsync(memBuf, ct)) > 0)
-                bodyWriter.Write(memBuf.Span.Slice(0, bytesRead));
+            while ((bytesRead = await stream.ReadAsync(byteBuf.Memory, ct)) > 0)
+                bodyWriter.Write(byteBuf.Span.Slice(0, bytesRead));
         }
     }
     #endregion

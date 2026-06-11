@@ -44,7 +44,7 @@ public class StaticacheWriter
                     httpContext.Response.StatusCode == StatusCodes.Status307TemporaryRedirect ||
                     httpContext.Response.StatusCode == StatusCodes.Status308PermanentRedirect;
 
-                if (!isRedirect && !msm.IsEmpty)
+                if (!isRedirect && !msm.IsEmpty && httpContext.Response.StatusCode != StatusCodes.Status206PartialContent)
                 {
                     var cacheEntry = httpContext.Features.Get<StatiCacheEntry>();
 

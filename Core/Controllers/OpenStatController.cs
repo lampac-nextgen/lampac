@@ -185,7 +185,7 @@ public class OpenStatController : BaseController
 
         return Json(new
         {
-            memoryCache = memoryCache.GetCurrentStatistics().CurrentEntryCount,
+            memoryCache = memoryCache.GetCurrentStatistics()?.CurrentEntryCount ?? -1,
             HybridFileCache = HybridFileCache.Stat_ContTempDb,
             SemaphorManager = SemaphorManager.Stat_ContSemaphoreLocks,
             Staticache = Staticache.cacheFiles.Count,

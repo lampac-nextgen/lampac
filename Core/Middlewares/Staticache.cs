@@ -87,24 +87,31 @@ public class Staticache
         }
         #endregion
 
-        EventListener.UpdateInitFile += () =>
+        void UpdateRoutes()
         {
             var routes = CoreInit.conf.Staticache.routes;
             if (routes == null || routes.Count == 0)
                 preparedRoutes = Array.Empty<StaticachePreparedRoute>();
-
-            preparedRoutes = routes.Select(r => new StaticachePreparedRoute
+            else
             {
-                Route = r,
-                PathRegex = new Regex(
-                    r.pathRex,
-                    RegexOptions.IgnoreCase |
-                    RegexOptions.CultureInvariant |
-                    RegexOptions.Compiled,
-                    TimeSpan.FromMilliseconds(100)
-                )
-            }).ToArray();
-        };
+                preparedRoutes = routes.Select(r => new StaticachePreparedRoute
+                {
+                    Route = r,
+                    PathRegex = r.pathRex != null
+                        ? new Regex(
+                            r.pathRex,
+                            RegexOptions.IgnoreCase |
+                            RegexOptions.CultureInvariant |
+                            RegexOptions.Compiled,
+                            TimeSpan.FromMilliseconds(100)
+                        )
+                        : null
+                }).ToArray();
+            }
+        }
+
+        UpdateRoutes();
+        EventListener.UpdateInitFile += UpdateRoutes;
     }
 
     static void cleanup(object state)
@@ -192,7 +199,7 @@ public class Staticache
             {
                 var r = p.Route;
 
-                if ((r.path != null && path.Equals(r.path))
+                if ((r.path != null && path.Equals(r.path, StringComparison.OrdinalIgnoreCase))
                     || (r.pathRex != null && p.PathRegex.IsMatch(path)))
                 {
                     customRoute = true;
@@ -203,19 +210,18 @@ public class Staticache
         }
         #endregion
 
-        if (customRoute == false)
+        if (staticache.always == false)
         {
-            // кеш отключён для всех кроме always
-            if (!init.enable && !staticache.always)
-                return _next(httpContext);
+            if (customRoute == false)
+            {
+                // endpoint или настройки init требует явный routes
+                if (init.enable == false || staticache.manually || init.manually)
+                    return _next(httpContext);
+            }
 
-            // endpoint или настройки init требует явный routes
-            if (staticache.manually || init.manually)
+            if (init.minimalCacheMinutes > staticache.cacheMinutes)
                 return _next(httpContext);
         }
-
-        if (init.minimalCacheMinutes > staticache.cacheMinutes && !staticache.always)
-            return _next(httpContext);
 
         if (init.disabledPaths != null && init.disabledPaths.Contains(path))
             return _next(httpContext);
@@ -223,11 +229,8 @@ public class Staticache
         if (staticache.setHeadersNoCache)
             WriteNoCache(httpContext);
 
-        if (customRoute == false)
-            route = new();
-
         if (0 >= route.cacheMinutes)
-            route.cacheMinutes = 1;
+            route.cacheMinutes = staticache.cacheMinutes;
 
         if (route.queryKeys == null)
             route.queryKeys = staticache.queryKeys;
@@ -296,7 +299,7 @@ public class Staticache
         {
             if (queryKeys.Length == 1 && queryKeys[0] == ".*")
             {
-                foreach (var q in httpContext.Request.Query)
+                foreach (var q in httpContext.Request.Query.OrderBy(x => x.Key, StringComparer.Ordinal))
                 {
                     string key = q.Key;
 

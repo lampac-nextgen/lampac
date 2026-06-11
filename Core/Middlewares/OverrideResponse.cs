@@ -51,6 +51,9 @@ public class OverrideResponse
                         {
                             httpContext.Response.ContentType = over.type;
 
+                            if (string.IsNullOrEmpty(over.val))
+                                return Task.CompletedTask;
+
                             if (over.val.Contains("{localhost}"))
                                 return httpContext.Response.WriteAsync(over.val.Replace("{localhost}", CoreInit.Host(httpContext)));
 

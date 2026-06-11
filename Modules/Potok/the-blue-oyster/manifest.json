@@ -6,6 +6,7 @@
   "author": "lampac",
   "entrypoint": "index.js",
   "permissions": [
+    "http-proxy",
     "storage",
     "ui-notifications"
   ],
