@@ -4,15 +4,20 @@ displayname: TrahKino
 rch_access: apk,cors
 stream_access: apk,cors
 rchstreamproxy: web
+streamproxy: true
 host: https://trahkino.me
 priorityBrowser: http
 streamproxy_preview: true
+headers_stream:
+  referer: "{host}/"
 
 menu:
   route:
     sort: "{host}/{sort}/{page}/"
     cat: "{host}/categories/{cat}/{page}/"
     catsort: '{host}/categories/{cat}/?mode=async&function=get_block&block_id=list_videos_common_videos_list&sort_by={sort.Replace("top-rated", "rating").Replace("most-popular", "video_viewed")}&from={page}'
+    model: "{host}/{model.TrimEnd('/')}/{(page > 1 ? $\"{page}/\" : string.Empty)}"
+    modelsort: '{host}/{model.TrimEnd("/")}/?mode=async&function=get_block&block_id=list_videos_common_videos_list&sort_by={sort.Replace("top-rated", "rating").Replace("most-popular", "video_viewed")}&from={page}'
   sort:
     Новинки: ""
     Лучшее: top-rated
@@ -58,6 +63,58 @@ menu:
     Развратное: razvrat
     Француженки: francujenki
     Хентай: hentay
+  customs:
+    - name: Каналы
+      arg: studio
+      format: "channels/{value}/{page}/"
+      submenu:
+        Vivid: vivid
+        Step Siblings Caught: step-siblings-caught
+        Fake Hostel: fake-hostel
+        Mia Khalifa: mia-khalifa
+        Bratty Sis: bratty-sis
+        Private Society: private-society
+        Family Swap XXX: family-swap-xxx
+        VIXEN: vixen
+        Pervmom: pervmom
+        Female Fake Taxi: female-fake-taxi
+        Blacked Raw: blacked-raw
+        BLACKED: blacked
+        FreeUse Fantasy: freeuse-fantasy
+        Moms Teach Sex: moms-teach-sex
+        Public Agent: public-agent
+        Brazzers: brazzers
+        FreeUse Milf: freeuse-milf
+        Sexy Hub: sexy-hub
+        My Family Pies: my-family-pies
+        New Sensations: new-sensations
+        Tushy: tushy
+        Bang Bros Network: bang-bros-network
+        Bellesa Plus: bellesa-plus
+        Reality Kings: reality-kings
+        Sweet Sinner: sweet-sinner
+        My Friends Hot Mom: my-friends-hot-mom
+        Property Sex: property-sex
+        My Pervy Family: my-pervy-family
+        Perv Mom: perv-mom
+        Perv Therapy: perv-therapy
+        Nubiles Porn: nubiles-porn
+        Net Video Girls: net-video-girls
+        Lubed: lubed
+        FAMILYxxx: familyxxx
+        Hot Wife XXX: hot-wife-xxx
+        All Girl Massage: all-girl-massage
+        Exxxtra Small: exxxtra-small
+        Mom Swap: mom-swap
+        Backroom Casting Couch: backroom-casting-couch
+        Wow Girls: wow-girls
+        Fake Taxi: fake-taxi
+        Cum4K: cum4k
+        Nubile Films: nubile-films
+        POVD: povd
+        Family Strokes: family-strokes
+        Sis Loves Me: sis-loves-me
+        Teen Fidelity: teen-fidelity
 
 list:
   uri: latest-updates/{page}/
@@ -65,7 +122,77 @@ list:
 search:
   uri: search/{search}/{page}/
 
+model:
+  format: "{host}/{model.TrimEnd('/')}/{(page > 1 ? $\"{page}/\" : string.Empty)}"
+  total_pages: 777
+
 contentParse:
+  eval: |
+    string currentModelPath = System.Text.RegularExpressions.Regex.Match(
+      html,
+      "<link[^>]+rel=\"canonical\"[^>]+href=\"https?://[^/]+/(models/[^\"/]+)/(?:\\d+/)?\"",
+      System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
+    ).Groups[1].Value?.Trim();
+
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.SelectSingleNode(".//a")?.GetAttributeValue("href", null);
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+          var cache = Shared.Services.Hybrid.HybridCache.GetMemory();
+          string memKey = $"trahkino:model:v1:{href}";
+          object cached;
+
+          bool sameCurrentModel(ModelItem item)
+          {
+            if (item == null || string.IsNullOrEmpty(currentModelPath))
+              return false;
+
+            string uri = item.uri ?? string.Empty;
+            string modelHref = Shared.Services.Utilities.AesTo.Decrypt(
+              System.Text.RegularExpressions.Regex.Match(uri, "model=([^&]+)").Groups[1].Value
+            ) ?? string.Empty;
+
+            return modelHref.Trim('/').Equals(currentModelPath.Trim('/'), System.StringComparison.OrdinalIgnoreCase);
+          }
+
+          if (cache.TryGetValue(memKey, out cached))
+          {
+            if (cached is ModelItem modelItem)
+            {
+              if (!sameCurrentModel(modelItem))
+                pl.model = modelItem;
+            }
+            else if (cached is System.Collections.Generic.List<ModelItem> modelItems)
+            {
+              foreach (var item in modelItems)
+              {
+                if (!sameCurrentModel(item))
+                {
+                  pl.model = item;
+                  break;
+                }
+              }
+            }
+          }
+          else
+          {
+            pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+
+            if (!string.IsNullOrEmpty(currentModelPath))
+              pl.myarg += $"&current={Shared.Services.Utilities.AesTo.Encrypt(currentModelPath)}";
+          }
+        }
+      }
+      catch { }
+    }
+
+    return pl;
   nodes: //div[@class='item ']
   name:
     node: .//strong

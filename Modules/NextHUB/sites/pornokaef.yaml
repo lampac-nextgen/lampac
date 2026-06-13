@@ -60,6 +60,35 @@ menu:
     Двойное проникновение: dvojnoe-proniknovenie
     Свингеры: svingery
     Секс-игрушки: seks-igrushki
+  customs:
+    - name: Студии
+      arg: studio
+      format: "channels/{value}/{page}"
+      submenu:
+        Brazzers: brazzers
+        Public Agent: public-agent
+        Mom XXX: mom-xxx
+        Blacked: blacked
+        Oldje: oldje
+        Pure Mature: pure-mature
+        21 Sextreme: 21-sextreme
+        Wow Girls: wow-girls
+        Bang Bros Network: bang-bros-network
+        Tushy: tushy
+        Mature NL: mature-nl
+        Asian Street Meat: asian-street-meat
+        Lusty Grandmas: lusty-grandmas
+        Reality Kings: reality-kings
+        Naughty America: naughty-america
+        Young Sex Parties: young-sex-parties
+        My Friends Hot Mom: my-friends-hot-mom
+        Dogfart Network: dogfart-network
+        LetsDoeIt: letsdoeit
+        Rocco Siffredi: rocco-siffredi
+        18 Videoz: 18-videoz
+        NF Busty: nf-busty
+        Teen Erotica: teen-erotica
+        Bratty Sis: bratty-sis
 
 list:
   uri: "{page}"
@@ -67,7 +96,37 @@ list:
 search:
   uri: videos/{search}/{page}
 
+model:
+  format: "{host}/{model.Trim('/')}{(page > 1 ? $\"/{page}\" : string.Empty)}"
+  total_pages: 777
+
 contentParse:
+  eval: |
+    string currentModelPath = System.Text.RegularExpressions.Regex.Match(
+      html,
+      "<link[^>]+rel=\"canonical\"[^>]+href=\"https?://[^/]+/(model/[^\"/]+)(?:/\\d+)?\"",
+      System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
+    ).Groups[1].Value?.Trim();
+
+    try
+    {
+      string href = row.SelectSingleNode(".//a[@class='thumb']")?.GetAttributeValue("href", null)
+        ?? row.SelectSingleNode(".//a")?.GetAttributeValue("href", null);
+
+      if (!string.IsNullOrEmpty(href))
+      {
+        if (!href.StartsWith("http"))
+          href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+        pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+
+        if (!string.IsNullOrEmpty(currentModelPath))
+          pl.myarg += $"&current={Shared.Services.Utilities.AesTo.Encrypt(currentModelPath)}";
+      }
+    }
+    catch { }
+
+    return pl;
   nodes: //div[@class='video-container itemized is-wide']
   name:
     node: .//div[@class='thumb-title']

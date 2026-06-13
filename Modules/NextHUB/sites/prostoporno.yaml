@@ -11,6 +11,9 @@ menu:
     sort: "{host}/{sort}/{page}/"
     cat: "{host}/categories/{cat}/{page}/"
     catsort: '{host}/categories/{cat}/{sort.Replace("best", "top-rated")}/week/{page}/'
+    model: "{host}/{model.Trim('/')}"
+    modelsort: "{host}/{model.Trim('/')}"
+    -: "{url}"
   sort:
     Новинки: ""
     Популярнаe: best
@@ -104,7 +107,38 @@ list:
 search:
   uri: albums/search/{search}/{page}/
 
+model:
+  total_pages: 1
+
 contentParse:
+  eval: |
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.SelectSingleNode(".//a")?.GetAttributeValue("href", null);
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"https://prostoporno.red{href}" : $"https://prostoporno.red/{href}";
+
+          var cache = Shared.Services.Hybrid.HybridCache.GetMemory();
+          string memKey = $"prostoporno:model:v2:{href}";
+          object cached;
+
+          if (cache.TryGetValue(memKey, out cached) && cached is ModelItem modelItem)
+          {
+            pl.model = modelItem;
+          }
+          else
+          {
+            pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+          }
+        }
+      }
+      catch { }
+    }
+    return pl;
   nodes: //div[@class='thumb']
   name:
     node: .//strong

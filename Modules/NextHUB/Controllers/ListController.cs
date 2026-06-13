@@ -15,9 +15,32 @@ using System.Web;
 
 namespace NextHUB;
 
-public class ListController : BaseSisiController<NxtSettings>
+public partial class ListController : BaseSisiController<NxtSettings>
 {
     public ListController() : base(default) { }
+
+    [HttpGet]
+    [Route("nexthub/model")]
+    async public Task<ActionResult> Model(string plugin, string href, string current)
+    {
+        plugin = DecryptQuery(plugin);
+        href = DecryptQuery(href);
+        current = string.IsNullOrEmpty(current) ? null : DecryptQuery(current);
+
+        var _nxtInit = Root.goInit(plugin);
+        if (_nxtInit == null)
+            return Json(new { model = default(ModelItem) });
+
+        if (string.IsNullOrWhiteSpace(href))
+            return Json(new { model = default(ModelItem) });
+
+        if (await IsRequestBlocked(_nxtInit, rch: _nxtInit.rch_access != null))
+            return badInitMsg;
+
+        var models = await new ModelProbeResolver(init.host).Resolve(plugin, href, current);
+
+        return Json(new { model = models?.FirstOrDefault(), models });
+    }
 
     [HttpGet, Staticache]
     [Route("nexthub")]
@@ -42,7 +65,11 @@ public class ListController : BaseSisiController<NxtSettings>
         if (init.menu?.customs != null)
         {
             foreach (var item in init.menu.customs)
-                semaphoreKey += $":{HttpContext.Request.Query[item.arg]}";
+            {
+                string argvalue = CustomQueryValue(item.arg);
+                if (!string.IsNullOrEmpty(argvalue))
+                    semaphoreKey += $":{item.arg}:{argvalue}";
+            }
         }
 
     rhubFallback:
@@ -76,11 +103,12 @@ public class ListController : BaseSisiController<NxtSettings>
         if (IsRhubFallback(cache))
             goto rhubFallback;
 
-        var menu = new List<MenuItem>(3);
+        bool nomenu = HttpContext.Request.Query.ContainsKey("nomenu");
+        var menu = nomenu ? null : new List<MenuItem>(3);
         bool usedRoute = init.menu?.route != null || init.route?.eval != null;
 
         #region search
-        if (string.IsNullOrEmpty(model) && init.search?.uri != null)
+        if (!nomenu && string.IsNullOrEmpty(model) && init.search?.uri != null)
         {
             menu.Add(new MenuItem()
             {
@@ -92,7 +120,7 @@ public class ListController : BaseSisiController<NxtSettings>
         #endregion
 
         #region sort
-        if (string.IsNullOrEmpty(search) && init.menu?.sort != null)
+        if (!nomenu && string.IsNullOrEmpty(search) && init.menu?.sort != null)
         {
             var msort = new MenuItem()
             {
@@ -118,7 +146,7 @@ public class ListController : BaseSisiController<NxtSettings>
         #endregion
 
         #region categories
-        if (string.IsNullOrEmpty(search) && string.IsNullOrEmpty(model) && init.menu?.categories != null)
+        if (!nomenu && string.IsNullOrEmpty(search) && string.IsNullOrEmpty(model) && init.menu?.categories != null)
         {
             var categories = init.menu.categories.Where(i => i.Key != "format");
 
@@ -146,11 +174,16 @@ public class ListController : BaseSisiController<NxtSettings>
         #endregion
 
         #region custom categories
-        if (string.IsNullOrEmpty(search) && string.IsNullOrEmpty(model) && init.menu?.customs != null)
+        if (!nomenu && string.IsNullOrEmpty(search) && init.menu?.customs != null)
         {
             foreach (var custom in init.menu.customs)
             {
-                string argvalue = HttpContext.Request.Query[custom.arg];
+                if (!ShouldShowCustomMenu(custom, model))
+                    continue;
+
+                string argvalue = string.Equals(custom.arg, "model", StringComparison.OrdinalIgnoreCase)
+                    ? model
+                    : CustomQueryValue(custom.arg);
 
                 var mcat = new MenuItem()
                 {
@@ -185,290 +218,34 @@ public class ListController : BaseSisiController<NxtSettings>
         #endregion
 
         return PlaylistResult(cache,
-            menu.Count == 0 ? null : menu,
+            menu?.Count == 0 ? null : menu,
             total_pages: total_pages
         );
     }
 
-
-    #region goPlaylist
-    public static List<PlaylistItem> goPlaylist(RequestModel requestInfo, string host, ContentParseSettings parse, NxtSettings init, string html, RecyclableMemoryStream msm, string plugin)
+    static bool ShouldShowCustomMenu(CustomCategories custom, string model)
     {
-        if (parse == null)
-            return null;
+        if (custom?.submenu == null)
+            return false;
 
-        #region HtmlDocument
-        var doc = new HtmlDocument();
+        if (string.IsNullOrEmpty(model))
+            return true;
 
-        if (msm != null && msm.Length > 0)
-        {
-            doc.Load(msm);
-
-            if (init.debug)
-                Console.WriteLine(Encoding.UTF8.GetString(msm.ToArray()));
-
-            msm.Position = 0;
-        }
-        else
-        {
-            if (string.IsNullOrEmpty(html))
-                return null;
-
-            if (init.debug)
-                Console.WriteLine(html);
-
-            doc.LoadHtml(html);
-        }
-        #endregion
-
-        #region eval
-        string eval = parse.eval;
-        if (!string.IsNullOrEmpty(eval) && eval.EndsWith(".ncs"))
-            eval = FileCache.ReadAllText($"{ModInit.modpath}/sites/{eval}");
-
-        if (string.IsNullOrEmpty(parse.nodes))
-        {
-            if (string.IsNullOrEmpty(eval))
-                return null;
-
-            if (msm != null && msm.Length > 0)
-                html = OwnerTo.String(msm, Encoding.UTF8);
-
-            return CSharpEval.Execute<List<PlaylistItem>>(eval, new NxtPlaylist(init, plugin, host, html, doc, new List<PlaylistItem>()), Root.playlistOptions);
-        }
-        #endregion
-
-        var nodes = doc.DocumentNode.SelectNodes(parse.nodes);
-        if (nodes == null || nodes.Count == 0)
-            return null;
-
-        var playlists = new List<PlaylistItem>(nodes.Count);
-
-        foreach (var row in nodes)
-        {
-            #region nodeValue
-            string nodeValue(SingleNodeSettings nd)
-            {
-                string value = null;
-
-                if (nd != null)
-                {
-                    if (string.IsNullOrEmpty(nd.node) && (!string.IsNullOrEmpty(nd.attribute) || nd.attributes != null))
-                    {
-                        if (nd.attributes != null)
-                        {
-                            foreach (var attr in nd.attributes)
-                            {
-                                var attrValue = row.GetAttributeValue(attr, null);
-                                if (!string.IsNullOrEmpty(attrValue))
-                                {
-                                    value = attrValue;
-                                    break;
-                                }
-                            }
-                        }
-                        else
-                        {
-                            value = row.GetAttributeValue(nd.attribute, null);
-                        }
-                    }
-                    else
-                    {
-                        var inNode = row.SelectSingleNode(nd.node);
-                        if (inNode != null)
-                        {
-                            if (nd.attributes != null)
-                            {
-                                foreach (var attr in nd.attributes)
-                                {
-                                    var attrValue = inNode.GetAttributeValue(attr, null);
-                                    if (!string.IsNullOrEmpty(attrValue))
-                                    {
-                                        value = attrValue;
-                                        break;
-                                    }
-                                }
-                            }
-                            else
-                            {
-                                value = (!string.IsNullOrEmpty(nd.attribute) ? inNode.GetAttributeValue(nd.attribute, null) : inNode.InnerText)?.Trim();
-                            }
-                        }
-                    }
-                }
-
-                if (string.IsNullOrEmpty(value))
-                    return null;
-
-                if (nd.format != null)
-                    return CSharpEval.Execute<string>($"return $\"{nd.format}\";", new NxtNodeValue(value, host));
-
-                return value;
-            }
-            #endregion
-
-            string name = nodeValue(parse.name);
-            string href = nodeValue(parse.href);
-            string img = nodeValue(parse.img);
-            string duration = nodeValue(parse.duration);
-            string quality = nodeValue(parse.quality);
-            string preview = nodeValue(parse.preview);
-
-            #region model
-            ModelItem model = null;
-            if (parse.model != null)
-            {
-                string mname = nodeValue(parse.model.name);
-                string mhref = nodeValue(parse.model.href);
-
-                if (!string.IsNullOrEmpty(mname) && !string.IsNullOrEmpty(mhref))
-                {
-                    model = new ModelItem()
-                    {
-                        name = mname,
-                        uri = $"nexthub?plugin={AesTo.Encrypt(plugin)}&model={AesTo.Encrypt(mhref)}"
-                    };
-                }
-            }
-            #endregion
-
-            #region args
-            string args = string.Empty;
-
-            if (parse.args != null)
-            {
-                foreach (var a in parse.args)
-                {
-                    string arg = nodeValue(a);
-                    if (!string.IsNullOrEmpty(arg))
-                        args += $"&{a.name}={AesTo.Encrypt(arg)}";
-                }
-            }
-            #endregion
-
-            if (init.debug)
-                Console.WriteLine($"\n\nname: {name}\nhref: {href}\nimg: {img}\nduration: {duration}\nquality: {quality}\nmyarg: {args}\n\n{row.OuterHtml}");
-
-            if (!string.IsNullOrWhiteSpace(name) && !string.IsNullOrWhiteSpace(href))
-            {
-                #region href
-                if (href.StartsWith("../"))
-                    href = $"{init.host}/{href.Replace("../", "")}";
-                else if (href.StartsWith("//"))
-                    href = $"https:{href}";
-                else if (href.StartsWith("/"))
-                    href = init.host + href;
-                else if (!href.StartsWith("http"))
-                    href = $"{init.host}/{href}";
-                #endregion
-
-                #region img
-                if (img != null)
-                {
-                    img = img.Replace("&amp;", "&").Replace("\\", "");
-
-                    if (img.StartsWith("../"))
-                        img = $"{init.host}/{img.Replace("../", "")}";
-                    else if (img.StartsWith("//"))
-                        img = $"https:{img}";
-                    else if (img.StartsWith("/"))
-                        img = init.host + img;
-                    else if (!img.StartsWith("http"))
-                        img = $"{init.host}/{img}";
-                }
-                #endregion
-
-                if (!init.ignore_no_picture && string.IsNullOrEmpty(img))
-                    continue;
-
-                #region preview
-                if (preview != null)
-                {
-                    if (preview.Contains("&amp;"))
-                        preview = preview.Replace("&amp;", "&");
-
-                    if (preview.Contains("\\"))
-                        preview = preview.Replace("\\", "");
-
-                    if (preview.StartsWith("../"))
-                        preview = $"{init.host}/{preview.Replace("../", "")}";
-                    else if (preview.StartsWith("//"))
-                        preview = $"https:{preview}";
-                    else if (preview.StartsWith("/"))
-                        preview = init.host + preview;
-                    else if (!preview.StartsWith("http"))
-                        preview = $"{init.host}/{preview}";
-
-                    if (init.streamproxy_preview)
-                    {
-                        preview = ProxyLink.Encrypt(
-                            preview,
-                            string.Empty,
-                            verifyip: false,
-                            ex: DateTime.Today.AddDays(2),
-                            prefix: [host, "/proxy/"]
-                        );
-                    }
-                }
-                #endregion
-
-                string clearText(string text)
-                {
-                    if (string.IsNullOrEmpty(text))
-                        return text;
-
-                    text = text.Replace("&nbsp;", "");
-                    return Regex.Replace(text, "<[^>]+>", "");
-                }
-
-                var pl = new PlaylistItem()
-                {
-                    name = clearText(name),
-                    video = $"nexthub/vidosik?uri={AesTo.Encrypt($"{plugin}_-:-_{href}")}" + args,
-                    preview = preview,
-                    picture = img,
-                    time = clearText(duration),
-                    quality = clearText(quality),
-                    myarg = args,
-                    json = parse.json,
-                    related = init.view != null ? init.view.related : false,
-                    model = model,
-                    bookmark = new Bookmark()
-                    {
-                        site = "nexthub",
-                        href = $"{plugin}_-:-_{href}",
-                        image = img
-                    }
-                };
-
-                #region eval
-                if (eval != null)
-                {
-                    if (msm != null && msm.Length > 0)
-                        html = OwnerTo.String(msm, Encoding.UTF8);
-
-                    pl = CSharpEval.Execute<PlaylistItem>(eval, new NxtChangePlaylis(init, plugin, host, html, nodes, pl, row), Root.playlistOptions);
-                }
-                #endregion
-
-                if (pl.json == false && (init.streamproxy || (init.geostreamproxy != null && requestInfo.Country != null && init.geostreamproxy.Contains(requestInfo.Country))))
-                {
-                    pl.video = ProxyLink.Encrypt(
-                        pl.video,
-                        requestInfo.IP,
-                        init.headersList,
-                        prefix: [host, "/proxy/"]
-                    );
-                }
-
-                if (pl != null)
-                    playlists.Add(pl);
-            }
-        }
-
-        return playlists;
+        return string.Equals(custom.arg, "model", StringComparison.OrdinalIgnoreCase) &&
+               custom.submenu.Values.Any(i => string.Equals(i, model, StringComparison.OrdinalIgnoreCase));
     }
-    #endregion
+
+    string CustomQueryValue(string arg)
+    {
+        if (string.IsNullOrEmpty(arg) || !HttpContext.Request.Query.ContainsKey(arg))
+            return null;
+
+        string value = HttpContext.Request.Query[arg];
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        return DecryptQuery(value) ?? value;
+    }
 
     #region ContentAsync
     async Task<string> ContentAsync(NxtSettings init, string url, IReadOnlyList<HeadersModel> headers, (string ip, string username, string password) proxy, string search, string sort, string cat, string model, int pg)
@@ -617,8 +394,9 @@ public class ListController : BaseSisiController<NxtSettings>
             {
                 foreach (var c in init.menu.customs)
                 {
-                    if (HttpContext.Request.Query.ContainsKey(c.arg))
-                        url = $"{init.host}/{c.format.Replace("{value}", HttpContext.Request.Query[c.arg])}";
+                    string argvalue = CustomQueryValue(c.arg);
+                    if (!string.IsNullOrWhiteSpace(argvalue))
+                        url = $"{init.host}/{c.format.Replace("{value}", argvalue)}";
                 }
             }
 

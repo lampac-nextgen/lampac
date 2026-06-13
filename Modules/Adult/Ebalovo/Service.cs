@@ -10,6 +10,7 @@ using Shared.Services.RxEnumerate;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web;
 
@@ -18,14 +19,19 @@ namespace Ebalovo;
 public static class EbalovoTo
 {
     #region Uri
-    public static string Uri(string host, string search, string sort, string c, int pg)
+    public static string Uri(string host, string search, string sort, string c, string model, int pg)
     {
         var url = StringBuilderPool.ThreadInstance;
 
         url.Append(host);
         url.Append("/");
 
-        if (!string.IsNullOrWhiteSpace(search))
+        if (!string.IsNullOrWhiteSpace(model))
+        {
+            url.Append(model.Trim('/'));
+            url.Append("/");
+        }
+        else if (!string.IsNullOrWhiteSpace(search))
         {
             url.Append("search/");
             url.Append(HttpUtility.UrlEncode(search));
@@ -113,6 +119,48 @@ public static class EbalovoTo
         }
 
         return playlists;
+    }
+    #endregion
+
+    #region Models
+    public static List<ModelItem> Models(string listUri, string html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+            return null;
+
+        string block = Regex.Match(
+            html,
+            "<span[^>]+class=\"[^\"]*link-models[^\"]*\"[^>]*>(?<body>.*?)(?=<span[^>]+class=\"[^\"]*video-link[^\"]*\"[^>]*>|</p>)",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline
+        ).Groups["body"].Value;
+
+        if (string.IsNullOrWhiteSpace(block))
+            return null;
+
+        var matches = Regex.Matches(
+            block,
+            "<a[^>]+href=\"(?:https?://[^/]+/)?(models/[^\"]+/?)\"[^>]*>([^<]+)</a\\s*>",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline
+        );
+
+        if (matches.Count == 0)
+            return null;
+
+        var models = new List<ModelItem>(matches.Count);
+        var unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Match match in matches)
+        {
+            string href = match.Groups[1].Value.Trim('/');
+            string name = HttpUtility.HtmlDecode(match.Groups[2].Value)?.Trim();
+
+            if (string.IsNullOrWhiteSpace(href) || string.IsNullOrWhiteSpace(name) || !unique.Add(href))
+                continue;
+
+            models.Add(new ModelItem(name, $"{listUri}?model={HttpUtility.UrlEncode(href)}"));
+        }
+
+        return models.Count == 0 ? null : models;
     }
     #endregion
 

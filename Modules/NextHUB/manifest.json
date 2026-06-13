@@ -2,6 +2,7 @@
   "enable": true,
   "tree": [
     "Controllers",
+    "Services",
     "GlobalUsings.cs",
     "ModInit.cs",
     "ModuleConf.cs",

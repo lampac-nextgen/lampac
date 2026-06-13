@@ -402,6 +402,7 @@ public class ViewController : BaseSisiController<NxtSettings>
                                 if (infile.EndsWith(".js"))
                                     return page.EvaluateAsync<string>($"(html, plugin, url, file) => {{ {evaluate} }}", new { _content, plugin, targetHost, cache.file });
 
+                                cache.headers ??= new List<HeadersModel>();
                                 var nxt = new NxtEvalView(init, HttpContext.Request.Query, _content, plugin, targetHost, cache.file, cache.headers, proxyManager);
                                 return CSharpEval.ExecuteAsync<string>(goEval(evaluate), nxt, Root.evalOptionsFull);
                             }
@@ -410,6 +411,7 @@ public class ViewController : BaseSisiController<NxtSettings>
                                 if (init.view.evalJS != null)
                                     return page.EvaluateAsync<string>($"(html, plugin, url, file) => {{ {init.view.evalJS} }}", new { _content, plugin, targetHost, cache.file });
 
+                                cache.headers ??= new List<HeadersModel>();
                                 var nxt = new NxtEvalView(init, HttpContext.Request.Query, _content, plugin, targetHost, cache.file, cache.headers, proxyManager);
                                 return CSharpEval.ExecuteAsync<string>(goEval(init.view.eval), nxt, Root.evalOptionsFull);
                             }
@@ -547,6 +549,7 @@ public class ViewController : BaseSisiController<NxtSettings>
             #region eval
             if (!string.IsNullOrEmpty(init.view.eval))
             {
+                cache.headers ??= new List<HeadersModel>();
                 var nxt = new NxtEvalView(init, HttpContext.Request.Query, html, plugin, url, cache.file, cache.headers, proxyManager);
                 cache.file = await CSharpEval.ExecuteAsync<string>(goEval(init.view.eval), nxt, Root.evalOptionsFull).ConfigureAwait(false);
 

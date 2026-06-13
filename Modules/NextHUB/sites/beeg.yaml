@@ -4,135 +4,306 @@ streamproxy: true
 displayindex: 280
 displayname: Beeg
 host: https://beeg.com
+priorityBrowser: http
+
+route:
+  eval: |
+    string slug = null;
+
+    var f = Regex.Match(url ?? string.Empty, "[?&]f=([^&]+)");
+    if (f.Success)
+      slug = f.Groups[1].Value;
+    else if (!string.IsNullOrWhiteSpace(model))
+      slug = model;
+    else if (!string.IsNullOrWhiteSpace(cat))
+      slug = cat;
+
+    slug = string.IsNullOrWhiteSpace(slug) ? "index" : slug;
+
+    var offset = Math.Max(0, (page - 1) * 48);
+    return $"https://store.externulls.com/tag/videos/{slug}?limit=48&offset={offset}";
 
 menu:
   categories:
     format: "?f={cat}"
-    "Wow Girls": WowGirls
-    "Bratty Sis": BrattySis
-    "Family Strokes": FamilyStrokes
-    "Nubiles Porn": NubilesPorn
-    "Adult Time": AdultTime
-    "Nubile Films": NubileFilms
-    "Blacked": Blacked
-    "Ultra Films": UltraFilms
-    "Sis Loves Me": SisLovesMe
-    "LetsDoeIt!": LetsDoeIt
-    "Tiny 4K": Tiny4K
-    "Vixen": VixenCom
-    "Team Skeet": TeamSkeet
-    "My Friend's Hot Mom": MyFriendsHotMom
-    "Pure Taboo": PureTaboo
-    "Step Siblings Caught": StepSiblingsCaught
-    "Porn Force": PornForce
-    "Dorcel Club": DorcelClub
-    "21 Naturals": 21Naturals
-    "Passion HD": PassionHD
-    "Moms Teach Sex": MomsTeachSex
-    "MYLF": MYLFCom
-    "New Sensations": NewSensations
-    "Porn World": PornWorld
-    "Bare Back Studios": BareBackStudios
-    "Teen Fidelity": TeenFidelity
-    "Family XXX": FamilyXXX
-    "Tushy": Tushy
-    "NF Busty": NFBusty
-    "My Family Pies": MyFamilyPies
-    "Cum 4K": Cum4K
-    "Exploited College Girls": ExploitedCollegeGirls
-    "Hot Wife XXX": HotWifeXXX
-    "Porn Fidelity": PornFidelity
-    "Net Video Girls": NVG
-    "White Boxxx": WhiteBoxxx
-    "Deeper": DeeperOfficial
-    "Bellesa Plus": BellesaPlus
-    "Perv Mom": PervMom
-    "My Pervy Family": MyPervyFamily
-    "Exxxtra Small": ExxxtraSmall
-    "Pure Mature": PureMature
-    "Hegre": Hegre
-    "Caribbeancom": Caribbeancom
-    "21 Sextury": 21Sextury
-    "Dad Crush": DadCrush
-    "BFFs": BFFs
-    "Tonight's Girlfriend": TonightsGirlfriend
-    "Daughter Swap": DaughterSwap
-    "Sex Art": SexArt
-    "Jav HD": JavHD
-    "FreeUse MILF": FreeUseMILF
-    "Shop Lyfter": ShopLyfter
-    "Joy Mii": JoyMii
-    "My Sister's Hot Friend": MySistersHotFriend
-    "Massage Girls 18": MassageGirls18
-    "StasyQ": StasyQ
-    "Princess Cum": PrincessCum
-    "Club Sweethearts": ClubSweethearts
-    "Blacked Raw": BlackedRaw
-    "Girl Cum": GirlCumOfficial
-    "Lubed (Com)": LubedCom
-    "Life Selector": LifeSelector
-    "Teen Mega World": TeenMegaWorld
-    "VIP 4K": VIP4K
-    "Backroom Casting Couch": BackroomCastingCouch
-    "POVD": POVD
-    "ATK Girlfriends": AtkGirlfriends
-    "Spy Fam": SpyFam
-    "Lust Cinema": LustCinema
-    "Exotic 4K": Exotic4K
-    "Nuru Massage": NuruMassage
-    "FreeUse Fantasy": FreeUseFantasy
-    "Vixen Plus": VixenPlus
-    "X Art": XArt
-    "Evil Angel": EvilAngel
-    "Erotica X": EroticaX
-    "Casting Couch X": CastingCouchX
-    "Luxure": Luxure
-    "Tushy Raw": TushyRaw
-    "My First Sex Teacher": MyFirstSexTeacher
-    "Teens Love Anal": TeensLoveAnal
-    "Girls Way": GirlsWay
-    "Naughty Office": NaughtyOffice
-    "Fit 18": Fit18
-    "Private (Com)": PrivateCom
-    "Met Art X": MetArtX
-    "Holed": Holed
-    "Mommy's Boy (Official)": MommysBoyOfficial
-    "Casting Couch HD": CastingCouchHD
-    "Teen Erotica": TeenErotica
-    "Property Sex": PropertySex
-    "Her Limit": HerLimit
-    "Mommy's Girl (Com)": MommysGirlCom
-    "Cam Soda": CamSoda
-    "Helpless Teens": HelplessTeens
-    "A Girl Knows": AGirlKnows
-    "Transfixed": Transfixed
-    "JAV Hub": JAVHub
-    "Viv Thomas": VivThomas
+    Babe: Babe
+    Anal: Anal
+    Asian: Asian
+    Blonde: Blonde
+    Blowjob: Blowjob
+    Brunette: Brunette
+    Creampie: Creampie
+    Hardcore: Hardcore
+    Interracial: Interracial
+    Lesbian: Lesbian
+    MILF: MILF
+    Mature: Mature
+    POV: POV
+    Redhead: Redhead
+    Teen: Teen
+    "Big Ass": BigAss
+    "Big Tits": BigTits
+    Threesome: Threesome
+    Pornstar: Pornstar
+    Squirting: Squirting
+    Cumshot: Cumshot
+    Orgy: Orgy
+  customs:
+    - name: Студии
+      arg: studio
+      format: "?f={value}"
+      submenu:
+        "Wow Girls": WowGirls
+        "Bratty Sis": BrattySis
+        "Family Strokes": FamilyStrokes
+        "Nubiles Porn": NubilesPorn
+        "Adult Time": AdultTime
+        "Nubile Films": NubileFilms
+        "Blacked": Blacked
+        "Ultra Films": UltraFilms
+        "Sis Loves Me": SisLovesMe
+        "LetsDoeIt!": LetsDoeIt
+        "Tiny 4K": Tiny4K
+        "Vixen": VixenCom
+        "Team Skeet": TeamSkeet
+        "My Friend's Hot Mom": MyFriendsHotMom
+        "Pure Taboo": PureTaboo
+        "Step Siblings Caught": StepSiblingsCaught
+        "Porn Force": PornForce
+        "Dorcel Club": DorcelClub
+        "21 Naturals": 21Naturals
+        "Passion HD": PassionHD
+        "Moms Teach Sex": MomsTeachSex
+        "MYLF": MYLFCom
+        "New Sensations": NewSensations
+        "Porn World": PornWorld
+        "Bare Back Studios": BareBackStudios
+        "Teen Fidelity": TeenFidelity
+        "Family XXX": FamilyXXX
+        "Tushy": Tushy
+        "NF Busty": NFBusty
+        "My Family Pies": MyFamilyPies
+        "Cum 4K": Cum4K
+        "Exploited College Girls": ExploitedCollegeGirls
+        "Hot Wife XXX": HotWifeXXX
+        "Porn Fidelity": PornFidelity
+        "Net Video Girls": NVG
+        "White Boxxx": WhiteBoxxx
+        "Deeper": DeeperOfficial
+        "Bellesa Plus": BellesaPlus
+        "Perv Mom": PervMom
+        "My Pervy Family": MyPervyFamily
+        "Exxxtra Small": ExxxtraSmall
+        "Pure Mature": PureMature
+        "Hegre": Hegre
+        "Caribbeancom": Caribbeancom
+        "21 Sextury": 21Sextury
+        "Dad Crush": DadCrush
+        "BFFs": BFFs
+        "Tonight's Girlfriend": TonightsGirlfriend
+        "Daughter Swap": DaughterSwap
+        "Sex Art": SexArt
+        "Jav HD": JavHD
+        "FreeUse MILF": FreeUseMILF
+        "Shop Lyfter": ShopLyfter
+        "Joy Mii": JoyMii
+        "My Sister's Hot Friend": MySistersHotFriend
+        "Massage Girls 18": MassageGirls18
+        "StasyQ": StasyQ
+        "Princess Cum": PrincessCum
+        "Club Sweethearts": ClubSweethearts
+        "Blacked Raw": BlackedRaw
+        "Girl Cum": GirlCumOfficial
+        "Lubed (Com)": LubedCom
+        "Life Selector": LifeSelector
+        "Teen Mega World": TeenMegaWorld
+        "VIP 4K": VIP4K
+        "Backroom Casting Couch": BackroomCastingCouch
+        "POVD": POVD
+        "ATK Girlfriends": AtkGirlfriends
+        "Spy Fam": SpyFam
+        "Lust Cinema": LustCinema
+        "Exotic 4K": Exotic4K
+        "Nuru Massage": NuruMassage
+        "FreeUse Fantasy": FreeUseFantasy
+        "Vixen Plus": VixenPlus
+        "X Art": XArt
+        "Evil Angel": EvilAngel
+        "Erotica X": EroticaX
+        "Casting Couch X": CastingCouchX
+        "Luxure": Luxure
+        "Tushy Raw": TushyRaw
+        "My First Sex Teacher": MyFirstSexTeacher
+        "Teens Love Anal": TeensLoveAnal
+        "Girls Way": GirlsWay
+        "Naughty Office": NaughtyOffice
+        "Fit 18": Fit18
+        "Private (Com)": PrivateCom
+        "Met Art X": MetArtX
+        "Holed": Holed
+        "Mommy's Boy (Official)": MommysBoyOfficial
+        "Casting Couch HD": CastingCouchHD
+        "Teen Erotica": TeenErotica
+        "Property Sex": PropertySex
+        "Her Limit": HerLimit
+        "Mommy's Girl (Com)": MommysGirlCom
+        "Cam Soda": CamSoda
+        "Helpless Teens": HelplessTeens
+        "A Girl Knows": AGirlKnows
+        "Transfixed": Transfixed
+        "JAV Hub": JAVHub
+        "Viv Thomas": VivThomas
+    - name: Страны
+      arg: country
+      format: "?f={value}"
+      submenu:
+        British: British
+        Russian: Russian
+        Japanese: Japanese
+        German: German
+        French: French
+        Italian: Italian
+        Spanish: Spanish
+        Chinese: Chinese
+        Korean: Korean
+        Indian: Indian
+        Czech: Czech
+        Ukrainian: Ukrainian
+        Brazilian: Brazilian
+        Hungarian: Hungarian
+        Polish: Polish
 
 list:
   uri: ""
   viewsource: false
-  waitForSelector: .tw-relative.core-page__units-grid
-  routeEval: |
-    if (route.Request.Url.Contains("&limit=48&offset=0")) {
-      await route.ContinueAsync(new RouteContinueOptions { Url = route.Request.Url.Replace("&offset=0", $"&offset={page * 48}"), PostData = null, Headers = null });
-      return false; // не продолжать запрос внутри NextHUB
-    }
-    return true;
 
 contentParse:
-  nodes: //div[contains(@class, 'core-page__unit-column')]
-  name:
-    node: .//div[@data-testid='unit-title']
-  href:
-    node: .//a
-    attribute: href
-  img:
-    node: .//img
-    attribute: src
-  duration:
-    node: .//span[@data-testid='unit-amount']
+  eval: |
+    string FormatDuration(long seconds)
+    {
+      if (seconds <= 0) return null;
+      var ts = TimeSpan.FromSeconds(seconds);
+      return ts.TotalHours >= 1 ? ts.ToString(@"h\:mm\:ss") : ts.ToString(@"m\:ss");
+    }
 
+    var jd = System.Text.Json.JsonDocument.Parse(html);
+    if (jd.RootElement.ValueKind != System.Text.Json.JsonValueKind.Array)
+      return playlists;
+
+    foreach (var item in jd.RootElement.EnumerateArray())
+    {
+      if (!item.TryGetProperty("file", out var file) || file.ValueKind != System.Text.Json.JsonValueKind.Object)
+        continue;
+
+      string name = null;
+      if (file.TryGetProperty("data", out var data) && data.ValueKind == System.Text.Json.JsonValueKind.Array && data.GetArrayLength() > 0)
+      {
+        var first = data[0];
+        if (first.ValueKind == System.Text.Json.JsonValueKind.Object && first.TryGetProperty("cd_value", out var cdValue))
+          name = cdValue.GetString();
+      }
+
+      if (string.IsNullOrWhiteSpace(name))
+        continue;
+
+      string multi = null;
+      if (file.TryGetProperty("hls_resources", out var hls) && hls.ValueKind == System.Text.Json.JsonValueKind.Object && hls.TryGetProperty("fl_cdn_multi", out var flMulti))
+        multi = flMulti.GetString();
+
+      if (string.IsNullOrWhiteSpace(multi))
+        continue;
+
+      long fileId = 0;
+      if (file.TryGetProperty("id", out var fileIdNode) && fileIdNode.ValueKind == System.Text.Json.JsonValueKind.Number)
+        fileId = fileIdNode.GetInt64();
+
+      if (fileId <= 0)
+        continue;
+
+      long durationSec = 0;
+      if (file.TryGetProperty("fl_duration", out var durNode) && durNode.ValueKind == System.Text.Json.JsonValueKind.Number)
+        durationSec = durNode.GetInt64();
+
+      string quality = null;
+      if (file.TryGetProperty("fl_height", out var hNode) && hNode.ValueKind == System.Text.Json.JsonValueKind.Number)
+        quality = $"{hNode.GetInt32()}p";
+
+      long thumbOffset = 0;
+      if (item.TryGetProperty("fc_facts", out var facts) && facts.ValueKind == System.Text.Json.JsonValueKind.Array && facts.GetArrayLength() > 0)
+      {
+        var fact = facts[0];
+        if (fact.ValueKind == System.Text.Json.JsonValueKind.Object && fact.TryGetProperty("fc_thumbs", out var thumbs) && thumbs.ValueKind == System.Text.Json.JsonValueKind.Array && thumbs.GetArrayLength() > 0)
+        {
+          var thumbNode = thumbs[0];
+          if (thumbNode.ValueKind == System.Text.Json.JsonValueKind.Number)
+            thumbOffset = thumbNode.GetInt64();
+        }
+      }
+
+      string personName = null;
+      string personSlug = null;
+      string ownerName = null;
+      string ownerSlug = null;
+      if (item.TryGetProperty("tags", out var tags) && tags.ValueKind == System.Text.Json.JsonValueKind.Array)
+      {
+        foreach (var tag in tags.EnumerateArray())
+        {
+          string tagName = tag.TryGetProperty("tg_name", out var tgName) ? tgName.GetString() : null;
+          string tagSlug = tag.TryGetProperty("tg_slug", out var tgSlug) ? tgSlug.GetString() : null;
+
+          if (string.IsNullOrWhiteSpace(tagName) || string.IsNullOrWhiteSpace(tagSlug))
+            continue;
+
+          if (personName == null && tag.TryGetProperty("is_person", out var isPerson) && isPerson.ValueKind == System.Text.Json.JsonValueKind.True)
+          {
+            personName = tagName;
+            personSlug = tagSlug;
+          }
+
+          if (ownerName == null && tag.TryGetProperty("is_owner", out var isOwner) && isOwner.ValueKind == System.Text.Json.JsonValueKind.True)
+          {
+            ownerName = tagName;
+            ownerSlug = tagSlug;
+          }
+        }
+      }
+
+      string modelName = personName ?? ownerName;
+      string modelSlug = personSlug ?? ownerSlug;
+      ModelItem modelItem = null;
+      if (!string.IsNullOrWhiteSpace(modelName) && !string.IsNullOrWhiteSpace(modelSlug))
+      {
+        modelItem = new ModelItem()
+        {
+          name = modelName,
+          uri = $"nexthub?plugin={AesTo.Encrypt(plugin)}&cat={AesTo.Encrypt(modelSlug)}"
+        };
+      }
+
+      string href = $"{init.host}/-0{fileId}";
+      string picture = $"https://thumbs.externulls.com/videos/{fileId}/{thumbOffset}.webp?size=480x270";
+      string stream = $"nexthub/vidosik?uri={AesTo.Encrypt($"{plugin}_-:-_{href}")}";
+
+      playlists.Add(new PlaylistItem()
+      {
+        name = name,
+        video = stream,
+        picture = picture,
+        time = FormatDuration(durationSec),
+        quality = quality,
+        json = true,
+        related = false,
+        model = modelItem,
+        bookmark = new Bookmark()
+        {
+          site = "nexthub",
+          href = $"{plugin}_-:-_{href}",
+          image = picture
+        }
+      });
+    }
+
+    return playlists;
 view:
   viewsource: true
   initUrlEval: |
@@ -140,4 +311,3 @@ view:
   regexMatch:
     format: "https://video.externulls.com/{value}#.m3u8"
     pattern: '"fl_cdn_multi": ?"([^"]+)"'
-    

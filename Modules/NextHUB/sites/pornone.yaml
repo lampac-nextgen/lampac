@@ -8,6 +8,23 @@ host: https://pornone.com
 ignore_no_picture: false
 priorityBrowser: http
 
+route:
+  eval: |
+    if (model != null)
+    {
+      if (model.Contains("suche?q=") || model.Contains("search?q="))
+        return page == 1 ? $"{host}/{model.TrimStart('/')}" : $"{host}/{model.TrimStart('/')}&page={page}";
+
+      return page == 1
+        ? $"{host}/{model.TrimEnd('/')}"
+        : $"{host}/{model.TrimEnd('/')}/{page}/";
+    }
+
+    if (cat != null && sort != null) return $"{host}/{cat}/{sort}/{page}/";
+    if (cat != null) return $"{host}/{cat}/{page}/";
+    if (sort != null) return $"{host}/{sort}/week/{page}/";
+    return url;
+
 #cookies:
 #  - Domain: pornone.com
 #    Path: /
@@ -20,24 +37,13 @@ list:
 search:
   uri: search?q={search}&sort=relevance&page={page}
 
-contentParse:
-  nodes: //a[@class='popbop vidLinkFX  videocard linkage']
-  name:
-    node: .//div[@class='videotitle ']
-  href:
-    attribute: href
-  img:
-    node: .//img[contains(@class, 'lazy-loading')]
-    attribute: data-src
-  duration:
-    node: .//span[@class='durlabel']
-
 view:
   related: true
   bindingToIP: true
   viewsource: true
-  regexMatch:
-    pattern: '<source src="([^\"]+)"'
+  nodeFile:
+    node: //source
+    attribute: src
     
 #view:
 #  related: true
@@ -50,10 +56,6 @@ view:
 #    attribute: src
 
 menu:
-  route:
-    sort: "{host}/{sort}/week/{page}/"
-    cat: "{host}/{cat}/{page}/"
-    catsort: "{host}/{cat}/{sort}/{page}/"
   sort:
     Новинки: ""
     Популярные: rating
@@ -566,3 +568,87 @@ menu:
     Yoga: yoga
     Zambian: zambian
     Zimbabwean: zimbabwean
+
+model:
+  total_pages: 777
+
+contentParse:
+  eval: |
+    string currentModelPath = System.Text.RegularExpressions.Regex.Match(
+      html,
+      "https?://[^/]+/(de/[^\"/]+-porn-videos-[0-9]+/)",
+      System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
+    ).Groups[1].Value?.Trim();
+
+    string currentSearchPath = System.Text.RegularExpressions.Regex.Match(
+      html,
+      "<link[^>]+rel=\"canonical\"[^>]+href=\"https?://[^/]+/(de/(?:suche|search)\\?q=[^\"]+)\"",
+      System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
+    ).Groups[1].Value?.Trim();
+
+    string currentProbe = $"{currentModelPath}|{currentSearchPath}".Trim('|');
+
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.GetAttributeValue("href", null);
+
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+          var cache = Shared.Services.Hybrid.HybridCache.GetMemory();
+          string memKey = $"pornone:model:v2:{href}";
+          object cached;
+
+          bool sameCurrentModel(ModelItem item)
+          {
+            if (item == null)
+              return false;
+
+            string uri = item.uri ?? string.Empty;
+            string modelHref = Shared.Services.Utilities.AesTo.Decrypt(
+              System.Text.RegularExpressions.Regex.Match(uri, "model=([^&]+)").Groups[1].Value
+            ) ?? string.Empty;
+
+            modelHref = modelHref.Trim('/');
+
+            if (!string.IsNullOrEmpty(currentModelPath) && modelHref.Equals(currentModelPath.Trim('/'), System.StringComparison.OrdinalIgnoreCase))
+              return true;
+
+            if (!string.IsNullOrEmpty(currentSearchPath) && modelHref.Equals(currentSearchPath.Trim('/'), System.StringComparison.OrdinalIgnoreCase))
+              return true;
+
+            return false;
+          }
+
+          if (cache.TryGetValue(memKey, out cached) && cached is ModelItem modelItem)
+          {
+            if (!sameCurrentModel(modelItem))
+              pl.model = modelItem;
+          }
+          else
+          {
+            pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+
+            if (!string.IsNullOrEmpty(currentProbe))
+              pl.myarg += $"&current={Shared.Services.Utilities.AesTo.Encrypt(currentProbe)}";
+          }
+        }
+      }
+      catch { }
+    }
+
+    return pl;
+  nodes: //a[@class='popbop vidLinkFX  videocard linkage']
+  name:
+    node: .//div[@class='videotitle ']
+  href:
+    attribute: href
+  img:
+    node: .//img[contains(@class, 'lazy-loading')]
+    attribute: data-src
+  duration:
+    node: .//span[@class='durlabel']

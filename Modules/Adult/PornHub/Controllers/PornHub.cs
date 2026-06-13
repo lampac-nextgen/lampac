@@ -1,11 +1,13 @@
 using Microsoft.AspNetCore.Mvc;
 using Shared;
 using Shared.Attributes;
+using Shared.Models.Base;
 using Shared.Models.SISI.Base;
 using Shared.Models.SISI.OnResult;
 using Shared.Services;
 using Shared.Services.Hybrid;
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -35,7 +37,7 @@ public class PornHubController : BaseSisiController
         string plugin = Regex.Match(HttpContext.Request.Path.Value, "^/([a-z]+)").Groups[1].Value;
 
         SemaphorManager semaphore = null;
-        string semaphoreKey = $"{plugin}:list:{search}:{model}:{sort}:{c}:{pg}";
+        string semaphoreKey = $"{plugin}:list:v2:{search}:{model}:{sort}:{c}:{pg}";
 
         PlaylistAndPage cache = null;
         HybridCacheEntry<PlaylistAndPage> entryCache;
@@ -122,6 +124,45 @@ public class PornHubController : BaseSisiController
     }
 
 
+    [HttpGet]
+    [Route("phub/model")]
+    async public Task<ActionResult> Model(string vkey, string current)
+    {
+        if (await IsRequestBlocked(rch_check: false))
+            return badInitMsg;
+
+        if (string.IsNullOrWhiteSpace(vkey))
+            return Json(new { model = default(ModelItem) });
+
+        string memKey = $"phub:model:v1:{vkey}";
+        if (!hybridCache.TryGetValue(memKey, out List<ModelItem> models))
+        {
+            string url = PornHubTo.StreamLinksUri(init.host, vkey);
+            if (url == null)
+                return Json(new { model = default(ModelItem) });
+
+            var headers = httpHeaders(init, HeadersModel.Init(
+                ("user-agent", "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1"),
+                ("cookie", "platform=mobile; accessAgeDisclaimerPH=1"),
+                ("sec-fetch-dest", "document"),
+                ("sec-fetch-site", "same-origin"),
+                ("sec-fetch-mode", "navigate")
+            ));
+
+            string html = await Http.Get(init.cors(url, headers, requestInfo), timeoutSeconds: 8, proxy: proxy, httpversion: init.httpversion, headers: headers);
+            models = PornHubTo.Models("phub", html);
+
+            if (models is not { Count: > 0 })
+                return Json(new { model = default(ModelItem) });
+
+            hybridCache.Set(memKey, models, cacheTime(24 * 60));
+        }
+
+        models = PornHubTo.FilterCurrentModels(current, models);
+        return Json(new { model = models is { Count: > 0 } ? models[0] : default, models });
+    }
+
+
     [HttpGet, Staticache(manually: true)]
     [Route("phub/vidosik")]
     async public Task<ActionResult> Vidosik(string vkey, bool related)
@@ -130,7 +171,7 @@ public class PornHubController : BaseSisiController
             return badInitMsg;
 
     rhubFallback:
-        var cache = await InvokeCacheResult($"phub:vidosik:{vkey}", 20, jsonContext.StreamItem, async e =>
+        var cache = await InvokeCacheResult($"phub:vidosik:v3:{vkey}", 20, jsonContext.StreamItem, async e =>
         {
             string url = PornHubTo.StreamLinksUri(init.host, vkey);
             if (url == null)

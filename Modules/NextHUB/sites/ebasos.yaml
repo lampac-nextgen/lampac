@@ -12,6 +12,8 @@ menu:
     sort: "{host}/{sort}/{page}/"
     cat: "{host}/categories/{cat}/{page}/"
     catsort: "{host}/categories/{cat}/top/{page}/"
+    model: "{host}/{model.TrimEnd('/')}/{(page > 1 ? $\"{page}/\" : string.Empty)}"
+    modelsort: "{host}/{model.TrimEnd('/')}/{(page > 1 ? $\"{page}/\" : string.Empty)}"
   sort:
     Новое: ""
     Лучшее: top-rated
@@ -44,7 +46,39 @@ list:
 search:
   uri: search/{search}/{page}/
 
+model:
+  format: "{host}/{model.TrimEnd('/')}/{(page > 1 ? $\"{page}/\" : string.Empty)}"
+  total_pages: 777
+
 contentParse:
+  eval: |
+    string currentModelPath = System.Text.RegularExpressions.Regex.Match(
+      html,
+      "<link[^>]+rel=\"canonical\"[^>]+href=\"https?://[^/]+/(models/[^\"/]+/)\"",
+      System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
+    ).Groups[1].Value?.Trim();
+
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.SelectSingleNode(".//a")?.GetAttributeValue("href", null);
+
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+          pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+
+          if (!string.IsNullOrEmpty(currentModelPath))
+            pl.myarg += $"&current={Shared.Services.Utilities.AesTo.Encrypt(currentModelPath)}";
+        }
+      }
+      catch { }
+    }
+
+    return pl;
   nodes: //div[@id='list_videos_common_videos_list_items']//div[contains(@class, 'item')]
   name:
     node: .//span[contains(@class, 'title')]
@@ -64,4 +98,4 @@ view:
     pattern: '<iframe[^>]+ src="([^"]+)"'
   regexMatch:
     matches: ["video_url"]
-    pattern: "{value}:[\t ]+'([^']+)'" 
+    pattern: "{value}:[\t ]+'([^']+)'"

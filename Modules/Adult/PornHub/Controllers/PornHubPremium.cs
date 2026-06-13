@@ -20,7 +20,7 @@ public class PornHubPremium : BaseSisiController
         if (await IsRequestBlocked(rch: false))
             return badInitMsg;
 
-        string memKey = $"phubprem:list:{search}:{model}:{sort}:{hd}:{pg}";
+        string memKey = $"phubprem:list:v2:{search}:{model}:{sort}:{hd}:{pg}";
         if (!hybridCache.TryGetValue(memKey, out (int total_pages, List<PlaylistItem> playlists) cache))
         {
             string uri = PornHubTo.Uri(init.host, "phubprem", search, model, sort, c, hd, pg);
@@ -56,7 +56,7 @@ public class PornHubPremium : BaseSisiController
         if (await IsRequestBlocked(rch: false))
             return badInitMsg;
 
-        string memKey = $"phubprem:vidosik:{vkey}";
+        string memKey = $"phubprem:vidosik:v3:{vkey}";
         if (!hybridCache.TryGetValue(memKey, out StreamItem stream_links))
         {
             string url = PornHubTo.StreamLinksUri(init.host, vkey);

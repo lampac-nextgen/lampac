@@ -63,6 +63,27 @@ model:
   format: '{host}/search/page{page}/?s={model.Split("=")[1]}'
 
 contentParse:
+  eval: |
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.SelectSingleNode(".//h2//a")?.GetAttributeValue("href", null)
+          ?? row.SelectSingleNode(".//a[contains(@class, 'video-thumb')]")?.GetAttributeValue("href", null)
+          ?? row.SelectSingleNode(".//a")?.GetAttributeValue("href", null);
+
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+          pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+        }
+      }
+      catch { }
+    }
+
+    return pl;
   nodes: //div[contains(@class, 'card video-card')]
   name:
     node: .//h2//a

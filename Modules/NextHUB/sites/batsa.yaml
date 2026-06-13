@@ -11,6 +11,8 @@ menu:
   route:
     sort: "{host}/{sort}/monthly?page={page}"
     cat: "{host}/{cat}?page={page}"
+    model: "{host}/{model}?page={page}"
+    modelsort: '{host}/{model}/{sort.Replace("top-rated", "rated").Replace("most-popular", "views")}/total?page={page}'
     -: '{host}/{cat}/{sort.Replace("top-rated", "rated").Replace("most-popular", "views")}/monthly?page={page}'
   sort:
     Новое: ""
@@ -77,6 +79,102 @@ menu:
     Вылизывание писек: vyilizyivanie-pisek
     Крупным планом: krupnyim-planom
     Дрочка: drochka
+  customs:
+    - name: Студии
+      arg: studio
+      format: "{value}?page={page}"
+      submenu:
+        Brazzers: brazzers
+        PornHub: pornhub
+        Team Skeet: team-skeet
+        Blacked: blacked
+        MYLF: mylf
+        Pure Taboo: pure-taboo
+        OnlyFans: onlyfans
+        MissaX: missax
+        Teen Mega World: teen-mega-world
+        Naughty America: naughty-america
+        VIP4K: vip4k
+        X-Art: x-art
+        Bang Bros: bang-bros
+        Tushy: tushy
+        Reality Kings: reality-kings
+        Wifey: wifey
+        Legal Porno: legal-porno
+        Vixen: vixen
+        Blacked Raw: blacked-raw
+        Mom Lover: mom-lover
+        Sex Art: sex-art
+        21 Naturals: 21-naturals
+        Nubiles: nubiles
+        Digital Playground: digital-playground
+        Mofos: mofos
+        Tiny 4K: tiny-4k
+        Babes: babes
+        Wow Porn Girls: wow-porn-girls
+        DDF Network: ddf-network
+        Deeper: deeper
+        Tushy Raw: tushy-raw
+        Brutal X: brutal-x
+        21 Sextury: 21-sextury
+        New Sensations: new-sensations
+        Jules Jordan: jules-jordan
+        Passion-HD: passion-hd
+        MILFY: milfy
+        JoyMii: joymii
+        PornBox: pornbox
+        LetsDoeIt: letsdoeit
+        HardX: hardx
+        21 seXtreme: 21-sextreme
+        SexMex: sexmex
+        PlayBoy: playboy
+        KINK: kink
+        Evil Angel: evil-angel
+        Erotica X: erotica-x
+        Property Sex: property-sex
+        Penthouse: penthouse
+        Wicked: wicked
+        Premium: premium
+        MomXXX: momxxx
+        Porn World: porn-world
+        Spizoo: spizoo
+        DogFart: dogfart
+        UltraFilms: ultrafilms
+        Twistys: twistys
+        Anal 4K: anal-4k
+        Porn Doe Premium: porn-doe-premium
+        Holed: holed
+        Lubed: lubed
+        Teens Love Black Cocks: teens-love-black-cocks
+        Colette: colette
+        TeenCreeper: teencreeper
+        Exotic 4K: exotic-4k
+        All Fine Girls: all-fine-girls
+        Dark X: dark-x
+        Porn Pros: porn-pros
+        Xvideos: xvideos
+        GirlsWay: girlsway
+        Slayed: slayed
+        Burning Angel: burning-angel
+        POVD: povd
+        Fantasy HD: fantasy-hd
+        ZTOD: ztod
+        ScoreLand: scoreland
+        FakeHub: fakehub
+        PlumperPass: plumperpass
+        CumLouder: cumlouder
+        MetArt: metart
+        ArabsExposed: arabsexposed
+        DaneJones: danejones
+        Heyzo: heyzo
+        Deflorian: deflorian
+        JoyBear: joybear
+        MyPervyFamily: mypervyfamily
+        AdultTime: adulttime
+        OldGoesYoung: oldgoesyoung
+        Hustler: hustler
+        Enjoyx: enjoyx
+        OnlyTarts: onlytarts
 
 list:
   uri: "?page={page}"
@@ -85,7 +183,52 @@ search:
   uri: "search?q={search}"
   total_pages: 1
 
+model:
+  uri: "{host}/{model}?page={page}"
+  total_pages: 777
+
 contentParse:
+  eval: |
+    string currentHeading = Regex.Match(
+      html,
+      "<div class=\"heading\">\\s*<h1>([^<]+)</h1>",
+      RegexOptions.IgnoreCase | RegexOptions.Singleline
+    ).Groups[1].Value?.Trim();
+
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.SelectSingleNode(".//a[1]")?.GetAttributeValue("href", null);
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+          var cache = Shared.Services.Hybrid.HybridCache.GetMemory();
+          string memKey = $"batsa:model:v1:{href}";
+          object cached;
+
+          if (cache.TryGetValue(memKey, out cached) && cached is ModelItem modelItem)
+          {
+            pl.model = modelItem;
+          }
+          else
+          {
+            pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+
+            if (!string.IsNullOrEmpty(currentHeading))
+              pl.myarg += $"&current={Shared.Services.Utilities.AesTo.Encrypt(currentHeading)}";
+          }
+        }
+      }
+      catch { }
+    }
+
+    if (pl.model != null && !string.IsNullOrEmpty(currentHeading) && string.Equals(pl.model.name, currentHeading, StringComparison.OrdinalIgnoreCase))
+      pl.model = null;
+
+    return pl;
   nodes: //div[@class='grid-item aspect-ratio-16x9']
   name:
     node: .//div[@class='grid-item-description']//a
@@ -98,7 +241,7 @@ contentParse:
   duration:
     node: .//span[contains(@class,'grid-item-dur')]
   quality:
-    node: .//span[contains(@class,'grid-item-like')]
+    node: .//span[contains(@class,'grid-item-dur')]
   preview:
     node: .//video//source
     attribute: src

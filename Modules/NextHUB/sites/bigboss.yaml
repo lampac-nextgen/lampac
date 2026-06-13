@@ -8,9 +8,13 @@ host: https://bigboss.video
 priorityBrowser: http
 
 menu:
+  route:
+    sort: '{host}/{(string.IsNullOrEmpty(sort) ? (page == 1 ? "latest/1/" : $"latest/1_page-{page}.html") : (page == 1 ? sort : sort.Replace(".html", $"_page-{page}.html")))}'
+    -: '{url}'
   sort:
     Новинки: ""
-    Популярное: videos/popular_page-{page}.html
+    Топ 100: videos/top100.html
+    По просмотрам: videos/popular.html
   categories:
     format: category/{cat}_page-{page}.html
     Азиатки: aziatki
@@ -69,12 +73,61 @@ menu:
     Эротика: classic-sex
 
 list:
-  uri: latest/{page}/
+  firstpage: latest/1/
+  uri: latest/1_page-{page}.html
+  total_pages: 777
 
 search:
+  firstpage: search/{search}/
   uri: search/{search}/page/{page}/
+  total_pages: 777
+
+model:
+  format: "{host}/{(page > 1 ? model.TrimEnd('/') + $\"/page-{page}.html\" : model)}"
+  total_pages: 777
 
 contentParse:
+  eval: |
+    string currentHeading = Regex.Match(
+      html,
+      "<div class=\"main__title[^\"]*\">.*?<h2>([^<]+)</h2>",
+      RegexOptions.IgnoreCase | RegexOptions.Singleline
+    ).Groups[1].Value?.Trim();
+
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.SelectSingleNode(".//a[contains(@class,'video-unit')]")?.GetAttributeValue("href", null)
+          ?? row.SelectSingleNode(".//a")?.GetAttributeValue("href", null);
+
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+          var cache = Shared.Services.Hybrid.HybridCache.GetMemory();
+          string memKey = $"bigboss:model:v1:{href}";
+          object cached;
+
+          if (cache.TryGetValue(memKey, out cached) && cached is ModelItem modelItem)
+          {
+            if (!string.Equals(currentHeading, modelItem.name, StringComparison.OrdinalIgnoreCase))
+              pl.model = modelItem;
+          }
+          else
+          {
+            pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+
+            if (!string.IsNullOrEmpty(currentHeading))
+              pl.myarg += $"&current={Shared.Services.Utilities.AesTo.Encrypt(currentHeading)}";
+          }
+        }
+      }
+      catch { }
+    }
+
+    return pl;
   nodes: //div[contains(@class,'main__ct-items')]//div[contains(@class,'main__ct-item')]
   name:
     node: .//div[contains(@class,'video-unit__caption')]

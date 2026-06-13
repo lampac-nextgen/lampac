@@ -36,7 +36,41 @@
 | Путь | Роль |
 |------|------|
 | `sites/*.yaml` | Описание каждого источника (списки, view, парсеры). |
-| `Controllers/ListController.cs` | Списки и поиск. |
+| `Controllers/ListController.cs` | Списки, меню и HTTP-запросы ленты. |
+| `Controllers/ListController.Playlist.cs` | Преобразование HTML/YAML `contentParse` в `PlaylistItem`. |
 | `Controllers/ViewController.cs` | Карточка просмотра. |
+| `Services/ModelProbeResolver.cs` | Догрузка моделей по конкретной карточке видео. |
+| `Services/ModelProbeSourceSettings.cs` | Список источников, где включена догрузка моделей, cache key и таймауты. |
+| `Services/ModelProbeParserRegistry.cs` | Выбор parser-метода по имени источника. |
+| `Services/ModelProbeParsers.cs` | Source-specific parser-методы моделей. |
+| `Services/ModelProbeParserUtilities.cs` | Общие helper-методы для model probe parser-ов. |
 | `SisiApi.cs` | Регистрация каналов в разделе Sisi. |
 | `Root.cs` | Загрузка init из YAML. |
+
+## Model Probe
+
+Модели не всегда парсятся на первой странице списка. Для части источников это
+замедляет загрузку ленты: нужно открывать страницу каждого видео. Поэтому
+NextHUB использует `model_probe`, который передается через сериализуемое поле
+`myarg`.
+
+Поток такой:
+
+1. YAML-источник кладет в `PlaylistItem.myarg` строку вида
+   `model_probe:nexthub/model?plugin=...&href=...`.
+2. Клиент SISI вызывает `model_probe`, когда пользователь открывает меню
+   конкретной карточки.
+3. `ModelProbeResolver` нормализует `href`, проверяет настройки источника,
+   делает HTTP-запрос страницы видео и кеширует результат.
+4. `ModelProbeParserRegistry` выбирает parser по `plugin`.
+5. Если моделей несколько, клиент показывает пункт `Модели` как вложенную
+   папку. Если модель одна, остается обычный прямой пункт модели.
+
+Чтобы добавить model probe для нового источника:
+
+1. В YAML заполнить `pl.myarg = $"model_probe:nexthub/model?...";` в
+   `contentParse`.
+2. Добавить источник в `ModelProbeSourceSettings`.
+3. Добавить parser в `ModelProbeParsers`.
+4. Подключить parser в `ModelProbeParserRegistry`.
+5. Проверить `docker compose restart lampac` и логи `compilation NextHUB`.

@@ -4,14 +4,22 @@ displayname: Porno Briz
 rch_access: apk,cors
 stream_access: apk,cors
 rchstreamproxy: web
+streamproxy: true
 host: https://pornobriz.com
 priorityBrowser: http
+headers_stream:
+  referer: "{host}/"
 
 menu:
+  route:
+    sort: "{host}/{sort}/{(page > 1 ? $\"page{page}/\" : string.Empty)}"
+    cat: "{host}/{cat}/page{page}/"
+    model: "{host}/{model.TrimEnd('/')}/"
+    modelsort: "{host}/{model.TrimEnd('/')}/"
   sort:
     Новинки: ""
-    Топ рейтинга: top/page{page}/
-    Популярнаe: best/page{page}/
+    Топ рейтинга: top
+    Популярнаe: best
   categories:
     format: "{cat}/page{page}/"
     Азиатки: asian
@@ -93,7 +101,39 @@ list:
 search:
   uri: search/{search}/page{page}/
 
+model:
+  format: "{host}/{model.TrimEnd('/')}/"
+  total_pages: 1
+
 contentParse:
+  eval: |
+    string currentModelPath = System.Text.RegularExpressions.Regex.Match(
+      html,
+      "<link[^>]+rel=\"canonical\"[^>]+href=\"https?://[^/]+/(models/[^\"/]+/)\"",
+      System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
+    ).Groups[1].Value?.Trim();
+
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.SelectSingleNode(".//a")?.GetAttributeValue("href", null);
+
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+          pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+
+          if (!string.IsNullOrEmpty(currentModelPath))
+            pl.myarg += $"&current={Shared.Services.Utilities.AesTo.Encrypt(currentModelPath)}";
+        }
+      }
+      catch { }
+    }
+
+    return pl;
   nodes: //div[contains(@class, 'thumb_main')]
   name:
     node: .//div[@class='th-title']
@@ -113,5 +153,5 @@ contentParse:
 view:
   viewsource: true
   regexMatch:
-    matches: ["720", "480", "240"]
+    matches: ["1080", "720", "480", "240"]
     pattern: 'src="([^"]+)" type="video/mp4" size="{value}"'

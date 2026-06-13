@@ -85,7 +85,39 @@ list:
 search:
   uri: search/{search}/{page}/
 
+model:
+  format: "{model}{(page > 1 ? page + \"/\" : string.Empty)}"
+  total_pages: 777
+
 contentParse:
+  eval: |
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.SelectSingleNode(".//a[@class='preview_link']")?.GetAttributeValue("href", null);
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+          var cache = Shared.Services.Hybrid.HybridCache.GetMemory();
+          string memKey = $"lenporno:model:v1:{href}";
+          object cached;
+
+          if (cache.TryGetValue(memKey, out cached) && cached is ModelItem modelItem)
+          {
+            pl.model = modelItem;
+          }
+          else
+          {
+            pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+          }
+        }
+      }
+      catch { }
+    }
+    return pl;
   nodes: //div[@class='innercont']
   name:
     node: .//a[@class='preview_link']

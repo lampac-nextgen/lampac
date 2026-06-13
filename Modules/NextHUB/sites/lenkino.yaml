@@ -4,6 +4,7 @@ displayname: Lenkino
 rch_access: apk,cors
 stream_access: apk,cors
 rchstreamproxy: web
+streamproxy: true
 host: https://wes.lenkino.adult
 priorityBrowser: http
 streamproxy_preview: true
@@ -133,6 +134,47 @@ menu:
     Глотает сперму: cum-swallow
     Сперма на попе: cum-on-ass
     Сперма на пизде: cum-on-pussy
+  customs:
+    - name: Студии
+      arg: studio
+      format: "channel/{value}/page/{page}"
+      submenu:
+        Perv Mom: pervmom
+        Pornhub: pornhub
+        Brazzers Exxtra: brazzers-exxtra
+        Bratty Sis: bratty-sis
+        Sis Loves Me: sis-loves-me
+        My Pervy Family: my-pervy-family
+        Anal Mom: anal-mom
+        "My Friend's Hot Mom": my-friends-hot-mom
+        Moms Teach Sex: momsteachsex
+        Family Strokes: family-strokes
+        Tushy: tushy
+        Blacked: blacked
+        Evil Angel: evilangel
+        Dad Crush: dadcrush
+        Sex Mex: sexmex
+        Family Therapy: family-therapy
+        Vixen: vixen
+        Freeuse Milf: freeusemilf
+        Milfy: milfy
+        "Cum 4K": cum4k
+        "Mom Swap": mom-swap
+        "Public Agent": publicagent
+        "Pure Taboo": pure-taboo
+        "My Family Pies": myfamilypies
+        "Freeuse Fantasy": freeuse-fantasy
+        ShopLyfter: shop-lyfter
+        Exxxtra Small: exxxtra-small
+        "Nubile Films": nubilefilms
+        "Fake Taxi": faketaxi
+        "Fake Hostel": fakehostel
+        "Bratty Milf": bratty-milf
+        "Let's Post It": let-s-post-it
+        "Tiny 4K": tiny4k
+        "Porn World": pornworld-com
+        "Hunt 4K": hunt-4k
+        "Club Sweethearts": club-sweethearts
 
 list:
   uri: "page/{page}"
@@ -141,7 +183,7 @@ search:
   uri: "search/{search}/page/{page}"
 
 contentParse:
-  nodes: //div[@class='item']
+  nodes: //div[@id='list_videos_videos_list_items']/div[contains(@class,'item')]
   name:
     node: .//div[@class='itm-tit']
   href:
@@ -165,6 +207,7 @@ contentParse:
 view:
   related: true
   viewsource: true
-  regexMatch:
-    matches: ["alt_url", "url"]
-    pattern: "video_{value}:[\t ]+'([^']+)'"
+  eval: |
+    {include:kt_player.eval}
+    headers.Add(new Shared.Models.Base.HeadersModel("referer", url));
+    return decode();

@@ -111,7 +111,65 @@ list:
 search:
   uri: channels/33/{search}/page/{page}
 
+model:
+  format: "{host}/{model.TrimEnd('/')}"
+  total_pages: 1
+
 contentParse:
+  eval: |
+    string currentModelPath = System.Text.RegularExpressions.Regex.Match(
+      html,
+      "<link[^>]+rel=\"canonical\"[^>]+href=\"https?://[^/]+/(pornstars/\\d+/[^\"/]+\\.html)\"",
+      System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
+    ).Groups[1].Value?.Trim();
+
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.SelectSingleNode(".//a[contains(@class, 'video_item_thumbnail')]")?.GetAttributeValue("href", null)
+          ?? row.SelectSingleNode(".//a")?.GetAttributeValue("href", null);
+
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+          var cache = Shared.Services.Hybrid.HybridCache.GetMemory();
+          string memKey = $"porndig:model:v1:{href}";
+          object cached;
+
+          bool sameCurrentModel(ModelItem item)
+          {
+            if (item == null || string.IsNullOrEmpty(currentModelPath))
+              return false;
+
+            string uri = item.uri ?? string.Empty;
+            string modelHref = Shared.Services.Utilities.AesTo.Decrypt(
+              System.Text.RegularExpressions.Regex.Match(uri, "model=([^&]+)").Groups[1].Value
+            ) ?? string.Empty;
+
+            return modelHref.Trim('/').Equals(currentModelPath.Trim('/'), System.StringComparison.OrdinalIgnoreCase);
+          }
+
+          if (cache.TryGetValue(memKey, out cached) && cached is ModelItem modelItem)
+          {
+            if (!sameCurrentModel(modelItem))
+              pl.model = modelItem;
+          }
+          else
+          {
+            pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+
+            if (!string.IsNullOrEmpty(currentModelPath))
+              pl.myarg += $"&current={Shared.Services.Utilities.AesTo.Encrypt(currentModelPath)}";
+          }
+        }
+      }
+      catch { }
+    }
+
+    return pl;
   nodes: //section[contains(@class, 'video_item_wrapper even_item video_item_medium')]
   name:
     node: .//a

@@ -13,6 +13,9 @@ menu:
     sort: "{host}/{sort}/all/month/page{page}/"
     cat: "{host}/{cat}/page{page}/"
     catsort: '{host}/{cat}/{sort.Replace("top", "popular").Replace("bests", "rating")}/page{page}/'
+    model: "{host}/{model.TrimEnd('/')}/{(page > 1 ? $\"page{page}/\" : string.Empty)}"
+    modelsort: "{host}/{model.TrimEnd('/')}/{sort}/{(page > 1 ? $\"page{page}/\" : string.Empty)}"
+    -: "{url}"
   sort:
     Новинки: ""
     Популярное: top
@@ -54,6 +57,50 @@ menu:
     Фистинг: fisting
     Худые девушки: skinny
     Черноволосые: black-haired
+  customs:
+    - name: Студии
+      arg: model
+      submenu:
+        1000 Facials: studio/1000facials
+        18 auditions: studio/18auditions
+        18 Lust: studio/18_lust
+        18 Videoz: studio/18videoz
+        18eighteen: studio/18eighteen
+        18XGirls: studio/18xgirls
+        2 Drops Studio: studio/2_drops_studio
+        21 Erotic Anal: studio/21_erotic_anal
+        21Naturals: studio/21naturals
+        21Sextreme: studio/21sextreme
+        21Sextury: studio/21sextury
+        21Sextury Network: studio/21sextury_network
+        40 Something Mag: studio/40_something_mag
+        5Kporn: studio/5kporn
+        5Kteens: studio/5kteens
+        8KMilfs: studio/8kmilfs
+        A GIRL KNOWS: studio/a_girl_knows
+        Abbie Maley: studio/abbie_maley
+        Abby Winters: studio/abby_winters
+        Able Godshark: studio/able_godshark
+        AcademyPOV: studio/academypov
+        Accidental Gangbang: studio/accidental_gangbang
+        Adam And Eve TV: studio/adamandevetv
+        Adam and Eve VOD: studio/adam_and_eve_vod
+        Adult Auditions: studio/adultauditions
+        Adult Time: studio/adult_time
+        AdultPrime: studio/adultprime
+        AfterDark: studio/afterdark
+        AGO: studio/ago
+        Alex Legend: studio/alex_legend
+        Alice Bong: studio/alice_bong
+        Alisawonderland: studio/alisawonderland
+        Alison Tyler: studio/alisontyler
+        AlissaAv: studio/alissaav
+        Alix Lynx: studio/alixlynx
+        All Anal: studio/all_anal
+        All Fine Girls: studio/all_fine_girls
+        All Girl Massage: studio/allgirlmassage
+        All Her Luv: studio/all_her_luv
+        All Internal: studio/allinternal
 
 list:
   uri: new/page{page}/
@@ -61,7 +108,64 @@ list:
 search:
   uri: search/{search}/
 
+model:
+  format: "{host}/{model.TrimEnd('/')}/{(page > 1 ? $\"page{page}/\" : string.Empty)}"
+  total_pages: 777
+
 contentParse:
+  eval: |
+    string currentModelSlug = System.Text.RegularExpressions.Regex.Match(
+      html,
+      "<link[^>]+rel=\"canonical\"[^>]+href=\"https?://[^/]+/model/([^\"/]+)/\"",
+      System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
+    ).Groups[1].Value?.Trim();
+
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.SelectSingleNode(".//a")?.GetAttributeValue("href", null);
+
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+          var cache = Shared.Services.Hybrid.HybridCache.GetMemory();
+          string memKey = $"sosushka:model:v1:{href}";
+          object cached;
+
+          bool sameCurrentModel(ModelItem item)
+          {
+            if (item == null || string.IsNullOrEmpty(currentModelSlug))
+              return false;
+
+            string uri = item.uri ?? string.Empty;
+            string modelHref = Shared.Services.Utilities.AesTo.Decrypt(
+              System.Text.RegularExpressions.Regex.Match(uri, "model=([^&]+)").Groups[1].Value
+            ) ?? string.Empty;
+
+            return modelHref.Trim('/').Equals($"model/{currentModelSlug}", System.StringComparison.OrdinalIgnoreCase);
+          }
+
+          if (cache.TryGetValue(memKey, out cached) && cached is ModelItem modelItem)
+          {
+            if (!sameCurrentModel(modelItem))
+              pl.model = modelItem;
+          }
+          else
+          {
+            pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+
+            if (!string.IsNullOrEmpty(currentModelSlug))
+              pl.myarg += $"&current={Shared.Services.Utilities.AesTo.Encrypt(currentModelSlug)}";
+          }
+        }
+      }
+      catch { }
+    }
+
+    return pl;
   nodes: //div[@class='thumb']
   name:
     node: .//p

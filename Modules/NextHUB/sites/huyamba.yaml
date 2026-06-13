@@ -13,6 +13,8 @@ menu:
     sort: "{host}/videos/?by={sort}&from={page}"
     cat: "{host}/categories/{cat}/videos/?from={page}"
     catsort: "{host}/categories/{cat}/?by={sort}&from={page}"
+    model: "{host}/{model.TrimEnd('/')}/?mode=async&function=get_block&block_id=list_videos_common_videos_list&from={page}"
+    modelsort: "{host}/{model.TrimEnd('/')}/?mode=async&function=get_block&block_id=list_videos_common_videos_list&by={sort}&from={page}"
   sort:
     Новинки: ""
     Лучшие: video_viewed_week
@@ -57,7 +59,76 @@ list:
 search:
   uri: search/{search}/?from_videos={page}
 
+model:
+  format: "{host}/{model.TrimEnd('/')}/?mode=async&function=get_block&block_id=list_videos_common_videos_list&from={page}"
+  total_pages: 777
+
 contentParse:
+  eval: |
+    var canonical = System.Text.RegularExpressions.Regex.Match(
+      html,
+      "<link[^>]+rel=\"canonical\"[^>]+href=\"https?://[^/]+/(models/[^\"]+/)\"",
+      System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
+    );
+
+    if (!canonical.Success)
+    {
+      canonical = System.Text.RegularExpressions.Regex.Match(
+        html,
+        "<link[^>]+href=\"https?://[^/]+/(models/[^\"]+/)\"[^>]+rel=\"canonical\"",
+        System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
+      );
+    }
+
+    string currentModelPath = canonical.Groups[1].Value?.Trim();
+
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.SelectSingleNode(".//a[contains(@class, 'card')]")?.GetAttributeValue("href", null)
+          ?? row.SelectSingleNode(".//a")?.GetAttributeValue("href", null);
+
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+          var cache = Shared.Services.Hybrid.HybridCache.GetMemory();
+          string memKey = $"huyamba:model:v1:{href}";
+          object cached;
+
+          bool sameCurrentModel(ModelItem item)
+          {
+            if (item == null || string.IsNullOrEmpty(currentModelPath))
+              return false;
+
+            string uri = item.uri ?? string.Empty;
+            string modelHref = Shared.Services.Utilities.AesTo.Decrypt(
+              System.Text.RegularExpressions.Regex.Match(uri, "model=([^&]+)").Groups[1].Value
+            ) ?? string.Empty;
+
+            return modelHref.Trim('/').Equals(currentModelPath.Trim('/'), System.StringComparison.OrdinalIgnoreCase);
+          }
+
+          if (cache.TryGetValue(memKey, out cached) && cached is ModelItem modelItem)
+          {
+            if (!sameCurrentModel(modelItem))
+              pl.model = modelItem;
+          }
+          else
+          {
+            pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+
+            if (!string.IsNullOrEmpty(currentModelPath))
+              pl.myarg += $"&current={Shared.Services.Utilities.AesTo.Encrypt(currentModelPath)}";
+          }
+        }
+      }
+      catch { }
+    }
+
+    return pl;
   nodes: //div[contains(@class, 'item thumb')]
   name:
     node: .//div[@class='title']

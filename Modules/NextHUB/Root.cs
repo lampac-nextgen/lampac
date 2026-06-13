@@ -30,6 +30,9 @@ public static class Root
         .AddReferences(typeof(Shared.Startup).Assembly)
         .AddImports("Shared.Models.SISI.Base")
         .AddImports("Shared.Models.SISI")
+        .AddImports("Shared.Services.Utilities")
+        .AddReferences(typeof(System.Text.Json.JsonDocument).Assembly)
+        .AddImports("System.Text.Json")
         .AddReferences(typeof(HtmlDocument).Assembly)
         .AddImports("HtmlAgilityPack");
     #endregion
@@ -37,6 +40,8 @@ public static class Root
     #region routeOptions
     public readonly static ScriptOptions routeOptions = ScriptOptions.Default
         .AddReferences(typeof(IRoute).Assembly)
+        .AddReferences(typeof(Shared.Startup).Assembly)
+        .AddImports("Shared.Services.Utilities")
         .AddImports("Microsoft.Playwright");
     #endregion
 

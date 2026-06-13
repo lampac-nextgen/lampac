@@ -258,12 +258,43 @@
   function fixList(list) {
     list.forEach(function(a) {
       if (!a.quality && a.time) a.quality = a.time;
+      if (!a.model_probe && a.myarg && a.myarg.indexOf('model_probe:') === 0) {
+        a.model_probe = a.myarg.substring('model_probe:'.length);
+      }
     });
     return list;
   }
 
   function menu$2(target, card_data) {
     if (!card_data.bookmark) return;
+
+    var cardModels = normalizeModels(card_data);
+
+    if (card_data.model_probe && !card_data.model_probe_resolved) {
+      if (card_data.model_probe_loading) return;
+
+      card_data.model_probe_loading = true;
+      Lampa.Loading.start();
+
+      return Api.model(card_data, function(models) {
+        card_data.model_probe_loading = false;
+        card_data.model_probe_resolved = true;
+        Lampa.Loading.stop();
+
+        applyModels(card_data, models);
+
+        menu$2(target, card_data);
+      }, function() {
+        card_data.model_probe_loading = false;
+        card_data.model_probe_resolved = true;
+        Lampa.Loading.stop();
+
+        menu$2(target, card_data);
+      });
+    }
+
+    cardModels = normalizeModels(card_data);
+
     var cm = [{
       title: !card_data.bookmark.uid ? 'В закладки' : 'Удалить из закладок'
     }];
@@ -282,10 +313,17 @@
       });
     }
 
-    if (card_data.model) {
+    if (cardModels.length == 1) {
       cm.push({
-        title: card_data.model.name,
-        model: true
+        title: cardModels[0].name,
+        model: cardModels[0]
+      });
+    } else if (cardModels.length > 1) {
+      cm.push({
+        title: 'Модели',
+        subtitle: cardModels.length + ' шт.',
+        model_folder: true,
+        models: cardModels
       });
     }
 	
@@ -301,12 +339,9 @@
       items: cm,
       onSelect: function onSelect(m) {
         if (m.model) {
-          Lampa.Activity.push({
-            url: Defined.localhost.replace('/sisi', '') + '/' + card_data.model.uri,
-            title: 'Модель - ' + card_data.model.name,
-            component: 'sisi_view_' + Defined.use_api,
-            page: 1
-          });
+          openModel(m.model);
+        } else if (m.model_folder) {
+          showModelFolder(target, card_data, m.models);
         } else if (m.related) {
           Lampa.Activity.push({
             url: card_data.video + '&related=true',
@@ -333,9 +368,66 @@
         Lampa.Controller.toggle('content');
       }
     });
+		  }
+
+  function openModel(model) {
+    Lampa.Activity.push({
+      url: Defined.localhost.replace('/sisi', '') + '/' + model.uri,
+      title: 'Модель - ' + model.name,
+      component: 'sisi_view_' + Defined.use_api,
+      page: 1
+    });
   }
 
-  var Utils = {
+  function showModelFolder(target, card_data, models) {
+    Lampa.Select.show({
+      title: 'Модели',
+      items: models.map(function(model) {
+        return {
+          title: model.name,
+          model: model
+        };
+      }),
+      onSelect: function onSelect(item) {
+        openModel(item.model);
+      },
+      onBack: function onBack() {
+        menu$2(target, card_data);
+      }
+    });
+  }
+
+	  function normalizeModels(card_data) {
+    var source = [];
+    var seen = {};
+
+    if (Array.isArray(card_data.models)) source = source.concat(card_data.models);
+    if (card_data.model) source.push(card_data.model);
+
+    return source.filter(function(model) {
+      if (!model || !model.uri || !model.name) return false;
+
+      var key = model.uri + '|' + model.name;
+      if (seen[key]) return false;
+
+      seen[key] = true;
+      return true;
+    });
+  }
+
+  function applyModels(card_data, models) {
+    if (!Array.isArray(models)) {
+      models = models && models.uri && models.name ? [models] : [];
+    }
+
+    card_data.models = normalizeModels({
+      models: models
+    });
+
+    if (card_data.models.length) card_data.model = card_data.models[0];
+  }
+
+	  var Utils = {
     sourceTitle: sourceTitle,
     play: play,
     fixCards: fixCards,
@@ -391,6 +483,10 @@
       call(true);
     };
 
+    this.model = function(element, call, error) {
+      error();
+    };
+
     this.account = function(u, join) {
       if (join) {
         if (Defined.use_api == 'lampac' && u.indexOf(Defined.localhost.replace('/sisi', '')) == -1) return u;
@@ -438,7 +534,7 @@
         menu$1.forEach(function(m, i) {
           var separator = m.playlist_url.indexOf('?') !== -1 ? '&' : '?';
           var url_query = add_url_query.indexOf('?') !== -1 || add_url_query.indexOf('&') !== -1 ? add_url_query.substring(1) : add_url_query;
-          var u = _this.account(m.playlist_url + separator + url_query);
+            var u = _this.account(Lampa.Utils.addUrlComponent(m.playlist_url + separator + url_query, 'nomenu=1'));
 
           var b = false;
           var w = setTimeout(function() {
@@ -514,9 +610,9 @@
 
     this.menu = function(success, error) {
       if (menu) return success(menu);
-      var url = this.account(Defined.localhost);
-        url += (url.indexOf('?') === -1 ? '?' : '&') + 'rchtype=' + ((window.rch_nws && window.rch_nws[hostkey] ? window.rch_nws[hostkey].type : window.rch && window.rch[hostkey] ? window.rch[hostkey].type : '') || '');
-      network.silent(url, function(data) {
+	      var url = this.account(Defined.localhost);
+	        url += (url.indexOf('?') === -1 ? '?' : '&') + 'rchtype=' + ((window.rch_nws && window.rch_nws[hostkey] ? window.rch_nws[hostkey].type : window.rch && window.rch[hostkey] ? window.rch[hostkey].type : '') || '');
+	      network.silent(url, function(data) {
         if (data.channels) {
           menu = data.channels;
           success(menu);
@@ -575,6 +671,21 @@
       });
     };
 
+    this.model = function(element, call, error) {
+      if (!element.model_probe) return error();
+
+      var url = element.model_probe;
+      if (url.indexOf('http') !== 0) {
+        url = Defined.localhost.replace('/sisi', '') + '/' + url.replace(/^\/+/, '');
+      }
+
+      network.silent(this.account(url), function(json) {
+        if (json && Array.isArray(json.models) && json.models.length) call(json.models);
+        else if (json && json.model) call(json.model);
+        else error();
+      }, error);
+    };
+
     this.account = function(u) {
       u = u.replace(/^[\?&]+/, '');
       u = u.replace(/[\?&]+$/, '');
@@ -631,7 +742,7 @@
         menu.forEach(function(m) {
           function loadThis() {
             var separator = m.playlist_url.indexOf('?') !== -1 ? '&' : '?';
-            network.silent(_this.account(m.playlist_url.replace(/[\?&]+$/, '') + separator + add_url_query.replace(/^[\?&]+/, '')), function(json) {
+            network.silent(_this.account(Lampa.Utils.addUrlComponent(m.playlist_url.replace(/[\?&]+$/, '') + separator + add_url_query.replace(/^[\?&]+/, ''), 'nomenu=1')), function(json) {
               if (json.rch) {
                 rchRun(json, function() {
                   loadThis();
@@ -751,6 +862,52 @@
     return comp;
   }
 
+  function showSubmenuSelect(comp, menuItem, object) {
+    var all = menuItem.submenu || [];
+    var step = 100;
+    var shown = Math.min(step, all.length);
+
+    function selectItems(items) {
+      Lampa.Select.show({
+        title: menuItem.title,
+        items: items,
+        onBack: function onBack() {
+          comp.filter();
+        },
+        onSelect: function onSelect(b) {
+          Lampa.Activity.push({
+            title: object.title,
+            url: b.playlist_url,
+            component: 'sisi_view_' + Defined.use_api,
+            page: 1
+          });
+        },
+        onFocus: function onFocus(b) {
+          if (shown >= all.length) return;
+          if (all.indexOf(b) < shown - 1) return;
+
+          shown = Math.min(shown + step, all.length);
+          open(b);
+        }
+      });
+    }
+
+    if (all.length <= step) {
+      selectItems(all);
+      return;
+    }
+
+    function open(selected) {
+      all.forEach(function(item) {
+        item.selected = item == selected;
+      });
+
+      selectItems(all.slice(0, shown));
+    }
+
+    open();
+  }
+
   function View(object) {
     var comp = new Lampa.InteractionCategory(object);
     var menu;
@@ -862,21 +1019,7 @@
             });
 
             if (a.submenu) {
-              Lampa.Select.show({
-                title: a.title,
-                items: a.submenu,
-                onBack: function onBack() {
-                  comp.filter();
-                },
-                onSelect: function onSelect(b) {
-                  Lampa.Activity.push({
-                    title: object.title,
-                    url: b.playlist_url,
-                    component: 'sisi_view_' + Defined.use_api,
-                    page: 1
-                  });
-                }
-              });
+              showSubmenuSelect(comp, a, object);
             } else {
               comp.filter();
             }

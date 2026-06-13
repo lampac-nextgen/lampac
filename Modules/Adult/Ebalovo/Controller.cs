@@ -8,6 +8,7 @@ using Shared.Models.SISI.Base;
 using Shared.Services;
 using Shared.Services.Hybrid;
 using System.Collections.Generic;
+using System.Linq;
 using System.Net;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -20,21 +21,34 @@ public class EbalovoController : BaseSisiController
 
     [HttpGet, Staticache]
     [Route("elo")]
-    async public Task<ActionResult> Index(string search, string sort, string c, int pg = 1)
+    async public Task<ActionResult> Index(string search, string sort, string c, string model, int pg = 1)
     {
         if (await IsRequestBlocked(rch: true, rch_keepalive: -1))
             return badInitMsg;
 
     rhubFallback:
-        var cache = await InvokeCacheResult($"elo:{search}:{sort}:{c}:{pg}", 10, jsonContext.ListPlaylistItem, async e =>
+        var cache = await InvokeCacheResult($"elo:{search}:{sort}:{c}:{model}:{pg}", 10, jsonContext.ListPlaylistItem, async e =>
         {
             string ehost = await goHost(init.host, proxy);
 
             List<PlaylistItem> playlists = null;
 
-            await httpHydra.GetSpan(EbalovoTo.Uri(ehost, search, sort, c, pg), span =>
+            await httpHydra.GetSpan(EbalovoTo.Uri(ehost, search, sort, c, model, pg), span =>
             {
-                playlists = EbalovoTo.Playlist("elo/vidosik", span);
+                playlists = EbalovoTo.Playlist("elo/vidosik", span, pl =>
+                {
+                    if (!string.IsNullOrWhiteSpace(pl?.bookmark?.href))
+                    {
+                        string modelProbe = $"elo/model?uri={WebUtility.UrlEncode(pl.bookmark.href)}";
+
+                        if (!string.IsNullOrWhiteSpace(model))
+                            modelProbe += $"&current={WebUtility.UrlEncode(model.Trim('/'))}";
+
+                        pl.myarg = $"model_probe:{modelProbe}";
+                    }
+
+                    return pl;
+                });
             },
             addheaders: HeadersModel.Init(
                 ("sec-fetch-dest", "document"),
@@ -54,8 +68,52 @@ public class EbalovoController : BaseSisiController
             goto rhubFallback;
 
         return PlaylistResult(cache,
-            string.IsNullOrEmpty(search) ? EbalovoTo.Menu(host, sort, c) : null
+            string.IsNullOrEmpty(search) && string.IsNullOrEmpty(model) ? EbalovoTo.Menu(host, sort, c) : null,
+            total_pages: string.IsNullOrEmpty(model) ? 0 : 1
         );
+    }
+
+
+    [HttpGet]
+    [Route("elo/model")]
+    async public Task<ActionResult> Model(string uri, string current)
+    {
+        if (await IsRequestBlocked(rch_check: false))
+            return badInitMsg;
+
+        uri = NormalizeSitePath(uri);
+        if (string.IsNullOrWhiteSpace(uri))
+            return Json(new { model = default(ModelItem) });
+
+        var memoryCache = HybridCache.GetMemory();
+        string memKey = $"ebalovo:model:v1:{uri}";
+
+        if (memoryCache.TryGetValue(memKey, out List<ModelItem> cachedModels))
+        {
+            cachedModels = FilterCurrentModels(current, cachedModels);
+            return Json(new { model = cachedModels?.FirstOrDefault(), models = cachedModels });
+        }
+
+        string ehost = await goHost(init.host, proxy);
+
+        var html = await httpHydra.Get($"{ehost}/{uri}",
+            addheaders: HeadersModel.Init(
+                ("sec-fetch-dest", "document"),
+                ("sec-fetch-mode", "navigate"),
+                ("sec-fetch-site", "same-origin"),
+                ("sec-fetch-user", "?1"),
+                ("upgrade-insecure-requests", "1")
+            )
+        );
+
+        var models = EbalovoTo.Models("elo", html);
+        if (models is not { Count: > 0 })
+            return Json(new { model = default(ModelItem) });
+
+        memoryCache.Set(memKey, models, DateTimeOffset.Now.AddHours(24));
+
+        models = FilterCurrentModels(current, models);
+        return Json(new { model = models?.FirstOrDefault(), models });
     }
 
 
@@ -144,5 +202,46 @@ public class EbalovoController : BaseSisiController
             memoryCache.Set(memkey, backhost, DateTime.Now.AddMinutes(20));
             return backhost;
         }
+    }
+
+    static List<ModelItem> FilterCurrentModels(string current, IEnumerable<ModelItem> models)
+    {
+        if (models == null)
+            return null;
+
+        var filtered = new List<ModelItem>();
+        foreach (var model in models)
+        {
+            if (model == null || string.IsNullOrWhiteSpace(model.name) || string.IsNullOrWhiteSpace(model.uri))
+                continue;
+
+            if (!IsSameCurrentModel(current, model) && !filtered.Any(i => string.Equals(ExtractModelHref(i), ExtractModelHref(model), StringComparison.OrdinalIgnoreCase)))
+                filtered.Add(model);
+        }
+
+        return filtered.Count == 0 ? null : filtered;
+    }
+
+    static bool IsSameCurrentModel(string current, ModelItem item)
+    {
+        if (string.IsNullOrWhiteSpace(current) || item == null)
+            return false;
+
+        string modelHref = ExtractModelHref(item)?.Trim('/');
+        return !string.IsNullOrEmpty(modelHref) && modelHref.Equals(current.Trim('/'), StringComparison.OrdinalIgnoreCase);
+    }
+
+    static string ExtractModelHref(ModelItem item)
+    {
+        string value = Regex.Match(item?.uri ?? string.Empty, "model=([^&]+)", RegexOptions.IgnoreCase).Groups[1].Value;
+        return string.IsNullOrEmpty(value) ? null : WebUtility.UrlDecode(value);
+    }
+
+    static string NormalizeSitePath(string uri)
+    {
+        if (string.IsNullOrWhiteSpace(uri))
+            return null;
+
+        return Regex.Replace(uri, "^https?://[^/]+/", string.Empty, RegexOptions.IgnoreCase).TrimStart('/');
     }
 }

@@ -9,6 +9,8 @@ priorityBrowser: http
 
 route:
   eval: |
+    if (model != null && sort != null) return $"{model}{sort.Replace("top", "toprated").Replace("most-popular", "popular")}/{(page > 1 ? $"page/{page}/" : string.Empty)}";
+    if (model != null) return page == 1 ? model : $"{model}page/{page}/";
     if (cat != null && sort != null) return $"{host}/{cat}/{sort.Replace("top", "toprated").Replace("most-popular", "popular")}/page/{page}/";
     if (cat != null || sort != null) return $"{host}/{cat ?? sort}/page/{page}/";
     if (query.ContainsKey("studio")) return page == 1 ? $"{host}/search/?search={query["studio"]}" : $"{host}/search/{query["studio"]}/page/{page}/";
@@ -106,7 +108,39 @@ list:
 search:
   uri: search/{search}/page/{page}/
 
+model:
+  format: "{model}{(sort != null ? sort.Replace(\"top\", \"toprated\").Replace(\"most-popular\", \"popular\") + \"/\" : string.Empty)}{(page > 1 ? $\"page/{page}/\" : string.Empty)}"
+  total_pages: 777
+
 contentParse:
+  eval: |
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.SelectSingleNode(".//a")?.GetAttributeValue("href", null);
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+          var cache = Shared.Services.Hybrid.HybridCache.GetMemory();
+          string memKey = $"vtrahetv:model:v1:{href}";
+          object cached;
+
+          if (cache.TryGetValue(memKey, out cached) && cached is ModelItem modelItem)
+          {
+            pl.model = modelItem;
+          }
+          else
+          {
+            pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+          }
+        }
+      }
+      catch { }
+    }
+    return pl;
   nodes: //div[@class='innercont']
   name:
     node: .//img

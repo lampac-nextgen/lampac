@@ -12,6 +12,9 @@ menu:
     sort: "{host}/{sort}/{page}"
     cat: "{host}/categories/{cat}/{page}"
     catsort: "{host}/categories/{cat}/{sort}/{page}"
+    model: "{host}/{model}{(page > 1 ? $\"/{page}\" : string.Empty)}"
+    modelsort: "{host}/{model}/{sort}{(page > 1 ? $\"/{page}\" : string.Empty)}"
+    -: "{url}"
   sort:
     Новинки: ""
     Топ рейтинга: toprated
@@ -55,7 +58,51 @@ list:
 search:
   uri: search/{search}/{page}
 
+model:
+  format: "{host}/{model}{(page > 1 ? $\"/{page}\" : string.Empty)}"
+  total_pages: 777
+
 contentParse:
+  eval: |
+    string currentHeading = System.Text.RegularExpressions.Regex.Match(
+      html,
+      "<h1[^>]*>([^<]+)</h1>",
+      System.Text.RegularExpressions.RegexOptions.IgnoreCase | System.Text.RegularExpressions.RegexOptions.Singleline
+    ).Groups[1].Value?.Trim();
+
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.SelectSingleNode(".//a")?.GetAttributeValue("href", null);
+
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+          var cache = Shared.Services.Hybrid.HybridCache.GetMemory();
+          string memKey = $"jopaonline:model:v1:{href}";
+          object cached;
+
+          if (cache.TryGetValue(memKey, out cached) && cached is ModelItem modelItem)
+          {
+            if (string.IsNullOrEmpty(currentHeading) || currentHeading.IndexOf(modelItem.name, System.StringComparison.OrdinalIgnoreCase) < 0)
+              pl.model = modelItem;
+          }
+          else
+          {
+            pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+
+            if (!string.IsNullOrEmpty(currentHeading))
+              pl.myarg += $"&current={Shared.Services.Utilities.AesTo.Encrypt(currentHeading)}";
+          }
+        }
+      }
+      catch { }
+    }
+
+    return pl;
   nodes: //div[@class='th']
   name:
     node: .//p
@@ -76,4 +123,4 @@ view:
   viewsource: true
   regexMatch:
     matches: ["720p", "480p", "360p", "240p"]
-    pattern: 'value="([^"]+)">{value}</option>'
+    pattern: '\[{value}\](https://[^''",\n\r\t ]+)'

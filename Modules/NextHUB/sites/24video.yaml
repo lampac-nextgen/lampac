@@ -12,6 +12,8 @@ menu:
   route:
     -: "{host}/{cat ?? sort}/page-{page}/"
     catsort: '{host}/{cat}/{sort.Replace("-porn", "")}/page-{page}/'
+    model: "{model}page-{page}/"
+    modelsort: '{model}{sort.Replace("-porn", "")}/page-{page}/'
   sort:
     Новинки: ""
     Рейтинговое: top-rated-porn
@@ -79,12 +81,45 @@ menu:
     Худые: porno-khudyye
 
 list:
+  firstpage: videos/
   uri: page-{page}/
 
 search:
+  firstpage: search/?text={search}
   uri: search/{search}/page-{page}/
 
+model:
+  uri: "{model}page-{page}/"
+  total_pages: 777
+
 contentParse:
+  eval: |
+    if (pl.model == null)
+    {
+      try
+      {
+        string href = row.SelectSingleNode(".//a")?.GetAttributeValue("href", null);
+        if (!string.IsNullOrEmpty(href))
+        {
+          if (!href.StartsWith("http"))
+            href = href.StartsWith("/") ? $"{init.host}{href}" : $"{init.host}/{href}";
+
+          var cache = Shared.Services.Hybrid.HybridCache.GetMemory();
+          string memKey = $"24video:model:v3:{href}";
+          object cached;
+          if (cache.TryGetValue(memKey, out cached) && cached is ModelItem modelItem)
+          {
+            pl.model = modelItem;
+          }
+          else
+          {
+            pl.myarg = $"model_probe:nexthub/model?plugin={Shared.Services.Utilities.AesTo.Encrypt(plugin)}&href={Shared.Services.Utilities.AesTo.Encrypt(href)}";
+          }
+        }
+      }
+      catch { }
+    }
+    return pl;
   nodes: //div[@class='item video-block']
   name:
     node: .//div[@class='title']
@@ -101,5 +136,24 @@ view:
   related: true
   viewsource: true
   regexMatch:
-    matches: ["1080p", "720p", "480p", "360p"]
+    matches: ["1080p", "2160p", "1440p", "720p", "480p", "360p", "240p"]
     pattern: '(https://[^",\n\r\t ]+/JOPORN_NET_[0-9]+_{value}.mp4)'
+  eval: |
+    string extract(string q)
+    {
+      var m = Regex.Match(
+        html,
+        $@"\[{Regex.Escape(q)}\]\s*(https://[^"",\n\r\t ]+/JOPORN_NET_[0-9]+_{Regex.Escape(q)}\.mp4)",
+        RegexOptions.IgnoreCase
+      );
+      return m.Groups[1].Value;
+    }
+
+    foreach (string q in new[] { "1080p", "2160p", "1440p", "720p", "480p", "360p", "240p" })
+    {
+      string link = extract(q);
+      if (!string.IsNullOrEmpty(link))
+        return link;
+    }
+
+    return file;

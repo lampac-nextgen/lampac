@@ -173,6 +173,7 @@ public static class PornHubTo
             }
         }
 
+        string currentModel = ExtractModelHref(model);
         string splitkey = videoCategory.Contains("pcVideoListItem ", StringComparison.Ordinal)
             ? "pcVideoListItem " : videoCategory.Contains("data-video-segment", StringComparison.Ordinal)
             ? "data-video-segment" : videoCategory.Contains("<li data-id=", StringComparison.Ordinal)
@@ -201,28 +202,21 @@ public static class PornHubTo
             if (img == null)
                 continue;
 
-            if (!IsModel_page)
-            {
-                model = null;
-                var gmodel = row.Groups("href=\"/model/([^\"]+)\"[^>]+>([^<]+)<");
-                if (string.IsNullOrEmpty(gmodel[1].Value))
-                    gmodel = row.Groups("href=\"/(pornstar/[^\"]+)\"[^>]+>([^<]+)<");
+            var models = IsModel_page && model != null
+                ? new List<ModelItem>() { model }
+                : ModelsFromCard(list_uri, row.ToString());
 
-                if (!string.IsNullOrEmpty(gmodel[1].Value))
-                {
-                    model = new ModelItem()
-                    {
-                        name = gmodel[2].Value,
-                        uri = list_uri + (list_uri.Contains("?") ? "&" : "?") + $"model={gmodel[1].Value}",
-                    };
-                }
-            }
+            var cardModel = models is { Count: > 0 } ? models[0] : null;
+            string model_probe = prem ? null : $"{list_uri}/model?vkey={HttpUtility.UrlEncode(vkey)}";
+            if (model_probe != null && !string.IsNullOrEmpty(currentModel))
+                model_probe += $"&current={HttpUtility.UrlEncode(currentModel)}";
 
             var pl = new PlaylistItem()
             {
                 name = title,
                 video = $"{video_uri}?vkey={vkey}",
-                model = model,
+                model = cardModel,
+                myarg = model_probe == null ? null : $"model_probe:{model_probe}",
                 picture = img,
                 preview = row.Match("data-mediabook=\"(https?://[^\"]+)\"") ?? row.Match("data-webm=\"(https?://[^\"]+)\""),
                 time = row.Match("<var class=\"duration\">([^<]+)</var>") ?? row.Match("class=\"time\">([^<]+)<") ?? row.Match("class=\"videoDuration floatLeft\">([^<]+)<") ?? row.Match("time\">([^<]+)<"),
@@ -243,6 +237,94 @@ public static class PornHubTo
         }
 
         return playlists;
+    }
+    #endregion
+
+    #region Models
+    public static List<ModelItem> Models(string list_uri, ReadOnlySpan<char> html)
+    {
+        if (html.IsEmpty)
+            return null;
+
+        string block = Regex.Match(
+            html.ToString(),
+            "<div[^>]+class=\"[^\"]*pornstarsWrapper[^\"]*\"[^>]*>.*?<div[^>]+class=\"[^\"]*tags[^\"]*\"[^>]*>(?<body>.*?)</div>",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline
+        ).Groups["body"].Value;
+
+        if (string.IsNullOrWhiteSpace(block))
+            return null;
+
+        return ModelsFromText(list_uri, block);
+    }
+
+    public static List<ModelItem> FilterCurrentModels(string current, IEnumerable<ModelItem> models)
+    {
+        if (models == null)
+            return null;
+
+        var filtered = new List<ModelItem>();
+        foreach (var model in models)
+        {
+            if (model == null || string.IsNullOrWhiteSpace(model.uri) || string.IsNullOrWhiteSpace(model.name))
+                continue;
+
+            string href = ExtractModelHref(model);
+            if (!string.IsNullOrWhiteSpace(current) && string.Equals(href?.Trim('/'), current.Trim('/'), StringComparison.OrdinalIgnoreCase))
+                continue;
+
+            if (!filtered.Any(i => string.Equals(ExtractModelHref(i), href, StringComparison.OrdinalIgnoreCase)))
+                filtered.Add(model);
+        }
+
+        return filtered.Count == 0 ? null : filtered;
+    }
+
+    static List<ModelItem> ModelsFromCard(string list_uri, string row)
+    {
+        if (string.IsNullOrWhiteSpace(row) || !row.Contains("/model/", StringComparison.Ordinal) && !row.Contains("/pornstar/", StringComparison.Ordinal))
+            return null;
+
+        return ModelsFromText(list_uri, row);
+    }
+
+    static List<ModelItem> ModelsFromText(string list_uri, string html)
+    {
+        if (string.IsNullOrWhiteSpace(html))
+            return null;
+
+        var matches = Regex.Matches(
+            html,
+            "<a[^>]+href=\"/(model/[^\"?#]+|pornstar/[^\"?#]+)\"[^>]*>(?<name>.*?)</a>",
+            RegexOptions.IgnoreCase | RegexOptions.Singleline
+        );
+
+        if (matches.Count == 0)
+            return null;
+
+        var models = new List<ModelItem>();
+        var unique = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (Match match in matches)
+        {
+            string href = match.Groups[1].Value.Trim('/');
+            string name = Regex.Replace(match.Groups["name"].Value, "<.*?>", string.Empty, RegexOptions.Singleline);
+            name = HttpUtility.HtmlDecode(name)?.Trim();
+
+            if (string.IsNullOrWhiteSpace(href) || string.IsNullOrWhiteSpace(name) || !unique.Add(href))
+                continue;
+
+            string model = href.StartsWith("model/", StringComparison.OrdinalIgnoreCase) ? href[6..] : href;
+            models.Add(new ModelItem(name, list_uri + (list_uri.Contains("?") ? "&" : "?") + $"model={model}"));
+        }
+
+        return models.Count == 0 ? null : models;
+    }
+
+    static string ExtractModelHref(ModelItem model)
+    {
+        string value = Regex.Match(model?.uri ?? string.Empty, "model=([^&]+)", RegexOptions.IgnoreCase).Groups[1].Value;
+        return string.IsNullOrEmpty(value) ? null : HttpUtility.UrlDecode(value);
     }
     #endregion
 
@@ -541,7 +623,7 @@ public static class PornHubTo
         {
             string video = Rx.Match(html, $"\"videoUrl\":\"([^\"]+)\",\"quality\":\"{q}\"");
 
-            if (!string.IsNullOrEmpty(video) || !video.Contains("validfrom"))
+            if (!string.IsNullOrEmpty(video))
                 qualitys.TryAdd($"{q}p", video.Replace("\\", "").Replace("///", "//"));
         }
 
