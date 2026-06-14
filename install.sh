@@ -25,6 +25,8 @@ readonly DOTNET_CHANNEL="${LAMPAC_DOTNET_CHANNEL:-10.0}"
 readonly LISTEN_PORT="${LAMPAC_PORT:-9118}"
 # Имя скрипта — исключается из синхронизации при обновлении
 readonly UPDATE_SCRIPT_NAME="install.sh"
+# Имя файлика для хранения установленной версии Лампака
+readonly VERSION_FILE_NAME="version.txt"
 
 REMOVE=0
 UPDATE=0
@@ -190,8 +192,9 @@ usage() {
   printf '  %s--dry-run%s      Show what would be updated/deleted without applying changes\n' "$C_YELLOW" "$C_RESET"
   printf '  %s--pre-release%s  Use latest GitHub pre-release asset (%s)\n' "$C_YELLOW" "$C_RESET" "$RELEASE_ZIP_NAME"
   printf '  %s--remove%s       Remove systemd unit, user, and install directory\n' "$C_RED" "$C_RESET"
-  printf '  %s--verbose%s      Show full output of all commands (for debugging)\n' "$C_BLUE" "$C_RESET"
+  printf '  %s-v, --verbose%s  Show full output of all commands (for debugging)\n' "$C_BLUE" "$C_RESET"
   printf '  %s-h, --help%s     Show this help and exit\n' "$C_BLUE" "$C_RESET"
+  printf '  %s--version%s      Show installed version\n' "$C_BLUE" "$C_RESET"
   printf '\n'
 
   printf '%sExamples:%s\n' "$C_BOLD" "$C_RESET"
@@ -273,9 +276,13 @@ parse_args() {
         UPDATE=1
         shift
         ;;
-      --verbose|-v)
+      -v|--verbose)
         VERBOSE=1
         shift
+        ;;
+      --version)
+        show_version
+        exit 0
         ;;
       *)
         log_err "Unknown option: $1"
@@ -309,6 +316,57 @@ is_ubuntu() {
   # shellcheck source=/dev/null
   . /etc/os-release
   [[ "${ID:-}" == "ubuntu" ]]
+}
+
+# ─── Version ───────────────────────────────────────────────────────────
+
+# Получить номер последнего (latest) релиза Лампака с гитхаба
+get_release_version() {
+  if ! command -v curl >/dev/null 2>&1; then
+    log_err "curl is required to get release version."
+    exit 1
+  fi
+  if ! command -v jq >/dev/null 2>&1; then
+    log_err "jq is required to get release version."
+    exit 1
+  fi
+  local api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
+  local version
+  version=$(curl -sSL -H 'Accept: application/vnd.github+json' "$api_url" \
+    | jq -r '.tag_name' | sed 's/^v//') || true
+  if [[ -z "${version:-}" ]]; then
+    log_err "Could not determine release version from ${api_url}."
+    exit 1
+  fi
+  echo "$version"
+}
+
+# Получить номер установленной версии Лампака из файлика
+get_installed_version() {
+  local version_file="${INSTALL_ROOT}/${VERSION_FILE_NAME}"
+  if [[ -f "$version_file" ]]; then
+    cat "$version_file"
+  else
+    echo "N/A"
+  fi
+}
+
+# Показать баннер и установленную версию Лампака для опции --version
+show_version() {
+  print_banner
+  if [[ -d "$INSTALL_ROOT" ]] && [[ -f "${INSTALL_ROOT}/Core.dll" ]]; then
+    printf '  %sInstalled Version:%s %s\n' "$C_BOLD" "$C_RESET" "$(get_installed_version)"
+  else
+    echo "Lampac is not installed."
+  fi
+  printf '\n'
+}
+
+# Сохранить версию в файлик, чтобы было что потом показывать
+save_installed_version() {
+  local version="$1"
+  local version_file="${INSTALL_ROOT}/${VERSION_FILE_NAME}"
+  echo "$version" > "$version_file"
 }
 
 # ─── Install steps ───────────────────────────────────────────────────────────
@@ -463,6 +521,9 @@ build_rsync_excludes() {
 
     # Файл с пользовательскими дополнительными исключениями
     "excludes.conf"
+
+    # Файл установленной версии (не удалять при обновлении)
+    "${VERSION_FILE_NAME}"
   )
 
   # Дополнительные исключения из excludes.conf (если файл существует)
@@ -519,6 +580,9 @@ download_and_extract_to_staging() {
 }
 
 install_app() {
+  # Добавил параметр в функцию для сохранения в файлик после установки.
+  local release_version="$1"
+  
   local tmp_zip
   tmp_zip="$(mktemp /tmp/lampac-nextgen.XXXXXX.zip)"
   CLEANUP_PATHS+=("$tmp_zip")
@@ -536,11 +600,18 @@ install_app() {
     log_err "Expected Core.dll not found in ${INSTALL_ROOT} — check release layout"
     exit 1
   fi
+
+  # Сохраняем версию
+  save_installed_version "$release_version"
 }
 
 # ─── Update ──────────────────────────────────────────────────────────────────
 
 do_update() {
+
+  # Добавил параметр в функцию для сохранения в файлик после обновления.
+  local new_version="$1"
+  
   if [[ ! -d "$INSTALL_ROOT" ]] || [[ ! -f "${INSTALL_ROOT}/Core.dll" ]]; then
     log_err "Installation not found at ${INSTALL_ROOT} — run without --update first."
     exit 1
@@ -625,6 +696,9 @@ do_update() {
       "${INSTALL_ROOT}/"
 
   set_install_ownership
+
+  # Сохраняем новую версию
+  save_installed_version "$new_version"
 
   spinner_start "Starting ${SERVICE_NAME}..."
   systemctl start "$SERVICE_NAME"
@@ -795,6 +869,14 @@ main() {
   printf '  %sDirectory:%s %s\n'         "$C_BOLD" "$C_RESET" "$INSTALL_ROOT"
   printf '  %sRelease:%s   %s\n'         "$C_BOLD" "$C_RESET" "$PUBLISH_URL"
 
+  # Узнаём и показываем версии под баннером
+  local release_version
+  release_version="$(get_release_version)"
+  if [[ "$UPDATE" -eq 1 ]]; then
+    printf '  %sInstalled Version:%s   %s\n' "$C_BOLD" "$C_RESET" "$(get_installed_version)"
+  fi
+  printf '  %sRelease Version:%s     %s\n' "$C_GREEN" "$C_RESET" "$release_version"
+
   local total_steps=4
   [[ "$UPDATE" -eq 1 ]] && total_steps=3
 
@@ -806,7 +888,7 @@ main() {
 
   if [[ "$UPDATE" -eq 1 ]]; then
     step 3 "$total_steps" "Update application"
-    do_update
+    do_update "$release_version"
     print_post_update
     exit 0
   fi
@@ -815,7 +897,7 @@ main() {
   ensure_service_user
 
   step 4 "$total_steps" "Application"
-  install_app
+  install_app "$release_version"
   install_systemd_unit
   set_install_ownership
   start_service
