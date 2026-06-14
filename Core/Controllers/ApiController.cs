@@ -113,7 +113,7 @@ public class ApiController : BaseController
     [Route("js/nws-client-es5.js")]
     public ActionResult NwsClient()
     {
-        string source = FileCache.ReadAllText("plugins/nws-client-es5.js", "nws-client-es5.js")
+        string source = FileCache.ReadAllText("plugins/nws-client-es5.js", "nws-client-es5.js", saveCache: false)
             .Replace("{localhost}", host);
 
         return ContentTo(source, "application/javascript; charset=utf-8");

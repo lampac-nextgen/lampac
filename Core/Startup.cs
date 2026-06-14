@@ -643,8 +643,13 @@ public class Startup
         if (midd.anonymousRequest)
             app.UseAnonymousRequest();
 
+        #region UseModule
         if (EventListener.Middleware != null)
             app.UseModule(first: true);
+
+        if (EventListener.MiddlewareAsync != null)
+            app.UseModuleAsync(first: true);
+        #endregion
 
         #region UseOverrideResponse
         if (CoreInit.conf.overrideResponse?.Count > 0)
@@ -698,8 +703,13 @@ public class Startup
         app.UseAuthorization();
         app.UseAccsdb();
 
+        #region UseModule
         if (EventListener.Middleware != null)
             app.UseModule(first: false);
+
+        if (EventListener.MiddlewareAsync != null)
+            app.UseModuleAsync(first: false);
+        #endregion
 
         #region UseOverrideResponse
         if (CoreInit.conf.overrideResponse?.Count > 0)

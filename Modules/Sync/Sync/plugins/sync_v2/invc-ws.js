@@ -89,7 +89,7 @@
     window.lwsEvent.init = true;
     window.lwsEvent.uid = j.user_uid;
     if (typeof NativeWsClient == 'undefined') {
-      Lampa.Utils.putScript(["{localhost}/js/nws-client-es5.js?v18112025"], function() {}, false, function() {
+        Lampa.Utils.putScript(["{localhost}/js/nws-client-es5.js?v21042026"], function() {}, false, function() {
         waitEvent();
       }, true);
     } else waitEvent();

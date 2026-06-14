@@ -5,28 +5,28 @@ using System.Threading.Tasks;
 
 namespace Core.Middlewares;
 
-public class Module
+public class ModuleAsync
 {
     private readonly RequestDelegate _next;
     private readonly bool first;
 
-    public Module(RequestDelegate next, bool first)
+    public ModuleAsync(RequestDelegate next, bool first)
     {
         _next = next;
         this.first = first;
     }
 
-    public Task Invoke(HttpContext httpContext)
+    async public Task InvokeAsync(HttpContext httpContext)
     {
         var middlewareEvent = new EventMiddleware(first, httpContext);
 
-        foreach (Func<bool, EventMiddleware, bool> handler in EventListener.Middleware.GetInvocationList())
+        foreach (Func<bool, EventMiddleware, Task<bool>> handler in EventListener.MiddlewareAsync.GetInvocationList())
         {
-            bool next = handler(first, middlewareEvent);
+            bool next = await handler(first, middlewareEvent);
             if (!next)
-                return Task.CompletedTask;
+                return;
         }
 
-        return _next(httpContext);
+        await _next(httpContext);
     }
 }

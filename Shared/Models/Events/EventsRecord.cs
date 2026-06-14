@@ -7,6 +7,7 @@ using Shared.Models.Templates;
 using Shared.Services;
 using System.Net;
 using System.Net.Http;
+using System.Text;
 using System.Text.Json;
 using System.Threading;
 
@@ -36,7 +37,7 @@ public record EventCatalogList(BaseController controller, HttpContext httpContex
 
 public record EventCatalogCard(BaseController controller, HttpContext httpContext, JObject card, string plugin, string uri, string type);
 
-public record EventAppReplace(string source, string token, string arg, string host, RequestModel requestInfo, HttpRequest request);
+public record EventAppReplace(StringBuilder bulder, string token, string arg, string host, RequestModel requestInfo, HttpRequest request);
 
 public record EventExternalids(string id, string imdb_id, string kinopoisk_id, int serial);
 

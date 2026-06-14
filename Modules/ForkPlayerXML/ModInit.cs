@@ -45,16 +45,16 @@ public class ModInit : IModuleLoaded
     }
 
 
-    Task<bool> Middleware(bool first, EventMiddleware e)
+    bool Middleware(bool first, EventMiddleware e)
     {
         if (Utilities.IsForkPlayer(e.httpContext) && e.httpContext.Request.Path.Value == "/")
         {
             string args = Utilities.ClearArgs(e.httpContext.Request.Query);
             e.httpContext.Response.Redirect("/fxml" + (!string.IsNullOrEmpty(args) ? $"?{args.Substring(0, 1)}" : string.Empty));
-            return Task.FromResult(false);
+            return false;
         }
 
-        return Task.FromResult(true);
+        return true;
     }
 
     ActionResult BadInitialization(EventBadInitialization e)

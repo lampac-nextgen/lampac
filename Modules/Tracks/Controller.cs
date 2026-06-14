@@ -1,31 +1,30 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Shared;
+using Shared.Attributes;
 using Shared.Services;
+using Shared.Services.Utilities;
 using System;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Web;
-using Shared.Services.Utilities;
 
 namespace Tracks;
 
 public class TracksController : BaseController
 {
-    [HttpGet]
-    [AllowAnonymous]
+    [HttpGet, AllowAnonymous]
+    [Staticache(cacheMinutes: 10, always: true, setHeadersNoCache: true)]
     [Route("tracks.js")]
     [Route("tracks/js/{token}")]
     public ActionResult Tracks(string token)
     {
-        SetHeadersNoCache();
-
         string plugin = FileCache.ReadAllText($"{ModInit.modpath}/plugin.js", "tracks.js")
             .Replace("{localhost}", host)
             .Replace("{token}", HttpUtility.UrlEncode(token));
 
-        return Content(plugin, "application/javascript; charset=utf-8");
+        return ContentTo(plugin, "application/javascript; charset=utf-8");
     }
 
 

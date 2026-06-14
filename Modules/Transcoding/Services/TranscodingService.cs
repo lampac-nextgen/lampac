@@ -973,6 +973,10 @@ omit_endlist — не добавлять #EXT-X-ENDLIST, чтобы плейли
                             if (index >= lastIndex - 1)
                                 continue;
 
+                            // первые 10 сегментов оставляем
+                            if (10 >= index)
+                                continue;
+
                             File.Delete(file);
                         }
                         catch (System.Exception ex)

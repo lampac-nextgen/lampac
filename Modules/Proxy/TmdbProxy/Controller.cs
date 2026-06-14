@@ -48,7 +48,7 @@ public class TmdbProxyController : BaseController
     [Route("tmdbproxy/js/{token}")]
     public ActionResult TmdbProxy(string token)
     {
-        string plugin = FileCache.ReadAllText($"{ModInit.modpath}/plugin.js", "tmdbproxy.js", saveCache: false)
+        string plugin = FileCache.ReadAllText($"{ModInit.modpath}/plugin.js", "tmdbproxy.js")
             .Replace("{localhost}", host)
             .Replace("{token}", HttpUtility.UrlEncode(token));
 

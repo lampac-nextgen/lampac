@@ -174,8 +174,8 @@ public class ModInit : IModuleLoaded, IModuleConfigure
         _updateDbTimer = new Timer(UpdateDbCallback, null, TimeSpan.FromSeconds(5), TimeSpan.FromSeconds(30));
 
         // === Подписка на EventListener вместо app.UseMiddleware ===
-        EventListener.Middleware -= LogUserRequestListener.InvokeAsync;
-        EventListener.Middleware += LogUserRequestListener.InvokeAsync;
+        EventListener.MiddlewareAsync -= LogUserRequestListener.InvokeAsync;
+        EventListener.MiddlewareAsync += LogUserRequestListener.InvokeAsync;
 
         Console.WriteLine($"[LogUserRequest-Lite] Module loaded (logDay={conf.logDay})");
     }
@@ -183,7 +183,7 @@ public class ModInit : IModuleLoaded, IModuleConfigure
     public void Dispose()
     {
         // === Отписка ===
-        EventListener.Middleware -= LogUserRequestListener.InvokeAsync;
+        EventListener.MiddlewareAsync -= LogUserRequestListener.InvokeAsync;
 
         _clearJurnalTimer?.Dispose();
         _statsTimer?.Dispose();

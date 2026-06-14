@@ -13,11 +13,16 @@ public class BaseENGController : BaseOnlineController
 
     static readonly int hlsTimeout = (int)TimeSpan.FromSeconds(30).TotalMilliseconds;
 
-    async public Task<ActionResult> ViewTmdb(bool checksearch, long id, long tmdb_id, string imdb_id, string title, string original_title, byte serial, short s = -1, bool rjson = false, bool mp4 = false, string method = "play", int hls_manifest_timeout = 0, string extension = "m3u8")
+    public Task<ActionResult> ViewTmdb(bool checksearch, long id, long tmdb_id, string imdb_id, string title, string original_title, byte serial, short s = -1, bool rjson = false, bool mp4 = false, string method = "play", int hls_manifest_timeout = 0, string extension = "m3u8")
     {
         if (checksearch)
-            return Content("data-json=");
+            return Task.FromResult<ActionResult>(Content("data-json=", "application/json; charset=utf-8"));
 
+        return ViewTmdbAsync(id, tmdb_id, imdb_id, title, original_title, serial, s, rjson, mp4, method, hls_manifest_timeout, extension);
+    }
+
+    async Task<ActionResult> ViewTmdbAsync(long id, long tmdb_id, string imdb_id, string title, string original_title, byte serial, short s = -1, bool rjson = false, bool mp4 = false, string method = "play", int hls_manifest_timeout = 0, string extension = "m3u8")
+    {
         if (await IsRequestBlocked(rch: false))
             return badInitMsg;
 
@@ -26,6 +31,8 @@ public class BaseENGController : BaseOnlineController
 
         if (hls_manifest_timeout == 0)
             hls_manifest_timeout = hlsTimeout;
+
+        string plugin = init.plugin.ToLowerAndTrim();
 
         if (serial == 1)
         {
@@ -64,7 +71,7 @@ public class BaseENGController : BaseOnlineController
 
                     tpl.Append(
                         $"{number} сезон",
-                        $"{host}/lite/{init.plugin.ToLower()}?id={id}&imdb_id={imdb_id}&serial=1&rjson={rjson}&title={enc_title}&original_title={enc_original_title}&s={number}",
+                        $"{host}/lite/{plugin}?id={id}&imdb_id={imdb_id}&serial=1&rjson={rjson}&title={enc_title}&original_title={enc_original_title}&s={number}",
                         number
                     );
                 }
@@ -85,8 +92,7 @@ public class BaseENGController : BaseOnlineController
                     for (short i = 1; i <= season.Value<short>("episode_count"); i++)
                     {
                         string path = (mp4 || method == "call") ? "video" : $"video.{extension}";
-                        string uri = $"{host}/lite/{init.plugin.ToLower()}/{path}?id={id}&imdb_id={imdb_id}&s={s}&e={i}";
-                        string stream = method == "call" ? accsArgs($"{host}/lite/{init.plugin.ToLower()}/{(mp4 ? "video" : $"video.{extension}")}?id={id}&imdb_id={imdb_id}&s={s}&e={i}&play=true") : null;
+                        string uri = $"{host}/lite/{plugin}/{path}?id={id}&imdb_id={imdb_id}&s={s}&e={i}";
 
                         if (method == "play")
                             uri = accsArgs(uri);
@@ -98,7 +104,9 @@ public class BaseENGController : BaseOnlineController
                             i,
                             uri,
                             method,
-                            streamlink: stream,
+                            streamlink: method == "call"
+                                ? accsArgs($"{host}/lite/{plugin}/{(mp4 ? "video" : $"video.{extension}")}?id={id}&imdb_id={imdb_id}&s={s}&e={i}&play=true")
+                                : null,
                             vast: init.vast,
                             hls_manifest_timeout: hls_manifest_timeout
                         );
@@ -116,8 +124,7 @@ public class BaseENGController : BaseOnlineController
             var mtpl = new MovieTpl(title, original_title);
 
             string path = (mp4 || method == "call") ? "video" : $"video.{extension}";
-            string uri = $"{host}/lite/{init.plugin.ToLower()}/{path}?id={id}&imdb_id={imdb_id}";
-            string stream = method == "call" ? accsArgs($"{host}/lite/{init.plugin.ToLower()}/{(mp4 ? "video" : $"video.{extension}")}?id={id}&imdb_id={imdb_id}&play=true") : null;
+            string uri = $"{host}/lite/{plugin}/{path}?id={id}&imdb_id={imdb_id}";
 
             if (method == "play")
                 uri = accsArgs(uri);
@@ -126,7 +133,9 @@ public class BaseENGController : BaseOnlineController
                 "English",
                 uri,
                 method,
-                stream: stream,
+                stream: method == "call"
+                    ? accsArgs($"{host}/lite/{plugin}/{(mp4 ? "video" : $"video.{extension}")}?id={id}&imdb_id={imdb_id}&play=true")
+                    : null,
                 vast: init.vast,
                 hls_manifest_timeout: hls_manifest_timeout
             );

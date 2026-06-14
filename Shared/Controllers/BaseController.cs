@@ -110,38 +110,45 @@ public class BaseController : Controller
     #region mylocalip
     static string lastMyIp = null;
 
-    async public ValueTask<string> mylocalip()
+    public ValueTask<string> mylocalip()
     {
         string key = "BaseController:mylocalip";
-        if (!memoryCache.TryGetValue(key, out string userIp))
-        {
-            if (EventListener.MyLocalIp != null)
-            {
-                var em = new EventMyLocalIp(requestInfo, HttpContext.Request, HttpContext);
+        if (memoryCache.TryGetValue(key, out string userIp))
+            return ValueTask.FromResult(userIp);
 
-                foreach (Func<EventMyLocalIp, Task<string>> handler in EventListener.MyLocalIp.GetInvocationList())
+        return mylocalipAsync(key);
+    }
+
+    async ValueTask<string> mylocalipAsync(string key)
+    {
+        string userIp = null;
+
+        if (EventListener.MyLocalIp != null)
+        {
+            var em = new EventMyLocalIp(requestInfo, HttpContext.Request, HttpContext);
+
+            foreach (Func<EventMyLocalIp, Task<string>> handler in EventListener.MyLocalIp.GetInvocationList())
+            {
+                string eip = await handler(em);
+                if (!string.IsNullOrEmpty(eip))
                 {
-                    string eip = await handler(em);
-                    if (!string.IsNullOrEmpty(eip))
-                    {
-                        userIp = eip;
-                        break;
-                    }
+                    userIp = eip;
+                    break;
                 }
             }
-
-            if (string.IsNullOrEmpty(userIp))
-            {
-                var myip = await Http.Get<JObject>("https://api.ipify.org/?format=json");
-                if (myip == null || string.IsNullOrEmpty(myip.Value<string>("ip")))
-                    return lastMyIp;
-
-                userIp = myip.Value<string>("ip");
-                lastMyIp = userIp;
-            }
-
-            memoryCache.Set(key, userIp, DateTime.Now.AddMinutes(5));
         }
+
+        if (string.IsNullOrEmpty(userIp))
+        {
+            var myip = await Http.Get<JObject>("https://api.ipify.org/?format=json");
+            if (myip == null || string.IsNullOrEmpty(myip.Value<string>("ip")))
+                return lastMyIp;
+
+            userIp = myip.Value<string>("ip");
+            lastMyIp = userIp;
+        }
+
+        memoryCache.Set(key, userIp, TimeSpan.FromMinutes(5));
 
         return userIp;
     }
@@ -1258,7 +1265,7 @@ public class BaseController : Controller
     }
     #endregion
 
-    #region ContentTo
+    #region ContentTo / string
     public ActionResult ContentTo(string html, string contentType = null)
     {
         if (string.IsNullOrEmpty(html))
@@ -1303,6 +1310,64 @@ public class BaseController : Controller
 
             if (charsUsed == 0 && bytesUsed == 0)
                 break;
+        }
+
+        Span<byte> tail = BodyWriter.GetSpan(128);
+
+        encoder.Convert(
+            ReadOnlySpan<char>.Empty,
+            tail,
+            flush: true,
+            out int _,
+            out int _bytesUsed,
+            out bool _);
+
+        if (_bytesUsed > 0)
+            BodyWriter.Advance(_bytesUsed);
+
+        return _emptyResult;
+    }
+    #endregion
+
+    #region ContentTo / StringBuilder
+    public ActionResult ContentTo(StringBuilder sb, string contentType)
+    {
+        if (sb.Length == 0)
+            return StatusCode(503);
+
+        var response = HttpContext.Response;
+        response.ContentType = contentType;
+
+        var encoder = Encoding.UTF8.GetEncoder();
+
+        foreach (var chunk in sb.GetChunks())
+        {
+            ReadOnlySpan<char> chars = chunk.Span;
+
+            while (!chars.IsEmpty)
+            {
+                Span<byte> span = BodyWriter.GetSpan(PoolInvk._chunk32);
+
+                encoder.Convert(
+                    chars,
+                    span,
+                    flush: false,
+                    out int charsUsed,
+                    out int bytesUsed,
+                    out bool completed);
+
+                if (bytesUsed > 0)
+                {
+                    BodyWriter.Advance(bytesUsed);
+                    chars = chars.Slice(charsUsed);
+                }
+
+                if (completed)
+                    break;
+
+                if (charsUsed == 0 && bytesUsed == 0)
+                    throw new InvalidOperationException("UTF8 encoder made no progress.");
+            }
         }
 
         Span<byte> tail = BodyWriter.GetSpan(128);

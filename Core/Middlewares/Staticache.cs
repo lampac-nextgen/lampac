@@ -173,6 +173,9 @@ public class Staticache
         if (staticache == null)
             return _next(httpContext);
 
+        if (staticache.setHeadersNoCache)
+            WriteNoCache(httpContext);
+
         var init = CoreInit.conf.Staticache;
 
         #region EventListener
@@ -226,9 +229,6 @@ public class Staticache
         if (init.disabledPaths != null && init.disabledPaths.Contains(path))
             return _next(httpContext);
 
-        if (staticache.setHeadersNoCache)
-            WriteNoCache(httpContext);
-
         if (0 >= route.cacheMinutes)
             route.cacheMinutes = staticache.cacheMinutes;
 
@@ -248,6 +248,8 @@ public class Staticache
         {
             httpContext.Response.StatusCode = _r.statusCode;
             httpContext.Response.Headers["X-StatiCache-Status"] = "HIT";
+            httpContext.Response.Headers["X-StatiCache-Bucket"] = BucketFolders.Name(cachekey[0]);
+            httpContext.Response.Headers["X-StatiCache-Id"] = cachekey;
 
             string ext = _r.ext switch
             {

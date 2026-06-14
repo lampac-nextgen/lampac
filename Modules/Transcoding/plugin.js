@@ -177,7 +177,7 @@
 			playback.ffprobe = null;
             playback.url = json.playlistUrl;
             playback.subtitles_call = json.subtitlesUrl;
-            playback.hls_manifest_timeout = json.hls_timeout_seconds;
+            playback.hls_manifest_timeout = json.hls_timeout_seconds * 1000;
             Lampa.Player.play(playback);
 			
         }, function (error) {

@@ -28,7 +28,7 @@ public static class GCMode
                     Interlocked.Exchange(ref collect, 1);
                 }
 
-                return Task.FromResult(true);
+                return true;
             };
 
             _timer = new Timer(_ =>

@@ -3,8 +3,9 @@ using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using Shared;
-using Shared.Services;
+using Shared.Attributes;
 using Shared.Models.Base;
+using Shared.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -17,19 +18,17 @@ namespace TimeCode;
 public class TimeCodeController : BaseController
 {
     #region timecode.js
-    [HttpGet]
-    [AllowAnonymous]
+    [HttpGet, AllowAnonymous]
+    [Staticache(cacheMinutes: 10, always: true, setHeadersNoCache: true)]
     [Route("timecode.js")]
     [Route("timecode/js/{token}")]
     public ActionResult timecode(string token)
     {
-        SetHeadersNoCache();
-
         string plugin = FileCache.ReadAllText($"{ModInit.modpath}/plugin.js", "timecode.js")
             .Replace("{localhost}", host)
             .Replace("{token}", HttpUtility.UrlEncode(token));
 
-        return Content(plugin, "application/javascript; charset=utf-8");
+        return ContentTo(plugin, "application/javascript; charset=utf-8");
     }
     #endregion
 

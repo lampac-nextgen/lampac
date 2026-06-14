@@ -1,5 +1,6 @@
 using Microsoft.AspNetCore.Mvc;
 using Shared.Models.Templates;
+using System.Text;
 
 namespace Shared.Models.Events;
 
@@ -53,9 +54,11 @@ public class EventListener
 
     public static Func<EventControllerHttpHeaders, Dictionary<string, string>> HttpHeaders;
 
-    public static Func<bool, EventMiddleware, Task<bool>> Middleware;
+    public static Func<bool, EventMiddleware, bool> Middleware;
 
-    public static Func<string, EventAppReplace, string> AppReplace;
+    public static Func<bool, EventMiddleware, Task<bool>> MiddlewareAsync;
+
+    public static Func<string, EventAppReplace, StringBuilder> AppReplace;
 
     public static Action<EventHttpHandler> HttpHandler;
 

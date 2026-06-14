@@ -59,6 +59,11 @@ public static class Extensions
         return builder.UseMiddleware<Module>(first);
     }
 
+    public static IApplicationBuilder UseModuleAsync(this IApplicationBuilder builder, bool first)
+    {
+        return builder.UseMiddleware<ModuleAsync>(first);
+    }
+
     public static IApplicationBuilder UseStaticache(this IApplicationBuilder builder)
     {
         return builder.UseMiddleware<Staticache>();

@@ -22,7 +22,7 @@ namespace ExternalBind
             "/lite/iptvonline/bind",
         };
 
-        static readonly Func<bool, EventMiddleware, Task<bool>> MiddlewareHandler = OnMiddleware;
+        static readonly Func<bool, EventMiddleware, bool> MiddlewareHandler = OnMiddleware;
 
         public void Loaded(InitspaceModel initspace)
         {
@@ -34,14 +34,14 @@ namespace ExternalBind
             EventListener.Middleware -= MiddlewareHandler;
         }
 
-        static Task<bool> OnMiddleware(bool first, EventMiddleware e)
+        static bool OnMiddleware(bool first, EventMiddleware e)
         {
             var requestInfo = e.httpContext.Features.Get<RequestModel>();
             var path = e.httpContext.Request.Path.Value;
             if (requestInfo != null && path != null && ExternalBindPaths.Contains(path))
                 requestInfo.IsLocalIp = true;
 
-            return Task.FromResult(true);
+            return true;
         }
     }
 }

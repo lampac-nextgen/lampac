@@ -47,7 +47,7 @@ public class ModInit : IModuleLoaded
         return false;
     }
 
-    static Task<bool> Middleware(bool first, EventMiddleware e)
+    static bool Middleware(bool first, EventMiddleware e)
     {
         if (e.httpContext.Request.Query.TryGetValue("initial", out var initial) && initial.Count > 0 && initial[0] == "potok")
         {
@@ -66,6 +66,6 @@ public class ModInit : IModuleLoaded
             e.httpContext.Request.QueryString = builder.ToQueryString();
         }
 
-        return Task.FromResult(true);
+        return true;
     }
 }

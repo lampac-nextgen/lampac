@@ -82,7 +82,7 @@ public class ProxyImg
 
         string href = decryptLink?.uri;
 
-        if (string.IsNullOrWhiteSpace(href) || !href.StartsWith("http"))
+        if (string.IsNullOrEmpty(href) || !href.StartsWith("http"))
         {
             httpContext.Response.StatusCode = 404;
             return;
@@ -189,10 +189,16 @@ public class ProxyImg
                         await httpContext.Response.SendFileAsync(outFile, ctsHttp.Token).ConfigureAwait(false);
                         return;
                     }
-                    catch (Exception ex)
+                    catch (FileNotFoundException ex)
                     {
                         fileWatcher.Remove(fileName);
                         Log.Error(ex, "CatchId={CatchId}", "id_7ong4hmg");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Error(ex, "CatchId={CatchId}", "id_8h9jv1s0");
+                        httpContext.Response.Redirect(href);
+                        return;
                     }
                 }
                 #endregion
@@ -507,6 +513,7 @@ public class ProxyImg
         catch (Exception ex)
         {
             Log.Error(ex, "CatchId={CatchId}", "id_4qyrn7xp");
+            httpContext.Response.Redirect(href);
         }
     }
 

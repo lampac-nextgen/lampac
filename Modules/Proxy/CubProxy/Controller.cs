@@ -128,7 +128,7 @@ public class CubProxyController : BaseController
         queryKeys = [".*"]
     )]
     [Route("cub/{*suffix}")]
-    async public Task Proxy()
+    public Task Proxy()
     {
         var init = ModInit.conf;
 
@@ -147,7 +147,7 @@ public class CubProxyController : BaseController
         if (subdomain.Equals("ws"))
         {
             HttpContext.Response.Redirect($"https://{domain}{HttpContext.Request.QueryString.Value}");
-            return;
+            return Task.CompletedTask;
         }
         #endregion
 
@@ -157,7 +157,7 @@ public class CubProxyController : BaseController
             HttpContext.Response.ContentType = "text/plain; charset=utf-8";
             HttpContext.Response.StatusCode = StatusCodes.Status200OK;
             HttpContext.Response.BodyWriter.Write("ok"u8);
-            return;
+            return Task.CompletedTask;
         }
         #endregion
 
@@ -167,7 +167,7 @@ public class CubProxyController : BaseController
             HttpContext.Response.ContentType = "application/json; charset=utf-8";
             HttpContext.Response.StatusCode = StatusCodes.Status200OK;
             HttpContext.Response.BodyWriter.Write("[]"u8);
-            return;
+            return Task.CompletedTask;
         }
         #endregion
 
@@ -177,10 +177,29 @@ public class CubProxyController : BaseController
             HttpContext.Response.ContentType = "application/json; charset=utf-8";
             HttpContext.Response.StatusCode = StatusCodes.Status200OK;
             HttpContext.Response.BodyWriter.Write("{\"secuses\":true}"u8);
-            return;
+            return Task.CompletedTask;
         }
         #endregion
 
+        #region ads
+        if (uri.StartsWith("api/ad/vast"))
+        {
+            return HttpContext.Response.WriteAsJsonAsync(new
+            {
+                secuses = true,
+                ad = Array.Empty<string>(),
+                day_of_month = DateTime.Now.Day,
+                days_in_month = 31,
+                month = DateTime.Now.Month
+            }, HttpContext.RequestAborted);
+        }
+        #endregion
+
+        return ProxyAsync(init, path, uri, subdomain, domain);
+    }
+
+    async Task ProxyAsync(ModuleConf init, string path, string uri, string subdomain, string domain)
+    {
         using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted))
         {
             ctsHttp.CancelAfter(TimeSpan.FromSeconds(15));
@@ -193,22 +212,6 @@ public class CubProxyController : BaseController
                     country = await mylocalip();
 
                 await HttpContext.Response.WriteAsync(country ?? string.Empty, ctsHttp.Token);
-                return;
-            }
-            #endregion
-
-            #region ads
-            if (uri.StartsWith("api/ad/vast"))
-            {
-                await HttpContext.Response.WriteAsJsonAsync(new
-                {
-                    secuses = true,
-                    ad = Array.Empty<string>(),
-                    day_of_month = DateTime.Now.Day,
-                    days_in_month = 31,
-                    month = DateTime.Now.Month
-                }, ctsHttp.Token);
-
                 return;
             }
             #endregion

@@ -96,13 +96,7 @@ public class Accsdb
 
         if (CoreInit.conf.accsdb.enable)
         {
-            bool limitip = false;
-            var user = requestInfo.user;
             var accsdb = CoreInit.conf.accsdb;
-            var now = DateTime.Now;
-
-            if (user?.bypass_accsdb == true)
-                return _next(httpContext);
 
             if (requestInfo.IsLocalRequest || requestInfo.IsAnonymousRequest)
                 return _next(httpContext);
@@ -119,7 +113,14 @@ public class Accsdb
             if (requestInfo.user_uid != null && accsdb.white_uids != null && accsdb.white_uids.Contains(requestInfo.user_uid))
                 return _next(httpContext);
 
+            var now = DateTime.Now;
+            var user = requestInfo.user;
+
+            if (user?.bypass_accsdb == true)
+                return _next(httpContext);
+
             string uri = path + httpContext.Request.QueryString.Value;
+            bool limitip = false;
 
             if (IsLockHostOrUser(memoryCache, requestInfo.user_uid, requestInfo.IP, uri, out limitip)
                 || user == null
@@ -207,8 +208,15 @@ public class Accsdb
 
         if (uri.StartsWith("/lifeevents", StringComparison.Ordinal) ||
             uri.StartsWith("/externalids", StringComparison.Ordinal) ||
+            uri.StartsWith("/testaccsdb", StringComparison.Ordinal) ||
             uri.StartsWith("/sisi/bookmark", StringComparison.Ordinal) ||
-            uri.StartsWith("/sisi/history", StringComparison.Ordinal))
+            uri.StartsWith("/sisi/history", StringComparison.Ordinal) ||
+            uri.StartsWith("/tmdb/", StringComparison.Ordinal) ||
+            uri.StartsWith("/timecode/", StringComparison.Ordinal) ||
+            uri.StartsWith("/bookmark/", StringComparison.Ordinal) ||
+            uri.StartsWith("/storage/", StringComparison.Ordinal) ||
+            uri.StartsWith("/cub/", StringComparison.Ordinal) ||
+            uri.StartsWith("/dlna/", StringComparison.Ordinal))
         {
             islock = false;
             return islock;

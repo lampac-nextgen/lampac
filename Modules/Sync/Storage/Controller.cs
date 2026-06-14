@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Shared;
+using Shared.Attributes;
 using Shared.Services;
 using Shared.Services.Pools;
 using Shared.Services.Pools.Json;
@@ -21,19 +22,17 @@ public class StorageController : BaseController
     const long maxRequestSize = 10 * 1024 * 1024;
 
     #region backup.js
-    [HttpGet]
-    [AllowAnonymous]
+    [HttpGet, AllowAnonymous]
+    [Staticache(cacheMinutes: 10, always: true, setHeadersNoCache: true)]
     [Route("backup.js")]
     [Route("backup/js/{token}")]
     public ActionResult Backup(string token)
     {
-        SetHeadersNoCache();
-
         string plugin = FileCache.ReadAllText($"{ModInit.modpath}/backup.js", "backup.js")
             .Replace("{localhost}", host)
             .Replace("{token}", HttpUtility.UrlEncode(token));
 
-        return Content(plugin, "application/javascript; charset=utf-8");
+        return ContentTo(plugin, "application/javascript; charset=utf-8");
     }
     #endregion
 

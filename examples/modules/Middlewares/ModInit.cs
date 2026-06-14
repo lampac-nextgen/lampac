@@ -14,27 +14,27 @@ public class ModInit : IModuleLoaded
     public void Loaded(InitspaceModel conf)
     {
         EventListener.Middleware += Invoke;
-        EventListener.Middleware += InvokeAsync;
+        EventListener.MiddlewareAsync += InvokeAsync;
     }
 
     public void Dispose()
     {
         EventListener.Middleware -= Invoke;
-        EventListener.Middleware -= InvokeAsync;
+        EventListener.MiddlewareAsync -= InvokeAsync;
     }
 
 
-    public static Task<bool> Invoke(bool first, EventMiddleware e)
+    public static bool Invoke(bool first, EventMiddleware e)
     {
         var httpContext = e.httpContext;
         var requestInfo = httpContext.Features.Get<RequestModel>();
         if (first || requestInfo.IsLocalRequest || requestInfo.IsAnonymousRequest)
-            return Task.FromResult(true);
+            return true;
 
         if (Regex.IsMatch(httpContext.Request.Path.Value, "^/(kinogram|porngram|lamson)"))
             httpContext.Response.Headers["X-Lamson"] = "Middleware was here";
 
-        return Task.FromResult(true);
+        return true;
     }
 
 

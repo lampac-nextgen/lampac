@@ -41,94 +41,95 @@ public class OnlineApiController : BaseController
     public ActionResult Online(string token)
     {
         var init = ModInit.conf;
-        var apr = init.appReplace;
 
-        (string file, string filecleaer) cache;
-
-        cache.file = FileCache.ReadAllText($"{ModInit.modpath}/plugin.js", "online.js", false)
-            .Replace("{rch_websoket}", FileCache.ReadAllText("plugins/rch_nws.js", "rch_nws.js", false));
-
-        #region appReplace
-        if (apr != null)
+        string file = memoryCache.GetOrCreate("online.js", entry =>
         {
-            foreach (var r in apr)
+            entry.AbsoluteExpirationRelativeToNow = TimeSpan.FromMinutes(10);
+            string filejs = FileCache.ReadAllText($"{ModInit.modpath}/plugin.js", "online.js", saveCache: false);
+
+            #region appReplace
+            if (init.appReplace != null)
             {
-                string val = r.Value;
-                if (val.StartsWith("file:"))
-                    val = IO.File.ReadAllText(val.Substring(5));
+                foreach (var r in init.appReplace)
+                {
+                    string val = r.Value;
+                    if (val.StartsWith("file:"))
+                        val = IO.File.ReadAllText(val.Substring(5));
 
-                cache.file = Regex.Replace(cache.file, r.Key, val, RegexOptions.IgnoreCase);
+                    filejs = Regex.Replace(filejs, r.Key, val, RegexOptions.IgnoreCase);
+                }
             }
-        }
-        #endregion
+            #endregion
 
-        if (!init.version)
+            if (!init.version)
+            {
+                filejs = Regex.Replace(filejs, "version: \\'[^\\']+\\'", "version: ''")
+                    .Replace("manifst.name, \" v\"", "manifst.name, \" \"");
+            }
+
+            if (init.description != "Плагин для просмотра онлайн сериалов и фильмов")
+                filejs = Regex.Replace(filejs, "description: \\'([^\\']+)?\\'", $"description: '{init.description}'");
+
+            if (init.apn != null)
+                filejs = Regex.Replace(filejs, "apn: \\'([^\\']+)?\\'", $"apn: '{init.apn}'");
+
+            return filejs;
+        });
+
+        var bulder = StringBuilderPool.Rent();
+
+        try
         {
-            cache.file = Regex.Replace(cache.file, "version: \\'[^\\']+\\'", "version: ''")
-                .Replace("manifst.name, \" v\"", "manifst.name, \" \"");
-        }
+            bulder = bulder.Append(file);
+            bulder = bulder.Replace("{rch_websoket}", FileCache.ReadAllText("plugins/rch_nws.js", "rch_nws.js"));
 
-        if (init.description != "Плагин для просмотра онлайн сериалов и фильмов")
-            cache.file = Regex.Replace(cache.file, "description: \\'([^\\']+)?\\'", $"description: '{init.description}'");
+            if (!init.spider)
+            {
+                bulder = bulder
+                    .Replace("addSourceSearch('Spider', 'spider');", "")
+                    .Replace("addSourceSearch('Anime', 'spider/anime');", "");
+            }
 
-        if (init.apn != null)
-            cache.file = Regex.Replace(cache.file, "apn: \\'([^\\']+)?\\'", $"apn: '{init.apn}'");
+            if (init.component != "lampac")
+            {
+                bulder = bulder
+                    .Replace("component: 'lampac'", $"component: '{init.component}'")
+                    .Replace("'lampac', component", $"'{init.component}', component")
+                    .Replace("window.lampac_plugin", $"window.{init.component}_plugin");
+            }
 
-        var bulder = new StringBuilder(cache.file);
+            if (init.name != "Lampac")
+                bulder = bulder.Replace("name: 'Lampac'", $"name: '{init.name}'");
 
-        if (!init.spider)
-        {
+            if (CoreInit.conf.kit.aesgcmkeyName != null)
+                bulder = bulder.Replace("aesgcmkey", CoreInit.conf.kit.aesgcmkeyName);
+
+            if (init.spiderName != "Spider")
+            {
+                bulder = bulder
+                    .Replace("addSourceSearch('Spider'", $"addSourceSearch('{init.spiderName}'")
+                    .Replace("addSourceSearch('Anime'", $"addSourceSearch('{init.spiderName} - Anime'");
+            }
+
             bulder = bulder
-                .Replace("addSourceSearch('Spider', 'spider');", "")
-                .Replace("addSourceSearch('Anime', 'spider/anime');", "");
-        }
+                .Replace("{invc-rch}", FileCache.ReadAllText("plugins/invc-rch.js", "invc-rch.js"))
+                .Replace("{invc-rch_nws}", FileCache.ReadAllText("plugins/invc-rch_nws.js", "invc-rch_nws.js"))
+                .Replace("{player-inner}", string.Empty)
+                .Replace("{localhost}", host)
+                .Replace("{token}", HttpUtility.UrlEncode(token));
 
-        if (init.component != "lampac")
+            if (EventListener.AppReplace != null)
+            {
+                foreach (Func<string, EventAppReplace, StringBuilder> handler in EventListener.AppReplace.GetInvocationList())
+                    bulder = handler.Invoke("online", new EventAppReplace(bulder, token, null, host, requestInfo, HttpContext.Request));
+            }
+
+            return ContentTo(bulder, "application/javascript; charset=utf-8");
+        }
+        finally
         {
-            bulder = bulder
-                .Replace("component: 'lampac'", $"component: '{init.component}'")
-                .Replace("'lampac', component", $"'{init.component}', component")
-                .Replace("window.lampac_plugin", $"window.{init.component}_plugin");
+            StringBuilderPool.Return(bulder);
         }
-
-        if (init.name != "Lampac")
-            bulder = bulder.Replace("name: 'Lampac'", $"name: '{init.name}'");
-
-        if (CoreInit.conf.kit.aesgcmkeyName != null)
-            bulder = bulder.Replace("aesgcmkey", CoreInit.conf.kit.aesgcmkeyName);
-
-        if (init.spiderName != "Spider")
-        {
-            bulder = bulder
-                .Replace("addSourceSearch('Spider'", $"addSourceSearch('{init.spiderName}'")
-                .Replace("addSourceSearch('Anime'", $"addSourceSearch('{init.spiderName} - Anime'");
-        }
-
-        bulder = bulder
-            .Replace("{invc-rch}", FileCache.ReadAllText("plugins/invc-rch.js", "invc-rch.js", false))
-            .Replace("{invc-rch_nws}", FileCache.ReadAllText("plugins/invc-rch_nws.js", "invc-rch_nws.js", false))
-            .Replace("{player-inner}", string.Empty)
-            .Replace("{localhost}", host);
-
-        cache.file = bulder.ToString();
-        cache.filecleaer = cache.file.Replace("{token}", string.Empty);
-
-        if (EventListener.AppReplace != null)
-        {
-            string source = cache.file;
-
-            foreach (Func<string, EventAppReplace, string> handler in EventListener.AppReplace.GetInvocationList())
-                source = handler.Invoke("online", new EventAppReplace(source, token, null, host, requestInfo, HttpContext.Request));
-
-            return ContentTo(source.Replace("{token}", HttpUtility.UrlEncode(token)), "application/javascript; charset=utf-8");
-        }
-
-        return ContentTo(
-            token != null
-                ? cache.file.Replace("{token}", HttpUtility.UrlEncode(token))
-                : cache.filecleaer,
-            "application/javascript; charset=utf-8"
-        );
     }
     #endregion
 
@@ -761,7 +762,7 @@ public class OnlineApiController : BaseController
                 return;
             }
 
-            if (init.group_hide)
+            if (init.group_hide && !requestInfo.IsLocalRequest)
             {
                 if (init.group > 0)
                 {

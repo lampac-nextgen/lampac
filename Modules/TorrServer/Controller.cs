@@ -2,6 +2,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Shared;
+using Shared.Attributes;
 using Shared.Models.Base;
 using Shared.Services;
 using Shared.Services.Pools;
@@ -43,19 +44,18 @@ public class TorrServerController : BaseController
 
     #region ts.js
     [HttpGet, AllowAnonymous]
+    [Staticache(cacheMinutes: 10, always: true, setHeadersNoCache: true)]
     [Route("ts.js")]
     [Route("ts/js/{token}")]
     public ActionResult Plugin(string token)
     {
-        SetHeadersNoCache();
-
         string plugins = FileCache.ReadAllText($"{ModInit.modpath}/plugins.js", "ts.js")
             .Replace("{localhost}", Regex.Replace(host, "^https?://", ""));
 
         if (!string.IsNullOrEmpty(token))
             plugins = Regex.Replace(plugins, "Lampa.Storage.set\\('torrserver_login'[^\n\r]+", $"Lampa.Storage.set('torrserver_login','{HttpUtility.UrlEncode(token)}');");
 
-        return Content(plugins, "application/javascript; charset=utf-8");
+        return ContentTo(plugins, "application/javascript; charset=utf-8");
     }
     #endregion
 

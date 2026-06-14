@@ -7,8 +7,10 @@ using NetVips;
 using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Shared;
-using Shared.Services;
+using Shared.Attributes;
 using Shared.Models.Base;
+using Shared.Services;
+using Shared.Services.Utilities;
 using System;
 using System.Collections.Generic;
 using System.IO;
@@ -18,7 +20,6 @@ using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using IO = System.IO;
-using Shared.Services.Utilities;
 
 namespace DLNA;
 
@@ -200,19 +201,17 @@ public class DLNAController : BaseController
     #endregion
 
     #region dlna.js
-    [HttpGet]
-    [AllowAnonymous]
+    [HttpGet, AllowAnonymous]
+    [Staticache(cacheMinutes: 10, always: true, setHeadersNoCache: true)]
     [Route("dlna.js")]
     [Route("dlna/js/{token}")]
     public ActionResult Plugin(string token)
     {
-        SetHeadersNoCache();
-
-        var plugin = FileCache.ReadAllText($"{ModInit.modpath}/plugin.js", "dlna.js")
+        var plugin = FileCache.ReadAllText($"{ModInit.modpath}/plugin.js", "dlna.js", saveCache: false)
             .Replace("{localhost}", host)
             .Replace("{token}", HttpUtility.UrlEncode(token));
 
-        return Content(plugin, "application/javascript; charset=utf-8");
+        return ContentTo(plugin, "application/javascript; charset=utf-8");
     }
     #endregion
 
