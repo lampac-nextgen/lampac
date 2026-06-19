@@ -100,7 +100,15 @@ RUN apt-get update \
     chromium \
     curl \
     fontconfig \
+    gstreamer1.0-libav \
+    gstreamer1.0-plugins-bad \
+    gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-base-apps \
+    gstreamer1.0-plugins-good \
+    gstreamer1.0-tools \
     imagemagick \
+    libgstreamer-plugins-base1.0-0 \
+    libgstreamer1.0-0 \
     libicu76 \
     libjpeg-dev \
     libnspr4 \
