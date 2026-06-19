@@ -1,0 +1,12 @@
+{
+  "enable": true,
+  "references": [
+    "references/"
+  ],
+  "tree": [
+    "Services",
+    "Models",
+    "Controller.cs",
+    "ModInit.cs"
+  ]
+}
