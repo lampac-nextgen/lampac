@@ -320,7 +320,7 @@ is_ubuntu() {
 
 # ─── Version ───────────────────────────────────────────────────────────
 
-# Получить номер последнего (latest) релиза Лампака с гитхаба
+# Получить номер последнего [пре-]релиза Лампака с гитхаба
 get_release_version() {
   if ! command -v curl >/dev/null 2>&1; then
     log_err "curl is required to get release version."
@@ -330,10 +330,19 @@ get_release_version() {
     log_err "jq is required to get release version."
     exit 1
   fi
-  local api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
+  local api_url="https://api.github.com/repos/${GITHUB_REPO}/releases"
   local version
+
+  # Проверяем флаг пререлиза
+  local pr_arg
+  if [[ "$PRE_RELEASE" -eq 1 ]]; then
+    pr_arg="true"
+  else
+    pr_arg="false"
+  fi
+
   version=$(curl -sSL -H 'Accept: application/vnd.github+json' "$api_url" \
-    | jq -r '.tag_name' | sed 's/^v//') || true
+    | jq -r --argjson prerelease "$pr_arg" '.[] | select(.prerelease == $prerelease) | .tag_name' | head -n1 | sed 's/^v//') || true
   if [[ -z "${version:-}" ]]; then
     log_err "Could not determine release version from ${api_url}."
     exit 1
@@ -582,7 +591,7 @@ download_and_extract_to_staging() {
 install_app() {
   # Добавил параметр в функцию для сохранения в файлик после установки.
   local release_version="$1"
-  
+
   local tmp_zip
   tmp_zip="$(mktemp /tmp/lampac-nextgen.XXXXXX.zip)"
   CLEANUP_PATHS+=("$tmp_zip")
@@ -611,7 +620,7 @@ do_update() {
 
   # Добавил параметр в функцию для сохранения в файлик после обновления.
   local new_version="$1"
-  
+
   if [[ ! -d "$INSTALL_ROOT" ]] || [[ ! -f "${INSTALL_ROOT}/Core.dll" ]]; then
     log_err "Installation not found at ${INSTALL_ROOT} — run without --update first."
     exit 1
