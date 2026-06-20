@@ -1,0 +1,673 @@
+﻿using Gst;
+using GStreamer.Models;
+using System;
+using System.Diagnostics;
+using System.IO;
+using System.Linq;
+using System.Text;
+using System.Threading;
+
+namespace GStreamer.Services;
+
+public class GStask
+{
+    #region GStask
+    public System.DateTime lastActive { get; private set; } = System.DateTime.UtcNow;
+
+    public SemaphoreSlim semaphore { get; private set; } = new(1, 1);
+
+    public bool IsDead { get; private set; }
+
+    public bool IsFrozen { get; private set; }
+
+    public bool IsEos { get; private set; }
+
+    public int lastSentSegment = -1;
+    int audioIndex;
+
+    double positionSeconds = 0;
+    double positionSeekSeconds = 0;
+
+    public readonly ulong id;
+    public readonly string user_uid;
+    public readonly ProbeInfo probe;
+    public readonly string sourceUrl;
+    public readonly ModuleConf conf;
+
+    public byte[] initMp4 { get; private set; }
+
+    bool statePlaying = false;
+    (int index, bool complete, Segment seg) readySegment = (-1, false, default);
+
+    Mp4BoxReader mp4Reader;
+
+    Pipeline pipeline;
+    Bus bus;
+    Gst.Bin bin;
+    GstApp.AppSink sink;
+
+    CancellationTokenSource busWatchCts;
+    System.Threading.Tasks.Task busWatchTask;
+
+    public GStask(ProbeInfo probe, ModuleConf conf, string sourceUrl, ulong id, string user_uid, int audio)
+    {
+        this.id = id;
+        this.probe = probe;
+        this.user_uid = user_uid;
+        this.sourceUrl = sourceUrl;
+        this.conf = conf;
+
+        if (probe.Tracks.FirstOrDefault(i => i.Type == "audio" && i.Index == audio) != null)
+            audioIndex = audio;
+
+        mp4Reader = new Mp4BoxReader(
+           onInit: data =>
+           {
+               initMp4 = data;
+           },
+           onSegment: seg =>
+           {
+               readySegment.seg = seg;
+               readySegment.complete = true;
+
+               if (seg.startSeconds > 0)
+                   positionSeconds = seg.startSeconds + positionSeekSeconds;
+           }
+        );
+    }
+    #endregion
+
+    #region CreatePipelineArgs
+    string CreatePipelineArgs(ProbeInfo probe)
+    {
+        var sb = new StringBuilder();
+
+        long queueNs = conf.pipeline_timeSeconds * 1_000_000_000L;
+        int audioQueueBytes = conf.pipeline_audioQueue * 1024 * 1024;
+        int maxQueueBytes = conf.pipeline_videoQueue * 1024 * 1024;
+        int sinkQueueBytes = conf.pipeline_sinkQueue * 1024 * 1024;
+
+        double version = ModInit.conf.gst_version;
+
+        #region souphttpsrc
+        string httpqueue = $$"""
+        queue2
+            use-buffering=false
+            max-size-buffers=0
+            max-size-bytes={{maxQueueBytes}}
+            max-size-time={{queueNs}} !
+        """;
+
+        if (conf.tempfs)
+        {
+            long ringBytes = maxQueueBytes * (conf.tempfs_ring + 2);
+            ringBytes += 5 * 1024 * 1024; // на смещения и всякую мелочь
+
+            string tempTemplate = Path.Combine(
+                "cache",
+                "gstranscoding",
+                $"{id}-XXXXXX"
+            ).Replace('\\', '/');
+
+            httpqueue = $$"""
+            queue2
+                use-buffering=false
+                temp-template="{{tempTemplate}}"
+                temp-remove=true
+                ring-buffer-max-size={{ringBytes}}
+                max-size-buffers=0
+                max-size-bytes={{maxQueueBytes}}
+                max-size-time=0 !
+            """;
+        }
+
+        sb.AppendLine($$"""
+        souphttpsrc
+            location="{{sourceUrl}}"
+            is-live=false
+            keep-alive=true
+            timeout=60
+            retries=5 {{(version >= 1.26 ? "retry-backoff-factor=0.5 retry-backoff-max=10" : string.Empty)}} !
+        {{httpqueue}}
+        matroskademux name=d
+        """);
+        #endregion
+
+        #region d.video
+        if (probe.IsH264)
+        {
+            #region H264
+            if (conf.transcodeH264)
+            {
+                TranscodeToH264(sb, maxQueueBytes, queueNs);
+            }
+            else
+            {
+                sb.AppendLine($$"""
+                d.video_0 !
+                queue
+                    max-size-buffers=0
+                    max-size-bytes={{maxQueueBytes}}
+                    max-size-time={{queueNs}}
+                    leaky=0 !
+                h264parse config-interval=-1 !
+                h264timestamper !
+                video/x-h264,stream-format=avc,alignment=au !
+                mux.video_0
+                """);
+            }
+            #endregion
+        }
+        else if (probe.IsH265)
+        {
+            #region H265
+            if (conf.transcodeH265)
+            {
+                TranscodeToH264(sb, maxQueueBytes, queueNs);
+            }
+            else
+            {
+                sb.AppendLine($$"""
+                d.video_0 !
+                queue
+                    max-size-buffers=0
+                    max-size-bytes={{maxQueueBytes}}
+                    max-size-time={{queueNs}}
+                    leaky=0 !
+                h265parse config-interval=-1 !
+                h265timestamper !
+                video/x-h265,stream-format=hvc1,alignment=au !
+                mux.video_0
+                """);
+            }
+            #endregion
+        }
+        else if (probe.IsAV1)
+        {
+            #region AV1
+            if (conf.transcodeAV1)
+            {
+                TranscodeToH264(sb, maxQueueBytes, queueNs);
+            }
+            else
+            {
+                sb.AppendLine($$"""
+                d.video_0 !
+                queue
+                    max-size-buffers=0
+                    max-size-bytes={{maxQueueBytes}}
+                    max-size-time={{queueNs}}
+                    leaky=0 !
+                av1parse !
+                video/x-av1,stream-format=obu-stream,alignment=tu !
+                mux.video_0
+                """);
+            }
+            #endregion
+        }
+        else if (probe.IsVP9)
+        {
+            #region VP9
+            if (conf.transcodeVP9)
+            {
+                TranscodeToH264(sb, maxQueueBytes, queueNs);
+            }
+            else
+            {
+                sb.AppendLine($$"""
+                d.video_0 !
+                queue
+                    max-size-buffers=0
+                    max-size-bytes={{maxQueueBytes}}
+                    max-size-time={{queueNs}}
+                    leaky=0 !
+                vp9parse !
+                video/x-vp9,alignment=frame !
+                mux.video_0
+                """);
+            }
+            #endregion
+        }
+        else
+        {
+            throw new NotSupportedException("Unsupported video codec");
+        }
+        #endregion
+
+        sb.AppendLine($$"""
+        d.audio_{{audioIndex}} !
+        queue
+            max-size-buffers=0
+            max-size-bytes={{audioQueueBytes}}
+            max-size-time={{queueNs}}
+            leaky=0 !
+        decodebin !
+        audioconvert !
+        audioresample !
+        audio/x-raw,rate=48000,channels=2 !
+        avenc_aac bitrate={{conf.aac_bitrate * 1000}} !
+        aacparse !
+        audio/mpeg,mpegversion=4,stream-format=raw,rate=48000,channels=2 !
+        mux.audio_0
+        """);
+
+        sb.AppendLine($$"""
+        mp4mux
+            name=mux
+            fragment-duration={{conf.segment_seconds * 1000}}
+            streamable=true !
+        appsink
+            name=out
+            emit-signals=false
+            sync=false
+            max-buffers={{(conf.tempfs ? 1 : 0)}}
+            max-bytes={{sinkQueueBytes}}
+            max-time={{queueNs}}
+            {{(version >= 1.28 ? "leaky-type=none" : "drop=false")}}
+            wait-on-eos=false
+        """);
+
+        return sb.ToString();
+    }
+
+    void TranscodeToH264(StringBuilder sb, int maxQueueBytes, long queueNs)
+    {
+        int segmentSeconds = Math.Max(1, conf.segment_seconds);
+        int frameRateNum = probe.Video?.FrameRateNum ?? 0;
+        int frameRateDen = probe.Video?.FrameRateDen ?? 0;
+
+        int keyIntMax = frameRateNum > 0 && frameRateDen > 0
+            ? Math.Max(
+                1,
+                (int)Math.Round(
+                    (double)frameRateNum * segmentSeconds / frameRateDen
+                )
+            )
+            : 25 * segmentSeconds;
+
+        sb.AppendLine($$"""
+        d.video_0 !
+        queue
+            max-size-buffers=0
+            max-size-bytes={{maxQueueBytes}}
+            max-size-time={{queueNs}}
+            leaky=0 !
+        decodebin !
+        videoconvert !
+        video/x-raw,format=I420 !
+        x264enc
+            tune=zerolatency
+            speed-preset=veryfast
+            bitrate={{conf.video_bitrate}}
+            key-int-max={{keyIntMax}}
+            bframes=0
+            byte-stream=false !
+        video/x-h264,profile=main,stream-format=avc,alignment=au !
+        h264parse config-interval=-1 !
+        h264timestamper !
+        video/x-h264,profile=main,stream-format=avc,alignment=au !
+        mux.video_0
+        """);
+    }
+    #endregion
+
+    #region BusWatch
+    void StartBusWatch()
+    {
+        busWatchCts = new CancellationTokenSource();
+
+        var token = busWatchCts.Token;
+
+        busWatchTask = System.Threading.Tasks.Task.Factory.StartNew(
+            () => BusWatch(token),
+            token,
+            System.Threading.Tasks.TaskCreationOptions.LongRunning,
+            System.Threading.Tasks.TaskScheduler.Default
+        );
+    }
+
+    void StopBusWatch()
+    {
+        var cts = busWatchCts;
+        var task = busWatchTask;
+
+        busWatchCts = null;
+        busWatchTask = null;
+
+        if (cts == null)
+            return;
+
+        cts.Cancel();
+
+        try
+        {
+            if (task != null && System.Threading.Tasks.Task.CurrentId != task.Id)
+                task.Wait(TimeSpan.FromMilliseconds(100));
+        }
+        catch { }
+
+        cts.Dispose();
+    }
+
+    void BusWatch(CancellationToken ct)
+    {
+        while (!ct.IsCancellationRequested)
+        {
+            try
+            {
+                using (var msg = bus.TimedPop(50_000_000UL))
+                {
+                    if (msg == null)
+                        continue;
+
+                    uint type = BusReader.GetType(msg);
+
+                    if (type == BusReader.Error)
+                    {
+                        IsDead = true;
+                        Dispose();
+                        return;
+                    }
+                    else if (type == BusReader.Eos)
+                    {
+                        double duration = probe.DurationSeconds;
+                        if (duration <= 0)
+                        {
+                            // длительность неизвестна — EOS нельзя признать ошибочным
+                            IsEos = true;
+                            return;
+                        }
+
+                        double eosThreshold = duration -
+                            conf.pipeline_timeSeconds -
+                            conf.segment_seconds -
+                            120; // 120s
+
+                        if (Volatile.Read(ref positionSeconds) >= eosThreshold)
+                        {
+                            // выход в пределах допустимого отступления от конца
+                            IsEos = true;
+                            return;
+                        }
+                        else
+                        {
+                            IsDead = true;
+                            Dispose();
+                            return;
+                        }
+                    }
+                }
+            }
+            catch { }
+        }
+    }
+    #endregion
+
+    #region UpdateLastActive
+    public void UpdateLastActive()
+    {
+        lastActive = System.DateTime.UtcNow;
+    }
+    #endregion
+
+    #region Seek
+    public bool Seek(double seconds)
+    {
+        if (IsDead || !statePlaying)
+            return false;
+
+        if (pipeline != null)
+        {
+            StopBusWatch();
+            pipeline.SetState(State.Null);
+            pipeline.Dispose();
+            sink.Dispose();
+            bus.Dispose();
+        }
+
+        string pipelineArgs = CreatePipelineArgs(probe);
+        pipeline = (Pipeline)Gst.Functions.ParseLaunch(pipelineArgs);
+        bus = pipeline.GetBus();
+
+        bin = pipeline;
+        sink = (GstApp.AppSink)bin.GetByName("out");
+
+        StateChangeReturn ret;
+
+        if (seconds > 0)
+        {
+            ret = pipeline.SetState(State.Paused);
+            if (ret == StateChangeReturn.Failure)
+            {
+                IsDead = true;
+                Dispose();
+                return false;
+            }
+
+            if (ret == StateChangeReturn.Async)
+            {
+                // ждём завершение команды в pipeline
+                using (var msg = bus.TimedPopFiltered(5_000_000_000UL, MessageType.AsyncDone | MessageType.Error))
+                {
+                    if (BusReader.GetType(msg) == BusReader.Error)
+                    {
+                        IsDead = true;
+                        Dispose();
+                        return false;
+                    }
+                }
+            }
+
+            bool ok = pipeline.SeekSimple(
+                Format.Time,
+                SeekFlags.Flush | SeekFlags.KeyUnit | SeekFlags.SnapAfter,
+                (long)Math.Round(seconds * 1_000_000_000d)
+            );
+
+            if (!ok)
+            {
+                IsDead = true;
+                Dispose();
+                return false;
+            }
+
+            // После flushing seek тоже лучше дождаться ASYNC_DONE.
+            using (var flushing = bus.TimedPopFiltered(5_000_000_000UL, MessageType.AsyncDone | MessageType.Error))
+            {
+                if (BusReader.GetType(flushing) == BusReader.Error)
+                {
+                    IsDead = true;
+                    Dispose();
+                    return false;
+                }
+            }
+        }
+
+        ret = pipeline.SetState(State.Playing);
+        if (ret == StateChangeReturn.Failure)
+        {
+            IsDead = true;
+            Dispose();
+            return false;
+        }
+
+        if (ret == StateChangeReturn.Async)
+        {
+            using (var msg = bus.TimedPopFiltered(5_000_000_000UL, MessageType.AsyncDone | MessageType.Error))
+            {
+                if (BusReader.GetType(msg) == BusReader.Error)
+                {
+                    IsDead = true;
+                    Dispose();
+                    return false;
+                }
+            }
+        }
+
+        mp4Reader.ResetSegment();
+        mp4Reader.SeekReset(seconds);
+        readySegment = (-1, false, default);
+
+        IsFrozen = false;
+        IsEos = false;
+        positionSeekSeconds = seconds;
+        StartBusWatch();
+        return true;
+    }
+    #endregion
+
+    #region GetSegment
+    public Segment GetSegment(int index, CancellationToken ct, int audio = 0)
+    {
+        if (IsDead)
+            return default;
+
+        #region start Playing
+        if (!statePlaying)
+        {
+            statePlaying = true;
+
+            if (probe.Tracks.FirstOrDefault(i => i.Type == "audio" && i.Index == audio) != null)
+                audioIndex = audio;
+
+            string pipelineArgs = CreatePipelineArgs(probe);
+            pipeline = (Pipeline)Gst.Functions.ParseLaunch(pipelineArgs);
+            bus = pipeline.GetBus();
+
+            bin = pipeline;
+            sink = (GstApp.AppSink)bin.GetByName("out");
+            var ret = pipeline.SetState(State.Playing);
+            if (ret == StateChangeReturn.Failure)
+            {
+                IsDead = true;
+                Dispose();
+                return default;
+            }
+
+            if (ret == StateChangeReturn.Async)
+            {
+                using (var msg = bus.TimedPopFiltered(5_000_000_000UL, MessageType.AsyncDone | MessageType.Error))
+                {
+                    if (BusReader.GetType(msg) == BusReader.Error)
+                    {
+                        IsDead = true;
+                        Dispose();
+                        return default;
+                    }
+                }
+            }
+
+            StartBusWatch();
+        }
+        else if (IsFrozen)
+        {
+            if (!Seek(positionSeconds))
+            {
+                IsDead = true;
+                Dispose();
+                return default;
+            }
+        }
+        #endregion
+
+        if (readySegment.index == index && readySegment.complete)
+            return readySegment.seg;
+
+        mp4Reader.ResetSegment();
+        readySegment = (-1, false, default);
+
+        try
+        {
+            long start = Stopwatch.GetTimestamp();
+            var timeout = TimeSpan.FromSeconds(10);
+
+            while (Stopwatch.GetElapsedTime(start) < timeout)
+            {
+                if (ct.IsCancellationRequested || IsDead)
+                    return default;
+
+                // 100 ms
+                using (var sample = sink.TryPullSample(100_000_000UL))
+                {
+                    var buffer = sample?.GetBuffer();
+                    if (buffer == null)
+                    {
+                        if (IsEos) // очередь appsink полностью вычитана
+                            return default;
+
+                        continue;
+                    }
+
+                    nuint? size = buffer.GetSize();
+                    if (size == null || 0 >= size)
+                        continue;
+
+                    mp4Reader.Push(buffer, (int)size);
+
+                    if (readySegment.complete)
+                    {
+                        readySegment.index = index > 0 ? index : 0;
+                        return readySegment.seg;
+                    }
+                }
+            }
+
+            return default;
+        }
+        catch
+        {
+            IsDead = true;
+            Dispose();
+            return default;
+        }
+    }
+    #endregion
+
+    #region Dispose
+    public void Dispose()
+    {
+        mp4Reader?.Dispose();
+        mp4Reader = null;
+
+        StopBusWatch();
+
+        if (pipeline == null)
+            return;
+
+        pipeline.SetState(State.Null);
+        pipeline.Dispose();
+        pipeline = null;
+
+        sink.Dispose();
+        sink = null;
+        bus.Dispose();
+        bus = null;
+
+        semaphore.Dispose();
+        semaphore = null;
+        initMp4 = null;
+        bin = null;
+    }
+    #endregion
+
+    #region Frozen
+    public void Frozen()
+    {
+        if (pipeline == null)
+            return;
+
+        IsFrozen = true;
+        StopBusWatch();
+
+        pipeline.SetState(State.Null);
+        pipeline.Dispose();
+        pipeline = null;
+
+        sink.Dispose();
+        sink = null;
+        bus.Dispose();
+        bus = null;
+        bin = null;
+    }
+    #endregion
+}

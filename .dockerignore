@@ -1,11 +1,37 @@
+# Exclude everything except source trees needed for `dotnet publish`
 **
-!config
-!Core
-!Modules
-!TestModules
-!Online
-!SISI
-!Shared
-bin/**
-obj/**
+
+!config/
+!config/**
+!Core/
+!Core/**
+!Modules/
+!Modules/**
+!TestModules/
+!TestModules/**
+!Online/
+!Online/**
+!SISI/
+!SISI/**
+!Shared/
+!Shared/**
+
+# Build outputs
+**/bin/
+**/obj/
+**/bin/**
+**/obj/**
+
+# Local dev / runtime data
+**/.playwright/
+**/.playwright/**
+**/cache/
+**/cache/**
+**/database/
+**/database/**
+
+# Git metadata and OS junk
+.git/
+**/.git/
 .DS_Store
+**/.DS_Store

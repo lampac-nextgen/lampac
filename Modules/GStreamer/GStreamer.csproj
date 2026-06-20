@@ -1,0 +1,30 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <OutputType>library</OutputType>
+    <IsPackable>true</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\Shared\Shared.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GirCore.GLib-2.0" Version="0.8.0-preview.1" />
+    <PackageReference Include="GirCore.GObject-2.0" Version="0.8.0-preview.1" />
+    <PackageReference Include="GirCore.Gst-1.0" Version="0.8.0-preview.1" />
+    <PackageReference Include="GirCore.GstApp-1.0" Version="0.8.0-preview.1" />
+    <PackageReference Include="GirCore.GstBase-1.0" Version="0.8.0-preview.1" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="plugins\gst.js">
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
+    <None Update="plugins\tracks.js">
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+</Project>
