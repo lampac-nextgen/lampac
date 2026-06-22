@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description"
-    content="Модули и провайдеры Lampac NextGen: Online, SISI, TorrServer, DLNA, JacRed, Transcoding и 70+ источников контента." />
+    content="Модули и провайдеры Lampac NextGen: Online, SISI, TorrServer, DLNA, JacRed, GStreamer, Transcoding и 70+ источников контента." />
   <meta property="og:title" content="Модули и провайдеры — Lampac NextGen" />
   <meta property="og:image" content="assets/logo.png" />
   <link rel="icon" href="assets/logo.png" type="image/png" />
@@ -419,8 +419,19 @@
             <div class="module-row-name"><a
                 href="https://github.com/lampac-nextgen/lampac/tree/main/Modules/Transcoding" target="_blank"
                 rel="noopener">Transcoding</a></div>
-            <div class="module-row-desc">HLS/DASH транскодинг через FFmpeg. До 5 параллельных потоков, таймаут 5 мин.
-              <strong style="color:var(--red)">Только доверенная сеть.</strong>
+            <div class="module-row-desc">HLS/DASH транскодинг через FFmpeg (legacy). До 5 параллельных потоков, таймаут
+              5 мин. Заменён модулем <strong>GStreamer</strong>. <strong style="color:var(--red)">Только доверенная
+                сеть.</strong>
+            </div><span class="module-row-tag">Медиа</span>
+          </div>
+          <div class="module-row">
+            <div class="dot dot-off"></div>
+            <div class="module-row-name"><a
+                href="https://github.com/lampac-nextgen/lampac/tree/main/Modules/GStreamer" target="_blank"
+                rel="noopener">GStreamer</a></div>
+            <div class="module-row-desc">HLS/fMP4 транскодинг через GStreamer. Плагин <code>/gst.js</code>, API
+              <code>/gst/*</code>, кеш в <code>cache/gstranscoding/</code>. Включите секцию <code>gst</code> в
+              <code>init.conf</code>. WAF: 50 req/s. <strong style="color:var(--red)">Только доверенная сеть.</strong>
             </div><span class="module-row-tag">Медиа</span>
           </div>
           <div class="module-row">

@@ -1,4 +1,8 @@
-# Transcoding
+<b>Актуальная реализация</b>:<br>
+https://github.com/lampac-nextgen/lampac/blob/main/Modules/GStreamer/README.md
+
+
+# Transcoding (legacy)
 
 Серверное **перекодирование потоков** (FFmpeg и связанная логика): очередь задач, каталог временных файлов, ограничение параллельных заданий и HTTP API под **`/transcoding`**.
 
