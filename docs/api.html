@@ -516,6 +516,38 @@
               </tr>
               <tr>
                 <td><span class="method method-get">GET</span></td>
+                <td><code>/gst.js</code></td>
+                <td>GStreamer</td>
+                <td>Плагин Lampa для серверного транскодинга. Требует <code>gst.enable</code> в <code>init.conf</code>.
+                </td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/gst/add</code></td>
+                <td>GStreamer</td>
+                <td>Создать задачу транскодинга. Параметры: <code>link</code> или <code>linkencode</code>,
+                  <code>uid</code>/<code>token</code>. Возвращает <code>hls</code> URL master.m3u8.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/gst/{id}/master.m3u8</code></td>
+                <td>GStreamer</td>
+                <td>HLS-плейлист активной задачи транскодинга.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/gst/{id}/heartbeat</code></td>
+                <td>GStreamer</td>
+                <td>Продление жизни задачи (без активности останавливается по <code>inactiveMinutes</code>).</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/gst/remove</code></td>
+                <td>GStreamer</td>
+                <td>Остановить и удалить задачу. Параметр: <code>id</code>.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
                 <td><code>/catalog/</code></td>
                 <td>Catalog</td>
                 <td>Браузер каталогов из YAML-файлов. Только доверенная сеть.</td>

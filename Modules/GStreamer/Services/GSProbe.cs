@@ -126,8 +126,9 @@ public static class GSProbe
                 StandardErrorEncoding = Encoding.UTF8
             };
 
-            process.StartInfo.Environment["LANG"] = "ru_RU.UTF-8";
-            process.StartInfo.Environment["LC_ALL"] = "ru_RU.UTF-8";
+            process.StartInfo.Environment["LANG"] = "C.UTF-8";
+            process.StartInfo.Environment["LC_ALL"] = "C.UTF-8";
+            process.StartInfo.Environment["LANGUAGE"] = "en";
             process.StartInfo.Environment["GST_DEBUG_NO_COLOR"] = "1";
 
             process.StartInfo.ArgumentList.Add("-v");

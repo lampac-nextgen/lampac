@@ -11,13 +11,18 @@
     }
 
     function reguest(params, callback) {
-      if (params.ffprobe) {
-        setTimeout(function () {
-          callback({
-            streams: params.ffprobe
-          });
-        }, 200);
-      }
+        if (params.ffprobe) {
+            setTimeout(function () {
+                callback({
+                    streams: params.ffprobe
+                });
+            }, 200);
+        }
+        else {
+            callback({
+                streams: []
+            });
+        }
     }
 
     function subscribeTracks(data) {

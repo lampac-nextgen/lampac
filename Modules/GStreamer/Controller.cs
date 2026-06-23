@@ -8,6 +8,7 @@ using Shared;
 using Shared.Attributes;
 using Shared.Services;
 using Shared.Services.Pools;
+using Shared.Services.Utilities;
 using System;
 using System.IO;
 using System.Linq;
@@ -55,7 +56,7 @@ public class GStreamerController : BaseController
 
     #region add
     [HttpGet("/gst/add")]
-    public async Task<ActionResult> Add(string link, string uid, string token)
+    public async Task<ActionResult> Add(string link, string linkencode, string uid, string token)
     {
         if (!ModInit.conf.enable)
             return StatusCode(403);
@@ -64,16 +65,21 @@ public class GStreamerController : BaseController
         if (ModInit.conf.allowed_uids != null && !ModInit.conf.allowed_uids.Contains(user_id))
             return StatusCode(401);
 
-        var gstask = await GService.GetOrAdd(link, user_id);
-        if (gstask == null)
-            return StatusCode(502);
+        var gstask = await GService.GetOrAdd(link ?? CrypTo.DecodeBase64(linkencode), user_id);
+        if (gstask.task == null)
+        {
+            HttpContext.Response.StatusCode = StatusCodes.Status502BadGateway;
+            return Content(gstask.error);
+        }
+
+        var task = gstask.task;
 
         return Json(new
         {
-            id = gstask.id.ToString(),
-            gstask.user_uid,
-            hls = $"{host}/gst/{gstask.id}/master.m3u8",
-            gstask.probe
+            id = task.id.ToString(),
+            task.user_uid,
+            hls = $"{host}/gst/{task.id}/master.m3u8",
+            task.probe
         });
     }
     #endregion
@@ -119,7 +125,7 @@ public class GStreamerController : BaseController
 
     #region start.m3u8
     [HttpGet("/gst/start.m3u8")]
-    public async Task<ActionResult> Start(string link, string uid, string token, int audio)
+    public async Task<ActionResult> Start(string link, string linkencode, string uid, string token, int audio)
     {
         if (!ModInit.conf.enable)
             return StatusCode(403);
@@ -128,11 +134,14 @@ public class GStreamerController : BaseController
         if (ModInit.conf.allowed_uids != null && !ModInit.conf.allowed_uids.Contains(user_id))
             return StatusCode(401);
 
-        var gstask = await GService.GetOrAdd(link, user_id, audio);
-        if (gstask == null)
-            return StatusCode(502);
+        var gstask = await GService.GetOrAdd(link ?? CrypTo.DecodeBase64(linkencode), user_id, audio);
+        if (gstask.task == null)
+        {
+            HttpContext.Response.StatusCode = StatusCodes.Status502BadGateway;
+            return Content(gstask.error);
+        }
 
-        return LocalRedirect($"/gst/{gstask.id}/master.m3u8");
+        return LocalRedirect($"/gst/{gstask.task.id}/master.m3u8?audio={audio}");
     }
     #endregion
 
@@ -271,10 +280,13 @@ public class GStreamerController : BaseController
 
                     if (diff > 0 && Math.Max(60, cutoff) >= (diff * gstask.conf.segment_seconds))
                     {
-                        for (int i = 0; i < diff; i++)
+                        for (int i = 0; i < diff - 1; i++)
                         {
-                            gstask.GetSegment(index, HttpContext.RequestAborted);
+                            if (HttpContext.RequestAborted.IsCancellationRequested)
+                                return;
+
                             gstask.lastSentSegment++;
+                            gstask.GetSegment(gstask.lastSentSegment, HttpContext.RequestAborted);
                         }
                     }
                     else

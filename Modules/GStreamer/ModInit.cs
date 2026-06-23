@@ -7,7 +7,10 @@ using Shared.Models.Module.Interfaces;
 using Shared.Services;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
+using System.Globalization;
 using System.IO;
+using System.Text.RegularExpressions;
 
 namespace GStreamer;
 
@@ -15,6 +18,7 @@ public class ModInit : IModuleLoaded
 {
     public static string modpath;
     public static ModuleConf conf;
+    static double? gstVersion;
 
     public void Loaded(InitspaceModel initspace)
     {
@@ -38,6 +42,10 @@ public class ModInit : IModuleLoaded
         foreach (var m in conf.limit_map)
             CoreInit.conf.WAF.limit_map.Insert(0, m);
 
+        gstVersion = ReadGstVersion();
+        if (gstVersion.HasValue)
+            conf.gst_version = gstVersion.Value;
+
         InitGst();
     }
 
@@ -51,23 +59,17 @@ public class ModInit : IModuleLoaded
     {
         conf = ModuleInvoke.Init("gst", new ModuleConf()
         {
-            tempfs = true,        // файловый буфер http потока
-            tempfs_ring = 1,      // количество буферных блоков videoQueue
-            segment_seconds = 6,  // 6s
-            aac_bitrate = 256,    // 256 кбит/с
-            video_bitrate = 8000,
-            pipeline_timeSeconds = 20, // 20s
-            pipeline_audioQueue = 4,   // 4Mb
-            pipeline_videoQueue = 32,  // 32Mb
-            pipeline_sinkQueue = 64,   // 64mb
+            gst_version = OperatingSystem.IsWindows() ? 1.28 : 1.26,
             PATH = @"C:\Program Files\gstreamer\1.0\mingw_x86_64",
-            gst_version = 1.28,
             inactiveMinutes = 10,
             limit_map = new List<WafLimitRootMap>()
             {
                 new("^/gst/", new WafLimitMap { limit = 50, second = 1 })
             }
         });
+
+        if (gstVersion.HasValue)
+            conf.gst_version = gstVersion.Value;
     }
 
 
@@ -117,5 +119,56 @@ public class ModInit : IModuleLoaded
         //    "hlssink3:4,splitmuxsink:4,mpegtsmux:4,*:2",
         //    EnvironmentVariableTarget.Process
         //);
+    }
+
+    static double? ReadGstVersion()
+    {
+        try
+        {
+            using var process = new Process
+            {
+                StartInfo = new ProcessStartInfo
+                {
+                    FileName = OperatingSystem.IsWindows()
+                        ? Path.Combine(conf.PATH, "bin", "gst-inspect-1.0.exe")
+                        : "gst-inspect-1.0",
+
+                    Arguments = "--version",
+                    RedirectStandardOutput = true,
+                    RedirectStandardError = true,
+                    UseShellExecute = false,
+                    CreateNoWindow = true
+                }
+            };
+
+            process.Start();
+
+            if (!process.WaitForExit(3000))
+            {
+                process.Kill(true);
+                return null;
+            }
+
+            foreach (string output in new string[] { process.StandardOutput.ReadToEnd(), process.StandardError.ReadToEnd() })
+            {
+                var match = Regex.Match(output, @"(?:GStreamer|version)\s+(\d+)\.(\d+)(?:\.\d+)?", RegexOptions.IgnoreCase);
+                if (!match.Success)
+                    return null;
+
+                string major = match.Groups[1].Value;
+                string minor = match.Groups[2].Value.PadLeft(2, '0');
+
+                if (double.TryParse($"{major}.{minor}", NumberStyles.AllowDecimalPoint, CultureInfo.InvariantCulture, out double version))
+                    return version;
+
+                return null;
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

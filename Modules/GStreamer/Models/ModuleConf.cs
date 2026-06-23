@@ -19,14 +19,23 @@ public class ModuleConf : ModuleBaseConf
     public string[] allowed_uids { get; set; }
 
 
-    public bool tempfs { get; set; }
+    /// <summary>
+    /// файловый буфер http потока
+    /// </summary>
+    public bool tempfs { get; set; } = true;
 
-    public int tempfs_ring { get; set; }
+    /// <summary>
+    /// количество буферных блоков videoQueue
+    /// </summary>
+    public int tempfs_ring { get; set; } = 1;
 
 
-    public int aac_bitrate { get; set; }
+    /// <summary>
+    /// 256 кбит/с
+    /// </summary>
+    public int aac_bitrate { get; set; } = 256;
 
-    public int segment_seconds { get; set; }
+    public int segment_seconds { get; set; } = 6;
 
     public bool transcodeH264 { get; set; }
 
@@ -36,14 +45,17 @@ public class ModuleConf : ModuleBaseConf
 
     public bool transcodeVP9 { get; set; }
 
-    public int video_bitrate { get; set; }
+    /// <summary>
+    /// 10 Мбит/c
+    /// </summary>
+    public int video_bitrate { get; set; } = 10_000;
 
 
-    public int pipeline_timeSeconds { get; set; }
+    public int pipeline_timeSeconds { get; set; } = 20;
 
-    public int pipeline_audioQueue { get; set; }
+    public int pipeline_audioQueue { get; set; } = 4;
 
-    public int pipeline_videoQueue { get; set; }
+    public int pipeline_videoQueue { get; set; } = 32;
 
-    public int pipeline_sinkQueue { get; set; }
+    public int pipeline_sinkQueue { get; set; } = 64;
 }

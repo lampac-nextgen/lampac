@@ -11,11 +11,11 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="GirCore.GLib-2.0" Version="0.7.0" />
-    <PackageReference Include="GirCore.GObject-2.0" Version="0.7.0" />
-    <PackageReference Include="GirCore.Gst-1.0" Version="0.7.0" />
-    <PackageReference Include="GirCore.GstApp-1.0" Version="0.7.0" />
-    <PackageReference Include="GirCore.GstBase-1.0" Version="0.7.0" />
+    <PackageReference Include="GirCore.GLib-2.0" Version="0.8.0-preview.1" />
+    <PackageReference Include="GirCore.GObject-2.0" Version="0.8.0-preview.1" />
+    <PackageReference Include="GirCore.Gst-1.0" Version="0.8.0-preview.1" />
+    <PackageReference Include="GirCore.GstApp-1.0" Version="0.8.0-preview.1" />
+    <PackageReference Include="GirCore.GstBase-1.0" Version="0.8.0-preview.1" />
   </ItemGroup>
 
   <ItemGroup>

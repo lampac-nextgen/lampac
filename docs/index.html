@@ -974,7 +974,7 @@
           <div class="stat-label">Аниме-провайдеров</div>
         </div>
         <div class="stat-item">
-          <div class="stat-num">25+</div>
+          <div class="stat-num">26+</div>
           <div class="stat-label">Модулей</div>
         </div>
         <div class="stat-item">
@@ -1026,9 +1026,9 @@
         </div>
         <div class="feature-card">
           <div class="feature-icon">⚙️</div>
-          <h3>Транскодинг</h3>
-          <p>HLS/DASH транскодинг через FFmpeg. До 5 параллельных потоков. Таймаут 5 мин. Кеш в
-            <code>cache/transcoding/</code>.
+          <h3>GStreamer</h3>
+          <p>HLS/fMP4 транскодинг через GStreamer: перекодирование H.265/AV1/VP9 в H.264, выбор аудиодорожек. Плагин
+            <code>/gst.js</code>, кеш в <code>cache/gstranscoding/</code>.
           </p>
         </div>
         <div class="feature-card">
@@ -1378,7 +1378,16 @@
           <div class="module-status off"></div>
           <div>
             <div class="module-name">Transcoding</div>
-            <div class="module-desc">HLS/DASH транскодинг FFmpeg. До 5 потоков. Только в доверенной сети.</div>
+            <div class="module-desc">HLS/DASH транскодинг FFmpeg (legacy). Заменён GStreamer.</div>
+          </div>
+        </div>
+        <div class="module-item">
+          <div class="module-status off"></div>
+          <div>
+            <div class="module-name">GStreamer</div>
+            <div class="module-desc">HLS/fMP4 транскодинг через GStreamer. Плагин <code>/gst.js</code>, API
+              <code>/gst/*</code>. Включите <code>gst.enable</code> в <code>init.conf</code>.
+            </div>
           </div>
         </div>
         <div class="module-item">

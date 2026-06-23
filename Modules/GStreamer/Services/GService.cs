@@ -21,10 +21,10 @@ public static class GService
         TimeSpan.FromMinutes(1)
     );
 
-    public static async Task<GStask> GetOrAdd(string sourceUrl, string uid, int audio = 0)
+    public static async Task<(GStask task, string error)> GetOrAdd(string sourceUrl, string uid, int audio = 0)
     {
         if (string.IsNullOrEmpty(sourceUrl) || string.IsNullOrEmpty(uid))
-            return null;
+            return (null, "uid");
 
         var hash = Fnv1a.Hash(sourceUrl);
         Fnv1a.Append(ref hash, uid);
@@ -33,19 +33,19 @@ public static class GService
         if (tasks.TryGetValue(hash.H1, out var task) && !task.IsDead)
         {
             task.UpdateLastActive();
-            return task;
+            return (task, null);
         }
 
         if (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
             string.IsNullOrEmpty(uri.Host))
         {
-            throw new ArgumentException("Invalid URL", nameof(sourceUrl));
+            return (null, "Uri");
         }
 
         sourceUrl = await Http.GetLocation(sourceUrl, timeoutSeconds: 45);
         if (sourceUrl == null)
-            return null;
+            return (null, "location");
 
         var hybridCache = HybridCache.Get();
 
@@ -55,13 +55,13 @@ public static class GService
             probe = await GSProbe.Get(sourceUrl);
             //Console.WriteLine(Newtonsoft.Json.JsonConvert.SerializeObject(probe, Newtonsoft.Json.Formatting.Indented));
             if (probe == null)
-                return null;
+                return (null, "probe");
 
             hybridCache.Set(probeKey, probe, TimeSpan.FromDays(10));
         }
 
         if (!probe.IsH264 && !probe.IsH265 && !probe.IsAV1 && !probe.IsVP9)
-            return null;
+            return (null, "not mp4");
 
         var conf = ModInit.conf;
         if (ModInit.conf.conf_uids != null && ModInit.conf.conf_uids.TryGetValue(uid, out var uidconf))
@@ -80,11 +80,11 @@ public static class GService
                 }
             }
 
-            return task;
+            return (task, null);
         }
         else
         {
-            return tasks[hash.H1];
+            return (tasks[hash.H1], null);
         }
     }
 
@@ -117,17 +117,21 @@ public static class GService
 
         try
         {
-            var inactiveBefore = DateTime.UtcNow - TimeSpan.FromMinutes(ModInit.conf.inactiveMinutes);
+            var now = DateTime.UtcNow;
 
             foreach (var item in tasks)
             {
                 var id = item.Key;
                 var task = item.Value;
 
-                if (inactiveBefore > task.lastActive || item.Value.IsDead)
+                if (now > task.lastActive.AddMinutes(60) || item.Value.IsDead)
                 {
                     if (tasks.TryRemove(id, out var removed))
                         removed.Dispose();
+                }
+                else if (!item.Value.IsFrozen && now > task.lastActive.AddMinutes(ModInit.conf.inactiveMinutes))
+                {
+                    item.Value.Frozen();
                 }
             }
         }

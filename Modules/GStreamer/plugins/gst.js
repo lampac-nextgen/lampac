@@ -77,6 +77,22 @@
         };
     }
 
+    function createPlaylist(data, audioIndex) {
+        var playlist = []
+
+        if (data.playlist) {
+            data.playlist.forEach(function (p) {
+                playlist.push({
+                    title: p.title,
+                    url_orig: p.url,
+                    url: account('{localhost}/gst/start.m3u8?linkencode=' + encodeURIComponent(Lampa.Base64.encode(p.url))) + '&audio=' + audioIndex
+                })
+            })
+        }
+
+        return playlist
+    }
+
     function handlePlayerStart(e) {
         if (isMkvSource(e.data)) {
             if (e.data.url.indexOf('/gst/') != -1 || e.data.url.indexOf('.m3u8') != -1)
@@ -94,7 +110,7 @@
                 var network = new Lampa.Reguest();
                 network.timeout = 40000;
 
-                network.native(account('{localhost}/gst/add?link=' + encodeURIComponent(src)), function (response) {
+                network.native(account('{localhost}/gst/add?linkencode=' + encodeURIComponent(Lampa.Base64.encode(src))), function (response) {
                     Lampa.Loading.stop();
 
                     var json = typeof response === 'string' ? JSON.parse(response) : response;
@@ -115,13 +131,26 @@
                             return formatAudioItem(track, index);
                         });
 
+                    
+
                     delete e.data.torrent_hash;
                     e.data.hls_type = 'hlsjs';
                     e.data.hls_manifest_timeout = 20000;
 
                     if (!items.length || items.length == 1) {
+                        e.data.url_orig = e.data.url
                         e.data.url = json.hls;
                         Lampa.Player.play(e.data);
+                        Lampa.Player.playlist(createPlaylist(e.data, json.audioIndex))
+                        Lampa.Player.callback(function () {
+                            Lampa.Controller.toggle('modal')
+
+                            e.data.url = e.data.url_orig
+
+                            Lampa.PlayerPlaylist.get().forEach(function (p) {
+                                p.url = p.url_orig
+                            })
+                        })
                         taskId = json.id;
                         return;
                     }
@@ -134,9 +163,20 @@
                         onSelect: function (item) {
                             Lampa.Select.close();
 
+                            e.data.url_orig = e.data.url
                             e.data.url = json.hls + '?audio=' + item.audioIndex;
 
                             Lampa.Player.play(e.data);
+                            Lampa.Player.playlist(createPlaylist(e.data, item.audioIndex))
+                            Lampa.Player.callback(function () {
+                                Lampa.Controller.toggle('modal')
+
+                                e.data.url = e.data.url_orig
+
+                                Lampa.PlayerPlaylist.get().forEach(function (p) {
+                                    p.url = p.url_orig
+                                })
+                            })
                             taskId = json.id;
                         },
                         onBack: function () {

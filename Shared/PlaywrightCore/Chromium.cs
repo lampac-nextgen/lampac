@@ -97,7 +97,9 @@ public class Chromium : PlaywrightBase, IDisposable
                         case Architecture.X86:
                         case Architecture.X64:
                             {
-                                executablePath = ".playwright/chrome-linux/chrome";
+                                executablePath = File.Exists(".playwright/chrome-linux/chrome")
+                                    ? ".playwright/chrome-linux/chrome"
+                                    : "/usr/bin/chromium";
                                 break;
                             }
                         default:
