@@ -1251,7 +1251,7 @@
             title: Lampa.Lang.translate('more'),
             separator: true
           });
-          if (Lampa.Account.logged() && params.element && typeof params.element.season !== 'undefined' && params.element.translate_voice) {
+          if (Lampa.Account.Permit.access && params.element && typeof params.element.season !== 'undefined' && params.element.translate_voice) {
             menu.push({
               title: Lampa.Lang.translate('lampac_voice_subscribe'),
               subscribe: true
@@ -1566,7 +1566,7 @@
     window.lampac_plugin = true;
     var manifst = {
       type: 'video',
-      version: '1.7.1',
+      version: '1.7.2',
       name: 'Lampac',
       description: 'Плагин для просмотра онлайн сериалов и фильмов',
       component: 'lampac',
