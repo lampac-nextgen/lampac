@@ -251,6 +251,10 @@ public class GStask
         }
         #endregion
 
+        var audioTrack = probe.Tracks.FirstOrDefault(i => i.Type == "audio" && i.Index == audioIndex);
+        int aacChannels    = conf.aac_channels  > 0 ? conf.aac_channels  : (audioTrack?.Channels ?? 2);
+        int aacSamplerate  = conf.aac_samplerate > 0 ? conf.aac_samplerate : (audioTrack?.Rate     ?? 48000);
+
         sb.AppendLine($$"""
         d.audio_{{audioIndex}} !
         queue
@@ -268,16 +272,16 @@ public class GStask
         audio/x-raw,
             format=F32LE,
             layout=interleaved,
-            rate=48000,
-            channels=2 !
+            rate={{aacSamplerate}},
+            channels={{aacChannels}} !
         avenc_aac
             bitrate={{conf.aac_bitrate * 1000}} !
         aacparse !
         audio/mpeg,
             mpegversion=4,
             stream-format=raw,
-            rate=48000,
-            channels=2 !
+            rate={{aacSamplerate}},
+            channels={{aacChannels}} !
         mux.audio_0
         """);
 
