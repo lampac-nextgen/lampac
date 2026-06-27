@@ -25,7 +25,7 @@ http://IP:9118/gst.js
 | `gst_version` | `1.28` | Версия установленного GStreamer. Для версии ниже 1.28 укажите фактическое значение, например `1.26`. |
 | `PATH` | `C:\Program Files\gstreamer\1.0\mingw_x86_64` | Корневой каталог GStreamer в Windows. |
 | `tempfs` | `true` | Использовать дисковый кольцевой буфер для входного HTTP-потока в `cache/gstranscoding`. |
-| `tempfs_ring` | `1` | Размер дискового кольцевого буфера в дополнительных блоках `pipeline_videoQueue`. |
+| `tempfs_ring` | `0` | Каждая единица ~30s буфера (10 = ~300s). |
 | `segment_seconds` | `6` | Целевая длительность HLS/fMP4-сегмента в секундах. |
 | `aac_bitrate` | `256` | Битрейт AAC в кбит/с. |
 | `video_bitrate` | `10000` | Битрейт H.264 в кбит/с при перекодировании видео. |
@@ -33,10 +33,10 @@ http://IP:9118/gst.js
 | `transcodeH265` | `false` | Перекодировать H.265 в H.264. |
 | `transcodeAV1` | `false` | Перекодировать AV1 в H.264. |
 | `transcodeVP9` | `false` | Перекодировать VP9 в H.264. |
-| `pipeline_timeSeconds` | `20` | Максимальный объём очередей по времени в секундах. |
-| `pipeline_audioQueue` | `4` | Максимальный размер очереди аудио в МБ. |
-| `pipeline_videoQueue` | `32` | Максимальный размер входной и видеоочереди в МБ. |
-| `pipeline_sinkQueue` | `64` | Максимальный размер очереди готовых данных в `appsink`, МБ. |
+| `pipeline_downloadRate` | `0` без ограничений | Максимальная скорость загрузки в Мбит/c. |
+| `pipeline_timeSeconds` | `18` | Максимальный объём очередей по времени в секундах. |
+| `pipeline_audioQueue` | `8` | Максимальный размер очереди аудио в МБ. |
+| `pipeline_videoQueue` | `36` | Максимальный размер входной и видеоочереди в МБ. |
 
 Полный пример:
 
@@ -131,8 +131,9 @@ apt-get install -y --no-install-recommends \
     gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-good \
     gstreamer1.0-plugins-bad \
-    gstreamer1.0-libav \
     gstreamer1.0-plugins-base-apps \
+    gstreamer1.0-plugins-ugly \
+    gstreamer1.0-libav \
     gstreamer1.0-tools \
     ca-certificates
 ```

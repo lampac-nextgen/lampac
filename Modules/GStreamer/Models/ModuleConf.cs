@@ -27,7 +27,13 @@ public class ModuleConf : ModuleBaseConf
     /// <summary>
     /// количество буферных блоков videoQueue
     /// </summary>
-    public int tempfs_ring { get; set; } = 1;
+    public int tempfs_ring { get; set; }
+
+    /// <summary>
+    /// buffers
+    /// bytes
+    /// </summary>
+    public string appsink_mode { get; set; } = "bytes";
 
 
     /// <summary>
@@ -51,11 +57,14 @@ public class ModuleConf : ModuleBaseConf
     public int video_bitrate { get; set; } = 10_000;
 
 
-    public int pipeline_timeSeconds { get; set; } = 20;
+    /// <summary>
+    /// Мбит/c
+    /// </summary>
+    public int pipeline_downloadRate { get; set; }
 
-    public int pipeline_audioQueue { get; set; } = 4;
+    public int pipeline_timeSeconds { get; set; } = 18;
 
-    public int pipeline_videoQueue { get; set; } = 32;
+    public int pipeline_audioQueue { get; set; } = 8;
 
-    public int pipeline_sinkQueue { get; set; } = 64;
+    public int pipeline_videoQueue { get; set; } = 36;
 }
