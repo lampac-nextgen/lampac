@@ -21,10 +21,10 @@ public static class GService
         TimeSpan.FromMinutes(1)
     );
 
-    public static async Task<GStask> GetOrAdd(string sourceUrl, string uid, int audio = 0)
+    public static async Task<(GStask task, string error)> GetOrAdd(string sourceUrl, string uid, int audio = 0)
     {
         if (string.IsNullOrEmpty(sourceUrl) || string.IsNullOrEmpty(uid))
-            return null;
+            return (null, "uid");
 
         var hash = Fnv1a.Hash(sourceUrl);
         Fnv1a.Append(ref hash, uid);
@@ -33,19 +33,40 @@ public static class GService
         if (tasks.TryGetValue(hash.H1, out var task) && !task.IsDead)
         {
             task.UpdateLastActive();
-            return task;
+            return (task, null);
         }
 
         if (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri) ||
             (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
             string.IsNullOrEmpty(uri.Host))
         {
-            throw new ArgumentException("Invalid URL", nameof(sourceUrl));
+            return (null, "Uri");
         }
 
-        sourceUrl = await Http.GetLocation(sourceUrl, timeoutSeconds: 45);
+        var httpHeaders = await Http.ResponseHeaders(sourceUrl, timeoutSeconds: 45);
+        if (httpHeaders == null)
+            return (null, "ResponseHeaders");
+
+        #region sourceUrl
+        {
+            string location = (int)httpHeaders.StatusCode == 301 || (int)httpHeaders.StatusCode == 302 || (int)httpHeaders.StatusCode == 307
+                ? httpHeaders.Headers.Location?.ToString()
+                : httpHeaders.RequestMessage.RequestUri?.ToString();
+
+            if (string.IsNullOrEmpty(location))
+                return (null, "location");
+
+            location = System.Web.HttpUtility.UrlDecode(location);
+
+            if (Uri.TryCreate(location, UriKind.Absolute, out var _u))
+                sourceUrl = _u.AbsoluteUri;
+
+            sourceUrl = location;
+        }
+
         if (sourceUrl == null)
-            return null;
+            return (null, "sourceUrl");
+        #endregion
 
         var hybridCache = HybridCache.Get();
 
@@ -55,37 +76,40 @@ public static class GService
             probe = await GSProbe.Get(sourceUrl);
             //Console.WriteLine(Newtonsoft.Json.JsonConvert.SerializeObject(probe, Newtonsoft.Json.Formatting.Indented));
             if (probe == null)
-                return null;
+                return (null, "probe");
 
             hybridCache.Set(probeKey, probe, TimeSpan.FromDays(10));
         }
 
+        if (!probe.Tracks.Exists(i => i.Type == "audio"))
+            return (null, "audio track not found");
+
+        if (!probe.IsMatroskaOrWebM)
+            return (null, $"not matroska/webm: {probe.ContainerCapsName ?? probe.ContainerName ?? "unknown"}");
+
         if (!probe.IsH264 && !probe.IsH265 && !probe.IsAV1 && !probe.IsVP9)
-            return null;
+            return (null, "not mp4");
 
         var conf = ModInit.conf;
         if (ModInit.conf.conf_uids != null && ModInit.conf.conf_uids.TryGetValue(uid, out var uidconf))
             conf = uidconf;
 
-        task = new GStask(probe, conf, sourceUrl, hash.H1, uid, audio);
+        if (tasks.TryGetValue(hash.H1, out task) && !task.IsDead)
+            return (task, null);
 
-        if (tasks.TryAdd(hash.H1, task))
+        foreach (var tk in tasks)
         {
-            foreach (var tk in tasks)
+            if (tk.Value.user_uid == uid && tk.Key != hash.H1)
             {
-                if (tk.Value.user_uid == uid && tk.Key != hash.H1)
-                {
-                    if (tasks.TryRemove(tk.Key, out var removed))
-                        removed.Dispose();
-                }
+                if (tasks.TryRemove(tk.Key, out var removed))
+                    removed.Dispose();
             }
+        }
 
-            return task;
-        }
-        else
-        {
-            return tasks[hash.H1];
-        }
+        task = new GStask(probe, conf, sourceUrl, hash.H1, uid, audio, httpHeaders.Content.Headers.ContentLength);
+        tasks[hash.H1] = task;
+
+        return (task, null);
     }
 
     public static GStask Get(ulong id)

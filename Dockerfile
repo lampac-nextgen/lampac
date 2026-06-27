@@ -105,6 +105,7 @@ RUN apt-get update \
     gstreamer1.0-plugins-base \
     gstreamer1.0-plugins-base-apps \
     gstreamer1.0-plugins-good \
+    gstreamer1.0-plugins-ugly \
     gstreamer1.0-tools \
     imagemagick \
     libgstreamer-plugins-base1.0-0 \

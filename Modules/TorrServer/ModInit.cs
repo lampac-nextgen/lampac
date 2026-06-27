@@ -165,6 +165,9 @@ public class ModInit : IModuleLoaded
 
             while (!IsShutdown && File.Exists(tspath))
             {
+                if (!CoreInit.Win32NT)
+                    Bash.Comand($"pkill -f ' -p {conf.tsport} '");
+
                 try
                 {
                     tsprocess = new Process();

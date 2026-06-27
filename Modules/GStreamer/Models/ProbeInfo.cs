@@ -10,6 +10,17 @@ public sealed class ProbeInfo
     public int DurationSeconds =>
         (int)(DurationNs > 0 ? DurationNs / 1_000_000_000.0 : 0);
 
+    public string ContainerName { get; set; }
+
+    public string ContainerCapsName { get; set; }
+
+    public bool IsMatroskaOrWebM =>
+        ContainerCapsName == "audio/x-matroska" ||
+        ContainerCapsName == "video/x-matroska" ||
+        ContainerCapsName == "video/x-matroska-3d" ||
+        ContainerCapsName == "audio/webm" ||
+        ContainerCapsName == "video/webm";
+
     public List<TrackInfo> Tracks { get; } = new();
 
     public TrackInfo Video =>

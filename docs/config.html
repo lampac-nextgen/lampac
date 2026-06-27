@@ -168,6 +168,7 @@
           <li><a href="#overview">Обзор</a></li>
           <li><a href="#listen">Сеть и порт (listen)</a></li>
           <li><a href="#modules-cfg">Управление модулями</a></li>
+          <li><a href="#gst">GStreamer (gst)</a></li>
           <li><a href="#cache">Кеш</a></li>
           <li><a href="#waf">WAF и безопасность</a></li>
           <li><a href="#accsdb">Аутентификация (accsdb)</a></li>
@@ -316,7 +317,128 @@
           <p><strong>По умолчанию отключены</strong> (в <code>SkipModules</code> в <code>base.conf</code>): Catalog,
             DLNA, Tracks, Transcoding, WebLog, CacheMedia, ProxyLimiter, ForkPlayerXML, MsxNative, TelegramAuth,
             TelegramAuthBot.<br>WAF и accsdb отключены через <code>"enable": false</code> в <code>base.conf</code>, а не
-            через SkipModules.</p>
+            через SkipModules. Модуль <strong>GStreamer</strong> загружается, но транскодинг выключен до
+            <code>gst.enable: true</code> — см. <a href="#gst">секцию gst</a>.</p>
+        </div>
+      </div>
+
+      <hr class="divider" style="margin-bottom:40px" />
+
+      <!-- GST -->
+      <div id="gst" class="config-section">
+        <div class="section-label">Медиа</div>
+        <h2 class="section-title">GStreamer (gst)</h2>
+        <p class="section-sub" style="margin-bottom:20px">Серверный HLS/fMP4 транскодинг через GStreamer. Заменяет legacy-модуль
+          Transcoding (FFmpeg). На клиенте подключите плагин <code>http://&lt;host&gt;:9118/gst.js</code>. Подробности —
+          <a href="https://github.com/lampac-nextgen/lampac/blob/main/Modules/GStreamer/README.md" target="_blank"
+            rel="noopener">Modules/GStreamer/README.md</a>.</p>
+        <div class="code-wrap">
+          <div class="code-header"><span class="code-title">init.conf — gst</span><button class="copy-btn"
+              onclick="copyCode(this)"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                <path
+                  d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" />
+                <path
+                  d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" />
+              </svg> Копировать</button></div>
+          <pre>{
+  <span class="hl-key">"gst"</span>: {
+    <span class="hl-key">"enable"</span>:              <span class="hl-bool">true</span>,
+    <span class="hl-key">"allowed_uids"</span>:        [<span class="hl-string">"device-uid"</span>],  <span class="hl-comment">// опционально: только эти UID</span>
+    <span class="hl-key">"inactiveMinutes"</span>:     <span class="hl-val">10</span>,
+    <span class="hl-key">"gst_version"</span>:         <span class="hl-val">1.28</span>,              <span class="hl-comment">// 1.26 на Linux по умолчанию</span>
+    <span class="hl-key">"PATH"</span>:                <span class="hl-string">"C:\\Program Files\\gstreamer\\1.0\\mingw_x86_64"</span>,
+
+    <span class="hl-key">"segment_seconds"</span>:     <span class="hl-val">6</span>,
+    <span class="hl-key">"aac_bitrate"</span>:         <span class="hl-val">256</span>,
+    <span class="hl-key">"video_bitrate"</span>:       <span class="hl-val">10000</span>,
+
+    <span class="hl-key">"transcodeH264"</span>:       <span class="hl-bool">false</span>,
+    <span class="hl-key">"transcodeH265"</span>:       <span class="hl-bool">false</span>,
+    <span class="hl-key">"transcodeAV1"</span>:        <span class="hl-bool">false</span>,
+    <span class="hl-key">"transcodeVP9"</span>:        <span class="hl-bool">false</span>,
+
+    <span class="hl-key">"tempfs"</span>:              <span class="hl-bool">true</span>,
+    <span class="hl-key">"tempfs_ring"</span>:         <span class="hl-val">1</span>,
+
+    <span class="hl-key">"pipeline_timeSeconds"</span>: <span class="hl-val">20</span>,
+    <span class="hl-key">"pipeline_audioQueue"</span>:  <span class="hl-val">4</span>,
+    <span class="hl-key">"pipeline_videoQueue"</span>:  <span class="hl-val">32</span>,
+    <span class="hl-key">"pipeline_sinkQueue"</span>:   <span class="hl-val">64</span>
+  }
+}</pre>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Параметр</th>
+                <th>По умолчанию</th>
+                <th>Описание</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>enable</code></td>
+                <td><code>false</code></td>
+                <td>Включить транскодинг GStreamer</td>
+              </tr>
+              <tr>
+                <td><code>allowed_uids</code></td>
+                <td>не задано</td>
+                <td>Список разрешённых UID устройств; без списка — доступ всем</td>
+              </tr>
+              <tr>
+                <td><code>conf_uids</code></td>
+                <td>не задано</td>
+                <td>Индивидуальные настройки pipeline для конкретных UID</td>
+              </tr>
+              <tr>
+                <td><code>inactiveMinutes</code></td>
+                <td><code>10</code></td>
+                <td>Остановка задачи после N минут без активности</td>
+              </tr>
+              <tr>
+                <td><code>gst_version</code></td>
+                <td><code>1.28</code> (Win) / <code>1.26</code> (Linux)</td>
+                <td>Версия GStreamer; определяется автоматически через <code>gst-inspect-1.0</code></td>
+              </tr>
+              <tr>
+                <td><code>PATH</code></td>
+                <td>MinGW-путь Windows</td>
+                <td>Корень установки GStreamer (только Windows)</td>
+              </tr>
+              <tr>
+                <td><code>transcodeH264/H265/AV1/VP9</code></td>
+                <td><code>false</code></td>
+                <td>Перекодировать соответствующий кодек в H.264</td>
+              </tr>
+              <tr>
+                <td><code>segment_seconds</code></td>
+                <td><code>6</code></td>
+                <td>Длительность HLS/fMP4-сегмента в секундах</td>
+              </tr>
+              <tr>
+                <td><code>aac_bitrate</code> / <code>video_bitrate</code></td>
+                <td><code>256</code> / <code>10000</code> кбит/с</td>
+                <td>Битрейт AAC и H.264 при перекодировании</td>
+              </tr>
+              <tr>
+                <td><code>tempfs</code> / <code>tempfs_ring</code></td>
+                <td><code>true</code> / <code>1</code></td>
+                <td>Дисковый кольцевой буфер входного HTTP-потока в <code>cache/gstranscoding</code></td>
+              </tr>
+              <tr>
+                <td><code>pipeline_*</code></td>
+                <td>см. пример</td>
+                <td>Размеры очередей pipeline (время и МБ)</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout callout-info"><span class="callout-icon">ℹ️</span>
+          <p>На Linux пакеты GStreamer устанавливаются скриптом <code>install.sh</code>. На Windows — MinGW Runtime
+            1.28.3 с <a href="https://gstreamer.freedesktop.org/download/" target="_blank"
+              rel="noopener">gstreamer.freedesktop.org</a>. WAF: <code>^/gst/</code> — 50 req/s.</p>
         </div>
       </div>
 

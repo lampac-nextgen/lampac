@@ -8,6 +8,7 @@ using Shared;
 using Shared.Attributes;
 using Shared.Services;
 using Shared.Services.Pools;
+using Shared.Services.Utilities;
 using System;
 using System.IO;
 using System.Linq;
@@ -55,7 +56,7 @@ public class GStreamerController : BaseController
 
     #region add
     [HttpGet("/gst/add")]
-    public async Task<ActionResult> Add(string link, string uid, string token)
+    public async Task<ActionResult> Add(string link, string linkencode, string uid, string token)
     {
         if (!ModInit.conf.enable)
             return StatusCode(403);
@@ -64,16 +65,21 @@ public class GStreamerController : BaseController
         if (ModInit.conf.allowed_uids != null && !ModInit.conf.allowed_uids.Contains(user_id))
             return StatusCode(401);
 
-        var gstask = await GService.GetOrAdd(link, user_id);
-        if (gstask == null)
-            return StatusCode(502);
+        var gstask = await GService.GetOrAdd(link ?? CrypTo.DecodeBase64(linkencode), user_id);
+        if (gstask.task == null)
+        {
+            HttpContext.Response.StatusCode = StatusCodes.Status502BadGateway;
+            return Content(gstask.error);
+        }
+
+        var task = gstask.task;
 
         return Json(new
         {
-            id = gstask.id.ToString(),
-            gstask.user_uid,
-            hls = $"{host}/gst/{gstask.id}/master.m3u8",
-            gstask.probe
+            id = task.id.ToString(),
+            task.user_uid,
+            hls = $"{host}/gst/{task.id}/master.m3u8",
+            task.probe
         });
     }
     #endregion
@@ -119,7 +125,7 @@ public class GStreamerController : BaseController
 
     #region start.m3u8
     [HttpGet("/gst/start.m3u8")]
-    public async Task<ActionResult> Start(string link, string uid, string token, int audio)
+    public async Task<ActionResult> Start(string link, string linkencode, string uid, string token, int audio)
     {
         if (!ModInit.conf.enable)
             return StatusCode(403);
@@ -128,11 +134,14 @@ public class GStreamerController : BaseController
         if (ModInit.conf.allowed_uids != null && !ModInit.conf.allowed_uids.Contains(user_id))
             return StatusCode(401);
 
-        var gstask = await GService.GetOrAdd(link, user_id, audio);
-        if (gstask == null)
-            return StatusCode(502);
+        var gstask = await GService.GetOrAdd(link ?? CrypTo.DecodeBase64(linkencode), user_id, audio);
+        if (gstask.task == null)
+        {
+            HttpContext.Response.StatusCode = StatusCodes.Status502BadGateway;
+            return Content(gstask.error);
+        }
 
-        return LocalRedirect($"/gst/{gstask.id}/master.m3u8");
+        return LocalRedirect($"/gst/{gstask.task.id}/master.m3u8?audio={audio}");
     }
     #endregion
 
@@ -214,7 +223,10 @@ public class GStreamerController : BaseController
             try
             {
                 if (gstask.initMp4 == null)
+                {
                     gstask.GetSegment(-1, HttpContext.RequestAborted, audio);
+                    gstask.lastSentSegment = 0;
+                }
             }
             finally
             {
@@ -266,18 +278,27 @@ public class GStreamerController : BaseController
                     int diff = index - gstask.lastSentSegment;
 
                     int cutoff = gstask.conf.tempfs
-                        ? gstask.conf.pipeline_videoQueue * (gstask.conf.tempfs_ring + 2)
-                        : gstask.conf.pipeline_videoQueue;
+                        ? gstask.conf.tempfs_ring > 0 ? 90 + (gstask.conf.tempfs_ring * 25) : 90
+                        : 60;
 
-                    if (diff > 0 && Math.Max(60, cutoff) >= (diff * gstask.conf.segment_seconds))
+                    if (diff > 0 && cutoff >= (diff * gstask.conf.segment_seconds))
                     {
                         for (int i = 0; i < diff - 1; i++)
                         {
                             if (HttpContext.RequestAborted.IsCancellationRequested)
                                 return;
 
-                            gstask.GetSegment(index, HttpContext.RequestAborted);
+                            if (gstask.lastSentSegment == index)
+                                break;
+
                             gstask.lastSentSegment++;
+
+                            Segment skipped = gstask.GetSegment(gstask.lastSentSegment, HttpContext.RequestAborted);
+                            if (skipped.data == null)
+                            {
+                                HttpContext.Response.StatusCode = StatusCodes.Status502BadGateway;
+                                return;
+                            }
                         }
                     }
                     else
@@ -297,7 +318,7 @@ public class GStreamerController : BaseController
             #endregion
 
             Segment seg = gstask.GetSegment(index, HttpContext.RequestAborted);
-            if (seg.audio == null || seg.video == null)
+            if (seg.data == null)
             {
                 HttpContext.Response.StatusCode = StatusCodes.Status502BadGateway;
                 return;
@@ -305,22 +326,22 @@ public class GStreamerController : BaseController
 
             HttpContext.Features.Get<IHttpResponseBodyFeature>()?.DisableBuffering();
 
-            seg.video.Position = 0;
-            seg.audio.Position = 0;
-
-            long totalLength = seg.video.Length + seg.audio.Length;
+            seg.data.Position = 0;
 
             Response.ContentType = "video/mp4";
             Response.Headers.AcceptRanges = "bytes";
 
             var range = Request.GetTypedHeaders()?.Range;
 
-            if (range != null && range.Ranges.Count == 1)
+            if (range != null &&
+                range.Ranges.Count == 1 &&
+                string.Equals(range.Unit.Value, "bytes", StringComparison.OrdinalIgnoreCase))
             {
                 var item = range.Ranges.First();
 
                 long start;
                 long end;
+                long totalLength = seg.data.Length;
 
                 if (item.From.HasValue)
                 {
@@ -359,8 +380,7 @@ public class GStreamerController : BaseController
                 Response.ContentLength = end - start + 1;
 
                 await CopyRange(
-                    seg.video,
-                    seg.audio,
+                    seg.data,
                     Response.Body,
                     start,
                     Response.ContentLength.Value,
@@ -369,9 +389,13 @@ public class GStreamerController : BaseController
             }
             else
             {
-                Response.ContentLength = totalLength;
-                await seg.video.CopyToAsync(Response.Body, HttpContext.RequestAborted);
-                await seg.audio.CopyToAsync(Response.Body, HttpContext.RequestAborted);
+                Response.StatusCode = StatusCodes.Status200OK;
+                Response.ContentLength = seg.data.Length;
+
+                await seg.data.CopyToAsync(
+                    Response.Body,
+                    HttpContext.RequestAborted
+                );
             }
         }
         finally
@@ -383,49 +407,23 @@ public class GStreamerController : BaseController
 
 
     #region Helpers
-    static async Task CopyRange(RecyclableMemoryStream video, RecyclableMemoryStream audio, Stream body, long offset, long count, CancellationToken cancellationToken)
+    static async Task CopyRange(RecyclableMemoryStream data, Stream body, long offset, long count, CancellationToken cancellationToken)
     {
         using (var nbuf = new BufferPool())
         {
-            if (offset < video.Length)
-            {
-                video.Position = offset;
-
-                long videoCount = Math.Min(
-                    count,
-                    video.Length - offset
-                );
-
-                while (videoCount > 0)
-                {
-                    int read = video.Read(nbuf.Span);
-                    if (read == 0)
-                        break;
-
-                    await body.WriteAsync(
-                        nbuf.Memory.Slice(0, read),
-                        cancellationToken
-                    );
-
-                    videoCount -= read;
-                    count -= read;
-                }
-
-                offset = 0;
-            }
-            else
-            {
-                offset -= video.Length;
-            }
-
-            if (count <= 0)
-                return;
-
-            audio.Position = offset;
+            data.Position = offset;
 
             while (count > 0)
             {
-                int read = audio.Read(nbuf.Span);
+                int length = (int)Math.Min(
+                    nbuf.Memory.Length,
+                    count
+                );
+
+                int read = data.Read(
+                    nbuf.Span.Slice(0, length)
+                );
+
                 if (read == 0)
                     break;
 
