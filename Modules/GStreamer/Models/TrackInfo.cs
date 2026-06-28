@@ -1,4 +1,6 @@
-﻿namespace GStreamer.Models;
+﻿using System;
+
+namespace GStreamer.Models;
 
 public sealed class TrackInfo
 {
@@ -7,6 +9,7 @@ public sealed class TrackInfo
 
     public string Type { get; set; }
     public string CapsName { get; set; }
+    public string Codec { get; set; }
 
     public string Title { get; set; }
     public string Language { get; set; }
@@ -15,7 +18,6 @@ public sealed class TrackInfo
     public int? Height { get; set; }
     public int? Channels { get; set; }
     public int? Rate { get; set; }
-
 
     public int? FrameRateNum { get; set; }
 
@@ -27,4 +29,10 @@ public sealed class TrackInfo
         FrameRateDen.Value > 0
             ? (double)FrameRateNum.Value / FrameRateDen.Value
             : null;
+
+    public bool IsAAC =>
+        Type == "audio" &&
+        CapsName == "audio/mpeg" &&
+        !string.IsNullOrWhiteSpace(Codec) &&
+        Codec.Contains("aac", StringComparison.OrdinalIgnoreCase);
 }

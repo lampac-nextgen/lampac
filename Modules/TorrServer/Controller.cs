@@ -64,6 +64,7 @@ public class TorrServerController : BaseController
     [HttpGet, AllowAnonymous]
     [Route("ts")]
     [Route("ts/static/js/{suffix}")]
+    [Route("ts/site.webmanifest")]
     async public Task<ActionResult> Main()
     {
         string html = null;

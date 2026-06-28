@@ -284,6 +284,7 @@ public static class GSProbe
         {
             Index = int.Parse(match.Groups["idx"].Value, CultureInfo.InvariantCulture),
             Type = type,
+            Codec = codec,
             CapsName = CodecToCapsName(type, codec)
         };
     }
@@ -337,7 +338,10 @@ public static class GSProbe
             string codec = ValueAfterColon(line);
 
             if (!string.IsNullOrWhiteSpace(codec))
+            {
+                track.Codec = codec;
                 track.CapsName ??= CodecToCapsName(track.Type, codec);
+            }
 
             return;
         }
@@ -347,7 +351,10 @@ public static class GSProbe
             string codec = ValueAfterColon(line);
 
             if (!string.IsNullOrWhiteSpace(codec))
+            {
+                track.Codec = codec;
                 track.CapsName ??= CodecToCapsName(track.Type, codec);
+            }
 
             return;
         }
