@@ -366,3 +366,8 @@ healthchecksdb
 
 # Mac OS
 .DS_Store
+
+# Allow GStreamer portable runtime bin
+!/Modules/GStreamer/
+!/Modules/GStreamer/gst-libs/
+!/Modules/GStreamer/gst-libs/**

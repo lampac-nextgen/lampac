@@ -338,7 +338,8 @@ install_os_packages() {
     env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
       ca-certificates curl chromium fontconfig \
       gstreamer1.0-libav gstreamer1.0-plugins-bad gstreamer1.0-plugins-base \
-      gstreamer1.0-plugins-base-apps gstreamer1.0-plugins-good gstreamer1.0-tools \
+      gstreamer1.0-plugins-base-apps gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly \
+      gstreamer1.0-tools \
       imagemagick libgstreamer-plugins-base1.0-0 libgstreamer1.0-0 \
       libjpeg-dev libnspr4 libpng-dev libwebp-dev unzip "$icu_pkg"
   apt-get clean -qq 2>/dev/null || true

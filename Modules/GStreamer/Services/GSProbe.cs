@@ -96,6 +96,8 @@ public static class GSProbe
             if (string.IsNullOrWhiteSpace(output))
                 return null;
 
+            //Console.WriteLine(output);
+
             return Parse(output);
         }
         catch
@@ -126,8 +128,9 @@ public static class GSProbe
                 StandardErrorEncoding = Encoding.UTF8
             };
 
-            process.StartInfo.Environment["LANG"] = "ru_RU.UTF-8";
-            process.StartInfo.Environment["LC_ALL"] = "ru_RU.UTF-8";
+            process.StartInfo.Environment["LANG"] = "C.UTF-8";
+            process.StartInfo.Environment["LC_ALL"] = "C.UTF-8";
+            process.StartInfo.Environment["LANGUAGE"] = "en";
             process.StartInfo.Environment["GST_DEBUG_NO_COLOR"] = "1";
 
             process.StartInfo.ArgumentList.Add("-v");
@@ -204,6 +207,16 @@ public static class GSProbe
             if (string.IsNullOrEmpty(line))
                 continue;
 
+            if (TryParseContainerLine(line, out string containerName, out string containerCapsName))
+            {
+                probe.ContainerName = containerName;
+                probe.ContainerCapsName = containerCapsName;
+
+                // Строка container относится не к текущему audio/video stream.
+                current = null;
+                continue;
+            }
+
             // субтитры исключаем из результата
             if (Regex.IsMatch(line, @"^(subtitle|subtitles)\s+#\d+:", RegexOptions.IgnoreCase))
             {
@@ -271,6 +284,7 @@ public static class GSProbe
         {
             Index = int.Parse(match.Groups["idx"].Value, CultureInfo.InvariantCulture),
             Type = type,
+            Codec = codec,
             CapsName = CodecToCapsName(type, codec)
         };
     }
@@ -324,7 +338,10 @@ public static class GSProbe
             string codec = ValueAfterColon(line);
 
             if (!string.IsNullOrWhiteSpace(codec))
+            {
+                track.Codec = codec;
                 track.CapsName ??= CodecToCapsName(track.Type, codec);
+            }
 
             return;
         }
@@ -334,7 +351,10 @@ public static class GSProbe
             string codec = ValueAfterColon(line);
 
             if (!string.IsNullOrWhiteSpace(codec))
+            {
+                track.Codec = codec;
                 track.CapsName ??= CodecToCapsName(track.Type, codec);
+            }
 
             return;
         }
@@ -496,5 +516,125 @@ public static class GSProbe
 
         track.FrameRateNum = numerator;
         track.FrameRateDen = denominator;
+    }
+
+    static bool TryParseContainerLine(
+        string line,
+        out string containerName,
+        out string containerCapsName
+    )
+    {
+        containerName = null;
+        containerCapsName = null;
+
+        if (string.IsNullOrWhiteSpace(line))
+            return false;
+
+        // gst-discoverer варианты:
+        // container: Matroska
+        // container #0: Matroska
+        // container format: Matroska
+        // container-format: Matroska
+        var match = Regex.Match(
+            line,
+            @"^(?:container(?:\s+#\d+)?|container[\s-]+format)\s*:\s*(?<value>.+)$",
+            RegexOptions.IgnoreCase
+        );
+
+        if (match.Success)
+        {
+            containerName = match.Groups["value"].Value.Trim();
+            containerCapsName = ContainerToCapsName(containerName);
+
+            return !string.IsNullOrWhiteSpace(containerName);
+        }
+
+        // На некоторых версиях/режимах -v могут встретиться caps напрямую:
+        // video/x-matroska, ...
+        // video/webm, ...
+        containerCapsName = ContainerCapsFromCapsLine(line);
+        if (containerCapsName == null)
+            return false;
+
+        containerName = containerCapsName;
+        return true;
+    }
+
+    static string ContainerToCapsName(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        string directCaps = ContainerCapsFromCapsLine(value);
+        if (directCaps != null)
+            return directCaps;
+
+        string c = value.ToLowerInvariant();
+
+        if (c.Contains("webm"))
+            return "video/webm";
+
+        if (c.Contains("matroska") || c.Contains("x-matroska"))
+            return "video/x-matroska";
+
+        // Ниже не поддерживается текущим pipeline, но полезно для диагностики.
+        if (c.Contains("quicktime") ||
+            c.Contains("iso mp4") ||
+            c.Contains("mpeg-4") ||
+            Regex.IsMatch(c, @"\bmp4\b", RegexOptions.IgnoreCase))
+        {
+            return "video/quicktime";
+        }
+
+        if (c.Contains("mpeg-ts") ||
+            c.Contains("mpegts") ||
+            c.Contains("transport stream"))
+        {
+            return "video/mpegts";
+        }
+
+        if (c.Contains("avi"))
+            return "video/x-msvideo";
+
+        if (c.Contains("ogg"))
+            return "application/ogg";
+
+        if (c.Contains("flv") || c.Contains("flash video"))
+            return "video/x-flv";
+
+        return null;
+    }
+
+    static string ContainerCapsFromCapsLine(string value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        string caps = value.Trim();
+
+        int comma = caps.IndexOf(',');
+        if (comma >= 0)
+            caps = caps[..comma].Trim();
+
+        caps = caps.Trim('"', '\'');
+
+        return caps switch
+        {
+            "audio/x-matroska" => "audio/x-matroska",
+            "video/x-matroska" => "video/x-matroska",
+            "video/x-matroska-3d" => "video/x-matroska-3d",
+            "audio/webm" => "audio/webm",
+            "video/webm" => "video/webm",
+
+            // Диагностические unsupported container caps.
+            "video/quicktime" => "video/quicktime",
+            "video/mp4" => "video/mp4",
+            "video/mpegts" => "video/mpegts",
+            "video/x-msvideo" => "video/x-msvideo",
+            "application/ogg" => "application/ogg",
+            "video/x-flv" => "video/x-flv",
+
+            _ => null
+        };
     }
 }

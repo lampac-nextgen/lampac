@@ -1,6 +1,6 @@
 {
   "BitTorr": {
-    "CacheSize": 134217728,
+    "CacheSize": 100663296,
     "ConnectionsLimit": 25,
     "DisableDHT": false,
     "DisablePEX": false,
@@ -17,7 +17,7 @@
     "FriendlyName": "",
     "PeersListenPort": 0,
     "PreloadCache": 0,
-    "ReaderReadAHead": 77,
+    "ReaderReadAHead": 83,
     "RemoveCacheOnDrop": false,
     "ResponsiveMode": false,
     "RetrackersMode": 1,

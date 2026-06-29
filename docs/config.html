@@ -350,6 +350,8 @@
 
     <span class="hl-key">"segment_seconds"</span>:     <span class="hl-val">6</span>,
     <span class="hl-key">"aac_bitrate"</span>:         <span class="hl-val">256</span>,
+    <span class="hl-key">"aac_samplerate"</span>:     <span class="hl-val">48000</span>,
+    <span class="hl-key">"aac_channels"</span>:       <span class="hl-val">2</span>,
     <span class="hl-key">"video_bitrate"</span>:       <span class="hl-val">10000</span>,
 
     <span class="hl-key">"transcodeH264"</span>:       <span class="hl-bool">false</span>,
@@ -421,6 +423,11 @@
                 <td><code>aac_bitrate</code> / <code>video_bitrate</code></td>
                 <td><code>256</code> / <code>10000</code> кбит/с</td>
                 <td>Битрейт AAC и H.264 при перекодировании</td>
+              </tr>
+              <tr>
+                <td><code>aac_samplerate</code> / <code>aac_channels</code></td>
+                <td>авто</td>
+                <td>Частота дискретизации (Гц) и количество каналов AAC. По умолчанию берутся из исходной дорожки (до 7.1 / 8 каналов)</td>
               </tr>
               <tr>
                 <td><code>tempfs</code> / <code>tempfs_ring</code></td>

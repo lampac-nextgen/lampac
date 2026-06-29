@@ -27,13 +27,23 @@ public class ModuleConf : ModuleBaseConf
     /// <summary>
     /// количество буферных блоков videoQueue
     /// </summary>
-    public int tempfs_ring { get; set; } = 1;
+    public int tempfs_ring { get; set; }
 
 
     /// <summary>
     /// 256 кбит/с
     /// </summary>
     public int aac_bitrate { get; set; } = 256;
+
+    /// <summary>
+    /// sample rate для AAC энкодера (Hz). 0 = берётся из исходной дорожки.
+    /// </summary>
+    public int aac_samplerate { get; set; }
+
+    /// <summary>
+    /// количество каналов AAC. 0 = берётся из исходной дорожки (поддерживается до 7.1 / 8 каналов).
+    /// </summary>
+    public int aac_channels { get; set; }
 
     public int segment_seconds { get; set; } = 6;
 
@@ -51,11 +61,10 @@ public class ModuleConf : ModuleBaseConf
     public int video_bitrate { get; set; } = 10_000;
 
 
-    public int pipeline_timeSeconds { get; set; } = 20;
+    /// <summary>
+    /// Мбит/c
+    /// </summary>
+    public int pipeline_downloadRate { get; set; }
 
-    public int pipeline_audioQueue { get; set; } = 4;
-
-    public int pipeline_videoQueue { get; set; } = 32;
-
-    public int pipeline_sinkQueue { get; set; } = 64;
+    public int pipeline_appsinkBuffers { get; set; } = 1000;
 }
