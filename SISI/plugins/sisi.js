@@ -50,7 +50,7 @@
       onBack: function onBack() {
         Lampa.Modal.close();
         Lampa.Controller.toggle(controller);
-      },
+      }
     });
   }
 
@@ -326,7 +326,7 @@
     preview: preview,
     hidePreview: hidePreview,
     fixList: fixList,
-    menu: menu$2,
+    menu: menu$2
   };
 
   function sisiCardHandlers() {
@@ -340,7 +340,7 @@
       },
       onFocus: function (target, element) {
         Utils.preview($(target), element);
-      },
+      }
     };
   }
 
@@ -354,8 +354,8 @@
       items: {
         mapping: 'grid',
         cols: 3,
-        align_left: true,
-      },
+        align_left: true
+      }
     };
 
     line.results.forEach(function (element) {
@@ -371,8 +371,8 @@
           },
           onLong: function (target, data) {
             handlers.onMenu($(target), data || element);
-          },
-        },
+          }
+        }
       };
     });
 
@@ -388,8 +388,8 @@
     json.params = {
       items: {
         mapping: 'grid',
-        cols: 3,
-      },
+        cols: 3
+      }
     };
 
     var handlers = sisiCardHandlers();
@@ -407,8 +407,8 @@
           },
           onLong: function (target, data) {
             handlers.onMenu($(target), data || element);
-          },
-        },
+          }
+        }
       };
     });
 
@@ -433,7 +433,7 @@
 
   function sisiShowEmpty(comp, er) {
     var empty = new Lampa.Empty({
-      descr: typeof er == 'string' ? er : Lampa.Lang.translate('empty_text_two'),
+      descr: typeof er == 'string' ? er : Lampa.Lang.translate('empty_text_two')
     });
 
     Lampa.Activity.all().forEach(function (active) {
@@ -470,7 +470,7 @@
               title: 'Поиск',
               value: '',
               free: true,
-              nosave: true,
+              nosave: true
             },
             function (value) {
               $('body').removeClass('ambience--enable');
@@ -483,12 +483,12 @@
                   title: 'Поиск - ' + value,
                   component: 'sisi_view_' + Defined.use_api,
                   search_start: search,
-                  page: 1,
+                  page: 1
                 });
               }
-            },
+            }
           );
-        },
+        }
       });
     }
 
@@ -515,14 +515,14 @@
                 title: object.title,
                 url: b.playlist_url,
                 component: 'sisi_view_' + Defined.use_api,
-                page: 1,
+                page: 1
               });
-            },
+            }
           });
         } else {
           sisiViewFilter(menu, object);
         }
-      },
+      }
     });
   }
 
@@ -874,7 +874,7 @@
           }.bind(this),
           function (er) {
             sisiShowEmpty(this, er);
-          }.bind(this),
+          }.bind(this)
         );
       },
       onInstance: function (line, data) {
@@ -884,14 +884,14 @@
               url: data.url,
               title: data.title,
               component: 'sisi_view_' + Defined.use_api,
-              page: 2,
+              page: 2
             });
-          },
+          }
         });
       },
       onPause: suspendSisiActivity,
       onStop: suspendSisiActivity,
-      onDestroy: suspendSisiActivity,
+      onDestroy: suspendSisiActivity
     });
 
     return comp;
@@ -918,13 +918,13 @@
 
             if (!data.results.length && object.url.indexOf('/bookmarks') !== -1) {
               Lampa.Noty.show('Удерживайте ОК на видео для добавления в закладки.', {
-                time: 10000,
+                time: 10000
               });
             }
           }.bind(this),
           function (er) {
             sisiShowEmpty(this, er);
-          }.bind(this),
+          }.bind(this)
         );
       },
       onNext: function (resolve, reject) {
@@ -935,7 +935,7 @@
       },
       onPause: suspendSisiActivity,
       onStop: suspendSisiActivity,
-      onDestroy: suspendSisiActivity,
+      onDestroy: suspendSisiActivity
     });
 
     return comp;
@@ -962,7 +962,7 @@
         },
         function () {
           oncomplite([]);
-        },
+        }
       );
     },
     onCancel: function onCancel() {
@@ -970,7 +970,7 @@
     },
     params: {
       lazy: true,
-      align_left: true,
+      align_left: true
     },
     onMore: function onMore(params, close) {
       close();
@@ -979,12 +979,12 @@
         url: url,
         title: 'Поиск - ' + params.query,
         component: 'sisi_view_' + Defined.use_api,
-        page: 2,
+        page: 2
       });
     },
     onSelect: function onSelect(params, close) {
       Utils.play(params.element);
-    },
+    }
   };
 
 
@@ -1023,7 +1023,7 @@
       '  font-weight: 900;',
       '  text-transform: uppercase;',
       '}',
-      '</style>',
+      '</style>'
     ].join('\n');
   }
 
@@ -1039,7 +1039,7 @@
     '  <rect x="116.753" y="139.22" width="19.1481" height="30.1959" rx="9.57407" fill="currentColor"/>',
     '  <rect x="64.9404" y="139.22" width="19.1481" height="30.1959" rx="9.57407" fill="currentColor"/>',
     '  <rect x="93.0994" y="176.021" width="19.1481" height="30.1959" rx="9.57407" fill="currentColor"/>',
-    '</svg>',
+    '</svg>'
   ].join('\n');
 
   var SISI_FILTER_BUTTON = [
@@ -1053,7 +1053,7 @@
     '    <circle cx="23.5" cy="26.5" r="3.5" fill="currentColor"></circle>',
     '    <circle cx="21.5" cy="9.5" r="3.5" fill="currentColor"></circle>',
     '  </svg>',
-    '</div>',
+    '</div>'
   ].join('\n');
 
   function sisiMenuItemHtml(title) {
@@ -1063,7 +1063,7 @@
       '    ' + SISI_ICON_SVG,
       '  </div>',
       '  <div class="menu__text">' + title + '</div>',
-      '</li>',
+      '</li>'
     ].join('\n');
   }
 
@@ -1081,7 +1081,7 @@
       '      ' + boxMac,
       '    </div>',
       '  </div>',
-      '</div>',
+      '</div>'
     ].join('\n');
   }
 
@@ -1148,7 +1148,7 @@
       Lampa.SettingsApi.addComponent({
         component: 'sisi',
         name: Lampa.Lang.translate('lampac_sisiname'),
-        icon: SISI_ICON_SVG,
+        icon: SISI_ICON_SVG
       });
       Lampa.SettingsApi.addParam({
         component: 'sisi',
@@ -1259,14 +1259,14 @@
                   url: a.playlist_url,
                   title: a.title,
                   component: 'sisi_view_' + Defined.use_api,
-                  page: 1,
+                  page: 1
                 });
               } else {
                 Lampa.Activity.push({
                   url: '',
                   title: Lampa.Lang.translate('lampac_sisiname'),
                   component: 'sisi_' + Defined.use_api,
-                  page: 1,
+                  page: 1
                 });
               }
             });
