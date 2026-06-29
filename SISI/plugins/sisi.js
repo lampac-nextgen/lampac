@@ -458,11 +458,11 @@
           onFocus: function (target) {
             handlers.onFocus(target, element);
           },
-          onlyEnter: function (target, data) {
-            handlers.onEnter(null, data || element);
+          onlyEnter: function () {
+            handlers.onEnter(null, element);
           },
-          onLong: function (target, data) {
-            handlers.onMenu($(target), data || element);
+          onLong: function (target) {
+            handlers.onMenu($(target), element);
           }
         }
       };
@@ -494,11 +494,11 @@
           onFocus: function (target) {
             handlers.onFocus(target, element);
           },
-          onlyEnter: function (target, data) {
-            handlers.onEnter(null, data || element);
+          onlyEnter: function () {
+            handlers.onEnter(null, element);
           },
-          onLong: function (target, data) {
-            handlers.onMenu($(target), data || element);
+          onLong: function (target) {
+            handlers.onMenu($(target), element);
           }
         }
       };
