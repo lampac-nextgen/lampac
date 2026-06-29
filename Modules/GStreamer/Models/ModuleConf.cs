@@ -35,6 +35,16 @@ public class ModuleConf : ModuleBaseConf
     /// </summary>
     public int aac_bitrate { get; set; } = 256;
 
+    /// <summary>
+    /// sample rate для AAC энкодера (Hz). 0 = берётся из исходной дорожки.
+    /// </summary>
+    public int aac_samplerate { get; set; }
+
+    /// <summary>
+    /// количество каналов AAC. 0 = берётся из исходной дорожки (поддерживается до 7.1 / 8 каналов).
+    /// </summary>
+    public int aac_channels { get; set; }
+
     public int segment_seconds { get; set; } = 6;
 
     public bool transcodeH264 { get; set; }

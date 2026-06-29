@@ -298,6 +298,9 @@ public class GStask
             i.Index == audioIndex
         );
 
+        int aacChannels   = conf.aac_channels   > 0 ? conf.aac_channels   : (selectedAudio?.Channels ?? 2);
+        int aacSamplerate = conf.aac_samplerate > 0 ? conf.aac_samplerate : (selectedAudio?.Rate      ?? 48000);
+
         sb.AppendLine($$"""
         d.audio_{{audioIndex}} !
         mq.sink_1
@@ -328,16 +331,16 @@ public class GStask
             audio/x-raw,
                 format=F32LE,
                 layout=interleaved,
-                rate=48000,
-                channels=2 !
+                rate={{aacSamplerate}},
+                channels={{aacChannels}} !
             avenc_aac
                 bitrate={{conf.aac_bitrate * 1000}} !
             aacparse !
             audio/mpeg,
                 mpegversion=4,
                 stream-format=raw,
-                rate=48000,
-                channels=2 !
+                rate={{aacSamplerate}},
+                channels={{aacChannels}} !
             mux.audio_0
             """);
         }

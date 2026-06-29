@@ -18,7 +18,6 @@ using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
-using System.Web;
 
 namespace TorrServer;
 
@@ -50,10 +49,10 @@ public class TorrServerController : BaseController
     public ActionResult Plugin(string token)
     {
         string plugins = FileCache.ReadAllText($"{ModInit.modpath}/plugins.js", "ts.js")
-            .Replace("{localhost}", Regex.Replace(host, "^https?://", ""));
-
-        if (!string.IsNullOrEmpty(token))
-            plugins = Regex.Replace(plugins, "Lampa.Storage.set\\('torrserver_login'[^\n\r]+", $"Lampa.Storage.set('torrserver_login','{HttpUtility.UrlEncode(token)}');");
+            .Replace("{localhost}", host)
+            .Replace("{token}", token ?? string.Empty)
+            .Replace("{tshost}", Regex.Replace(host, "^https?://", ""))
+            .Replace("{defaultPasswd}", ModInit.conf.defaultPasswd);
 
         return ContentTo(plugins, "application/javascript; charset=utf-8");
     }
@@ -64,7 +63,6 @@ public class TorrServerController : BaseController
     [HttpGet, AllowAnonymous]
     [Route("ts")]
     [Route("ts/static/js/{suffix}")]
-    [Route("ts/site.webmanifest")]
     async public Task<ActionResult> Main()
     {
         string html = null;
@@ -103,13 +101,31 @@ public class TorrServerController : BaseController
     }
     #endregion
 
-    #region TorAPI
-    [HttpGet, HttpPost]
+    #region Bypass
     [AllowAnonymous]
+    [HttpGet, HttpPost]
+    [Route("ts/echo")]
+    [Route("ts/gst/echo")]
+    [Route("ts/site.webmanifest")]
+    [Route("ts/msx/{suffix}")]
+    [Route("ts/search/{suffix}")]
+    [Route("ts/torznab/{suffix}")]
+    [Route("ts/ffp/{suffix}")]
+    public Task Bypass()
+    {
+        return TorAPI();
+    }
+    #endregion
+
+    #region TorAPI
+    [AllowAnonymous]
+    [HttpGet, HttpPost]
     [Route("ts/{*suffix}")]
     async public Task Index()
     {
-        if (HttpContext.Request.Path.Value.StartsWith("/shutdown"))
+        string path = HttpContext.Request.Path.Value;
+
+        if (path.StartsWith("/shutdown", StringComparison.OrdinalIgnoreCase))
         {
             HttpContext.Response.StatusCode = 404;
             return;
@@ -117,67 +133,48 @@ public class TorrServerController : BaseController
 
         if (CoreInit.conf.accsdb.enable)
         {
-            #region Обработка stream потока
-            if (HttpContext.Request.Method == "GET" && Regex.IsMatch(HttpContext.Request.Path.Value, "^/ts/(stream|play)"))
+            bool isStream = Regex.IsMatch(path, "^/ts/(stream|playlist|play/|download/|gst/)", RegexOptions.IgnoreCase);
+
+            if (HttpContext.Request.Method == "GET" && isStream)
             {
                 await TorAPI().ConfigureAwait(false);
-                return;
-
-                //if (ModInit.clientIps.Contains(HttpContext.Connection.RemoteIpAddress.ToString()))
-                //{
-                //    await TorAPI();
-                //    return;
-                //}
-                //else
-                //{
-                //    HttpContext.Response.StatusCode = 404;
-                //    return;
-                //}
             }
-            #endregion
-
-            #region Access-Control-Request-Headers
-            if (HttpContext.Request.Method == "OPTIONS" && HttpContext.Request.Headers.TryGetValue("Access-Control-Request-Headers", out var AccessControl) && AccessControl == "authorization")
+            else
             {
-                HttpContext.Response.StatusCode = 204;
-                return;
-            }
-            #endregion
-
-            if (HttpContext.Request.Headers.TryGetValue("Authorization", out var Authorization))
-            {
-                byte[] data = Convert.FromBase64String(Authorization.ToString().Replace("Basic ", ""));
-                string[] decodedString = Encoding.UTF8.GetString(data).Split(":");
-
-                string login = decodedString[0].ToLowerAndTrim();
-                string passwd = decodedString[1];
-
-                if (CoreInit.conf.accsdb.findUser(login) is AccsUser user && !user.ban && user.expires > DateTime.UtcNow && passwd == ModInit.conf.defaultPasswd)
+                #region Access-Control-Request-Headers
+                if (HttpContext.Request.Method == "OPTIONS" && HttpContext.Request.Headers.TryGetValue("Access-Control-Request-Headers", out var AccessControl) && AccessControl == "authorization")
                 {
-                    if (ModInit.conf.group > user.group)
-                    {
-                        HttpContext.Response.ContentType = "text/plain; charset=utf-8";
-                        HttpContext.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                        HttpContext.Response.BodyWriter.Write("NoAccessGroup"u8);
-                        return;
-                    }
-
-                    await TorAPI(user).ConfigureAwait(false);
+                    HttpContext.Response.StatusCode = 204;
                     return;
                 }
-            }
+                #endregion
 
-            if (HttpContext.Request.Path.Value.StartsWith("/ts/echo"))
-            {
-                HttpContext.Response.ContentType = "text/plain; charset=utf-8";
-                HttpContext.Response.StatusCode = StatusCodes.Status200OK;
-                HttpContext.Response.BodyWriter.Write("MatriX.API"u8);
-                return;
-            }
+                if (HttpContext.Request.Headers.TryGetValue("Authorization", out var Authorization))
+                {
+                    byte[] data = Convert.FromBase64String(Authorization.ToString().Replace("Basic ", ""));
+                    string[] decodedString = Encoding.UTF8.GetString(data).Split(":");
 
-            HttpContext.Response.StatusCode = 401;
-            HttpContext.Response.Headers["Www-Authenticate"] = "Basic realm=Authorization Required";
-            return;
+                    string login = decodedString[0].ToLowerAndTrim();
+                    string passwd = decodedString[1];
+
+                    if (CoreInit.conf.accsdb.findUser(login) is AccsUser user && !user.ban && user.expires > DateTime.UtcNow && passwd == ModInit.conf.defaultPasswd)
+                    {
+                        if (ModInit.conf.group > user.group)
+                        {
+                            HttpContext.Response.ContentType = "text/plain; charset=utf-8";
+                            HttpContext.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                            HttpContext.Response.BodyWriter.Write("NoAccessGroup"u8);
+                            return;
+                        }
+
+                        await TorAPI(user).ConfigureAwait(false);
+                        return;
+                    }
+                }
+
+                HttpContext.Response.StatusCode = 401;
+                HttpContext.Response.Headers["Www-Authenticate"] = "Basic realm=Authorization Required";
+            }
         }
         else
         {

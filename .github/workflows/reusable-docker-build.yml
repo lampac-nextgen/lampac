@@ -194,7 +194,7 @@ jobs:
           retention-days: ${{ inputs.sbom_artifact_retention_days }}
 
       - if: ${{ inputs.attest_github && inputs.push }}
-        uses: actions/attest-build-provenance@v4.1.0
+        uses: actions/attest-build-provenance@v4.1.1
         with:
           subject-name: ${{ env.GHCR_IMAGE }}
           subject-digest: ${{ steps.build.outputs.digest }}
