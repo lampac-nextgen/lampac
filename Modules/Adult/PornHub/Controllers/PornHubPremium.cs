@@ -11,6 +11,8 @@ namespace PornHub;
 
 public class PornHubPremium : BaseSisiController
 {
+    const int StreamCacheMinutes = 1;
+
     public PornHubPremium() : base(ModInit.conf.PornHubPremium) { }
 
     [HttpGet]
@@ -56,7 +58,7 @@ public class PornHubPremium : BaseSisiController
         if (await IsRequestBlocked(rch: false))
             return badInitMsg;
 
-        string memKey = $"phubprem:vidosik:v3:{vkey}";
+        string memKey = $"phubprem:vidosik:v4:{vkey}";
         if (!hybridCache.TryGetValue(memKey, out StreamItem stream_links))
         {
             string url = PornHubTo.StreamLinksUri(init.host, vkey);
@@ -72,7 +74,7 @@ public class PornHubPremium : BaseSisiController
                 return OnError("stream_links", refresh_proxy: true);
 
             proxyManager?.Success();
-            hybridCache.Set(memKey, stream_links, cacheTime(20));
+            hybridCache.Set(memKey, stream_links, cacheTime(StreamCacheMinutes));
         }
 
         if (related)

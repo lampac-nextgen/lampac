@@ -10,13 +10,24 @@ using System;
 using System.Collections.Generic;
 using System.Net.Http;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 
 namespace PornHub;
 
 public class PornHubController : BaseSisiController
 {
+    const int StreamCacheMinutes = 1;
+    const int StreamProbeAttempts = 3;
+
     static readonly HttpClient http2Client = FriendlyHttp.CreateHttp2Client(useCookies: false);
+    static readonly IReadOnlyList<HeadersModel> streamPageHeaders = HeadersModel.Init(
+        ("user-agent", Http.UserAgent),
+        ("cookie", "platform=pc; accessAgeDisclaimerPH=1"),
+        ("sec-fetch-dest", "document"),
+        ("sec-fetch-site", "same-origin"),
+        ("sec-fetch-mode", "navigate")
+    );
 
     public PornHubController() : base(ModInit.conf.PornHub)
     {
@@ -171,7 +182,7 @@ public class PornHubController : BaseSisiController
             return badInitMsg;
 
     rhubFallback:
-        var cache = await InvokeCacheResult($"phub:vidosik:v3:{vkey}", 20, jsonContext.StreamItem, async e =>
+        var cache = await InvokeCacheResult($"phub:vidosik:v5:{vkey}", StreamCacheMinutes, jsonContext.StreamItem, async e =>
         {
             string url = PornHubTo.StreamLinksUri(init.host, vkey);
             if (url == null)
@@ -179,15 +190,28 @@ public class PornHubController : BaseSisiController
 
             StreamItem stream_links = null;
 
-            await httpHydra.GetSpan(url, span =>
+            for (int i = 0; i < StreamProbeAttempts; i++)
             {
-                stream_links = PornHubTo.StreamLinks(span, "phub/vidosik", "phub");
-            });
+                await Http.GetSpan(
+                    init.cors(url, streamPageHeaders, requestInfo),
+                    span => stream_links = PornHubTo.StreamLinks(span, "phub/vidosik", "phub"),
+                    timeoutSeconds: init.httptimeout,
+                    headers: streamPageHeaders,
+                    proxy: proxy,
+                    statusCodeOK: true,
+                    httpversion: init.httpversion,
+                    useDefaultHeaders: false,
+                    httpClient: init.httpversion == 2 && !init.useproxy ? http2Client : null
+                );
+
+                if (stream_links?.qualitys != null && stream_links.qualitys.Count > 0 && !HasLegacySignedUrls(stream_links) && await IsPlayableStream(stream_links))
+                    return e.Success(stream_links);
+            }
 
             if (stream_links?.qualitys == null || stream_links.qualitys.Count == 0)
                 return e.Fail("stream_links", refresh_proxy: true);
 
-            return e.Success(stream_links);
+            return e.Fail("stream_probe", refresh_proxy: true);
         });
 
         if (IsRhubFallback(cache))
@@ -197,5 +221,70 @@ public class PornHubController : BaseSisiController
             return PlaylistResult(cache.Value?.recomends, cache.ISingleCache, null, total_pages: 1);
 
         return OnResult(cache);
+    }
+
+    async Task<bool> IsPlayableStream(StreamItem streamLinks)
+    {
+        string streamUrl = null;
+
+        foreach (var quality in streamLinks.qualitys)
+        {
+            streamUrl = quality.Value;
+            break;
+        }
+
+        if (string.IsNullOrEmpty(streamUrl))
+            return false;
+
+        var headers = HeadersModel.InitOrNull(init.headers_stream);
+        string requestUri = init.cors(streamUrl, headers, requestInfo);
+
+        var client = FriendlyHttp.MessageClient(
+            init.httpversion == 2 ? "http2" : "base",
+            Http.HandlerOrNull(requestUri, proxy),
+            out bool disposeHttpClient,
+            httpClient: init.httpversion == 2 && !init.useproxy ? http2Client : null
+        );
+
+        try
+        {
+            using (var request = new HttpRequestMessage(HttpMethod.Head, requestUri))
+            {
+                Http.DefaultRequestHeaders(requestUri, request, null, null, headers);
+
+                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(6)))
+                {
+                    using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false))
+                    {
+                        return (int)response.StatusCode is 200 or 206;
+                    }
+                }
+            }
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            if (disposeHttpClient)
+                client.Dispose();
+        }
+    }
+
+    static bool HasLegacySignedUrls(StreamItem streamLinks)
+    {
+        foreach (var quality in streamLinks.qualitys)
+        {
+            string url = quality.Value;
+
+            if (string.IsNullOrEmpty(url) || url.Contains("validto=", StringComparison.Ordinal))
+                continue;
+
+            if (url.Contains("?e=", StringComparison.Ordinal) || url.Contains("&e=", StringComparison.Ordinal))
+                return true;
+        }
+
+        return false;
     }
 }
