@@ -249,17 +249,17 @@
   }
 
   function menu$2(target, card_data) {
-    if (!card_data.bookmark) return;
+    if (!card_data.bookmark) return false;
 
     var cardModels = normalizeModels(card_data);
 
     if (card_data.model_probe && !card_data.model_probe_resolved) {
-      if (card_data.model_probe_loading) return;
+      if (card_data.model_probe_loading) return false;
 
       card_data.model_probe_loading = true;
       Lampa.Loading.start();
 
-      return Api.model(card_data, function(models) {
+      Api.model(card_data, function(models) {
         card_data.model_probe_loading = false;
         card_data.model_probe_resolved = true;
         Lampa.Loading.stop();
@@ -274,6 +274,8 @@
 
         menu$2(target, card_data);
       });
+
+      return false;
     }
 
     cardModels = normalizeModels(card_data);
@@ -351,6 +353,7 @@
         Lampa.Controller.toggle('content');
       }
     });
+    return false;
 		  }
 
   function openModel(model) {
@@ -462,7 +465,7 @@
             handlers.onEnter(null, element);
           },
           onLong: function (target) {
-            handlers.onMenu($(target), element);
+            return handlers.onMenu($(target), element);
           }
         }
       };
@@ -498,7 +501,7 @@
             handlers.onEnter(null, element);
           },
           onLong: function (target) {
-            handlers.onMenu($(target), element);
+            return handlers.onMenu($(target), element);
           }
         }
       };
