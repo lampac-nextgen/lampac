@@ -458,13 +458,16 @@
       element.params = {
         style: { name: 'collection' },
         emit: {
+          onCreate: function () {
+            this.menu_list = [];
+          },
           onFocus: function (target) {
             handlers.onFocus(target, element);
           },
           onlyEnter: function () {
             handlers.onEnter(null, element);
           },
-          onLong: function (target) {
+          onlyLong: function (target) {
             return handlers.onMenu($(target), element);
           }
         }
@@ -494,13 +497,16 @@
       element.params = {
         style: { name: 'collection' },
         emit: {
+          onCreate: function () {
+            this.menu_list = [];
+          },
           onFocus: function (target) {
             handlers.onFocus(target, element);
           },
           onlyEnter: function () {
             handlers.onEnter(null, element);
           },
-          onLong: function (target) {
+          onlyLong: function (target) {
             return handlers.onMenu($(target), element);
           }
         }
