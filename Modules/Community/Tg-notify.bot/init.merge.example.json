@@ -1,0 +1,13 @@
+{
+  "TelegramBot": {
+    "enable": true,
+    "bot_token": "ВАШ_ТОКЕН_ОТ_BOTFATHER",
+    "tmdb_api_key": "ВАШ_КЛЮЧ_TMDB",
+    "trakt_client_id": "",
+    "lampac_host": "http://127.0.0.1:9118",
+    "lampac_token": "",
+    "check_interval_minutes": 60,
+    "tmdb_lang": "ru-RU",
+    "data_dir": "database/tgnotify"
+  }
+}
