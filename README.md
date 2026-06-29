@@ -31,12 +31,14 @@
 - **TorrServer** — встроенный торрент-сервер как подпроцесс
 - **DLNA/UPnP** — медиасервер для локальных файлов
 - **JacRed** — агрегатор торрент-индексаторов (совместим с Jackett)
-- **Transcoding** — транскодинг через FFmpeg (до 5 потоков)
+- **GStreamer** — HLS/fMP4 транскодинг (замена legacy Transcoding/FFmpeg), плагин `/gst.js`
+- **Transcoding** — legacy транскодинг через FFmpeg (до 5 потоков); предпочтительнее **GStreamer**
 - **Tracks** — управление субтитрами и дорожками (FFprobe)
 - **Sync** — кросс-девайсная синхронизация закладок и истории (SQLite)
 - **TimeCode** — сохранение позиции воспроизведения
 - **TmdbProxy** — локальный кеш TMDB API
-- **LampaWeb** — встроенный хостинг Lampa UI (авто-обновление с GitHub)
+- **LampaWeb** — хостинг Lampa UI (авто-обновление с GitHub), виджеты Samsung Tizen (`/samsung.wgt`) и LG webOS (`/lg.ipk`)
+- **Tg-notify.bot** — Telegram-уведомления о новых сериях и озвучках, плагин `/tg-notify.js`
 - **WebLog** — отладка HTTP и Playwright-трафика в реальном времени
 - **Playwright** — автоматизация Chromium/Firefox для обхода JS-защит
 - **RCH** — WebSocket-реле для клиентов за NAT
@@ -449,16 +451,52 @@ cd publish && dotnet Core.dll
   // Статистика (/stats/*)
   "openstat": { "enable": false },
 
-  // Плагины Lampa UI
+  // Плагины Lampa UI (совместимы с Lampa 3.0)
   "LampaWeb": {
+    "widgets": {
+      "samsung": true,   // /samsung.wgt — Tizen
+      "lg": true         // /lg.ipk — webOS
+    },
+    "customPlugins": [
+      { "url": "{localhost}/tg-notify.js", "status": 1 }
+    ],
     "initPlugins": {
       "online": true, "sisi": true, "torrserver": true,
       "timecode": true, "jacred": true, "tmdbProxy": true,
       "cubProxy": true, "pirate_store": true
     }
+  },
+
+  // GStreamer — серверный транскодинг (включите enable)
+  "gst": {
+    "enable": true,
+    "aac_samplerate": 48000,
+    "aac_channels": 2
+  },
+
+  // TelegramBot — уведомления о сериях/озвучках (manifest: enable: false)
+  "TelegramBot": {
+    "enable": true,
+    "bot_token": "TOKEN",
+    "tmdb_api_key": "TMDB_KEY",
+    "lampac_host": "http://127.0.0.1:9118"
   }
 }
 ```
+
+</details>
+
+<details>
+<summary><strong>GStreamer (gst)</strong></summary>
+
+Серверный HLS/fMP4 транскодинг через GStreamer. Модуль загружается по умолчанию; транскодинг включается через `"gst": { "enable": true }`. На клиенте подключите `http://<host>:9118/gst.js`. Кеш — `cache/gstranscoding/`. Подробности — [Modules/GStreamer/README.md](Modules/GStreamer/README.md).
+
+</details>
+
+<details>
+<summary><strong>TelegramBot (Tg-notify.bot)</strong></summary>
+
+Фоновый Telegram-бот уведомлений о новых сериях и озвучках. Подписка из карточки Lampa, трекинг через Trakt→TMDB и опрос Mirage/Collaps. По умолчанию `"enable": false` в [manifest.json](Modules/Tg-notify.bot/manifest.json) — включите секцию `TelegramBot` в `init.conf` и подключите плагин через `LampaWeb.customPlugins`. Подробности — [Modules/Tg-notify.bot/README.md](Modules/Tg-notify.bot/README.md).
 
 </details>
 
@@ -487,13 +525,13 @@ cd publish && dotnet Core.dll
 > Служебные модули **Sync**, **SyncEvents**, **Storage** и **TimeCode** в `SkipModules` **нет** — они загружаются вместе с ядром, пока их не добавите в `SkipModules` вручную.
 
 > [!WARNING]
-> Модули **DLNA**, **Tracks**, **Transcoding** и **Catalog** не выполняют экранирование входящих запросов. Не включайте их на публично доступном VPS без ограничения доступа через firewall или reverse proxy.
+> Модули **DLNA**, **Tracks**, **Transcoding**, **GStreamer** и **Catalog** не выполняют экранирование входящих запросов. Не включайте их на публично доступном VPS без ограничения доступа через firewall или reverse proxy.
 
 | Модуль | По умолч. | Описание |
 | --- | :---: | --- |
 | **Online** | ✅ | VOD-ядро: плагин `/online.js`, агрегатор `/lite/*`. Провайдеры в `Modules/Online*/`. WAF: 10 req/s. [README](Online/README.md) |
 | **SISI** | ✅ | 18+: плагин `/sisi.js`, SQLite (история, закладки). Платформы в `Modules/Adult/*`. [README](SISI/README.md) |
-| **LampaWeb** | ✅ | Хостинг Lampa UI. Авто-обновление с GitHub каждые 90 мин. |
+| **LampaWeb** | ✅ | Хостинг Lampa UI. Виджеты `/samsung.wgt`, `/lg.ipk`. Авто-обновление с GitHub каждые 90 мин. [README](Modules/LampaWeb/README.md) |
 | **TorrServer** | ✅ | Управление процессом TorrServer, прокси `/ts/`. Случайный пароль за сессию. |
 | **JacRed** | ✅ | Агрегатор торрент-индексаторов (Rutor, Kinozal, RuTracker, NNMClub, Toloka, Bitru и др.). |
 | **NextHUB** | ✅ | 18+ витрина на YAML (`Modules/NextHUB/sites/`). Маршрут `/nexthub`. WAF: 5 req/s. [README](Modules/NextHUB/README.md) |
@@ -508,7 +546,8 @@ cd publish && dotnet Core.dll
 | **SyncEvents** | ✅ | Трансляция событий синхронизации через WebSocket (NwsEvents). Отключение: `SyncEvents` в `SkipModules`. |
 | **Storage** | ✅ | Хранилище данных для Sync, NWS (`onlyreg`). Отключение: `Storage` в `SkipModules`. |
 | **Tracks** | ⛔ | Субтитры и дорожки (`database/tracks/`), интеграция FFprobe (`/ffprobe`). Только в доверенной сети. |
-| **Transcoding** | ⛔ | HLS/DASH транскодинг FFmpeg. До 5 потоков, таймаут 5 мин. `cache/transcoding/`. Только в доверенной сети. |
+| **Transcoding** | ⛔ | HLS/DASH транскодинг FFmpeg. До 5 потоков, таймаут 5 мин. `cache/transcoding/`. Legacy — предпочтительнее **GStreamer**. |
+| **GStreamer** | ✅ | HLS/fMP4 транскодинг через GStreamer. Плагин `/gst.js`, API `/gst/*`. Включите `gst.enable` в `init.conf`. [README](Modules/GStreamer/README.md) |
 | **WebLog** | ⛔ | Страница `/weblog`: поток HTTP и Playwright-событий через WebSocket. Требует пароль root. Не включайте публично. |
 | **CacheMedia** | ⛔ | Кеширование потоков SISI (события `ProxyApiCacheStream` для отдельных платформ). |
 | **ProxyLimiter** | ⛔ | Лимиты параллельных запросов к медиапрокси для SISI. Конфиг `ProxyLimiter`. [README](Modules/Proxy/ProxyLimiter/README.md) |
@@ -519,6 +558,7 @@ cd publish && dotnet Core.dll
 | **ExternalBind** | ⛔ (manifest) | Привязка Lite/Online для удалённых URL (FilmixPro, Rezka, KinoPub). [README](Modules/ExternalBind/README.md) |
 | **TelegramAuth** | ⛔ | HTTP API `/tg/auth/…`, интеграция с accsdb. [README](Modules/Community/TelegramAuth/README.md) |
 | **TelegramAuthBot** | ⛔ | Telegram-бот для привязки устройств (long polling). [README](Modules/Community/TelegramAuthBot/README.md) |
+| **Tg-notify.bot** | ⛔ (manifest) | Telegram-уведомления о сериях и озвучках. Плагин `/tg-notify.js`, API `/api/tg/*`. [README](Modules/Tg-notify.bot/README.md) |
 
 <details>
 <summary><strong>Пользовательские модули</strong></summary>
@@ -706,7 +746,7 @@ cd publish && dotnet Core.dll
 
 | Метод | Путь | Описание |
 | --- | --- | --- |
-| `GET` | `/online.js` | Lampa VOD-плагин |
+| `GET` | `/online.js` | Lampa VOD-плагин (Lampa 3.0) |
 | `GET` | `/online/js/{token}` | Плагин с авторизацией по токену |
 | `GET` | `/lite/{provider}` | Список источников от провайдера |
 | `GET` | `/externalids` | Маппинг ID (TMDB ↔ KinoPoisk и т.д.) |
@@ -716,7 +756,7 @@ cd publish && dotnet Core.dll
 
 | Метод | Путь | Описание |
 | --- | --- | --- |
-| `GET` | `/sisi.js` | Lampa SISI-плагин |
+| `GET` | `/sisi.js` | Lampa SISI-плагин (Lampa 3.0) |
 | `GET` | `/sisi/js/{token}` | Плагин с авторизацией по токену |
 | `GET` | `/{provider}` | Контент платформы (напр. `/phub`, `/xnx`) |
 | `GET` | `/sisi/bookmark` | Управление закладками |
@@ -732,7 +772,19 @@ cd publish && dotnet Core.dll
 | `GET` | `/bookmark/…` | Закладки Sync |
 | `GET` | `/timecode/…` | Позиции воспроизведения |
 | `GET` | `/tmdb/…` | TMDB прокси/кеш |
-| `GET` | `/transcoding/…` | HLS/DASH транскодинг |
+| `GET` | `/transcoding/…` | HLS/DASH транскодинг (legacy FFmpeg) |
+| `GET` | `/gst.js` | GStreamer: плагин Lampa для серверного транскодинга |
+| `GET` | `/gst/add` | GStreamer: создать задачу транскодинга |
+| `GET` | `/gst/{id}/master.m3u8` | GStreamer: HLS-плейлист задачи |
+| `GET` | `/samsung.wgt` | LampaWeb: виджет Samsung Tizen |
+| `GET` | `/lg.ipk` | LampaWeb: виджет LG webOS |
+| `GET` | `/tg-notify.js` | Tg-notify.bot: плагин Telegram-подписок |
+| `GET` | `/api/tg/voices` | Tg-notify.bot: список озвучек (Mirage + Collaps) |
+| `POST` | `/api/tg/subscribe` | Tg-notify.bot: подписка на сериал/озвучку |
+| `POST` | `/api/tg/unsubscribe` | Tg-notify.bot: отписка |
+| `GET` | `/api/tg/status` | Tg-notify.bot: статус подписки |
+| `GET` | `/api/tg/link` | Tg-notify.bot: deep-link привязки Telegram |
+| `GET` | `/api/tg/subscriptions` | Tg-notify.bot: список подписок пользователя |
 | `GET` | `/ffprobe` | Метаданные дорожек (FFprobe) |
 | `GET` | `/nexthub` | NextHUB: браузер 18+ по YAML |
 | `GET` | `/nexthub/vidosik` | NextHUB: просмотр элемента (`uri`, `related`) |
@@ -760,7 +812,7 @@ cd publish && dotnet Core.dll
 │  │(VOD API)│ │ + Adult │ │(каталог) │ │(Lampa UI)         │     │
 │  └─────────┘ └─────────┘ └──────────┘ └───────────────────┘     │
 │  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌───────────────────┐     │
-│  │TorrServr│ │  DLNA   │ │  JacRed  │ │   Transcoding     │     │
+│  │TorrServr│ │  DLNA   │ │  JacRed  │ │  GStreamer        │     │
 │  └─────────┘ └─────────┘ └──────────┘ └───────────────────┘     │
 │  ┌─────────┐ ┌─────────┐ ┌──────────┐ ┌───────────────────┐     │
 │  │TmdbProxy│ │  Sync   │ │ TimeCode │ │     Tracks        │     │
@@ -771,6 +823,7 @@ cd publish && dotnet Core.dll
 │  │  OnlineUKR · OnlineGEO  — по одному проекту на провайдера │  │
 │  │  Modules/Adult/* — платформы 18+                          │  │
 │  │  Modules/Community/* — TelegramAuth, TelegramAuthBot      │  │
+│  │  Modules/Tg-notify.bot — уведомления о сериях/озвучках    │  │
 │  └───────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -872,6 +925,7 @@ lampac/
 │   ├── Community/              # TelegramAuth, TelegramAuthBot
 │   ├── DLNA/                   # DLNA/UPnP медиасервер
 │   ├── ForkPlayerXML/          # ForkPlayer: /fxml
+│   ├── GStreamer/              # HLS/fMP4 транскодинг (/gst/*)
 │   ├── ExternalBind/           # Привязка URL (manifest: enable: false)
 │   ├── MsxNative/              # MSX-плеер, Sisi
 │   ├── JacRed/                 # Агрегатор торрент-индексаторов
@@ -888,6 +942,7 @@ lampac/
 │   ├── Proxy/                  # CubProxy, TmdbProxy, CacheMedia, CorsMedia, Corseu, ProxyLimiter
 │   ├── Sync/                   # Sync, SyncEvents, Storage, TimeCode
 │   ├── TorrServer/             # Управление TorrServer
+│   ├── Tg-notify.bot/          # Telegram-уведомления о сериях/озвучках
 │   ├── Tracks/                 # Субтитры и дорожки (FFprobe)
 │   ├── Transcoding/            # FFmpeg транскодинг
 │   ├── WatchTogether/          # Синхронный просмотр
@@ -916,6 +971,7 @@ lampac/
 
 | Документ | О чём |
 | --- | --- |
+| [docs/](docs/index.html) | Веб-документация: установка, конфигурация, модули, API, changelog |
 | [Core/README.md](Core/README.md) | `Program`/`Startup`, middleware, загрузка `module/` и `mods/` |
 | [Shared/README.md](Shared/README.md) | `CoreInit`, контроллеры, `CSharpEval`, кеш, HTTP, Playwright |
 | [Online/README.md](Online/README.md) | VOD-ядро, `/online.js`, `/lite/`, PiTor, Externalids |
@@ -924,6 +980,9 @@ lampac/
 | [Modules/Community/README.md](Modules/Community/README.md) | Telegram-авторизация, клиент Lampa, API |
 | [Modules/Community/TelegramAuth/README.md](Modules/Community/TelegramAuth/README.md) | HTTP API `/tg/auth/…`, accsdb, хранилище |
 | [Modules/Community/TelegramAuthBot/README.md](Modules/Community/TelegramAuthBot/README.md) | Long polling-бот, команды, конфиг |
+| [Modules/GStreamer/README.md](Modules/GStreamer/README.md) | Серверный транскодинг, `gst` в init.conf, `/gst.js` |
+| [Modules/LampaWeb/README.md](Modules/LampaWeb/README.md) | Lampa UI, виджеты Tizen/webOS, `lampainit.js` |
+| [Modules/Tg-notify.bot/README.md](Modules/Tg-notify.bot/README.md) | Telegram-подписки на серии/озвучки, `/api/tg/*` |
 | [Modules/ExternalBind/README.md](Modules/ExternalBind/README.md) | Привязка Lite/Online, флаг локального IP |
 | [charts/lampac/README.md](charts/lampac/README.md) | Helm-чарт для Kubernetes (`ghcr.io/lampac-nextgen/lampac`) |
 

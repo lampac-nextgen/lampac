@@ -1,0 +1,10 @@
+Package: com.lampac.tv
+Version: 1.0.0
+Section: misc
+Priority: optional
+Architecture: all
+Installed-Size: 14745
+Maintainer: Hlushok <stpuh2@gmail.com>
+Description: This is a webOS application.
+webOS-Package-Format-Version: 2
+webOS-Packager-Version: x.y.x

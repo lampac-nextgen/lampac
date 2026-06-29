@@ -178,6 +178,7 @@
           <li><a href="#gc">Управление памятью GC</a></li>
           <li><a href="#providers-cfg">Конфигурация провайдеров</a></li>
           <li><a href="#lampa-plugins">Плагины Lampa UI</a></li>
+          <li><a href="#telegrambot">TelegramBot (Tg-notify)</a></li>
         </ul>
       </div>
 
@@ -779,6 +780,13 @@
   <span class="hl-key">"openstat"</span>: { <span class="hl-key">"enable"</span>: <span class="hl-bool">false</span> },  <span class="hl-comment">// /stats/* эндпоинты</span>
 
   <span class="hl-key">"LampaWeb"</span>: {
+    <span class="hl-key">"widgets"</span>: {
+      <span class="hl-key">"samsung"</span>: <span class="hl-bool">true</span>,   <span class="hl-comment">// /samsung.wgt — Tizen</span>
+      <span class="hl-key">"lg"</span>:      <span class="hl-bool">true</span>    <span class="hl-comment">// /lg.ipk — webOS</span>
+    },
+    <span class="hl-key">"customPlugins"</span>: [
+      { <span class="hl-key">"url"</span>: <span class="hl-string">"{localhost}/tg-notify.js"</span>, <span class="hl-key">"status"</span>: <span class="hl-val">1</span> }
+    ],
     <span class="hl-key">"initPlugins"</span>: {
       <span class="hl-key">"online"</span>:       <span class="hl-bool">true</span>,
       <span class="hl-key">"sisi"</span>:         <span class="hl-bool">true</span>,
@@ -791,6 +799,93 @@
     }
   }
 }</pre>
+        </div>
+        <div class="callout callout-info"><span class="callout-icon">ℹ️</span>
+          <p>Плагины <code>/online.js</code> и <code>/sisi.js</code> совместимы с <strong>Lampa 3.0</strong>. Виджеты
+            Smart TV собираются на лету с подстановкой <code>{localhost}</code>; кеш — в
+            <code>cache/widgets/</code>. Подробнее о Tg-notify — в <a href="#telegrambot">секции TelegramBot</a>.</p>
+        </div>
+      </div>
+
+      <hr class="divider" style="margin-bottom:40px" />
+
+      <!-- TELEGRAM BOT -->
+      <div id="telegrambot" class="config-section">
+        <div class="section-label">Уведомления</div>
+        <h2 class="section-title">TelegramBot (Tg-notify.bot)</h2>
+        <p class="section-sub" style="margin-bottom:20px">Фоновый Telegram-бот уведомлений о новых сериях и озвучках.
+          Подписка из карточки Lampa, трекинг через Trakt→TMDB и параллельный опрос Mirage/Collaps. По умолчанию модуль
+          отключён в <code>manifest.json</code> — включите <code>TelegramBot.enable</code> и задайте
+          <code>bot_token</code>. Подробности —
+          <a href="https://github.com/lampac-nextgen/lampac/blob/main/Modules/Tg-notify.bot/README.md" target="_blank"
+            rel="noopener">Modules/Tg-notify.bot/README.md</a>.</p>
+        <div class="code-wrap">
+          <div class="code-header"><span class="code-title">init.conf — TelegramBot</span><button class="copy-btn"
+              onclick="copyCode(this)"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                <path
+                  d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" />
+                <path
+                  d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" />
+              </svg> Копировать</button></div>
+          <pre>{
+  <span class="hl-key">"TelegramBot"</span>: {
+    <span class="hl-key">"enable"</span>:                 <span class="hl-bool">true</span>,
+    <span class="hl-key">"bot_token"</span>:              <span class="hl-string">"ТОКЕН_ОТ_BOTFATHER"</span>,
+    <span class="hl-key">"tmdb_api_key"</span>:           <span class="hl-string">"ВАШ_КЛЮЧ_TMDB"</span>,
+    <span class="hl-key">"trakt_client_id"</span>:        <span class="hl-string">""</span>,
+    <span class="hl-key">"lampac_host"</span>:            <span class="hl-string">"http://127.0.0.1:9118"</span>,
+    <span class="hl-key">"lampac_token"</span>:           <span class="hl-string">""</span>,
+    <span class="hl-key">"check_interval_minutes"</span>: <span class="hl-val">60</span>,
+    <span class="hl-key">"tmdb_lang"</span>:              <span class="hl-string">"ru-RU"</span>,
+    <span class="hl-key">"data_dir"</span>:               <span class="hl-string">"database/tgnotify"</span>
+  }
+}</pre>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Параметр</th>
+                <th>Описание</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>bot_token</code></td>
+                <td>Токен бота от @BotFather. Обязателен для запуска long polling</td>
+              </tr>
+              <tr>
+                <td><code>tmdb_api_key</code></td>
+                <td>Ключ TMDB v3 — обложки, описания эпизодов, определение сезона</td>
+              </tr>
+              <tr>
+                <td><code>trakt_client_id</code></td>
+                <td>Client ID Trakt (опционально). Основной источник новых серий; без него — только TMDB</td>
+              </tr>
+              <tr>
+                <td><code>lampac_host</code></td>
+                <td>Базовый URL Lampac для запросов к балансерам (<code>/lite/mirage</code>, <code>/lite/collaps</code>)</td>
+              </tr>
+              <tr>
+                <td><code>lampac_token</code></td>
+                <td>Токен accsdb — обязателен при включённой защите accsdb</td>
+              </tr>
+              <tr>
+                <td><code>check_interval_minutes</code></td>
+                <td>Период фоновой проверки подписок (первый прогон — через 2 мин после старта)</td>
+              </tr>
+              <tr>
+                <td><code>data_dir</code></td>
+                <td>Каталог <code>users.json</code> / <code>subscriptions.json</code></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="callout callout-warn"><span class="callout-icon">⚠️</span>
+          <p>Подключите клиентский плагин через <code>LampaWeb.customPlugins</code> (см. выше) или напрямую по URL
+            <code>{localhost}/tg-notify.js</code>. Убедитесь, что имя <code>TelegramBot</code> не попало в
+            <code>SkipModules</code>.
+          </p>
         </div>
       </div>
 
