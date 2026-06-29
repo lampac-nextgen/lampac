@@ -30,6 +30,7 @@ namespace TelegramBot
         public static ConcurrentDictionary<string, List<Subscription>> Subs { get; private set; } = new();
         public static TelegramBotClient Bot { get; private set; }
         public static bool IsRunning { get; private set; }
+        public static string modpath { get; private set; }
 
         static string DataDir => string.IsNullOrWhiteSpace(Config?.data_dir) ? "database/tgnotify" : Config.data_dir;
         static string configPath => System.IO.Path.Combine(DataDir, "config.json");
@@ -108,6 +109,7 @@ namespace TelegramBot
 
         public void Loaded(InitspaceModel initspace)
         {
+            modpath = initspace.path;
             UpdateConfFromInit();
             EventListener.UpdateInitFile += UpdateConfFromInit;
 
