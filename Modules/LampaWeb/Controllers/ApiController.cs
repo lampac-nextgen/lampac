@@ -10,6 +10,8 @@ using Shared.Services;
 using Shared.Services.Pools;
 using System;
 using System.Collections.Generic;
+using System.Formats.Tar;
+using System.IO.Compression;
 using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
@@ -374,6 +376,206 @@ public class ApiController : BaseController
         IO.Directory.Delete(cache, true);
 
         return File(IO.File.OpenRead(wgt), "application/octet-stream");
+    }
+
+    [HttpGet]
+    [AllowAnonymous]
+    [Route("lg.ipk")]
+    public ActionResult LgIpk(string overwritehost)
+    {
+        if (!ModInit.conf.widgets.lg)
+            return NotFound();
+
+        string cache = $"cache/widgets/lg/{Shared.Services.Utilities.CrypTo.md5(overwritehost ?? host + "v01")}";
+        string ipk = $"{cache}.ipk";
+
+        if (IO.File.Exists(ipk))
+            return File(IO.File.OpenRead(ipk), "application/octet-stream");
+
+        var widgetDirectory = $"{ModInit.modpath}/widgets/lg";
+        if (!IO.Directory.Exists(widgetDirectory))
+            return NotFound();
+
+        if (!IO.Directory.Exists($"{widgetDirectory}/app") ||
+            !IO.File.Exists($"{widgetDirectory}/service.tar.gz") ||
+            !IO.File.Exists($"{widgetDirectory}/control/control"))
+            return NotFound();
+
+        const string appId = "com.lampac.tv";
+        const string serviceId = appId + ".worker";
+
+        string appSource = $"{widgetDirectory}/app";
+        string serviceArchive = $"{widgetDirectory}/service.tar.gz";
+        string controlSource = $"{widgetDirectory}/control";
+        string replaceHost = overwritehost ?? host;
+
+        #region packageinfo.json (mandatory for webOS)
+        string appVersion = "1.0.0";
+        try
+        {
+            var appInfo = JObject.Parse(IO.File.ReadAllText($"{appSource}/appinfo.json"));
+            appVersion = appInfo.Value<string>("version") ?? appVersion;
+        }
+        catch { }
+
+        byte[] packageInfoData = Encoding.UTF8.GetBytes(new JObject
+        {
+            ["id"] = appId,
+            ["version"] = appVersion,
+            ["app"] = appId,
+            ["services"] = new JArray(serviceId)
+        }.ToString(Formatting.Indented));
+        #endregion
+
+        // app files patched with the host (root level only, like the legacy build)
+        var hostPatchedFiles = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "index.html", "loader.js", "app.js" };
+
+        long installedSize = 0;
+
+        // data.tar.gz — packed straight from the source folders, no intermediate copy
+        byte[] dataTarGz = BuildTarGz(tar =>
+        {
+            void AddTree(string source, string prefix, bool patch)
+            {
+                foreach (string file in IO.Directory.GetFiles(source, "*", IO.SearchOption.AllDirectories))
+                {
+                    string rel = IO.Path.GetRelativePath(source, file).Replace('\\', '/');
+                    string entryName = $"{prefix}/{rel}";
+
+                    if (patch && !rel.Contains('/') && hostPatchedFiles.Contains(rel))
+                    {
+                        byte[] data = Encoding.UTF8.GetBytes(IO.File.ReadAllText(file).Replace("{localhost}", replaceHost));
+                        WriteTarBytes(tar, entryName, data);
+                        installedSize += data.Length;
+                    }
+                    else
+                    {
+                        tar.WriteEntry(file, entryName);
+                        installedSize += new IO.FileInfo(file).Length;
+                    }
+                }
+            }
+
+            // The worker service ships as a single archive (1 file instead of ~1900 loose
+            // files) — this keeps build-copy and antivirus on-access scanning cheap.
+            void AddArchive(string archive, string prefix)
+            {
+                using var fs = IO.File.OpenRead(archive);
+                using var gzip = new GZipStream(fs, CompressionMode.Decompress);
+                using var reader = new TarReader(gzip);
+
+                while (reader.GetNextEntry() is TarEntry entry)
+                {
+                    if (entry.EntryType is not (TarEntryType.RegularFile or TarEntryType.V7RegularFile))
+                        continue;
+
+                    var data = new IO.MemoryStream();
+                    entry.DataStream?.CopyTo(data); // null for empty files (e.g. 0-byte .gitmodules)
+                    data.Position = 0;
+
+                    WriteTarStream(tar, $"{prefix}/{entry.Name}", data);
+                    installedSize += data.Length;
+                }
+            }
+
+            AddTree(appSource, $"usr/palm/applications/{appId}", patch: true);
+            AddArchive(serviceArchive, $"usr/palm/services/{serviceId}");
+
+            WriteTarBytes(tar, $"usr/palm/packages/{appId}/packageinfo.json", packageInfoData);
+            installedSize += packageInfoData.Length;
+        });
+
+        // control.tar.gz — Installed-Size patched in memory
+        byte[] controlTarGz = BuildTarGz(tar =>
+        {
+            foreach (string file in IO.Directory.GetFiles(controlSource, "*", IO.SearchOption.AllDirectories))
+            {
+                string rel = IO.Path.GetRelativePath(controlSource, file).Replace('\\', '/');
+
+                if (rel.Equals("control", StringComparison.OrdinalIgnoreCase))
+                {
+                    string text = Regex.Replace(IO.File.ReadAllText(file), "(?m)^Installed-Size:.*$", $"Installed-Size: {installedSize}");
+                    WriteTarBytes(tar, rel, Encoding.UTF8.GetBytes(text));
+                }
+                else
+                {
+                    tar.WriteEntry(file, rel);
+                }
+            }
+        });
+
+        // debian-binary must be exactly "2.0\n" (LF) — normalize in case the on-disk file has CRLF
+        byte[] debianBinary = IO.File.Exists($"{widgetDirectory}/debian-binary")
+            ? Encoding.ASCII.GetBytes(IO.File.ReadAllText($"{widgetDirectory}/debian-binary").Replace("\r\n", "\n").Replace("\r", "\n"))
+            : Encoding.ASCII.GetBytes("2.0\n");
+
+        IO.Directory.CreateDirectory(IO.Path.GetDirectoryName(ipk));
+
+        using (var stream = IO.File.Create(ipk))
+        using (var writer = new IO.BinaryWriter(stream, Encoding.ASCII, leaveOpen: false))
+        {
+            writer.Write(Encoding.ASCII.GetBytes("!<arch>\n"));
+            WriteArFile(writer, "debian-binary", debianBinary);
+            WriteArFile(writer, "control.tar.gz", controlTarGz);
+            WriteArFile(writer, "data.tar.gz", dataTarGz);
+        }
+
+        return File(IO.File.OpenRead(ipk), "application/octet-stream");
+
+        static byte[] BuildTarGz(Action<TarWriter> write)
+        {
+            using var ms = new IO.MemoryStream();
+            using (var gzip = new GZipStream(ms, CompressionLevel.Optimal, leaveOpen: true))
+            using (var tar = new TarWriter(gzip, TarEntryFormat.Ustar, leaveOpen: true))
+            {
+                write(tar);
+            }
+
+            return ms.ToArray();
+        }
+
+        static void WriteTarBytes(TarWriter tar, string entryName, byte[] data)
+            => WriteTarStream(tar, entryName, new IO.MemoryStream(data));
+
+        static void WriteTarStream(TarWriter tar, string entryName, IO.Stream data)
+        {
+            var entry = new UstarTarEntry(TarEntryType.RegularFile, entryName)
+            {
+                Mode = IO.UnixFileMode.UserRead | IO.UnixFileMode.UserWrite |
+                       IO.UnixFileMode.GroupRead | IO.UnixFileMode.OtherRead,
+                DataStream = data
+            };
+
+            tar.WriteEntry(entry);
+        }
+
+        static void WriteArFile(IO.BinaryWriter writer, string name, byte[] data)
+        {
+            string fileName = name.EndsWith("/") ? name : $"{name}/";
+
+            string header =
+                PadRight(fileName, 16) +
+                PadRight("0", 12) +
+                PadRight("0", 6) +
+                PadRight("0", 6) +
+                PadRight("100644", 8) +
+                PadRight(data.Length.ToString(), 10) +
+                "`\n";
+
+            writer.Write(Encoding.ASCII.GetBytes(header));
+            writer.Write(data);
+
+            if (data.Length % 2 != 0)
+                writer.Write((byte)'\n');
+
+            static string PadRight(string value, int len)
+            {
+                if (value.Length > len)
+                    return value.Substring(0, len);
+
+                return value.PadRight(len, ' ');
+            }
+        }
     }
 
     #endregion
