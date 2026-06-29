@@ -1,7 +1,6 @@
 (function () {
   'use strict';
 
-  var LOG_TAG = 'Lampac';
   var LAMPAC_VERSION = '1.8.0';
   var REQUEST_TIMEOUT = 10000;
   var BALANCER_TIMEOUT = 60000;
@@ -1578,7 +1577,10 @@
         .text(
           er && er.accsdb
             ? er.msg
-            : Lampa.Lang.translate('lampac_does_not_answer_text').replace('{balanser}', balanser[balanser].name),
+            : Lampa.Lang.translate('lampac_does_not_answer_text').replace(
+                '{balanser}',
+                sources[balanser] ? sources[balanser].name : balanser,
+              ),
         );
       scroll.clear();
       scroll.append(html);
@@ -1676,6 +1678,7 @@
     function suspendActivity() {
       stopBalanserTimer();
       clearTimeout(life_wait_timer);
+      clearTimeout(number_of_requests_timer);
       network.clear();
     }
 
@@ -1690,6 +1693,7 @@
       this.clearImages();
       files.destroy();
       scroll.destroy();
+      if (filter && typeof filter.destroy === 'function') filter.destroy();
     };
   }
 
@@ -1717,6 +1721,7 @@
                     item.title = Lampa.Utils.capitalizeFirstLetter(item.title);
                     item.release_date = item.year || '0000';
                     item.balanser = spiderUri;
+                    item.source = 'lampac';
                     if (item.img !== undefined) {
                       if (item.img.charAt(0) === '/') item.img = Defined.localhost + item.img.substring(1);
                       if (item.img.indexOf('/proxyimg') !== -1) item.img = account(item.img);
@@ -1725,10 +1730,15 @@
                     return item;
                   });
 
-                  rows.push({
-                    title: name,
-                    results: cards,
-                  });
+                  rows.push(
+                    Lampa.Utils.addSource(
+                      {
+                        title: name,
+                        results: cards,
+                      },
+                      'lampac',
+                    ),
+                  );
                 }
               });
 
@@ -1793,9 +1803,6 @@
       params: {
         lazy: true,
         align_left: true,
-        card_events: {
-          onMenu: function () { },
-        },
       },
       onMore: function (params, close) {
         close();
