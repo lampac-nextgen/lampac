@@ -292,8 +292,8 @@
                     items.push({ title: 'Озвучки:', separator: true });
                     result.voices.forEach(function (v) {
                         var src   = v.source || 'mirage';
-                        var badge = src === 'collaps' ? ' [C]' : src === 'rhs' ? ' [R]' : '';
-                        items.push({ title: '🎙 ' + v.name + badge, voice: v.name, orid: result.orid || '', voice_id: v.id || 0, collaps_orid: result.collaps_orid || '', voice_source: src });
+                        var badge = src === 'collaps' ? ' [C]' : src === 'rhs' ? ' [R]' : src === 'videohub' ? ' [V]' : '';
+                        items.push({ title: '🎙 ' + v.name + badge, voice: v.name, orid: result.orid || '', voice_id: v.id || 0, collaps_orid: result.collaps_orid || '', kp_id: result.kp_id || 0, voice_source: src });
                     });
                 }
 
@@ -302,7 +302,7 @@
                     onSelect: function (a) {
                         Lampa.Controller.toggle('content');
                         if (a.unsubscribe) doUnsubscribe(card, button, a.voice);
-                        else if (typeof a.voice !== 'undefined') doSubscribe(card, a.voice, season, button, a.orid, a.voice_id, a.collaps_orid, a.voice_source);
+                        else if (typeof a.voice !== 'undefined') doSubscribe(card, a.voice, season, button, a.orid, a.voice_id, a.collaps_orid, a.voice_source, a.kp_id);
                     },
                     onBack: function () { Lampa.Controller.toggle('content'); }
                 });
@@ -324,7 +324,7 @@
         );
     }
 
-    function doSubscribe(card, voice, season, button, orid, voiceId, collapsOrid, voiceSource) {
+    function doSubscribe(card, voice, season, button, orid, voiceId, collapsOrid, voiceSource, kpId) {
         network.clear();
         network['native'](apiUrl('/api/tg/subscribe'), function (r) {
             if (r.success) {
@@ -337,7 +337,7 @@
             }
         }, function () {
             Lampa.Noty.show('Ошибка подписки');
-        }, JSON.stringify({ tmdb_id: card.id, title: card.name || card.title || '', voice: voice, season: season, episode: 0, mirage_orid: orid || '', mirage_voice_id: voiceId || 0, voice_episode: 0, collaps_orid: collapsOrid || '', voice_source: voiceSource || '' }),
+        }, JSON.stringify({ tmdb_id: card.id, title: card.name || card.title || '', voice: voice, season: season, episode: 0, mirage_orid: orid || '', mirage_voice_id: voiceId || 0, voice_episode: 0, collaps_orid: collapsOrid || '', voice_source: voiceSource || '', kp_id: kpId || 0 }),
         { dataType: 'json', contentType: 'application/json' });
     }
 

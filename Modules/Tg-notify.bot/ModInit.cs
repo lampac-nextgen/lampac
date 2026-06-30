@@ -100,6 +100,7 @@ namespace TelegramBot
             public string mirage_orid { get; set; }   // ID сериала в Mirage
             public int mirage_voice_id { get; set; }  // ID озвучки (параметр t=)
             public string collaps_orid { get; set; }  // ID сериала в Collaps
+            public int kp_id { get; set; }            // kinopoisk_id для VideoHub (резолвится один раз и кешируется)
             public int last_season { get; set; }
             public int last_episode { get; set; }
             public int last_voice_episode { get; set; } // Последняя серия в озвучке
@@ -110,6 +111,7 @@ namespace TelegramBot
         public void Loaded(InitspaceModel initspace)
         {
             modpath = initspace.path;
+
             UpdateConfFromInit();
             EventListener.UpdateInitFile += UpdateConfFromInit;
 
@@ -226,8 +228,7 @@ namespace TelegramBot
         {
             new KeyboardButton[] { "📋 Подписки", "🔍 Проверить" },
             new KeyboardButton[] { "📖 Помощь", "🔓 Отвязать" }
-        })
-        { ResizeKeyboard = true };
+        }) { ResizeKeyboard = true };
 
         static async Task HandleMessage(Message msg)
         {
@@ -374,6 +375,7 @@ namespace TelegramBot
                         if (hasMirage) voiceTasks.Add(CheckMirageVoice(sub));
                         voiceTasks.Add(CheckCollapsVoice(sub));
                         voiceTasks.Add(CheckRHSVoice(sub));
+                        voiceTasks.Add(CheckVideoHubVoice(sub));
 
                         await Task.WhenAll(voiceTasks);
 
@@ -472,7 +474,7 @@ namespace TelegramBot
                     var (found, episodes) = await CheckViaTrakt(sub);
                     if (found)
                         return episodes; // Trakt нашёл шоу — верим только ему, даже если 0 новых серий
-
+                    
                     // Trakt не нашёл шоу — fallback на TMDB
                     Console.WriteLine($"[TelegramBot] Trakt: show {sub.tmdb_id} not found, using TMDB");
                     return await CheckViaTmdb(sub);
@@ -484,7 +486,7 @@ namespace TelegramBot
                     return new List<EpisodeInfo>();
                 }
             }
-
+            
             try { return await CheckViaTmdb(sub); }
             catch { return new List<EpisodeInfo>(); }
         }
@@ -497,10 +499,10 @@ namespace TelegramBot
             searchReq.Headers.Add("trakt-api-key", Config.trakt_client_id);
             searchReq.Headers.Add("trakt-api-version", "2");
             var searchResp = await http.SendAsync(searchReq);
-
+            
             Console.WriteLine($"[TelegramBot] Trakt search tmdb/{sub.tmdb_id}: status={searchResp.StatusCode}");
-
-            if (!searchResp.IsSuccessStatusCode)
+            
+            if (!searchResp.IsSuccessStatusCode) 
             {
                 Console.WriteLine($"[TelegramBot] Trakt search failed: {await searchResp.Content.ReadAsStringAsync()}");
                 return (false, result);
@@ -508,18 +510,18 @@ namespace TelegramBot
 
             var searchBody = await searchResp.Content.ReadAsStringAsync();
             var searchData = JArray.Parse(searchBody);
-
+            
             Console.WriteLine($"[TelegramBot] Trakt search results: {searchData.Count} items");
-
+            
             if (searchData.Count == 0) return (false, result);
 
             var showName = searchData[0]?["show"]?.Value<string>("title") ?? sub.title;
             var traktSlug = searchData[0]?["show"]?["ids"]?.Value<string>("slug");
             var traktId = searchData[0]?["show"]?["ids"]?.Value<string>("trakt");
             var showId = traktSlug ?? traktId;
-
+            
             Console.WriteLine($"[TelegramBot] Trakt found: {showName}, slug={traktSlug}, id={traktId}, using={showId}");
-
+            
             if (string.IsNullOrEmpty(showId)) return (false, result);
 
             // Шоу найдено — с этого момента верим только Trakt
@@ -558,8 +560,7 @@ namespace TelegramBot
                     result.Add(new EpisodeInfo
                     {
                         show_name = sub.title, // Русское название из подписки
-                        season = sNum,
-                        episode = eNum,
+                        season = sNum, episode = eNum,
                         title = !string.IsNullOrEmpty(tmdbTitle) ? tmdbTitle : (ep.Value<string>("title") ?? ""),
                         air_date = airDt.ToString("yyyy-MM-dd HH:mm UTC"),
                         overview = !string.IsNullOrEmpty(tmdbOverview) ? tmdbOverview : (ep.Value<string>("overview") ?? ""),
@@ -591,11 +592,8 @@ namespace TelegramBot
                 var still = ep.Value<string>("still_path");
                 result.Add(new EpisodeInfo
                 {
-                    show_name = showName,
-                    season = sNum,
-                    episode = eNum,
-                    title = ep.Value<string>("name") ?? "",
-                    air_date = airDate,
+                    show_name = showName, season = sNum, episode = eNum,
+                    title = ep.Value<string>("name") ?? "", air_date = airDate,
                     image_url = !string.IsNullOrEmpty(still) ? $"https://image.tmdb.org/t/p/w500{still}" : null
                 });
             }
@@ -959,6 +957,188 @@ namespace TelegramBot
         }
         #endregion
 
+        #region VideoHub (CDNvideohub) — поиск по kinopoisk_id
+
+        // Резолвер tmdb_id -> kinopoisk_id. Порядок: кеш в подписке -> мост Lampac /externalids -> поиск по названию в KP API.
+        // Результат кешируется прямо в sub.kp_id, чтобы не дёргать KP API каждый прогон. -1 = резолв не удался (больше не пытаемся).
+        public static async Task<int> GetKpId(Subscription sub)
+        {
+            if (sub.kp_id > 0) return sub.kp_id;
+            if (sub.kp_id == -1) return 0; // ранее не нашли — не долбим API повторно
+
+            // 1) Мост Lampac /externalids (бесплатно, без квоты KP API)
+            string imdbId = null;
+            if (!string.IsNullOrEmpty(Config.lampac_host))
+            {
+                try
+                {
+                    var token = !string.IsNullOrEmpty(Config.lampac_token) ? $"&token={Config.lampac_token}" : "";
+                    var url = $"{Config.lampac_host}/externalids?id={sub.tmdb_id}&ts=tv{token}";
+                    var body = await httpFast.GetStringAsync(url);
+                    if (!string.IsNullOrEmpty(body) && body != "null")
+                    {
+                        var j = JObject.Parse(body);
+                        var kpStr = j.Value<string>("kinopoisk_id");
+                        imdbId = j.Value<string>("imdb_id");
+                        if (int.TryParse(kpStr, out var kp) && kp > 0)
+                        {
+                            sub.kp_id = kp;
+                            Console.WriteLine($"[TelegramBot] KP resolved via externalids: {sub.title} -> kp={kp}");
+                            return kp;
+                        }
+                    }
+                }
+                catch (Exception ex) { Console.WriteLine($"[TelegramBot] externalids error: {ex.Message}"); }
+            }
+
+            // 2) Поиск по названию через kinopoiskapiunofficial.tech (нужен ключ kp_api_key)
+            if (!string.IsNullOrEmpty(Config.kp_api_key))
+            {
+                var kp = await SearchKpByTitle(sub.title, 0);
+                if (kp > 0)
+                {
+                    sub.kp_id = kp;
+                    Console.WriteLine($"[TelegramBot] KP resolved via search: {sub.title} -> kp={kp}");
+                    return kp;
+                }
+            }
+
+            sub.kp_id = -1; // пометка «не нашли», чтобы не пытаться каждый раз
+            Console.WriteLine($"[TelegramBot] KP NOT resolved: {sub.title} (tmdb={sub.tmdb_id})");
+            return 0;
+        }
+
+        // Поиск kinopoisk_id по названию. Точное совпадение nameRu/nameEn + год + type=TV_SERIES имеет приоритет.
+        static async Task<int> SearchKpByTitle(string title, int year)
+        {
+            if (string.IsNullOrEmpty(Config.kp_api_key) || string.IsNullOrEmpty(title)) return 0;
+
+            var cacheKey = $"kp_search:{title}:{year}";
+            var cached = GetCache<string>(cacheKey);
+            if (cached != null) return int.TryParse(cached, out var c) ? c : 0;
+
+            try
+            {
+                var url = $"https://kinopoiskapiunofficial.tech/api/v2.1/films/search-by-keyword?keyword={Uri.EscapeDataString(title)}";
+                using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                req.Headers.Add("X-API-KEY", Config.kp_api_key);
+                req.Headers.Add("accept", "application/json");
+
+                var resp = await httpFast.SendAsync(req);
+                var body = await resp.Content.ReadAsStringAsync();
+                if (string.IsNullOrEmpty(body)) return 0;
+
+                var json = JObject.Parse(body);
+                var films = json["films"] as JArray;
+                if (films == null || films.Count == 0) return 0;
+
+                int exactByYear = 0, firstSeries = 0, firstAny = 0;
+                foreach (var f in films)
+                {
+                    var id = f.Value<int?>("filmId") ?? 0;
+                    if (id <= 0) continue;
+                    var nameRu = (f.Value<string>("nameRu") ?? "").Trim();
+                    var nameEn = (f.Value<string>("nameEn") ?? "").Trim();
+                    var type = f.Value<string>("type") ?? "";
+                    int.TryParse(f.Value<string>("year"), out var fy);
+
+                    bool nameMatch = nameRu.Equals(title, StringComparison.OrdinalIgnoreCase)
+                                  || nameEn.Equals(title, StringComparison.OrdinalIgnoreCase);
+                    bool isSeries = type == "TV_SERIES";
+
+                    if (firstAny == 0) firstAny = id;
+                    if (isSeries && firstSeries == 0) firstSeries = id;
+                    if (nameMatch && isSeries && (year == 0 || fy == year) && exactByYear == 0)
+                        exactByYear = id;
+                }
+
+                int result = exactByYear != 0 ? exactByYear : (firstSeries != 0 ? firstSeries : firstAny);
+                SetCache(cacheKey, result.ToString());
+                return result;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[TelegramBot] SearchKpByTitle error: {ex.Message}");
+                return 0;
+            }
+        }
+
+        // Список озвучек VideoHub для сезона (для меню плагина). Возвращает VoiceInfo с source="videohub".
+        public static async Task<List<VoiceInfo>> GetVideoHubVoices(int kpId, int season)
+        {
+            var result = new List<VoiceInfo>();
+            if (kpId <= 0 || string.IsNullOrEmpty(Config.lampac_host)) return result;
+
+            var cacheKey = $"vhub_voices:{kpId}:{season}";
+            var cached = GetCache<List<VoiceInfo>>(cacheKey);
+            if (cached != null) return cached;
+
+            try
+            {
+                var token = !string.IsNullOrEmpty(Config.lampac_token) ? $"&token={Config.lampac_token}" : "";
+                var url = $"{Config.lampac_host}/lite/cdnvideohub?rjson=true&kinopoisk_id={kpId}&s={season}{token}";
+                var body = await httpFast.GetStringAsync(url);
+                if (string.IsNullOrEmpty(body) || body == "null") return result;
+
+                var json = JObject.Parse(body);
+                var voices = json["voice"] as JArray;
+                if (voices != null)
+                    foreach (var v in voices)
+                    {
+                        var name = v.Value<string>("name");
+                        if (!string.IsNullOrEmpty(name))
+                            result.Add(new VoiceInfo { id = 0, name = name, source = "videohub" });
+                    }
+
+                SetCache(cacheKey, result);
+            }
+            catch (Exception ex) { Console.WriteLine($"[TelegramBot] GetVideoHubVoices error: {ex.Message}"); }
+
+            return result;
+        }
+
+        // Проверка максимального вышедшего эпизода в нужной озвучке через VideoHub.
+        static async Task<int> CheckVideoHubVoice(Subscription sub)
+        {
+            if (string.IsNullOrEmpty(Config.lampac_host)) return sub.last_voice_episode;
+
+            int kpId = await GetKpId(sub);
+            if (kpId <= 0) return sub.last_voice_episode;
+
+            try
+            {
+                var token = !string.IsNullOrEmpty(Config.lampac_token) ? $"&token={Config.lampac_token}" : "";
+                // t = имя озвучки, обязательно URL-кодировать (кириллица иначе даёт HTTP 400)
+                var tParam = !string.IsNullOrEmpty(sub.voice) ? $"&t={Uri.EscapeDataString(sub.voice)}" : "";
+                var url = $"{Config.lampac_host}/lite/cdnvideohub?rjson=true&kinopoisk_id={kpId}&s={sub.last_season}{tParam}{token}";
+
+                Console.WriteLine($"[TelegramBot] VideoHub check: {sub.title} voice={sub.voice} kp={kpId} s={sub.last_season}");
+
+                var body = await httpFast.GetStringAsync(url);
+                if (string.IsNullOrEmpty(body) || body == "null") return sub.last_voice_episode;
+
+                var json = JObject.Parse(body);
+                var data = json["data"] as JArray;
+                if (data == null) return sub.last_voice_episode;
+
+                int maxEp = 0;
+                foreach (var ep in data)
+                {
+                    var epNum = ep.Value<int?>("e") ?? 0;
+                    if (epNum > maxEp) maxEp = epNum;
+                }
+
+                Console.WriteLine($"[TelegramBot] VideoHub result: {sub.title} voice={sub.voice} episodes={maxEp} (was {sub.last_voice_episode})");
+                return maxEp;
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[TelegramBot] VideoHub check error: {ex.Message}");
+                return sub.last_voice_episode;
+            }
+        }
+        #endregion
+
         #region RedHeadSound (RHS) — rjson
         public static async Task<List<VoiceInfo>> GetRHSVoices(string title, int year, int season)
         {
@@ -1085,7 +1265,7 @@ namespace TelegramBot
         #region API для контроллера
         public static async Task<object> SubscribeApi(string uid, int tmdbId, string title, string voice,
             int season, int episode, string mirageOrid = null, int mirageVoiceId = 0, int voiceEpisode = 0,
-            string collapsOrid = null, string voiceSource = null)
+            string collapsOrid = null, string voiceSource = null, int kpId = 0)
         {
             var user = Users.Values.FirstOrDefault(u => u.lampac_uid == uid);
             if (user == null) return new { success = false, msg = "not_linked" };
@@ -1098,16 +1278,14 @@ namespace TelegramBot
 
             Subs[key].Add(new Subscription
             {
-                chat_id = user.chat_id,
-                tmdb_id = tmdbId,
-                title = title,
+                chat_id = user.chat_id, tmdb_id = tmdbId, title = title,
                 voice = voice ?? "",
                 voice_source = voiceSource ?? (string.IsNullOrEmpty(mirageOrid) ? "collaps" : "mirage"),
                 mirage_orid = mirageOrid ?? "",
                 mirage_voice_id = mirageVoiceId,
                 collaps_orid = collapsOrid ?? "",
-                last_season = season,
-                last_episode = episode,
+                kp_id = kpId,
+                last_season = season, last_episode = episode,
                 last_voice_episode = voiceEpisode,
                 subscribed_at = DateTime.UtcNow
             });
@@ -1149,8 +1327,7 @@ namespace TelegramBot
 
             return new
             {
-                success = true,
-                linked = true,
+                success = true, linked = true,
                 subscribed = userSubs.Count > 0,
                 voices = userSubs.Select(s => s.voice).ToArray()
             };
@@ -1173,15 +1350,15 @@ namespace TelegramBot
                 .OrderByDescending(s => s.subscribed_at)
                 .Select(s => new
                 {
-                    tmdb_id = s.tmdb_id,
-                    title = s.title,
-                    media_type = s.media_type ?? "tv",
-                    last_season = s.last_season,
-                    last_episode = s.last_episode,
+                    tmdb_id         = s.tmdb_id,
+                    title           = s.title,
+                    media_type      = s.media_type ?? "tv",
+                    last_season     = s.last_season,
+                    last_episode    = s.last_episode,
                     last_voice_episode = s.last_voice_episode,
-                    voice = s.voice ?? "",
-                    voice_source = s.voice_source ?? "",
-                    subscribed_at = s.subscribed_at.ToString("o")
+                    voice           = s.voice ?? "",
+                    voice_source    = s.voice_source ?? "",
+                    subscribed_at   = s.subscribed_at.ToString("o")
                 })
                 .ToArray();
 
@@ -1288,9 +1465,24 @@ namespace TelegramBot
             foreach (var v in rhsVoices)
                 if (!existingNames.Contains(v.name)) { allVoices.Add(v); existingNames.Add(v.name); }
 
+            // === VideoHub: резолвим kp_id по tmdb и добавляем озвучки ===
+            int vhubKp = 0;
+            if (tmdbId > 0)
+            {
+                var probe = new Subscription { tmdb_id = tmdbId, title = title };
+                vhubKp = await GetKpId(probe);
+                if (vhubKp > 0)
+                {
+                    var vhubVoices = await GetVideoHubVoices(vhubKp, actualSeason);
+                    foreach (var v in vhubVoices)
+                        if (!existingNames.Contains(v.name)) { allVoices.Add(v); existingNames.Add(v.name); }
+                    Console.WriteLine($"[TelegramBot] GetVoices VideoHub: kp={vhubKp} voices={vhubVoices.Count}");
+                }
+            }
+
             Console.WriteLine($"[TelegramBot] GetVoices: {title} ({year}) s{actualSeason} — mirage:{mirageOrid} collaps:{collapsOrid} rhs:{rhsVoices.Count} voices:{allVoices.Count}");
 
-            var result = (object)new { success = true, voices = allVoices, orid = mirageOrid, collaps_orid = collapsOrid, season = actualSeason };
+            var result = (object)new { success = true, voices = allVoices, orid = mirageOrid, collaps_orid = collapsOrid, kp_id = vhubKp, season = actualSeason };
             if (allVoices.Count > 0) SetCache(cacheKey, result);
             return result;
         }
@@ -1298,20 +1490,52 @@ namespace TelegramBot
         // Параллельный поиск по нескольким названиям — все сразу, берём лучший
         static async Task<(string orid, string title)> SearchMirageMulti(List<string> titles, int year)
         {
-            if (titles.Count == 1)
-            {
-                var r = await SearchMirage(titles[0], year);
-                return r.Count > 0 ? (r[0].orid, r[0].title) : (null, null);
-            }
-
             var tasks = titles.Select(t => SearchMirage(t, year)).ToArray();
             await Task.WhenAll(tasks);
 
+            // Собираем ВСЕХ кандидатов со всех названий (без дублей по orid)
+            var all = new List<MirageSearchResult>();
+            var seen = new HashSet<string>();
             foreach (var task in tasks)
-                if (task.Result.Count > 0)
-                    return (task.Result[0].orid, task.Result[0].title);
+                foreach (var r in task.Result)
+                    if (!string.IsNullOrEmpty(r.orid) && seen.Add(r.orid))
+                        all.Add(r);
 
-            return (null, null);
+            if (all.Count == 0) return (null, null);
+
+            // Приоритет 1: точное совпадение года (главный критерий — локализованные названия часто расходятся)
+            if (year > 0)
+            {
+                var byYear = all.Where(r => r.year == year).ToList();
+                if (byYear.Count > 0)
+                {
+                    // среди совпавших по году — предпочесть совпадение названия с любым из искомых
+                    var best = byYear.OrderByDescending(r => TitleScore(r.title, titles)).First();
+                    Console.WriteLine($"[TelegramBot] SearchMirageMulti: matched by year={year} -> {best.title} orid={best.orid}");
+                    return (best.orid, best.title);
+                }
+            }
+
+            // Приоритет 2: года нет или не совпал — берём лучшего по названию
+            var fallback = all.OrderByDescending(r => TitleScore(r.title, titles)).First();
+            return (fallback.orid, fallback.title);
+        }
+
+        // Очки совпадения названия кандидата с любым из искомых названий
+        static int TitleScore(string candidate, List<string> titles)
+        {
+            var c = (candidate ?? "").Trim().ToLowerInvariant();
+            if (c.Length == 0) return 0;
+            int best = 0;
+            foreach (var t in titles)
+            {
+                var s = (t ?? "").Trim().ToLowerInvariant();
+                if (s.Length == 0) continue;
+                if (c == s) best = Math.Max(best, 100);
+                else if (c.Contains(s) || s.Contains(c))
+                    best = Math.Max(best, (int)(50.0 * Math.Min(c.Length, s.Length) / Math.Max(c.Length, s.Length)));
+            }
+            return best;
         }
 
         static async Task<string> SearchCollapsMulti(List<string> titles, int year)
