@@ -110,51 +110,15 @@ public class ModInit : IModuleLoaded
 
         ThreadPool.QueueUserWorkItem(async _ =>
         {
-            #region downloadUrl
-            string downloadUrl;
-            if (Environment.OSVersion.Platform == PlatformID.Win32NT)
-            {
-                downloadUrl = "https://github.com/YouROK/TorrServer/releases/latest/download/";
-                if (conf.releases != "latest")
-                    downloadUrl = $"https://github.com/YouROK/TorrServer/releases/download/{conf.releases}/";
-
-                if (conf.releases == "latest" || targetVersion >= new Version(141, 10))
-                {
-                    downloadUrl += "TorrServer-gst-windows-amd64.exe";
-                }
-                else
-                {
-                    downloadUrl += "TorrServer-windows-amd64.exe";
-                }
-            }
-            else
-            {
-                string uname = (await Bash.ComandAsync("uname -m")) ?? string.Empty;
-                string arch = uname.Contains("x86_64") ? "amd64" : (uname.Contains("i386") || uname.Contains("i686")) ? "386" : uname.Contains("aarch64") ? "arm64" : uname.Contains("armv7") ? "arm7" : uname.Contains("armv6") ? "arm5" : "amd64";
-
-                downloadUrl = "https://github.com/YouROK/TorrServer/releases/latest/download/";
-                if (conf.releases != "latest")
-                    downloadUrl = $"https://github.com/YouROK/TorrServer/releases/download/{conf.releases}/";
-
-                if (conf.releases == "latest" || targetVersion >= new Version(141, 10))
-                {
-                    if (arch is "amd64" or "arm64")
-                        downloadUrl += $"TorrServer-gst-linux-{arch}";
-                    else
-                        downloadUrl += $"TorrServer-linux-{arch}";
-                }
-                else
-                {
-                    downloadUrl += $"TorrServer-linux-{arch}";
-                }
-            }
-            #endregion
+            string downloadUrl = null;
 
             #region updatet/install
             async Task install()
             {
                 try
                 {
+                    string targetRelease = conf.releases;
+
                     if (conf.releases == "latest")
                     {
                         var root = await Http.Get<JObject>("https://api.github.com/repos/YouROK/TorrServer/releases/latest");
@@ -163,6 +127,7 @@ public class ModInit : IModuleLoaded
                             string tagname = root.Value<string>("tag_name");
                             if (!string.IsNullOrEmpty(tagname))
                             {
+                                targetRelease = tagname;
                                 if (!File.Exists($"{homedir}/tagname") || tagname != File.ReadAllText($"{homedir}/tagname"))
                                 {
                                     if (File.Exists(tspath))
@@ -171,6 +136,53 @@ public class ModInit : IModuleLoaded
                                     File.WriteAllText($"{homedir}/tagname", tagname);
                                 }
                             }
+                        }
+                        else
+                        {
+                            if (File.Exists($"{homedir}/tagname"))
+                                targetRelease = File.ReadAllText($"{homedir}/tagname");
+                        }
+                    }
+
+                    Version.TryParse(
+                        targetRelease.Replace("MatriX.", "", StringComparison.Ordinal).Trim(),
+                        out Version actualVersion
+                    );
+
+                    if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+                    {
+                        downloadUrl = targetRelease == "latest"
+                            ? "https://github.com/YouROK/TorrServer/releases/latest/download/"
+                            : $"https://github.com/YouROK/TorrServer/releases/download/{targetRelease}/";
+
+                        if (actualVersion >= new Version(141, 10))
+                        {
+                            downloadUrl += "TorrServer-gst-windows-amd64.exe";
+                        }
+                        else
+                        {
+                            downloadUrl += "TorrServer-windows-amd64.exe";
+                        }
+                    }
+                    else
+                    {
+                        string uname = (await Bash.ComandAsync("uname -m")) ?? string.Empty;
+                        string arch = uname.Contains("x86_64") ? "amd64" : (uname.Contains("i386") || uname.Contains("i686")) ? "386" : uname.Contains("aarch64") ? "arm64" : uname.Contains("armv7") ? "arm7" : uname.Contains("armv6") ? "arm5" : "amd64";
+
+                        downloadUrl = targetRelease == "latest"
+                            ? "https://github.com/YouROK/TorrServer/releases/latest/download/"
+                            : $"https://github.com/YouROK/TorrServer/releases/download/{targetRelease}/";
+
+                        if (actualVersion >= new Version(141, 10))
+                        {
+                            if (arch is "amd64" or "arm64")
+                                downloadUrl += $"TorrServer-gst-linux-{arch}";
+                            else
+                                downloadUrl += $"TorrServer-linux-{arch}";
+                        }
+                        else
+                        {
+                            downloadUrl += $"TorrServer-linux-{arch}";
                         }
                     }
 
@@ -208,7 +220,7 @@ public class ModInit : IModuleLoaded
                 await install();
             }
 
-            if (conf.checkfile)
+            if (conf.checkfile && !string.IsNullOrEmpty(downloadUrl))
             {
                 var response = await Http.ResponseHeaders(downloadUrl, timeoutSeconds: 10, allowAutoRedirect: true);
                 if (response != null && response.Content.Headers.ContentLength.HasValue && new FileInfo(tspath).Length != response.Content.Headers.ContentLength.Value)
@@ -276,7 +288,7 @@ public class ModInit : IModuleLoaded
         conf = ModuleInvoke.Init("TorrServer", new ModuleConf()
         {
             tsport = 9085,
-            releases = "MatriX.135",
+            releases = "MatriX.141.9",
             defaultPasswd = "ts",
             checkfile = true,
             limit_map = new List<WafLimitRootMap>()
