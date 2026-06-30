@@ -930,6 +930,7 @@ lampac/
 │   ├── MsxNative/              # MSX-плеер, Sisi
 │   ├── JacRed/                 # Агрегатор торрент-индексаторов
 │   ├── Kit/                    # Криптография
+│   ├── LampacApk/              # Генератор Android APK под адрес сервера
 │   ├── LampaWeb/               # Хостинг Lampa UI
 │   ├── NextHUB/                # 18+ витрина на YAML, sites/*.yaml
 │   ├── OnlineAnime/            # 12 аниме-источников
@@ -981,6 +982,7 @@ lampac/
 | [Modules/Community/TelegramAuth/README.md](Modules/Community/TelegramAuth/README.md) | HTTP API `/tg/auth/…`, accsdb, хранилище |
 | [Modules/Community/TelegramAuthBot/README.md](Modules/Community/TelegramAuthBot/README.md) | Long polling-бот, команды, конфиг |
 | [Modules/GStreamer/README.md](Modules/GStreamer/README.md) | Серверный транскодинг, `gst` в init.conf, `/gst.js` |
+| [Modules/LampacApk/README.md](Modules/LampacApk/README.md) | Генерация Android APK под адрес текущего сервера, подпись и кеш |
 | [Modules/LampaWeb/README.md](Modules/LampaWeb/README.md) | Lampa UI, виджеты Tizen/webOS, `lampainit.js` |
 | [Modules/Tg-notify.bot/README.md](Modules/Tg-notify.bot/README.md) | Telegram-подписки на серии/озвучки, `/api/tg/*` |
 | [Modules/ExternalBind/README.md](Modules/ExternalBind/README.md) | Привязка Lite/Online, флаг локального IP |

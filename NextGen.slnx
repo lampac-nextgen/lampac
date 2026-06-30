@@ -12,6 +12,7 @@
     <Project Path="Modules/ExternalBind/ExternalBind.csproj" />
     <Project Path="Modules/JacRed/JacRed.csproj" />
     <Project Path="Modules/Kit/Kit.csproj" />
+    <Project Path="Modules/LampacApk/LampacApk.csproj" />
     <Project Path="Modules/LampaWeb/LampaWeb.csproj" />
     <Project Path="Modules/MsxNative/MsxNative.csproj" />
     <Project Path="Modules/NextHUB/NextHUB.csproj" />
