@@ -45,7 +45,8 @@ public class ModInit : IModuleLoaded, IModuleOnline
         {
             enable = false,
             displayindex = 537,
-            stream_access = "apk,cors,web",
+            stream_access = "apk,cors",
+            rchstreamproxy = "web",
             plugin = "remux"
         });
     }

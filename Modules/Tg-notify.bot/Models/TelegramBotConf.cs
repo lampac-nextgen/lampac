@@ -16,6 +16,10 @@ namespace TelegramBot.Models
 
         public string lampac_token { get; set; } = "";
 
+        // Ключ kinopoiskapiunofficial.tech — резолвинг tmdb→kinopoisk_id по названию для источника VideoHub.
+        // Пусто → kp_id резолвится только через мост Lampac /externalids (покрытие ~40%).
+        public string kp_api_key { get; set; } = "";
+
         public int check_interval_minutes { get; set; } = 60;
 
         public string tmdb_lang { get; set; } = "ru-RU";

@@ -10,12 +10,14 @@
     <Project Path="Modules/Catalog/Catalog.csproj" />
     <Project Path="Modules/DLNA/DLNA.csproj" />
     <Project Path="Modules/ExternalBind/ExternalBind.csproj" />
+    <Project Path="Modules/GStreamer/GStreamer.csproj" />
     <Project Path="Modules/JacRed/JacRed.csproj" />
     <Project Path="Modules/Kit/Kit.csproj" />
     <Project Path="Modules/LampaWeb/LampaWeb.csproj" />
     <Project Path="Modules/MsxNative/MsxNative.csproj" />
     <Project Path="Modules/NextHUB/NextHUB.csproj" />
     <Project Path="Modules/PidTor/PidTor.csproj" />
+    <Project Path="Modules/Potok/Potok.csproj" />
     <Project Path="Modules/TorrServer/TorrServer.csproj" />
     <Project Path="Modules/Tracks/Tracks.csproj" />
     <Project Path="Modules/Transcoding/Transcoding.csproj" />
@@ -41,6 +43,7 @@
   <Folder Name="/Modules/Community/">
     <Project Path="Modules/Community/TelegramAuth/TelegramAuth.csproj" />
     <Project Path="Modules/Community/TelegramAuthBot/TelegramAuthBot.csproj" />
+    <Project Path="Modules/Tg-notify.bot/Tg-notify.bot.csproj" />
   </Folder>
   <Folder Name="/Modules/ForkPlayerXML/">
     <Project Path="Modules/ForkPlayerXML/ForkXML.csproj" />

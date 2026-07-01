@@ -140,7 +140,7 @@ gst-inspect-1.0 --version
 
 ## Windows portable (MinGW)
 
-Уже включена в модуль и не требует установки MinGW
+Уже включен в модуль и не требует установки MinGW installer
 
 ## Или Windows installer (MinGW)
 

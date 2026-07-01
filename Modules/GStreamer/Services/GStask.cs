@@ -298,8 +298,8 @@ public class GStask
             i.Index == audioIndex
         );
 
-        int aacChannels   = conf.aac_channels   > 0 ? conf.aac_channels   : (selectedAudio?.Channels ?? 2);
-        int aacSamplerate = conf.aac_samplerate > 0 ? conf.aac_samplerate : (selectedAudio?.Rate      ?? 48000);
+        int aacChannels = conf.aac_channels > 0 ? conf.aac_channels : (selectedAudio?.Channels ?? 2);
+        int aacSamplerate = conf.aac_samplerate > 0 ? conf.aac_samplerate : (selectedAudio?.Rate ?? 48000);
 
         sb.AppendLine($$"""
         d.audio_{{audioIndex}} !
@@ -690,7 +690,7 @@ public class GStask
                             continue;
                         }
 
-                        nuint size = buffer.GetSize(); 
+                        nuint size = buffer.GetSize();
                         if (size == 0)
                             continue;
 
