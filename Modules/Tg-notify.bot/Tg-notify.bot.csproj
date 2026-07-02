@@ -12,7 +12,7 @@
 
   <ItemGroup>
     <PackageReference Include="Telegram.Bot" Version="22.4.4" />
-    <ProjectReference Include="..\..\..\Shared\Shared.csproj" />
+    <ProjectReference Include="..\..\Shared\Shared.csproj" />
   </ItemGroup>
 
   <!-- Кладёт Telegram.Bot.dll в references/ для рантайм-компиляции Roslyn на сервере -->

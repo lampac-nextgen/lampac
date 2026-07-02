@@ -356,9 +356,10 @@ public class PiTor : BaseOnlineController
 
                     mtpl.Append(
                         torrent.voice,
-                        accsArgs($"{host}/lite/pidtor/s{hashmagnet}?{torrent.tr}"),
+                        accsArgs($"{host}/lite/pidtor/s{hashmagnet}?{torrent.tr}") + (ModInit.conf.gst ? "&.m3u8" : ""),
                         voice_name: $"{torrent.quality} / {torrent.mediainfo} / {torrent.sid}",
-                        quality: torrent.quality.Replace("p", "")
+                        quality: torrent.quality.Replace("p", ""),
+                        hls_manifest_timeout: (int)TimeSpan.FromSeconds(60).TotalMilliseconds
                     );
                 }
 
@@ -462,7 +463,8 @@ public class PiTor : BaseOnlineController
                     title ?? original_title,
                     s,
                     torrent.id,
-                    accsArgs($"{host}/lite/pidtor/s{id}?{tr}&tsid={torrent.id}")
+                    accsArgs($"{host}/lite/pidtor/s{id}?{tr}&tsid={torrent.id}") + (ModInit.conf.gst ? "&.m3u8" : ""),
+                    hls_manifest_timeout: (int)TimeSpan.FromSeconds(60).TotalMilliseconds
                 );
             }
 
@@ -486,7 +488,7 @@ public class PiTor : BaseOnlineController
             return Json(new { accsdb = true, msg = "Временно недоступен, попробуйте через несколько часов" });
 
         short index = tsid != -1 ? tsid : (short)1;
-        string magnet = $"magnet:?xt=urn:btih:{id}&" + Regex.Replace(HttpContext.Request.QueryString.Value.Remove(0, 1), "&(account_email|uid|token|nws_id|tsid)=[^&]+", "");
+        string magnet = $"magnet:?xt=urn:btih:{id}&" + Regex.Replace(HttpContext.Request.QueryString.Value.Remove(0, 1), "&(account_email|uid|token|nws_id|tsid)=[^&]+", "").Replace("&.m3u8", "");
 
         #region auth_stream
         async Task<ActionResult> auth_stream(string host, string login, string passwd, bool aes, string uhost = null, Dictionary<string, string> addheaders = null)
@@ -545,6 +547,9 @@ public class PiTor : BaseOnlineController
                 return Redirect($"{uhost ?? host}/{payload}");
             }
 
+            if (ModInit.conf.gst)
+                return Redirect($"{uhost ?? host}/gst/{hash}/master.m3u8?index={index}");
+
             return Redirect($"{uhost ?? host}/stream?link={hash}&index={index}&play");
         }
         #endregion
@@ -558,6 +563,9 @@ public class PiTor : BaseOnlineController
 
                 return await auth_stream($"http://{CoreInit.conf.listen.localhost}:{ModInit.tsport}", "ts", passwd, false, uhost: $"{host}/ts");
             }
+
+            if (ModInit.conf.gst)
+                return Redirect($"{host}/ts/gst/{id}/master.m3u8?index={index}");
 
             return Redirect($"{host}/ts/stream?link={HttpUtility.UrlEncode(magnet)}&index={index}&play");
         }
@@ -599,6 +607,9 @@ public class PiTor : BaseOnlineController
                 tshost = init.torrs[Random.Shared.Next(0, init.torrs.Length)];
                 memoryCache.Set(key, tshost, DateTime.Now.AddHours(4));
             }
+
+            if (ModInit.conf.gst)
+                return Redirect($"{tshost}/gst/{id}/master.m3u8?index={index}");
 
             return Redirect($"{tshost}/stream?link={HttpUtility.UrlEncode(magnet)}&index={index}&play");
         }

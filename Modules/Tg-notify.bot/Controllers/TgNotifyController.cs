@@ -61,7 +61,8 @@ namespace TelegramBot.Controllers
                 json.Value<int>("mirage_voice_id"),
                 json.Value<int>("voice_episode"),
                 json.Value<string>("collaps_orid") ?? "",
-                json.Value<string>("voice_source") ?? ""
+                json.Value<string>("voice_source") ?? "",
+                json.Value<int>("kp_id")
             );
             return Json(result);
         }
