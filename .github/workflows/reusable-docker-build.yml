@@ -162,7 +162,7 @@ jobs:
             org.opencontainers.image.revision=${{ github.sha }}
 
       - id: build
-        uses: docker/build-push-action@v7.2.0
+        uses: docker/build-push-action@v7.3.0
         with:
           context: ${{ inputs.context }}
           file: ${{ inputs.file || '' }}
