@@ -1,0 +1,9 @@
+{
+  "enable": true,
+  "dynamic": true,
+  "tree": [
+    "assets",
+    "ModInit.cs",
+    "LampacApkController.cs"
+  ]
+}

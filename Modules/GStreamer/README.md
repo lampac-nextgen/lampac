@@ -28,15 +28,14 @@ http://IP:9118/gst.js
 | `tempfs_ring` | `0` | Каждая единица ~30s буфера (10 = ~300s). |
 | `segment_seconds` | `6` | Целевая длительность HLS/fMP4-сегмента в секундах. |
 | `aac_bitrate` | `256` | Битрейт AAC в кбит/с. |
+| `aac_samplerate` | авто | Частота дискретизации AAC в Гц. По умолчанию берётся из исходной дорожки. |
+| `aac_channels` | авто | Количество каналов AAC. По умолчанию берётся из исходной дорожки (до 7.1 / 8 каналов). |
 | `video_bitrate` | `10000` | Битрейт H.264 в кбит/с при перекодировании видео. |
 | `transcodeH264` | `false` | Перекодировать входной H.264 в H.264. |
 | `transcodeH265` | `false` | Перекодировать H.265 в H.264. |
 | `transcodeAV1` | `false` | Перекодировать AV1 в H.264. |
 | `transcodeVP9` | `false` | Перекодировать VP9 в H.264. |
 | `pipeline_downloadRate` | `0` без ограничений | Максимальная скорость загрузки в Мбит/c. |
-| `pipeline_timeSeconds` | `18` | Максимальный объём очередей по времени в секундах. |
-| `pipeline_audioQueue` | `8` | Максимальный размер очереди аудио в МБ. |
-| `pipeline_videoQueue` | `36` | Максимальный размер входной и видеоочереди в МБ. |
 
 Полный пример:
 
@@ -61,12 +60,7 @@ http://IP:9118/gst.js
   "transcodeH264": false,
   "transcodeH265": true,
   "transcodeAV1": true,
-  "transcodeVP9": true,
-
-  "pipeline_timeSeconds": 20,
-  "pipeline_audioQueue": 4,
-  "pipeline_videoQueue": 32,
-  "pipeline_sinkQueue": 64
+  "transcodeVP9": true
 }
 ```
 
@@ -92,11 +86,7 @@ http://IP:9118/gst.js
   "transcodeH264": false,
   "transcodeH265": true,
   "transcodeAV1": true,
-  "transcodeVP9": true,
-  "pipeline_timeSeconds": 20,
-  "pipeline_audioQueue": 4,
-  "pipeline_videoQueue": 32,
-  "pipeline_sinkQueue": 64,
+  "transcodeVP9": true
 
   "conf_uids": {
     "mobile-uid": {
@@ -108,11 +98,7 @@ http://IP:9118/gst.js
       "transcodeH264": true,
       "transcodeH265": true,
       "transcodeAV1": true,
-      "transcodeVP9": true,
-      "pipeline_timeSeconds": 20,
-      "pipeline_audioQueue": 4,
-      "pipeline_videoQueue": 32,
-      "pipeline_sinkQueue": 64
+      "transcodeVP9": true
     }
   }
 }
@@ -142,7 +128,6 @@ apt-get install -y --no-install-recommends \
 
 ```bash
 gst-inspect-1.0 --version
-gst-discoverer-1.0 --version
 ```
 
 Если версия ниже 1.28, укажите её в настройках:
@@ -153,7 +138,11 @@ gst-discoverer-1.0 --version
 }
 ```
 
-## Windows
+## Windows portable (MinGW)
+
+Уже включен в модуль и не требует установки MinGW installer
+
+## Или Windows installer (MinGW)
 
 Скачайте и установите:
 

@@ -1,17 +1,18 @@
+using Newtonsoft.Json;
 using Newtonsoft.Json.Linq;
 using Shared;
-using Shared.Services;
 using Shared.Models.AppConf;
 using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
+using Shared.Services;
+using Shared.Services.Utilities;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
-using Shared.Services.Utilities;
 
 namespace TorrServer;
 
@@ -54,8 +55,11 @@ public class ModInit : IModuleLoaded
         homedir = Path.Combine(homedir, "data", "ts");
         #endregion
 
+        #region tspath
         if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+        {
             tspath = Path.Combine(homedir, "TorrServer-windows-amd64.exe");
+        }
         else
         {
             tspath = Path.Combine(homedir, "TorrServer-linux");
@@ -69,6 +73,38 @@ public class ModInit : IModuleLoaded
             Directory.CreateDirectory(homedir);
             File.Copy($"{modpath}/settings.json", Path.Combine(homedir, "settings.json"), true);
         }
+        #endregion
+
+        #region gst-libs
+        if (Environment.OSVersion.Platform == PlatformID.Win32NT)
+        {
+            string settingPath = Path.Combine(homedir, "settings.json");
+
+            if (File.Exists(settingPath) && Directory.Exists(Path.Combine("module", "GStreamer", "gst-libs", "win-x86_64")))
+            {
+                try
+                {
+                    var settings = JsonConvert.DeserializeObject<JObject>(File.ReadAllText(settingPath));
+                    if (!settings.ContainsKey("gst"))
+                    {
+                        settings.Add("gst", new JObject()
+                        {
+                            ["gstVersion"] = 1.28,
+                            ["gstPath"] = Path.Combine(Directory.GetCurrentDirectory(), "module", "GStreamer", "gst-libs", "win-x86_64")
+                        });
+
+                        File.WriteAllText(settingPath, JsonConvert.SerializeObject(settings, Formatting.Indented));
+                    }
+                }
+                catch { }
+            }
+        }
+        #endregion
+
+        Version.TryParse(
+            conf.releases.Replace("MatriX.", "", StringComparison.Ordinal).Trim(),
+            out Version targetVersion
+        );
 
         File.WriteAllText(Path.Combine(homedir, "accs.db"), $"{{\"ts\":\"{tspass}\"}}");
 
@@ -78,18 +114,39 @@ public class ModInit : IModuleLoaded
             string downloadUrl;
             if (Environment.OSVersion.Platform == PlatformID.Win32NT)
             {
-                downloadUrl = "https://github.com/YouROK/TorrServer/releases/latest/download/TorrServer-windows-amd64.exe";
+                downloadUrl = "https://github.com/YouROK/TorrServer/releases/latest/download/";
                 if (conf.releases != "latest")
-                    downloadUrl = $"https://github.com/YouROK/TorrServer/releases/download/{conf.releases}/TorrServer-windows-amd64.exe";
+                    downloadUrl = $"https://github.com/YouROK/TorrServer/releases/download/{conf.releases}/";
+
+                if (conf.releases == "latest" || targetVersion >= new Version(141, 10))
+                {
+                    downloadUrl += "TorrServer-gst-windows-amd64.exe";
+                }
+                else
+                {
+                    downloadUrl += "TorrServer-windows-amd64.exe";
+                }
             }
             else
             {
                 string uname = (await Bash.ComandAsync("uname -m")) ?? string.Empty;
                 string arch = uname.Contains("x86_64") ? "amd64" : (uname.Contains("i386") || uname.Contains("i686")) ? "386" : uname.Contains("aarch64") ? "arm64" : uname.Contains("armv7") ? "arm7" : uname.Contains("armv6") ? "arm5" : "amd64";
 
-                downloadUrl = "https://github.com/YouROK/TorrServer/releases/latest/download/TorrServer-linux-" + arch;
+                downloadUrl = "https://github.com/YouROK/TorrServer/releases/latest/download/";
                 if (conf.releases != "latest")
-                    downloadUrl = $"https://github.com/YouROK/TorrServer/releases/download/{conf.releases}/TorrServer-linux-" + arch;
+                    downloadUrl = $"https://github.com/YouROK/TorrServer/releases/download/{conf.releases}/";
+
+                if (conf.releases == "latest" || targetVersion >= new Version(141, 10))
+                {
+                    if (arch is "amd64" or "arm64")
+                        downloadUrl += $"TorrServer-gst-linux-{arch}";
+                    else
+                        downloadUrl += $"TorrServer-linux-{arch}";
+                }
+                else
+                {
+                    downloadUrl += $"TorrServer-linux-{arch}";
+                }
             }
             #endregion
 
@@ -151,7 +208,7 @@ public class ModInit : IModuleLoaded
                 await install();
             }
 
-            if (!File.Exists("isdocker") && conf.checkfile)
+            if (conf.checkfile)
             {
                 var response = await Http.ResponseHeaders(downloadUrl, timeoutSeconds: 10, allowAutoRedirect: true);
                 if (response != null && response.Content.Headers.ContentLength.HasValue && new FileInfo(tspath).Length != response.Content.Headers.ContentLength.Value)
@@ -166,7 +223,7 @@ public class ModInit : IModuleLoaded
             while (!IsShutdown && File.Exists(tspath))
             {
                 if (!CoreInit.Win32NT)
-                    Bash.Comand($"pkill -f ' -p {conf.tsport} '");
+                    await Bash.ComandAsync($"pkill -f ' -p {conf.tsport} '");
 
                 try
                 {

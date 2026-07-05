@@ -317,7 +317,8 @@
             <div class="module-row-name"><a href="https://github.com/lampac-nextgen/lampac/tree/main/Modules/LampaWeb"
                 target="_blank" rel="noopener">LampaWeb</a></div>
             <div class="module-row-desc">Хостинг Lampa UI. Авто-обновление с GitHub каждые 90 минут. Кеш в
-              <code>wwwroot/lampa-main/</code>.
+              <code>wwwroot/lampa-main/</code>. Виджеты для Smart TV: <code>/samsung.wgt</code> (Tizen),
+              <code>/lg.ipk</code> (webOS). Флаги <code>LampaWeb.widgets.samsung</code> / <code>.lg</code>.
             </div><span class="module-row-tag">UI</span>
           </div>
           <div class="module-row">
@@ -521,6 +522,17 @@
             <div class="module-row-name">TelegramAuthBot</div>
             <div class="module-row-desc">Telegram-бот для привязки устройств (long polling). Зависит от TelegramAuth.
             </div><span class="module-row-tag">Auth</span>
+          </div>
+          <div class="module-row">
+            <div class="dot dot-off"></div>
+            <div class="module-row-name"><a
+                href="https://github.com/lampac-nextgen/lampac/tree/main/Modules/Tg-notify.bot" target="_blank"
+                rel="noopener">Tg-notify.bot</a></div>
+            <div class="module-row-desc">Telegram-бот уведомлений о новых сериях и озвучках. Плагин
+              <code>/tg-notify.js</code>, API <code>/api/tg/*</code>. Trakt→TMDB + опрос Mirage/Collaps. Секция
+              <code>TelegramBot</code> в <code>init.conf</code>, <code>enable: false</code> в
+              <code>manifest.json</code>.
+            </div><span class="module-row-tag">Уведомления</span>
           </div>
         </div>
       </div>
