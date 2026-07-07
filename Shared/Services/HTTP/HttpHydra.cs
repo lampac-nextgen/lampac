@@ -18,9 +18,11 @@ public class HttpHydra
     {
         this.init = init;
         this.requestInfo = requestInfo;
-        this.rch = rch;
-        this.proxy = proxy;
         this.baseHeaders = baseHeaders;
+        this.rch = rch;
+
+        if (init.useproxy)
+            this.proxy = proxy;
     }
 
     public void RegisterHttp(HttpClient httpClient)

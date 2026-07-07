@@ -40,6 +40,12 @@
       border: 1px solid rgba(99, 102, 241, 0.3);
     }
 
+    .method-post {
+      background: rgba(251, 191, 36, 0.12);
+      color: #f59e0b;
+      border: 1px solid rgba(251, 191, 36, 0.3);
+    }
+
     .auth-badge {
       display: inline-block;
       font-size: 11px;
@@ -151,6 +157,8 @@
         <div style="display:flex;flex-wrap:wrap;gap:12px;margin-bottom:24px">
           <div style="display:flex;align-items:center;gap:8px"><span class="method method-get">GET</span> <span
               style="font-size:14px;color:var(--text-muted)">HTTP GET запрос</span></div>
+          <div style="display:flex;align-items:center;gap:8px"><span class="method method-post">POST</span> <span
+              style="font-size:14px;color:var(--text-muted)">HTTP POST запрос</span></div>
           <div style="display:flex;align-items:center;gap:8px"><span class="method method-ws">WS</span> <span
               style="font-size:14px;color:var(--text-muted)">WebSocket соединение</span></div>
         </div>
@@ -577,6 +585,65 @@
                 <td>API комнат синхронного просмотра. Маршруты: <code>/watchtogether/create</code>,
                   <code>/watchtogether/info</code>. Реального WS-эндпоинта нет — общение через NwsEvents
                   (<code>/nws</code>).</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/samsung.wgt</code></td>
+                <td>LampaWeb</td>
+                <td>Виджет Lampa для Samsung Tizen. Параметр <code>?overwritehost=</code> подставляет хост сервера.
+                  Управляется через <code>LampaWeb.widgets.samsung</code>.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/lg.ipk</code></td>
+                <td>LampaWeb</td>
+                <td>Виджет Lampa для LG webOS (IPK). Параметр <code>?overwritehost=</code> подставляет хост сервера.
+                  Управляется через <code>LampaWeb.widgets.lg</code>.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/tg-notify.js</code></td>
+                <td>Tg-notify.bot</td>
+                <td>Плагин Lampa для Telegram-подписок на новые серии и озвучки. Требует
+                  <code>TelegramBot.enable</code> в <code>init.conf</code>.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-post">POST</span></td>
+                <td><code>/api/tg/subscribe</code></td>
+                <td>Tg-notify.bot</td>
+                <td>Подписка на сериал и озвучку. JSON: <code>tmdb_id</code>, <code>title</code>, <code>voice</code>,
+                  <code>season</code>, <code>episode</code> и др. Требует <code>user_uid</code>.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-post">POST</span></td>
+                <td><code>/api/tg/unsubscribe</code></td>
+                <td>Tg-notify.bot</td>
+                <td>Отписка. JSON: <code>tmdb_id</code>, <code>voice</code>. Требует <code>user_uid</code>.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/api/tg/status</code></td>
+                <td>Tg-notify.bot</td>
+                <td>Статус подписки пользователя. Параметр: <code>?tmdb_id=</code>.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/api/tg/voices</code></td>
+                <td>Tg-notify.bot</td>
+                <td>Доступные озвучки (Mirage + Collaps). Параметры: <code>title</code>, <code>year</code>,
+                  <code>season</code>, <code>tmdb_id</code>. Публичный.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/api/tg/link</code></td>
+                <td>Tg-notify.bot</td>
+                <td>Deep-link для привязки Telegram-аккаунта к UID Lampa.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/api/tg/subscriptions</code></td>
+                <td>Tg-notify.bot</td>
+                <td>Список всех подписок пользователя с метаданными (вкладка «TG Подписки»).</td>
               </tr>
             </tbody>
           </table>

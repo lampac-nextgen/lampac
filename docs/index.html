@@ -974,7 +974,7 @@
           <div class="stat-label">Аниме-провайдеров</div>
         </div>
         <div class="stat-item">
-          <div class="stat-num">26+</div>
+          <div class="stat-num">27+</div>
           <div class="stat-label">Модулей</div>
         </div>
         <div class="stat-item">
@@ -1027,9 +1027,22 @@
         <div class="feature-card">
           <div class="feature-icon">⚙️</div>
           <h3>GStreamer</h3>
-          <p>HLS/fMP4 транскодинг через GStreamer: перекодирование H.265/AV1/VP9 в H.264, выбор аудиодорожек. Плагин
-            <code>/gst.js</code>, кеш в <code>cache/gstranscoding/</code>.
+          <p>HLS/fMP4 транскодинг через GStreamer: перекодирование H.265/AV1/VP9 в H.264, выбор аудиодорожек, настраиваемые
+            <code>aac_samplerate</code> и <code>aac_channels</code>. Плагин <code>/gst.js</code>, кеш в
+            <code>cache/gstranscoding/</code>.
           </p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">📱</div>
+          <h3>Smart TV виджеты</h3>
+          <p>LampaWeb собирает пакеты для телевизоров: Samsung Tizen (<code>/samsung.wgt</code>) и LG webOS
+            (<code>/lg.ipk</code>) с подстановкой хоста Lampac.</p>
+        </div>
+        <div class="feature-card">
+          <div class="feature-icon">🔔</div>
+          <h3>Tg-notify.bot</h3>
+          <p>Telegram-уведомления о новых сериях и озвучках. Подписка из карточки Lampa, трекинг через Trakt/TMDB и
+            балансеры Mirage/Collaps. Плагин <code>/tg-notify.js</code>.</p>
         </div>
         <div class="feature-card">
           <div class="feature-icon">🔄</div>
@@ -1297,7 +1310,8 @@
           <div class="module-status on"></div>
           <div>
             <div class="module-name">LampaWeb</div>
-            <div class="module-desc">Хостинг Lampa UI. Авто-обновление с GitHub каждые 90 минут.</div>
+            <div class="module-desc">Хостинг Lampa UI. Виджеты Samsung/LG: <code>/samsung.wgt</code>,
+              <code>/lg.ipk</code>. Авто-обновление с GitHub каждые 90 минут.</div>
           </div>
         </div>
         <div class="module-item">
@@ -1419,6 +1433,14 @@
           <div>
             <div class="module-name">WatchTogether</div>
             <div class="module-desc">Синхронный просмотр через WebSocket-комнаты.</div>
+          </div>
+        </div>
+        <div class="module-item">
+          <div class="module-status off"></div>
+          <div>
+            <div class="module-name">Tg-notify.bot</div>
+            <div class="module-desc">Telegram-бот уведомлений о сериях и озвучках. Плагин <code>/tg-notify.js</code>,
+              секция <code>TelegramBot</code>.</div>
           </div>
         </div>
       </div>

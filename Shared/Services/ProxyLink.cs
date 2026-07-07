@@ -607,7 +607,7 @@ public class ProxyLink : IProxyLink
                 return null;
         }
 
-        return new ProxyLinkModel(reqip, headers, null, uri_clear, plugin, verifyip, e);
+        return new ProxyLinkModel(reqip, headers, proxy, uri_clear, plugin, verifyip, e);
     }
     #endregion
 

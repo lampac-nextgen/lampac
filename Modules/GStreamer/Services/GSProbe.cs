@@ -217,13 +217,6 @@ public static class GSProbe
                 continue;
             }
 
-            // субтитры исключаем из результата
-            if (Regex.IsMatch(line, @"^(subtitle|subtitles)\s+#\d+:", RegexOptions.IgnoreCase))
-            {
-                current = null;
-                continue;
-            }
-
             var stream = TryParseStreamHeader(line);
             if (stream != null)
             {
@@ -240,6 +233,7 @@ public static class GSProbe
 
         int video = 0;
         int audio = 0;
+        int subtitle = 0;
 
         foreach (var track in probe.Tracks)
         {
@@ -255,11 +249,16 @@ public static class GSProbe
                 track.PadName = $"audio_{audio}";
                 audio++;
             }
+            else if (track.Type == "subtitle")
+            {
+                track.Index = subtitle;
+                track.PadName = $"subtitle_{subtitle}";
+                subtitle++;
+            }
         }
 
         return probe.Tracks.Count > 0 ? probe : null;
     }
-
 
     static TrackInfo TryParseStreamHeader(string line)
     {
@@ -267,10 +266,11 @@ public static class GSProbe
         // video #1: H.264 (High Profile)
         // audio #2: AC-3 (ATSC A/52)
         // audio #3: E-AC-3 (ATSC A/52B)
+        // subtitle #4: SubRip subtitle
 
         var match = Regex.Match(
             line,
-            @"^(?<type>video|audio)\s+#(?<idx>\d+):\s*(?<codec>.+)$",
+            @"^(?<type>video|audio|subtitle|subtitles)\s+#(?<idx>\d+):\s*(?<codec>.+)$",
             RegexOptions.IgnoreCase
         );
 
@@ -278,13 +278,16 @@ public static class GSProbe
             return null;
 
         string type = match.Groups["type"].Value.ToLowerInvariant();
+        if (type == "subtitles")
+            type = "subtitle";
+
         string codec = match.Groups["codec"].Value.Trim();
 
         return new TrackInfo
         {
             Index = int.Parse(match.Groups["idx"].Value, CultureInfo.InvariantCulture),
             Type = type,
-            Codec = codec,
+            Codec = type == "subtitle" ? SubtitleCodec(codec) : codec,
             CapsName = CodecToCapsName(type, codec)
         };
     }
@@ -359,11 +362,88 @@ public static class GSProbe
             return;
         }
 
+        if (line.StartsWith("subtitle codec:", StringComparison.OrdinalIgnoreCase))
+        {
+            string codec = ValueAfterColon(line);
+
+            if (!string.IsNullOrWhiteSpace(codec))
+            {
+                track.Codec = SubtitleCodec(codec);
+                track.CapsName = CodecToCapsName(track.Type, codec);
+            }
+
+            return;
+        }
+
         if (line.StartsWith("Frame rate:", StringComparison.OrdinalIgnoreCase))
         {
             ParseFrameRate(track, ValueAfterColon(line));
             return;
         }
+    }
+
+    static string SubtitleCodec(string codec)
+    {
+        if (string.IsNullOrWhiteSpace(codec))
+            return "unknown";
+
+        string c = codec.ToLowerInvariant();
+
+        if (c.Contains("subpicture/x-pgs") ||
+            c.Contains("pgs") ||
+            c.Contains("hdmv") ||
+            c.Contains("presentation graphic"))
+        {
+            return "pgs";
+        }
+
+        if (c.Contains("subpicture/x-dvd") ||
+            c.Contains("dvd") ||
+            c.Contains("vobsub"))
+        {
+            return "dvd";
+        }
+
+        if (c.Contains("application/x-ass") ||
+            c.Contains("advanced substation") ||
+            Regex.IsMatch(c, @"\bass\b", RegexOptions.IgnoreCase))
+        {
+            return "ass";
+        }
+
+        if (c.Contains("application/x-ssa") ||
+            c.Contains("substation alpha") ||
+            Regex.IsMatch(c, @"\bssa\b", RegexOptions.IgnoreCase))
+        {
+            return "ssa";
+        }
+
+        if (c.Contains("subrip") ||
+            Regex.IsMatch(c, @"\bsrt\b", RegexOptions.IgnoreCase))
+        {
+            return "subrip";
+        }
+
+        if (c.Contains("utf-8") ||
+            c.Contains("utf8"))
+        {
+            return "utf8";
+        }
+
+        if (c.Contains("webvtt") ||
+            Regex.IsMatch(c, @"\bvtt\b", RegexOptions.IgnoreCase) ||
+            c.Contains("timed text") ||
+            c.Contains("tx3g") ||
+            c.Contains("text/x-raw") ||
+            c.Contains("text"))
+        {
+            return "text";
+        }
+
+        if (c.Contains("kate"))
+            return "kate";
+
+        return "unknown";
     }
 
     static long ParseDurationNs(string text)
@@ -450,6 +530,20 @@ public static class GSProbe
                 return "audio/mpeg";
         }
 
+        if (type == "subtitle")
+        {
+            return SubtitleCodec(codec) switch
+            {
+                "text" or "subrip" or "utf8" => "text/x-raw",
+                "ass" => "application/x-ass",
+                "ssa" => "application/x-ssa",
+                "pgs" => "subpicture/x-pgs",
+                "dvd" => "subpicture/x-dvd",
+                "kate" => "subtitle/x-kate",
+                _ => "application/x-subtitle-unknown"
+            };
+        }
+
         return null;
     }
 
@@ -458,10 +552,10 @@ public static class GSProbe
         string value = ValueAfterColon(line);
 
         if (int.TryParse(
-                value,
-                NumberStyles.Integer,
-                CultureInfo.InvariantCulture,
-                out int result))
+            value,
+            NumberStyles.Integer,
+            CultureInfo.InvariantCulture,
+            out int result))
         {
             return result;
         }
