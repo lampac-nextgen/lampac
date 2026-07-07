@@ -72,6 +72,20 @@ RUN case "$BUILDARCH" in \
     && rm /tmp/ffmpeg.tar.xz \
     && touch /out/lampac/isdocker
 
+# Playwright headless shell only — matched to the driver, much smaller than full chromium.
+FROM --platform=$TARGETPLATFORM debian:13-slim AS playwright-browser
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends ca-certificates nodejs \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY --from=builder /out/lampac/.playwright/package /pw/package
+WORKDIR /pw
+
+ENV PLAYWRIGHT_BROWSERS_PATH=/pw/browsers
+
+RUN node package/cli.js install chromium --only-shell
+
 # Runner — OS/arch of the published image (amd64 vs arm64)
 FROM debian:13-slim AS runner
 
@@ -87,7 +101,7 @@ ENV DOTNET_ROOT=/usr/share/dotnet \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     DOTNET_CLI_TELEMETRY_OPTOUT=1 \
-    CHROMIUM_PATH=/usr/bin/chromium \
+    PLAYWRIGHT_BROWSERS_PATH=/lampac/.playwright \
     CHROMIUM_FLAGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
 
 WORKDIR /lampac
@@ -97,9 +111,9 @@ EXPOSE 9118
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     ca-certificates \
-    chromium \
     curl \
     fontconfig \
+    fonts-liberation \
     gstreamer1.0-libav \
     gstreamer1.0-plugins-bad \
     gstreamer1.0-plugins-base \
@@ -108,13 +122,25 @@ RUN apt-get update \
     gstreamer1.0-plugins-ugly \
     gstreamer1.0-tools \
     imagemagick \
+    libasound2 \
+    libatk-bridge2.0-0 \
+    libatk1.0-0 \
+    libcups2 \
+    libdrm2 \
+    libgbm1 \
     libgstreamer-plugins-base1.0-0 \
     libgstreamer1.0-0 \
     libicu76 \
     libjpeg-dev \
     libnspr4 \
+    libnss3 \
     libpng-dev \
     libwebp-dev \
+    libxcomposite1 \
+    libxdamage1 \
+    libxfixes3 \
+    libxkbcommon0 \
+    libxrandr2 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/* \
     && rm -rf \
@@ -129,6 +155,7 @@ RUN groupadd -r -g 1000 lampac \
 
 # Copy application
 COPY --chown=lampac:lampac --from=builder /out /
+COPY --chown=lampac:lampac --from=playwright-browser /pw/browsers/ /lampac/.playwright/
 
 # Health check — verify process is running
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \

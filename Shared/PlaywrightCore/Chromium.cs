@@ -44,6 +44,116 @@ public class Chromium : PlaywrightBase, IDisposable
 
     public static int ContextsCount => browser?.Contexts?.Count ?? 0;
 
+    static string FindBundledChromiumPath()
+    {
+        const string flatPath = ".playwright/chrome-linux/chrome";
+        if (File.Exists(flatPath))
+            return flatPath;
+
+        if (!Directory.Exists(".playwright"))
+            return null;
+
+        foreach (var dir in Directory.GetDirectories(".playwright", "chromium-*")
+            .Concat(Directory.GetDirectories(".playwright", "chromium_headless_shell-*"))
+            .Concat(Directory.GetDirectories(".playwright", "chrome-*")))
+        {
+            foreach (var chrome in new[]
+            {
+                Path.Combine(dir, "chrome-linux", "chrome"),
+                Path.Combine(dir, "chrome-linux", "headless_shell"),
+            })
+            {
+                if (File.Exists(chrome))
+                    return chrome;
+            }
+        }
+
+        return null;
+    }
+
+    static string ResolveChromiumExecutablePath(string configuredPath)
+    {
+        var bundled = FindBundledChromiumPath();
+        if (bundled != null)
+            return bundled;
+
+        var envPath = Environment.GetEnvironmentVariable("CHROMIUM_PATH");
+        if (!string.IsNullOrWhiteSpace(envPath) && File.Exists(envPath))
+            return envPath;
+
+        if (!string.IsNullOrEmpty(configuredPath) && File.Exists(configuredPath))
+            return configuredPath;
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
+        {
+            switch (RuntimeInformation.ProcessArchitecture)
+            {
+                case Architecture.X86:
+                case Architecture.X64:
+                    return ".playwright\\chrome-win\\chrome.exe";
+                case Architecture.Arm64:
+                    return ".playwright\\chrome-win32\\chrome.exe";
+                default:
+                    Console.WriteLine("Chromium: Architecture unknown");
+                    return null;
+            }
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
+        {
+            switch (RuntimeInformation.ProcessArchitecture)
+            {
+                case Architecture.X64:
+                case Architecture.Arm64:
+                    return ".playwright/chrome-mac/Chromium.app/Contents/MacOS/Chromium";
+                default:
+                    Console.WriteLine("Chromium: Architecture unknown");
+                    return null;
+            }
+        }
+
+        if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
+        {
+            switch (RuntimeInformation.ProcessArchitecture)
+            {
+                case Architecture.X86:
+                case Architecture.X64:
+                case Architecture.Arm64:
+                    return File.Exists("/usr/bin/chromium") ? "/usr/bin/chromium" : null;
+                default:
+                    Console.WriteLine("Chromium: Architecture unknown");
+                    return null;
+            }
+        }
+
+        Console.WriteLine("Chromium: IsOSPlatform unknown");
+        return null;
+    }
+
+    static string[] BuildLaunchArgs(string[] configuredArgs, bool devtools = false)
+    {
+        var args = new HashSet<string>(configuredArgs ?? [], StringComparer.Ordinal);
+
+        if (devtools)
+            args.Add("--auto-open-devtools-for-tabs");
+
+        if (File.Exists("isdocker"))
+        {
+            args.Add("--no-sandbox");
+            args.Add("--disable-setuid-sandbox");
+            args.Add("--disable-dev-shm-usage");
+        }
+
+        var envFlags = Environment.GetEnvironmentVariable("CHROMIUM_FLAGS");
+        if (!string.IsNullOrWhiteSpace(envFlags))
+        {
+            foreach (var flag in envFlags.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+                args.Add(flag);
+        }
+
+        return args.ToArray();
+    }
+
     async public static Task CreateAsync()
     {
         try
@@ -52,67 +162,7 @@ public class Chromium : PlaywrightBase, IDisposable
             if (!init.enable || browser != null || shutdown)
                 return;
 
-            string executablePath = init.executablePath;
-
-            if (string.IsNullOrEmpty(executablePath))
-            {
-                if (RuntimeInformation.IsOSPlatform(OSPlatform.Windows))
-                {
-                    switch (RuntimeInformation.ProcessArchitecture)
-                    {
-                        case Architecture.X86:
-                        case Architecture.X64:
-                        case Architecture.Arm64:
-                            {
-                                if (RuntimeInformation.ProcessArchitecture == Architecture.Arm64)
-                                    executablePath = ".playwright\\chrome-win32\\chrome.exe";
-                                else
-                                    executablePath = ".playwright\\chrome-win\\chrome.exe";
-                                break;
-                            }
-                        default:
-                            Console.WriteLine("Chromium: Architecture unknown");
-                            return;
-                    }
-                }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.OSX))
-                {
-                    switch (RuntimeInformation.ProcessArchitecture)
-                    {
-                        case Architecture.X64:
-                        case Architecture.Arm64:
-                            {
-                                executablePath = ".playwright/chrome-mac/Chromium.app/Contents/MacOS/Chromium";
-                                break;
-                            }
-                        default:
-                            Console.WriteLine("Chromium: Architecture unknown");
-                            return;
-                    }
-                }
-                else if (RuntimeInformation.IsOSPlatform(OSPlatform.Linux))
-                {
-                    switch (RuntimeInformation.ProcessArchitecture)
-                    {
-                        case Architecture.X86:
-                        case Architecture.X64:
-                            {
-                                executablePath = File.Exists(".playwright/chrome-linux/chrome")
-                                    ? ".playwright/chrome-linux/chrome"
-                                    : "/usr/bin/chromium";
-                                break;
-                            }
-                        default:
-                            Console.WriteLine("PlaywChromiumright: Architecture unknown");
-                            return;
-                    }
-                }
-                else
-                {
-                    Console.WriteLine("Chromium: IsOSPlatform unknown");
-                    return;
-                }
-            }
+            string executablePath = ResolveChromiumExecutablePath(init.executablePath);
 
             if (string.IsNullOrEmpty(executablePath) || !File.Exists(executablePath))
             {
@@ -120,7 +170,7 @@ public class Chromium : PlaywrightBase, IDisposable
                 return;
             }
 
-            Console.WriteLine("Chromium: Initialization");
+            Console.WriteLine($"Chromium: executable {executablePath}");
 
             if (!string.IsNullOrEmpty(init.NODE_OPTIONS))
                 Environment.SetEnvironmentVariable("NODE_OPTIONS", init.NODE_OPTIONS);
@@ -133,9 +183,7 @@ public class Chromium : PlaywrightBase, IDisposable
             {
                 Headless = init.Headless,
                 ExecutablePath = executablePath,
-                Args = init.Devtools
-                    ? [.. init.Args ?? [], "--auto-open-devtools-for-tabs"]
-                    : init.Args
+                Args = BuildLaunchArgs(init.Args, init.Devtools)
             });
 
             Console.WriteLine("Chromium: LaunchAsync");
