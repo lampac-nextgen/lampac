@@ -23,4 +23,6 @@ public class ModuleConf : ModuleBaseConf
     public int maximumDiskReadRate { get; set; }
 
     public int maximumDiskWriteRate { get; set; }
+
+    public bool onlyLocalIP { get; set; }
 }
