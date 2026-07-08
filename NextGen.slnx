@@ -13,6 +13,7 @@
     <Project Path="Modules/GStreamer/GStreamer.csproj" />
     <Project Path="Modules/JacRed/JacRed.csproj" />
     <Project Path="Modules/Kit/Kit.csproj" />
+    <Project Path="Modules/LampacApk/LampacApk.csproj" />
     <Project Path="Modules/LampaWeb/LampaWeb.csproj" />
     <Project Path="Modules/MsxNative/MsxNative.csproj" />
     <Project Path="Modules/NextHUB/NextHUB.csproj" />
@@ -52,6 +53,7 @@
     <Project Path="Modules/LogUserRequest-Lite/LogUserRequest.csproj" />
   </Folder>
   <Folder Name="/Modules/OnlineAnime/">
+    <Project Path="Modules/OnlineAnime/AiLiberty/AiLiberty.csproj" />
     <Project Path="Modules/OnlineAnime/AniLiberty/AniLiberty.csproj" />
     <Project Path="Modules/OnlineAnime/AniLibria/AniLibria.csproj" />
     <Project Path="Modules/OnlineAnime/Animebesst/Animebesst.csproj" />

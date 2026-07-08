@@ -18,6 +18,7 @@ namespace TelegramBot.Controllers
             string file = null;
             foreach (var p in new[]
             {
+                "module/Tg-notify.bot/tg-notify.js",
                 "module/Community/Tg-notify.bot/tg-notify.js",
                 "mods/TelegramBot/tg-notify.js",
                 "module/TelegramBot/tg-notify.js",

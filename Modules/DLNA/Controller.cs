@@ -486,6 +486,16 @@ public class DLNAController : BaseController
     [Route("dlna")]
     public ActionResult Index(string path)
     {
+        if (ModInit.conf.onlyLocalIP && !requestInfo.IsLocalIp)
+        {
+            return Json(new { error = "onlyLocalIP" });
+        }
+
+        if (SafePath(path) == null)
+        {
+            return ContentTo("[]");
+        }
+
         #region getImage
         string getImage(string name)
         {
@@ -677,12 +687,23 @@ public class DLNAController : BaseController
     [Route("dlna/stream")]
     public ActionResult Stream(string path)
     {
+        if (ModInit.conf.onlyLocalIP && !requestInfo.IsLocalIp)
+        {
+            return Json(new { error = "onlyLocalIP" });
+        }
+
+        string full = SafePath(path);
+        if (full == null || !IO.File.Exists(full))
+        {
+            return NotFound();
+        }
+
         string contentType = "application/octet-stream";
 
         if (path.EndsWith(".jpg"))
             contentType = "image/jpeg";
 
-        return File(IO.File.OpenRead($"{dlna_path}/{path}"), contentType, true);
+        return File(IO.File.OpenRead(full), contentType, true);
     }
     #endregion
 
@@ -691,9 +712,21 @@ public class DLNAController : BaseController
     [Route("dlna/delete")]
     public ActionResult Delete(string path)
     {
+        if (ModInit.conf.onlyLocalIP && !requestInfo.IsLocalIp)
+        {
+            return Json(new { error = "onlyLocalIP" });
+        }
+
+        string full = SafePath(path);
+
+        if (full == null || full == Path.GetFullPath(dlna_path))
+        {
+            return Content(string.Empty);
+        }
+
         try
         {
-            IO.File.Delete($"{dlna_path}/{path}");
+            IO.File.Delete(full);
         }
         catch (Exception ex)
         {
@@ -702,7 +735,7 @@ public class DLNAController : BaseController
 
         try
         {
-            Directory.Delete($"{dlna_path}/{path}", true);
+            Directory.Delete(full, true);
         }
         catch (Exception ex)
         {
@@ -719,6 +752,11 @@ public class DLNAController : BaseController
     [Route("dlna/tracker/managers")]
     public ActionResult Managers()
     {
+        if (ModInit.conf.onlyLocalIP && !requestInfo.IsLocalIp)
+        {
+            return Json(new { error = "onlyLocalIP" });
+        }
+
         if (torrentEngine?.Torrents == null)
             return Content("[]");
 
@@ -756,6 +794,11 @@ public class DLNAController : BaseController
     [Route("dlna/tracker/show")]
     async public Task<JsonResult> Show(string path)
     {
+        if (ModInit.conf.onlyLocalIP && !requestInfo.IsLocalIp)
+        {
+            return Json(new { error = "onlyLocalIP" });
+        }
+
         try
         {
             var tparse = await getTorrent(path);
@@ -851,6 +894,11 @@ public class DLNAController : BaseController
     [Route("dlna/tracker/download")]
     async public Task<JsonResult> Download(string path, int[] indexs, string thumb, long id, bool serial, int lastCount = -1)
     {
+        if (ModInit.conf.onlyLocalIP && !requestInfo.IsLocalIp)
+        {
+            return Json(new { error = "onlyLocalIP" });
+        }
+
         try
         {
             var tparse = await getTorrent(path);
@@ -1124,6 +1172,11 @@ public class DLNAController : BaseController
     [Route("dlna/tracker/delete")]
     async public Task<JsonResult> TorrentDelete(string infohash)
     {
+        if (ModInit.conf.onlyLocalIP && !requestInfo.IsLocalIp)
+        {
+            return Json(new { error = "onlyLocalIP" });
+        }
+
         if (torrentEngine == null)
             return Json(new { });
 
@@ -1161,6 +1214,11 @@ public class DLNAController : BaseController
     [Route("dlna/tracker/pause")]
     async public Task<JsonResult> TorrentPause(string infohash)
     {
+        if (ModInit.conf.onlyLocalIP && !requestInfo.IsLocalIp)
+        {
+            return Json(new { error = "onlyLocalIP" });
+        }
+
         if (torrentEngine == null)
             return Json(new { });
 
@@ -1177,6 +1235,11 @@ public class DLNAController : BaseController
     [Route("dlna/tracker/start")]
     async public Task<JsonResult> TorrentStart(string infohash)
     {
+        if (ModInit.conf.onlyLocalIP && !requestInfo.IsLocalIp)
+        {
+            return Json(new { error = "onlyLocalIP" });
+        }
+
         if (torrentEngine == null)
             return Json(new { });
 
@@ -1193,6 +1256,11 @@ public class DLNAController : BaseController
     [Route("dlna/tracker/changefilepriority")]
     async public Task<JsonResult> ChangeFilePriority(string infohash, int[] indexs)
     {
+        if (ModInit.conf.onlyLocalIP && !requestInfo.IsLocalIp)
+        {
+            return Json(new { error = "onlyLocalIP" });
+        }
+
         if (torrentEngine == null)
             return Json(new { });
 
@@ -1261,6 +1329,32 @@ public class DLNAController : BaseController
             {
                 return false;
             }
+        }
+    }
+
+    static string SafePath(string path)
+    {
+        try
+        {
+            string root = Path.GetFullPath(dlna_path);
+            string full = Path.GetFullPath(Path.Combine(root, path ?? string.Empty));
+
+            if (full == root)
+            {
+                return full;
+            }
+
+            if (full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+                || full.StartsWith(root + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
+            {
+                return full;
+            }
+
+            return null;
+        }
+        catch
+        {
+            return null;
         }
     }
     #endregion

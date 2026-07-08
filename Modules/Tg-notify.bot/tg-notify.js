@@ -1,7 +1,7 @@
 (function () {
     'use strict';
 
-    var lampac_host = 'https://hanzoon.online';
+    var lampac_host = '{localhost}';
     var network = new Lampa.Reguest();
 
     function getToken() {

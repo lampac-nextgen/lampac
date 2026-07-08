@@ -12,6 +12,7 @@ using Shared.Services.Utilities;
 using System;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
@@ -149,6 +150,87 @@ public class GStreamerController : BaseController
     [AllowAnonymous]
     [HttpGet("/gst/{id}/master.m3u8")]
     public ActionResult MasterPlaylist(ulong id, int audio)
+    {
+        SetHeadersNoCache();
+
+        var gstask = GService.Get(id);
+        if (gstask == null)
+            return NotFound();
+
+        var probe = gstask.probe;
+        var playlist = StringBuilderPool.Rent();
+
+        playlist.AppendLine("#EXTM3U");
+        playlist.AppendLine("#EXT-X-VERSION:7");
+        playlist.AppendLine();
+
+        bool hasSubs = false;
+
+        if (probe != null && gstask.conf.subtitles)
+        {
+            foreach (var track in probe.Tracks)
+            {
+                if (track.Type != "subtitle")
+                    continue;
+
+                switch (track.Codec)
+                {
+                    case "text":
+                    case "subrip":
+                    case "utf8":
+                    case "ass":
+                    case "ssa":
+                        break;
+
+                    default:
+                        continue;
+                }
+
+                hasSubs = true;
+
+                string lang = string.IsNullOrWhiteSpace(track.Language)
+                    ? "und"
+                    : track.Language;
+
+                string name = string.IsNullOrWhiteSpace(track.Title)
+                    ? $"Subtitle {track.Index}"
+                    : track.Title;
+
+                playlist.AppendLine($"#EXT-X-MEDIA:TYPE=SUBTITLES,GROUP-ID=\"subs\",NAME=\"{name}\",LANGUAGE=\"{lang}\",DEFAULT=NO,AUTOSELECT=YES,FORCED=NO,URI=\"/gst/{id}/subs/{track.Index}.m3u8\"");
+            }
+
+            if (hasSubs)
+                playlist.AppendLine();
+        }
+
+        playlist.Append("#EXT-X-STREAM-INF:BANDWIDTH=4000000");
+
+        if (probe != null)
+        {
+            if (probe.Video?.Width > 0 && probe.Video?.Height > 0)
+                playlist.Append($",RESOLUTION={probe.Video.Width}x{probe.Video.Height}");
+        }
+
+        playlist.Append(",CODECS=\"avc1.640028,mp4a.40.2\"");
+
+        if (hasSubs)
+            playlist.Append(",SUBTITLES=\"subs\"");
+
+        playlist.AppendLine();
+        playlist.AppendLine($"/gst/{id}/video.m3u8?audio={audio}");
+
+        return ContentTo(
+            playlist,
+            "application/vnd.apple.mpegurl; charset=utf-8"
+        );
+    }
+    #endregion
+
+
+    #region video.m3u8
+    [AllowAnonymous]
+    [HttpGet("/gst/{id}/video.m3u8")]
+    public ActionResult VideoPlaylist(ulong id, int audio)
     {
         SetHeadersNoCache();
 
@@ -405,6 +487,94 @@ public class GStreamerController : BaseController
     }
     #endregion
 
+
+    #region subs.m3u8
+    [AllowAnonymous]
+    [HttpGet("/gst/{id}/subs/{index}.m3u8")]
+    public ActionResult SubsPlaylist(ulong id, int index)
+    {
+        var gstask = GService.Get(id);
+        if (gstask == null)
+            return NotFound();
+
+        int duration = gstask.probe.DurationSeconds;
+        if (0 >= duration)
+            duration = 200 * 60; // 200 min
+
+        int segmentSeconds = gstask.conf.segment_seconds;
+        int count = duration / segmentSeconds;
+
+        var playlist = StringBuilderPool.Rent();
+
+        try
+        {
+            playlist.AppendLine("#EXTM3U");
+            playlist.AppendLine("#EXT-X-PLAYLIST-TYPE:VOD");
+            playlist.AppendLine("#EXT-X-VERSION:3");
+            playlist.Append("#EXT-X-TARGETDURATION:")
+                    .Append(segmentSeconds)
+                    .Append('\n');
+            playlist.AppendLine("#EXT-X-MEDIA-SEQUENCE:0"); ;
+
+            for (int i = 0; i < count; i++)
+            {
+                playlist
+                    .Append("#EXTINF:")
+                    .Append(segmentSeconds)
+                    .AppendLine(".00,");
+
+                playlist
+                    .Append(index)
+                    .Append('/')
+                    .Append(i)
+                    .AppendLine(".vtt");
+            }
+
+            playlist.AppendLine("#EXT-X-ENDLIST");
+
+            return ContentTo(
+                playlist,
+                "application/vnd.apple.mpegurl; charset=utf-8"
+            );
+        }
+        finally
+        {
+            StringBuilderPool.Return(playlist);
+        }
+    }
+    #endregion
+
+    #region sub.vtt
+    [AllowAnonymous]
+    [HttpGet("/gst/{id}/subs/{index}/{seg}.vtt")]
+    public async Task<ActionResult> SubVtt(ulong id, int index, int seg)
+    {
+        SetHeadersNoCache();
+
+        var gstask = GService.Get(id);
+        if (gstask == null)
+            return NotFound();
+
+        if (!gstask.conf.subtitles)
+            return Ok();
+
+        await gstask.semaphore.WaitAsync(HttpContext.RequestAborted).ConfigureAwait(false);
+
+        try
+        {
+            StringBuilder vtt = gstask.GetSubtitleVtt(StringBuilderPool.ThreadInstance, index, seg);
+
+            return ContentTo(
+                vtt,
+                "text/vtt; charset=utf-8"
+            );
+        }
+        finally
+        {
+            gstask.semaphore.Release();
+        }
+    }
+    #endregion
 
     #region Helpers
     static async Task CopyRange(RecyclableMemoryStream data, Stream body, long offset, long count, CancellationToken cancellationToken)

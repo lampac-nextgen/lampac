@@ -45,7 +45,11 @@ public class ModuleConf : ModuleBaseConf
     /// </summary>
     public int aac_channels { get; set; }
 
+
     public int segment_seconds { get; set; } = 6;
+
+    public bool subtitles { get; set; } = true;
+
 
     public bool transcodeH264 { get; set; }
 

@@ -2,9 +2,13 @@
 using GStreamer.Models;
 using Shared.Services.Pools;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
+using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
+using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace GStreamer.Services;
@@ -46,6 +50,10 @@ public class GStask
     Bus bus;
     Gst.Bin bin;
     GstApp.AppSink sink;
+
+    readonly Dictionary<int, GstApp.AppSink> subsSinks = new();
+    public readonly Dictionary<int, SubtitleStore> subtitles = new();
+    readonly List<TrackInfo> subtitleTracks = new();
 
     CancellationTokenSource busWatchCts;
     System.Threading.Tasks.Task busWatchTask;
@@ -346,6 +354,64 @@ public class GStask
         }
         #endregion
 
+        #region d.subtitle
+        if (conf.subtitles)
+        {
+            subtitleTracks.Clear();
+
+            foreach (var track in probe.Tracks)
+            {
+                if (track.Type != "subtitle")
+                    continue;
+
+                switch (track.Codec)
+                {
+                    case "text":
+                    case "subrip":
+                    case "utf8":
+                    case "ass":
+                    case "ssa":
+                        break;
+
+                    default:
+                        continue;
+                }
+
+                subtitleTracks.Add(track);
+
+                if (!subtitles.ContainsKey(track.Index))
+                {
+                    subtitles[track.Index] = new SubtitleStore
+                    {
+                        Track = track
+                    };
+                }
+
+                string subparse = track.Codec == "ass" || track.Codec == "ssa"
+                    ? "ssaparse !"
+                    : string.Empty;
+
+                sb.AppendLine($$"""
+                d.{{track.PadName}} !
+                queue
+                    max-size-buffers=16
+                    max-size-bytes=0
+                    max-size-time=0 !
+                {{subparse}}
+                webvttenc !
+                appsink
+                    name=subs_{{track.Index}}
+                    emit-signals=false
+                    sync=false
+                    async=false
+                    max-buffers=16
+                    {{(version >= 1.28 ? "leaky-type=none" : "drop=false")}}
+                    wait-on-eos=false
+                """);
+            }
+        }
+        #endregion
+
         sb.AppendLine($$"""
         mp4mux
             name=mux
@@ -475,6 +541,7 @@ public class GStask
     }
     #endregion
 
+
     #region UpdateLastActive
     public void UpdateLastActive()
     {
@@ -503,6 +570,15 @@ public class GStask
 
         bin = pipeline;
         sink = (GstApp.AppSink)bin.GetByName("out");
+
+        subsSinks.Clear();
+
+        foreach (var track in subtitleTracks)
+        {
+            var subSink = (GstApp.AppSink)bin.GetByName($"subs_{track.Index}");
+            if (subSink != null)
+                subsSinks[track.Index] = subSink;
+        }
 
         StateChangeReturn ret;
 
@@ -589,6 +665,7 @@ public class GStask
     }
     #endregion
 
+
     #region GetSegment
     public Segment GetSegment(int index, CancellationToken ct, int audio = 0)
     {
@@ -609,6 +686,16 @@ public class GStask
 
             bin = pipeline;
             sink = (GstApp.AppSink)bin.GetByName("out");
+
+            subsSinks.Clear();
+
+            foreach (var track in subtitleTracks)
+            {
+                var subSink = (GstApp.AppSink)bin.GetByName($"subs_{track.Index}");
+                if (subSink != null)
+                    subsSinks[track.Index] = subSink;
+            }
+
             var ret = pipeline.SetState(State.Playing);
             if (ret == StateChangeReturn.Failure)
             {
@@ -644,7 +731,10 @@ public class GStask
         #endregion
 
         if (readySegment.index == index && readySegment.complete)
+        {
+            DrainSubtitles();
             return readySegment.seg;
+        }
 
         mp4Reader.ResetSegment();
         readySegment = (-1, false, default);
@@ -658,6 +748,8 @@ public class GStask
             {
                 if (ct.IsCancellationRequested || IsDead)
                     return default;
+
+                DrainSubtitles();
 
                 // 100 ms
                 using (var sample = sink.TryPullSample(100_000_000UL))
@@ -698,6 +790,7 @@ public class GStask
 
                         if (readySegment.complete)
                         {
+                            DrainSubtitles();
                             readySegment.index = index > 0 ? index : 0;
                             return readySegment.seg;
                         }
@@ -717,6 +810,243 @@ public class GStask
     }
     #endregion
 
+    #region GetSubtitleVtt
+    public StringBuilder GetSubtitleVtt(StringBuilder sb, int subtitleIndex, int seg)
+    {
+        DrainSubtitles();
+
+        double segDur = Math.Max(1, conf.segment_seconds);
+        double from = seg * segDur;
+        double to = from + segDur;
+
+        long mpegts = (long)Math.Round(from * 90000d);
+
+        sb.AppendLine("WEBVTT");
+        sb.AppendLine($"X-TIMESTAMP-MAP=LOCAL:00:00:00.000,MPEGTS:{mpegts}");
+        sb.AppendLine();
+
+        if (!subtitles.TryGetValue(subtitleIndex, out var store))
+            return sb;
+
+        lock (store.Cues)
+        {
+            foreach (var cue in store.Cues)
+            {
+                if (cue.EndSeconds <= from || cue.StartSeconds >= to)
+                    continue;
+
+                double startSeconds = Math.Max(cue.StartSeconds, from) - from;
+                double endSeconds = Math.Min(cue.EndSeconds, to) - from;
+
+                if (endSeconds <= startSeconds)
+                    continue;
+
+                var start = TimeSpan.FromSeconds(startSeconds);
+                var end = TimeSpan.FromSeconds(endSeconds);
+
+                sb.AppendLine($"{start:hh\\:mm\\:ss\\.fff} --> {end:hh\\:mm\\:ss\\.fff}");
+                sb.AppendLine(cue.Text);
+                sb.AppendLine();
+            }
+        }
+
+        return sb;
+    }
+    #endregion
+
+    #region DrainSubtitles
+    const int MaxSubtitleBufferBytes = 1024 * 1024;
+    const int MaxPendingVttChars = 64 * 1024;
+
+    static readonly Regex VttCueRegex = new(
+        @"(?:^|\n)(?:[^\n]*\n)?(?<start>\d{2,}:\d{2}:\d{2}\.\d{3})[ \t]+-->[ \t]+(?<end>\d{2,}:\d{2}:\d{2}\.\d{3})(?<settings>[^\n]*)\n(?<text>.*?)(?:\n[ \t]*\n)",
+        RegexOptions.Compiled |
+        RegexOptions.CultureInvariant |
+        RegexOptions.Singleline
+    );
+
+    void DrainSubtitles()
+    {
+        if (subsSinks.Count == 0)
+            return;
+
+        foreach (var pair in subsSinks)
+        {
+            int subtitleIndex = pair.Key;
+
+            if (!subtitles.TryGetValue(subtitleIndex, out var store))
+                continue;
+
+            var subSink = pair.Value;
+
+            while (true)
+            {
+                using var sample = subSink.TryPullSample(0);
+                if (sample == null)
+                    break;
+
+                using var buffer = sample.GetBuffer();
+                if (buffer == null)
+                    continue;
+
+                nuint nsize = buffer.GetSize();
+                if (nsize == 0 || nsize > MaxSubtitleBufferBytes)
+                    continue;
+
+                int size = (int)nsize;
+                byte[] data = new byte[size];
+
+                int copied = (int)buffer.Extract(
+                    (nuint)0,
+                    data.AsSpan(0, size)
+                );
+
+                if (copied <= 0)
+                    continue;
+
+                string chunk = Encoding.UTF8.GetString(data, 0, copied);
+                if (string.IsNullOrWhiteSpace(chunk))
+                    continue;
+
+                if (chunk.IndexOf('\r') >= 0)
+                    chunk = chunk.Replace("\r\n", "\n").Replace('\r', '\n');
+
+                lock (store.Cues)
+                {
+                    string vtt = string.IsNullOrEmpty(store.Pending)
+                        ? chunk
+                        : store.Pending + chunk;
+
+                    int consumed = 0;
+
+                    foreach (Match match in VttCueRegex.Matches(vtt))
+                    {
+                        if (!TryVttSeconds(match.Groups["start"].Value, out double startSeconds) ||
+                            !TryVttSeconds(match.Groups["end"].Value, out double endSeconds) ||
+                            endSeconds <= startSeconds)
+                        {
+                            consumed = match.Index + match.Length;
+                            continue;
+                        }
+
+                        string text = match.Groups["text"].Value.Trim();
+                        if (text.Length == 0)
+                        {
+                            consumed = match.Index + match.Length;
+                            continue;
+                        }
+
+                        if (positionSeekSeconds > 0 &&
+                            startSeconds < positionSeekSeconds - conf.segment_seconds)
+                        {
+                            startSeconds += positionSeekSeconds;
+                            endSeconds += positionSeekSeconds;
+                        }
+
+                        var key = new SubtitleCueKey(startSeconds, endSeconds, text);
+
+                        if (store.Seen.Add(key))
+                        {
+                            store.Cues.Add(new SubtitleCue
+                            {
+                                StartSeconds = startSeconds,
+                                EndSeconds = endSeconds,
+                                Settings = match.Groups["settings"].Value.Trim(),
+                                Text = text
+                            });
+                        }
+
+                        consumed = match.Index + match.Length;
+                    }
+
+                    if (consumed > 0)
+                    {
+                        store.Pending = consumed < vtt.Length
+                            ? vtt[consumed..]
+                            : null;
+                    }
+                    else
+                    {
+                        store.Pending = vtt;
+                    }
+
+                    if (!string.IsNullOrEmpty(store.Pending) &&
+                        store.Pending.Length > MaxPendingVttChars)
+                    {
+                        int cut = store.Pending.Length - MaxPendingVttChars;
+                        int nl = store.Pending.IndexOf('\n', cut);
+
+                        store.Pending = nl >= 0
+                            ? store.Pending[(nl + 1)..]
+                            : store.Pending[^MaxPendingVttChars..];
+                    }
+                }
+            }
+        }
+    }
+
+    static bool TryVttSeconds(string value, out double seconds)
+    {
+        seconds = 0;
+
+        if (string.IsNullOrEmpty(value))
+            return false;
+
+        ReadOnlySpan<char> span = value.AsSpan().Trim();
+
+        int p1 = span.IndexOf(':');
+        if (p1 <= 0)
+            return false;
+
+        int p2 = span[(p1 + 1)..].IndexOf(':');
+        if (p2 < 0)
+            return false;
+
+        p2 += p1 + 1;
+
+        ReadOnlySpan<char> hSpan = span[..p1];
+        ReadOnlySpan<char> mSpan = span[(p1 + 1)..p2];
+        ReadOnlySpan<char> sSpan = span[(p2 + 1)..];
+
+        int dot = sSpan.IndexOf('.');
+        if (dot < 0)
+            dot = sSpan.IndexOf(',');
+
+        if (dot <= 0)
+            return false;
+
+        ReadOnlySpan<char> secSpan = sSpan[..dot];
+        ReadOnlySpan<char> msSpan = sSpan[(dot + 1)..];
+
+        if (!int.TryParse(hSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out int h) ||
+            !int.TryParse(mSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out int m) ||
+            !int.TryParse(secSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out int s))
+        {
+            return false;
+        }
+
+        int ms = 0;
+        int mul = 100;
+
+        for (int i = 0; i < msSpan.Length && i < 3; i++)
+        {
+            char c = msSpan[i];
+            if (c < '0' || c > '9')
+                return false;
+
+            ms += (c - '0') * mul;
+            mul /= 10;
+        }
+
+        if (h < 0 || m < 0 || m > 59 || s < 0 || s > 59)
+            return false;
+
+        seconds = h * 3600d + m * 60d + s + ms / 1000d;
+        return true;
+    }
+    #endregion
+
+
     #region Dispose
     public void Dispose()
     {
@@ -731,6 +1061,11 @@ public class GStask
         pipeline.SetState(State.Null);
         pipeline.Dispose();
         pipeline = null;
+
+        foreach (var subSink in subsSinks.Values)
+            subSink.Dispose();
+
+        subsSinks.Clear();
 
         sink.Dispose();
         sink = null;
@@ -756,6 +1091,11 @@ public class GStask
         pipeline.SetState(State.Null);
         pipeline.Dispose();
         pipeline = null;
+
+        foreach (var subSink in subsSinks.Values)
+            subSink.Dispose();
+
+        subsSinks.Clear();
 
         sink.Dispose();
         sink = null;
