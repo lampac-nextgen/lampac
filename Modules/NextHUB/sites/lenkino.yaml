@@ -208,6 +208,28 @@ view:
   related: true
   viewsource: true
   eval: |
-    {include:kt_player.eval}
+    string decodeLenkino()
+    {
+      foreach (string q in new string[] { "alt_url5", "alt_url4", "alt_url3", "alt_url2", "alt_url", "alt_url1", "url", "url_text" })
+      {
+        string l = Regex.Match(html, $"video_{q}:[\t ]+'([^']+)'", RegexOptions.IgnoreCase).Groups[1].Value;
+        if (!string.IsNullOrEmpty(l) && l.Contains("/get_file/"))
+          return l.Replace("function/0/", "");
+      }
+
+      foreach (string q in new string[] { "1080p", "720p", "480p", "360p" })
+      {
+        string l = Regex.Match(html, $"(https?://[^/]+/get_file/[^\"]+_{q}\\.mp4([^\"]+)?)('|\")", RegexOptions.IgnoreCase).Groups[1].Value;
+        if (!string.IsNullOrEmpty(l))
+          return l.Replace("function/0/", "");
+      }
+
+      string link = Regex.Match(html, "(https?://[^/]+/get_file/[^'\"]+\\.mp4([^'\"]+)?)('|\")", RegexOptions.IgnoreCase).Groups[1].Value;
+      if (string.IsNullOrEmpty(link))
+        return null;
+
+      return link.Replace("function/0/", "");
+    }
+
     headers.Add(new Shared.Models.Base.HeadersModel("referer", url));
-    return decode();
+    return decodeLenkino();
