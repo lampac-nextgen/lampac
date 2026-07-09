@@ -45,7 +45,7 @@ public static class Service
         if (e.plugin != null && e.plugin.Equals("spectre", StringComparison.OrdinalIgnoreCase))
         {
             var streamdata = e.decryptLink?.userdata as StreamData;
-            if (streamdata?.id == null || !watchs.TryGetValue(streamdata.id, out WatchMux watch) || watch?.ws == null)
+            if (streamdata?.id == null || !watchs.TryGetValue(streamdata.id, out WatchMux watch))
             {
                 if (ModInit.conf.debug)
                     Console.WriteLine("watch null");
@@ -78,7 +78,7 @@ public static class Service
                 if (streamdata.resolution != watch.resolution)
                 {
                     watch.resolution = streamdata.resolution;
-                    sendResolution = true;
+                    sendResolution = watch.ws != null;
                 }
             }
 
@@ -109,7 +109,7 @@ public static class Service
                         watch.last_time = watch.current_time;
 
                     if ((watch.current_time - watch.last_time) > 90)
-                        sendSeeked = true;
+                        sendSeeked = watch.ws != null;
 
                     watch.last_time = watch.current_time;
                 }
@@ -158,6 +158,18 @@ public static class Service
         if (!connected)
             return false;
 
+        return watchs.TryAdd(id, watch);
+    }
+
+    public static bool AddOrUpdateHeaders(string id, WatchMux watch)
+    {
+        if (string.IsNullOrEmpty(watch?.edge_hash))
+            return false;
+
+        if (watchs.TryRemove(id, out WatchMux _rw))
+            _rw.Dispose();
+
+        watch.lastreq = DateTime.Now;
         return watchs.TryAdd(id, watch);
     }
     #endregion

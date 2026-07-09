@@ -7,8 +7,10 @@ using Shared.Attributes;
 using Shared.Models.Base;
 using Shared.Models.Templates;
 using Shared.PlaywrightCore;
+using Shared.Services;
 using Shared.Services.RxEnumerate;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -19,6 +21,10 @@ namespace Spectre;
 
 public class SpectreController : BaseOnlineController<ModuleConf>
 {
+    static readonly ConcurrentDictionary<string, CachedVideoResult> videoCache = new();
+    static readonly TimeSpan videoCacheTtl = TimeSpan.FromMinutes(2);
+    static readonly TimeSpan videoCacheStaleTtl = TimeSpan.FromMinutes(10);
+
     public SpectreController() : base(ModInit.conf)
     {
         loadKitInitialization = (j, i, c) =>
@@ -375,16 +381,36 @@ public class SpectreController : BaseOnlineController<ModuleConf>
                 ? token_movie
                 : requestInfo.IP;
 
-        if (ModInit.conf.debug)
-            Console.WriteLine("streamId: " + streamId);
-
-        var result = await goMovie($"{init.linkhost}/?token_movie={token_movie}&token={init.token}", id_file, streamId);
-        if (result.streams.data.Count == 0 || result.wsUri == null)
+        string videoCacheKey = cacheKey(token_movie, id_file, streamId);
+        var result = await resolveVideo($"{init.linkhost}/?token_movie={token_movie}&token={init.token}", token_movie, id_file, streamId, play);
+        if (result.streams?.data == null || result.streams.data.Count == 0)
             return OnError();
 
-        bool res = await Service.AddOrUpdate(streamId, result.wsUri, result.watch);
-        if (!res)
-            return OnError();
+        if (!string.IsNullOrEmpty(result.wsUri) || !string.IsNullOrEmpty(result.watch?.edge_hash))
+        {
+            bool res = false;
+            int addOrUpdateAttempts = play ? 5 : 2;
+
+            for (int attempt = 0; attempt < addOrUpdateAttempts; attempt++)
+            {
+                res = !string.IsNullOrEmpty(result.wsUri)
+                    ? await Service.AddOrUpdate(streamId, result.wsUri, result.watch)
+                    : Service.AddOrUpdateHeaders(streamId, result.watch);
+                if (res)
+                    break;
+
+                RemoveCachedVideo(videoCacheKey);
+
+                await Task.Delay(play ? 400 : 200);
+
+                result = await resolveVideo($"{init.linkhost}/?token_movie={token_movie}&token={init.token}", token_movie, id_file, streamId, play);
+                if (result.streams?.data == null || result.streams.data.Count == 0)
+                    continue;
+            }
+
+            if (!res)
+                return OnError();
+        }
 
         var first = result.streams.Firts();
 
@@ -399,6 +425,99 @@ public class SpectreController : BaseOnlineController<ModuleConf>
             vast: init.vast,
             httpContext: HttpContext
         ));
+    }
+    #endregion
+
+    #region resolveVideo
+    async Task<(WatchMux watch, StreamQualityTpl streams, string wsUri)> resolveVideo(string uri, string token_movie, long id_file, string streamId, bool aggressiveRetry)
+    {
+        string cacheKey = this.cacheKey(token_movie, id_file, streamId);
+
+        if (TryGetCachedVideo(cacheKey, out var cached))
+            return cached;
+
+        int maxAttempts = aggressiveRetry ? 1 : 2;
+        int retryDelayMs = aggressiveRetry ? 400 : 250;
+
+        for (int attempt = 0; attempt < maxAttempts; attempt++)
+        {
+            var result = await goMovie(uri, id_file, streamId);
+            if (result.streams?.data?.Count > 0)
+            {
+                SetCachedVideo(cacheKey, result);
+                return result;
+            }
+
+            await Task.Delay(retryDelayMs);
+        }
+
+        if (TryGetCachedVideo(cacheKey, out cached, allowStale: true))
+            return cached;
+
+        return default;
+    }
+
+    string cacheKey(string token_movie, long id_file, string streamId)
+        => $"{token_movie}:{id_file}:{streamId}";
+
+    void RemoveCachedVideo(string cacheKey)
+        => videoCache.TryRemove(cacheKey, out _);
+
+    bool TryGetCachedVideo(string cacheKey, out (WatchMux watch, StreamQualityTpl streams, string wsUri) result, bool allowStale = false)
+    {
+        result = default;
+
+        if (!videoCache.TryGetValue(cacheKey, out var cached))
+            return false;
+
+        DateTime now = DateTime.UtcNow;
+        if (cached.expires < now)
+        {
+            if (cached.expires.Add(videoCacheStaleTtl) < now)
+            {
+                videoCache.TryRemove(cacheKey, out _);
+                return false;
+            }
+
+            if (!allowStale)
+                return false;
+        }
+
+        var watch = new WatchMux()
+        {
+            streamId = cached.streamId,
+            edge_hash = cached.edge_hash,
+            requestOrigin = cached.requestOrigin,
+            requestReferer = cached.requestReferer,
+            resolution = cached.resolution
+        };
+
+        var streams = new StreamQualityTpl(cached.qualities.Count);
+        foreach (var item in cached.qualities)
+            streams.Append(item.link, item.quality);
+
+        result = (watch, streams, cached.wsUri);
+        return true;
+    }
+
+    void SetCachedVideo(string cacheKey, (WatchMux watch, StreamQualityTpl streams, string wsUri) result)
+    {
+        if (result.watch == null || result.streams?.data == null || result.streams.data.Count == 0)
+            return;
+
+        videoCache[cacheKey] = new CachedVideoResult()
+        {
+            expires = DateTime.UtcNow.Add(videoCacheTtl),
+            streamId = result.watch.streamId,
+            edge_hash = result.watch.edge_hash,
+            requestOrigin = result.watch.requestOrigin,
+            requestReferer = result.watch.requestReferer,
+            resolution = result.watch.resolution,
+            wsUri = result.wsUri,
+            qualities = result.streams.data
+                .Select(i => new CachedVideoQuality(i.link, i.quality))
+                .ToList()
+        };
     }
     #endregion
 
@@ -455,7 +574,10 @@ public class SpectreController : BaseOnlineController<ModuleConf>
 
         JObject root;
 
-        if (!hybridCache.TryGetValue(memKey, out (int category_id, JToken data) res))
+        bool cacheHit = hybridCache.TryGetValue(memKey, out (int category_id, JToken data) res);
+        bool refreshStaleEmptyCache = cacheHit && res.category_id == 0 && res.data == null && kinopoisk_id > 0 && !string.IsNullOrWhiteSpace(imdb_id);
+
+        if (!cacheHit || refreshStaleEmptyCache)
         {
             string stitle = title.ToLowerAndTrim();
 
@@ -490,7 +612,14 @@ public class SpectreController : BaseOnlineController<ModuleConf>
             }
             else
             {
-                root = await httpHydra.Get<JObject>($"{init.apihost}/?token={init.token}&kp={kinopoisk_id}&imdb={imdb_id}&token_movie={token_movie}", safety: true);
+                root = await loadMovieRoot(kinopoisk_id, imdb_id, token_movie, "kp");
+                if (IsNotMovie(root) && kinopoisk_id > 0)
+                {
+                    root = !string.IsNullOrWhiteSpace(imdb_id)
+                        ? await loadMovieRoot(0, imdb_id, token_movie, null)
+                        : await loadMovieRoot(kinopoisk_id, null, token_movie, "tmdb");
+                }
+
                 if (root == null)
                     return (true, 0, null);
 
@@ -509,6 +638,22 @@ public class SpectreController : BaseOnlineController<ModuleConf>
 
         return (false, res.category_id, res.data);
     }
+
+    Task<JObject> loadMovieRoot(long external_id, string imdb_id, string token_movie, string idParam)
+    {
+        string uri = $"{init.apihost}/?token={init.token}&token_movie={token_movie}";
+
+        if (external_id > 0 && !string.IsNullOrWhiteSpace(idParam))
+            uri += $"&{idParam}={external_id}";
+
+        if (!string.IsNullOrWhiteSpace(imdb_id))
+            uri += $"&imdb={HttpUtility.UrlEncode(imdb_id)}";
+
+        return httpHydra.Get<JObject>(uri, safety: true);
+    }
+
+    bool IsNotMovie(JObject root)
+        => root != null && root.Value<string>("status") == "error" && root.Value<string>("error_info") == "not movie";
     #endregion
 
     #region iframe
@@ -573,19 +718,32 @@ public class SpectreController : BaseOnlineController<ModuleConf>
                 if (page == null)
                     return default;
 
+                if (ModInit.conf.debug)
+                {
+                    page.Console += (_, msg) => Console.WriteLine($"Spectre console {msg.Type}: {msg.Text}");
+                    page.PageError += (_, err) => Console.WriteLine("Spectre page error: " + err);
+                    page.RequestFailed += (_, req) => Console.WriteLine($"Spectre request failed: {req.Method} {req.Url} - {req.Failure}");
+                }
+
                 await page.RouteAsync("**/*", async route =>
                 {
                     try
                     {
+                        if (ModInit.conf.debug && (route.Request.Url.Contains("kinogo-go.tv") || route.Request.Url.Contains(init.linkhost) || route.Request.Url.Contains("/build/")))
+                            Console.WriteLine($"Spectre route: {route.Request.Method} {route.Request.Url}");
+
                         if (route.Request.Url.Contains("kinogo-go.tv"))
                         {
                             await route.FulfillAsync(new RouteFulfillOptions
                             {
-                                Body = PlaywrightBase.IframeHtml(uri)
+                                Body = PlaywrightBase.IframeHtml(WithAutoplay(uri))
                             });
                         }
                         else if (route.Request.Method == "POST" && route.Request.Url.Contains("/movies/"))
                         {
+                            if (ModInit.conf.debug)
+                                Console.WriteLine("Spectre POST: " + route.Request.Url);
+
                             string newUrl = Regex.Replace(route.Request.Url, "/[0-9]+$", $"/{id_file}");
 
                             var fetchHeaders = route.Request.Headers;
@@ -608,20 +766,36 @@ public class SpectreController : BaseOnlineController<ModuleConf>
                             }).ConfigureAwait(false);
 
                             string json = await fetchResponse.TextAsync().ConfigureAwait(false);
+                            if (ModInit.conf.debug)
+                                Console.WriteLine($"Spectre POST status: {fetchResponse.Status}, body: {json.Substring(0, Math.Min(json.Length, 500))}");
+
                             var jo = JsonConvert.DeserializeObject<JObject>(json);
+                            if (jo == null || jo["hlsSource"] == null)
+                                throw new Exception("invalid player json");
 
-                            watch.requestReferer = route.Request.Headers["referer"];
-                            watch.requestOrigin = route.Request.Headers["origin"];
+                            route.Request.Headers.TryGetValue("referer", out string requestReferer);
+                            route.Request.Headers.TryGetValue("origin", out string requestOrigin);
 
-                            wsUri = jo.Value<string>("pnr") + $"?sid={jo.Value<string>("pnk")}&v=2.1&t={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
+                            watch.requestReferer = requestReferer;
+                            watch.requestOrigin = requestOrigin;
+
+                            string pnr = jo.Value<string>("pnr");
+                            string pnk = jo.Value<string>("pnk");
+                            bool directHlsFallback = string.IsNullOrEmpty(pnr) || string.IsNullOrEmpty(pnk);
+
+                            if (!directHlsFallback)
+                                wsUri = pnr + $"?sid={pnk}&v=2.1&t={DateTimeOffset.UtcNow.ToUnixTimeMilliseconds()}";
 
                             var selectedItem =
-                                jo["hlsSource"]
+                                jo["hlsSource"]?
                                     .Children<JObject>()
                                     .FirstOrDefault(x => (bool?)x["default"] == true)
                                 ??
-                                jo["hlsSource"]
+                                jo["hlsSource"]?
                                     .FirstOrDefault() as JObject;
+
+                            if (selectedItem?["quality"] == null)
+                                throw new Exception("invalid hls source");
 
                             foreach (var q in selectedItem["quality"].Children<JProperty>())
                             {
@@ -649,14 +823,8 @@ public class SpectreController : BaseOnlineController<ModuleConf>
                                 streamquality.Append(HostStreamProxy(link, userdata: streamData), $"{q.Name}p");
                             }
 
-                            browser.SetPageResult(null);
-
-                            if (ModInit.conf.debug)
-                            {
-                                Console.WriteLine("\nReferer: " + watch.requestReferer);
-                                Console.WriteLine("Origin: " + watch.requestOrigin);
-                                Console.WriteLine("resolution: " + watch.resolution);
-                            }
+                            if (!directHlsFallback)
+                                browser.SetPageResult(null);
 
                             await route.FulfillAsync(new RouteFulfillOptions
                             {
@@ -664,6 +832,24 @@ public class SpectreController : BaseOnlineController<ModuleConf>
                                 Body = json,
                                 Headers = fetchResponse.Headers
                             }).ConfigureAwait(false);
+                        }
+                        else if (route.Request.Url.EndsWith("/master.m3u8"))
+                        {
+                            if (ModInit.conf.debug)
+                                Console.WriteLine("Spectre master: " + route.Request.Url);
+
+                            route.Request.Headers.TryGetValue("referer", out string requestReferer);
+                            route.Request.Headers.TryGetValue("origin", out string requestOrigin);
+                            route.Request.Headers.TryGetValue("accepts-controls", out string edgeHash);
+
+                            watch.requestReferer = requestReferer;
+                            watch.requestOrigin = requestOrigin;
+                            watch.edge_hash = edgeHash;
+
+                            if (!string.IsNullOrEmpty(watch.edge_hash))
+                                browser.SetPageResult(route.Request.Url);
+
+                            await route.ContinueAsync();
                         }
                         else
                         {
@@ -679,18 +865,31 @@ public class SpectreController : BaseOnlineController<ModuleConf>
                                 return;
                             }
 
+                            if (route.Request.Url.StartsWith($"{init.linkhost}/build/") ||
+                                route.Request.Url.StartsWith($"{init.linkhost}/js/"))
+                            {
+                                await route.ContinueAsync();
+                                return;
+                            }
+
                             if (await PlaywrightBase.AbortOrCache(page, route))
                                 return;
 
                             await route.ContinueAsync();
                         }
                     }
-                    catch { }
+                    catch (Exception ex)
+                    {
+                        if (ModInit.conf.debug)
+                            Console.WriteLine($"Spectre route error: {route.Request.Method} {route.Request.Url} - {ex.Message}");
+                    }
                 });
 
                 PlaywrightBase.GotoAsync(page, "https://kinogo-go.tv/");
 
-                await browser.WaitPageResult(15);
+                string pageResult = await browser.WaitPageResult(25);
+                if (ModInit.conf.debug)
+                    Console.WriteLine($"Spectre page result: {(pageResult ?? "null")}, streams={streamquality.data.Count}, ws={(string.IsNullOrEmpty(wsUri) ? "null" : "yes")}, edge={(string.IsNullOrEmpty(watch.edge_hash) ? "null" : "yes")}");
             }
 
             return (watch, streamquality, wsUri);
@@ -699,6 +898,40 @@ public class SpectreController : BaseOnlineController<ModuleConf>
         {
             return default;
         }
+    }
+
+    string WithAutoplay(string uri)
+    {
+        if (string.IsNullOrEmpty(uri) || uri.IndexOf("autoplay", StringComparison.OrdinalIgnoreCase) >= 0)
+            return uri;
+
+        return uri + (uri.Contains("?") ? "&" : "?") + "autoplay=1";
+    }
+    #endregion
+
+    #region CachedVideo
+    sealed class CachedVideoResult
+    {
+        public DateTime expires { get; set; }
+        public string streamId { get; set; }
+        public string edge_hash { get; set; }
+        public string requestOrigin { get; set; }
+        public string requestReferer { get; set; }
+        public string resolution { get; set; }
+        public string wsUri { get; set; }
+        public List<CachedVideoQuality> qualities { get; set; } = new();
+    }
+
+    sealed class CachedVideoQuality
+    {
+        public CachedVideoQuality(string link, string quality)
+        {
+            this.link = link;
+            this.quality = quality;
+        }
+
+        public string link { get; }
+        public string quality { get; }
     }
     #endregion
 }
