@@ -24,6 +24,7 @@
     <Project Path="Modules/Transcoding/Transcoding.csproj" />
     <Project Path="Modules/WatchTogether/WatchTogether.csproj" />
     <Project Path="Modules/WebLog/WebLog.csproj" />
+    <Project Path="Modules/Telemetry/Telemetry.csproj" />
   </Folder>
   <Folder Name="/Modules/Adult/">
     <Project Path="Modules/Adult/BongaCams/BongaCams.csproj" />
