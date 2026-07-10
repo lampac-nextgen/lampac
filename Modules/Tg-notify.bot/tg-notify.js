@@ -337,7 +337,7 @@
             }
         }, function () {
             Lampa.Noty.show('Ошибка подписки');
-        }, JSON.stringify({ tmdb_id: card.id, title: card.name || card.title || '', voice: voice, season: season, episode: 0, mirage_orid: orid || '', mirage_voice_id: voiceId || 0, voice_episode: 0, collaps_orid: collapsOrid || '', voice_source: voiceSource || '', kp_id: kpId || 0 }),
+        }, JSON.stringify({ tmdb_id: card.id, title: card.name || card.title || '', voice: voice, season: season, episode: 0, mirage_orid: orid || '', mirage_voice_id: voiceId || 0, voice_episode: 0, collaps_orid: collapsOrid || '', voice_source: voiceSource || '', kp_id: (card.kinopoisk_id || card.kp_id || kpId || 0) }),
         { dataType: 'json', contentType: 'application/json' });
     }
 
