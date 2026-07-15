@@ -115,9 +115,57 @@
         };
     }
 
+    function selectAutoAudioTrack(audioTracks) {
+        for (var i = 0; i < audioTracks.length; i++) {
+            var disposition = audioTracks[i] && audioTracks[i].disposition;
+            if (disposition && (disposition.default === 1 || disposition.default === true)) {
+                return audioTracks[i];
+            }
+        }
+
+        var language = String(Lampa.Storage.get('language', 'ru') || 'ru').toLowerCase().split('-')[0];
+        var aliases = {
+            ru: ['ru', 'rus'],
+            en: ['en', 'eng'],
+            uk: ['uk', 'ukr'],
+            be: ['be', 'bel'],
+            bg: ['bg', 'bul'],
+            he: ['he', 'heb'],
+            cs: ['cs', 'ces', 'cze'],
+            ro: ['ro', 'ron', 'rum'],
+            de: ['de', 'deu', 'ger'],
+            fr: ['fr', 'fra', 'fre'],
+            es: ['es', 'spa'],
+            it: ['it', 'ita'],
+            pt: ['pt', 'por'],
+            pl: ['pl', 'pol'],
+            tr: ['tr', 'tur'],
+            ja: ['ja', 'jpn'],
+            ko: ['ko', 'kor'],
+            zh: ['zh', 'zho', 'chi']
+        };
+        var preferred = aliases[language] || (language ? [language] : []);
+
+        for (var j = 0; j < audioTracks.length; j++) {
+            var tags = audioTracks[j] && audioTracks[j].tags ? audioTracks[j].tags : {};
+            var trackLanguage = String(tags.language || '').toLowerCase();
+            if (preferred.indexOf(trackLanguage) !== -1) {
+                return audioTracks[j];
+            }
+        }
+
+        return audioTracks[0];
+    }
+
     function showAudioSelector(data, audioTracks) {
         if (!audioTracks.length) {
             notify('Не удалось найти аудиодорожки для MKV файла');
+            return;
+        }
+
+        var manualSelection = Lampa.Storage.get('transcoding_audio_prompt', false);
+        if (!(manualSelection === true || manualSelection === 'true')) {
+            startTranscoding(data, selectAutoAudioTrack(audioTracks));
             return;
         }
 
@@ -237,6 +285,24 @@
         }
     }
 
+    function registerSettings() {
+        if (window.lampac_transcoding_audio_setting || !Lampa.SettingsApi || !Lampa.SettingsApi.addParam) return;
+        window.lampac_transcoding_audio_setting = true;
+        Lampa.SettingsApi.addParam({
+            component: 'player',
+            param: {
+                name: 'transcoding_audio_prompt',
+                type: 'trigger',
+                values: '',
+                default: false
+            },
+            field: {
+                name: 'Спрашивать аудиодорожку при транскодировании',
+                description: 'Включите для ручного выбора дорожки перед запуском MKV'
+            }
+        });
+    }
+
     function handlePlayerStart(e) {
         if (!isMkvSource(e.data) || e.data.transcoding || /\/transcoding\//i.test(e.data.url)) return;
 
@@ -280,6 +346,7 @@
 
     if (!window.lampac_transcoding_plugin) {
         window.lampac_transcoding_plugin = true;
+        registerSettings();
 		
         Lampa.Player.listener.follow('create', handlePlayerStart);
         Lampa.Player.listener.follow('destroy', handlePlayerDestroy);
