@@ -4,7 +4,7 @@
 # Global ARGs
 ARG DOTNET_VERSION=10.0.10
 ARG DOTNET_SDK_VERSION=10.0.302
-ARG CHROMIUM_VERSION=149.0.7827.196-1~deb13u1
+ARG CHROMIUM_VERSION=150.0.7871.100-1~deb13u1
 
 # Builder image — platform set by buildx
 FROM --platform=$BUILDPLATFORM debian:13-slim AS builder
@@ -99,10 +99,28 @@ EXPOSE 9118
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl \
     && mkdir -p /tmp/chromium && cd /tmp/chromium \
-    && BASE="https://snapshot.debian.org/archive/debian-security/20260625T165532Z/pool/updates/main/c/chromium" \
+    && BASE="https://snapshot.debian.org/archive/debian/20260710T142757Z/pool/main/c/chromium" \
+    && case "$TARGETARCH" in \
+    amd64) \
+    SHA_CHROMIUM=87ce517f9fe47c4dcac35fc314fa4ab87117f2496dc27257de2bba11ef8af610 \
+    SHA_COMMON=f5e636f3535e7fc5c688e2b01554e87755eb4b84fca071d9e47e7670d35d0564 \
+    SHA_SANDBOX=a02bc28af35c9cdbaaafb0affa004fa203cf4508d4c7fa280efdc7c521a380c3 \
+    ;; \
+    arm64) \
+    SHA_CHROMIUM=28cfcb13137ff92affba7495cfe8ddc08b33c008b0fd12f1dc357a2fdbc139a3 \
+    SHA_COMMON=2fcd3948e09dc08c939eeb1bc32e5e99afeb761fe98135d41cfb39675de95810 \
+    SHA_SANDBOX=91f2e4b7de964f2635f4c83a02125303a2932b3b4e0cdfb64c6ba8ec7cfd1b24 \
+    ;; \
+    *) echo "Unsupported TARGETARCH: $TARGETARCH" && exit 1 ;; \
+    esac \
     && for pkg in chromium chromium-common chromium-sandbox; do \
     curl -fSL -o "${pkg}.deb" "${BASE}/${pkg}_${CHROMIUM_VERSION}_${TARGETARCH}.deb"; \
     done \
+    && printf '%s  %s\n' \
+    "$SHA_CHROMIUM" chromium.deb \
+    "$SHA_COMMON" chromium-common.deb \
+    "$SHA_SANDBOX" chromium-sandbox.deb \
+    | sha256sum -c - \
     && apt-get install -y --no-install-recommends ./*.deb \
     && rm -rf /tmp/chromium \
     && apt-get install -y --no-install-recommends \
