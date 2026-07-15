@@ -1,0 +1,17 @@
+{
+  "enable": true,
+  "dynamic": true,
+  "references": [
+    "YoutubeExplode"
+  ],
+  "tree": [
+    "Controllers",
+    "Models",
+    "Providers",
+    "SQL",
+    "Services",
+    "GlobalUsings.cs",
+    "ModInit.cs",
+    "ModuleConf.cs"
+  ]
+}

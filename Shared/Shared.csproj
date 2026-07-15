@@ -45,6 +45,7 @@
     <PackageReference Include="NetVips" Version="3.2.0" />
     <PackageReference Include="NetVips.Native" Version="8.18.4" />
     <PackageReference Include="Microsoft.Extensions.DependencyModel" Version="10.0.7" />
+    <PackageReference Include="YoutubeExplode" Version="6.6.0" />
     <PackageReference Include="YamlDotNet" Version="18.1.0" />
   </ItemGroup>
 
