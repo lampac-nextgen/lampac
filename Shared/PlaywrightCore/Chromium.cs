@@ -134,7 +134,7 @@ public class Chromium : PlaywrightBase, IDisposable
                 Headless = init.Headless,
                 ExecutablePath = executablePath,
                 Args = init.Args,
-                Devtools = init.Devtools
+                //Devtools = init.Devtools
             });
 
             Console.WriteLine("Chromium: LaunchAsync");

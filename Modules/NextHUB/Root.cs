@@ -1,10 +1,14 @@
 ﻿using HtmlAgilityPack;
+using Microsoft.AspNetCore.Http;
 using Microsoft.CodeAnalysis.Scripting;
+using Microsoft.Extensions.Primitives;
 using Microsoft.Playwright;
 using Shared.Services.Pools;
 using Shared.Models.SISI.NextHUB;
 using YamlDotNet.Serialization;
 using Microsoft.Extensions.Caching.Memory;
+using System.Net;
+using System.Net.Sockets;
 
 namespace NextHUB;
 
@@ -43,15 +47,22 @@ public static class Root
 
     public static NxtSettings goInit(string plugin)
     {
-        if (string.IsNullOrEmpty(plugin))
+        if (string.IsNullOrEmpty(plugin) || plugin.Length > 64 ||
+            !Regex.IsMatch(plugin, "\\A[a-z0-9-]+\\z", RegexOptions.IgnoreCase | RegexOptions.CultureInvariant))
             return null;
 
-        plugin = Regex.Replace(plugin, "[^a-z0-9\\-]+", "", RegexOptions.IgnoreCase);
+        if (!string.IsNullOrWhiteSpace(ModInit.conf.sites_enabled))
+        {
+            string[] enabledSites = Regex.Split(ModInit.conf.sites_enabled, "[,;|\\s]+")
+                .Where(i => !string.IsNullOrWhiteSpace(i))
+                .ToArray();
 
-        if (ModInit.conf.sites_enabled != null && !ModInit.conf.sites_enabled.Contains(plugin))
-            return null;
+            if (!enabledSites.Contains(plugin, StringComparer.OrdinalIgnoreCase))
+                return null;
+        }
 
-        if (!File.Exists($"{ModInit.modpath}/sites/{plugin}.yaml"))
+        string siteFile = Path.Combine(ModInit.modpath, "sites", $"{plugin}.yaml");
+        if (!File.Exists(siteFile))
             return null;
 
         var memoryCache = HybridCache.GetMemory();
@@ -68,15 +79,16 @@ public static class Root
                     .Build();
 
                 // Чтение основного YAML-файла
-                string yaml = File.ReadAllText($"{ModInit.modpath}/sites/{plugin}.yaml");
+                string yaml = File.ReadAllText(siteFile);
                 var target = deserializer.Deserialize<Dictionary<object, object>>(yaml);
 
                 foreach (string y in new string[] { "_", plugin })
                 {
-                    if (File.Exists($"{ModInit.modpath}/override/{y}.yaml"))
+                    string overrideFile = Path.Combine(ModInit.modpath, "override", $"{y}.yaml");
+                    if (File.Exists(overrideFile))
                     {
                         // Чтение пользовательского YAML-файла
-                        string myYaml = File.ReadAllText($"{ModInit.modpath}/override/{y}.yaml");
+                        string myYaml = File.ReadAllText(overrideFile);
                         var mySource = deserializer.Deserialize<Dictionary<object, object>>(myYaml);
 
                         // Объединение словарей
@@ -131,6 +143,131 @@ public static class Root
     }
 
 
+    #region request security
+    public static (IQueryCollection query, string cacheKey) getEvalQuery(IQueryCollection requestQuery, NxtSettings init)
+    {
+        if (requestQuery == null || requestQuery.Count == 0)
+            return (QueryCollection.Empty, string.Empty);
+
+        var allowedKeys = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (init.menu?.customs != null)
+        {
+            foreach (var custom in init.menu.customs)
+            {
+                if (!string.IsNullOrWhiteSpace(custom.arg))
+                    allowedKeys.Add(custom.arg);
+            }
+        }
+
+        void addArgs(ContentParseSettings parse)
+        {
+            if (parse?.args == null)
+                return;
+
+            foreach (var arg in parse.args)
+            {
+                if (!string.IsNullOrWhiteSpace(arg.name))
+                    allowedKeys.Add(arg.name);
+            }
+        }
+
+        addArgs(init.contentParse);
+        addArgs(init.list?.contentParse);
+        addArgs(init.search?.contentParse);
+        addArgs(init.model?.contentParse);
+        addArgs(init.view?.relatedParse);
+
+        if (allowedKeys.Count == 0)
+            return (QueryCollection.Empty, string.Empty);
+
+        var values = new Dictionary<string, StringValues>(StringComparer.OrdinalIgnoreCase);
+        var hash = Fnv1a.Empty;
+
+        foreach (string key in allowedKeys.OrderBy(i => i, StringComparer.Ordinal))
+        {
+            if (!requestQuery.TryGetValue(key, out StringValues value) || StringValues.IsNullOrEmpty(value))
+                continue;
+
+            values[key] = value;
+            Fnv1a.Append(ref hash, key);
+
+            foreach (string item in value)
+                Fnv1a.Append(ref hash, item);
+        }
+
+        if (values.Count == 0)
+            return (QueryCollection.Empty, string.Empty);
+
+        return (new QueryCollection(values), $":{Fnv1a.Base64Url(hash)}");
+    }
+
+    public static bool isSafeHttpUrl(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out Uri uri) ||
+            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
+            !string.IsNullOrEmpty(uri.UserInfo))
+        {
+            return false;
+        }
+
+        string hostname;
+        try
+        {
+            hostname = uri.IdnHost.TrimEnd('.');
+        }
+        catch (UriFormatException)
+        {
+            return false;
+        }
+
+        if (string.IsNullOrEmpty(hostname) ||
+            hostname.Equals("localhost", StringComparison.OrdinalIgnoreCase) ||
+            hostname.EndsWith(".localhost", StringComparison.OrdinalIgnoreCase) ||
+            hostname.EndsWith(".local", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        return !IPAddress.TryParse(hostname, out IPAddress address) || !isPrivateAddress(address);
+    }
+
+    static bool isPrivateAddress(IPAddress address)
+    {
+        if (address.IsIPv4MappedToIPv6)
+            address = address.MapToIPv4();
+
+        if (IPAddress.IsLoopback(address))
+            return true;
+
+        byte[] bytes = address.GetAddressBytes();
+        if (address.AddressFamily == AddressFamily.InterNetwork)
+        {
+            byte a = bytes[0];
+            byte b = bytes[1];
+
+            return a == 0 || a == 10 || a == 127 ||
+                   (a == 100 && b >= 64 && b <= 127) ||
+                   (a == 169 && b == 254) ||
+                   (a == 172 && b >= 16 && b <= 31) ||
+                   (a == 192 && (b == 0 || b == 168)) ||
+                   (a == 198 && (b == 18 || b == 19)) ||
+                   a >= 224;
+        }
+
+        if (address.AddressFamily != AddressFamily.InterNetworkV6)
+            return true;
+
+        return address.Equals(IPAddress.IPv6Any) ||
+               address.Equals(IPAddress.IPv6None) ||
+               address.IsIPv6LinkLocal ||
+               address.IsIPv6SiteLocal ||
+               address.IsIPv6Multicast ||
+               (bytes[0] & 0xfe) == 0xfc;
+    }
+    #endregion
+
+
     static string changeFileId(string plugin, IMemoryCache memoryCache)
     {
         if (CoreInit.conf.lowMemoryMode)
@@ -142,12 +279,13 @@ public static class Root
             var sb = StringBuilderPool.ThreadInstance;
 
             sb.Append(CoreInit.conf.guid);
-            sb.Append(File.GetLastWriteTimeUtc($"{ModInit.modpath}/sites/{plugin}.yaml").ToString());
+            sb.Append(File.GetLastWriteTimeUtc(Path.Combine(ModInit.modpath, "sites", $"{plugin}.yaml")).ToString());
 
             foreach (string y in new string[] { "_", plugin })
             {
-                if (File.Exists($"{ModInit.modpath}/override/{y}.yaml"))
-                    sb.Append(File.GetLastWriteTimeUtc($"{ModInit.modpath}/override/{y}.yaml").ToString());
+                string overrideFile = Path.Combine(ModInit.modpath, "override", $"{y}.yaml");
+                if (File.Exists(overrideFile))
+                    sb.Append(File.GetLastWriteTimeUtc(overrideFile).ToString());
             }
 
             fileKeyId = sb.ToString();

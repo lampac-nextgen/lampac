@@ -754,13 +754,38 @@ namespace TelegramBot
             try
             {
                 var token = !string.IsNullOrEmpty(Config.lampac_token) ? $"&token={Config.lampac_token}" : "";
+
+                // Помощник: запрос с проглатыванием 503/500/ошибок (возвращает null вместо исключения)
+                async Task<string> TryGet(string u)
+                {
+                    try { return await httpFast.GetStringAsync(u); }
+                    catch { return null; }
+                }
+
                 var url = $"{Config.lampac_host}/lite/mirage-search?rjson=true&title={Uri.EscapeDataString(title)}&year={year}{token}";
-                var body = await httpFast.GetStringAsync(url);
+                var body = await TryGet(url);
+
                 if (string.IsNullOrEmpty(body) || body == "null")
                 {
-                    // Fallback: без rjson
+                    // Fallback 1: без rjson
                     url = $"{Config.lampac_host}/lite/mirage-search?title={Uri.EscapeDataString(title)}&year={year}{token}";
-                    body = await httpFast.GetStringAsync(url);
+                    body = await TryGet(url);
+                }
+
+                if (string.IsNullOrEmpty(body) || body == "null")
+                {
+                    // Fallback 2: очищенное название. Mirage отдаёт 503 на цифрах/апострофах/дефисах в запросе.
+                    // "Люди Икс '97" -> "Люди Икс"; "Уидоус-Бэй" -> "Уидоус Бэй"
+                    var simple = Regex.Replace(title, @"[\u2018\u2019\u02BC'`]", "");
+                    simple = Regex.Replace(simple, @"[-\u2013\u2014]", " ");
+                    simple = Regex.Replace(simple, @"\d+", "");
+                    simple = Regex.Replace(simple, @"\s+", " ").Trim();
+                    if (simple.Length >= 3 && !simple.Equals(title, StringComparison.OrdinalIgnoreCase))
+                    {
+                        Console.WriteLine($"[TelegramBot] Mirage fallback simplified: '{title}' -> '{simple}'");
+                        url = $"{Config.lampac_host}/lite/mirage-search?rjson=true&title={Uri.EscapeDataString(simple)}&year={year}{token}";
+                        body = await TryGet(url);
+                    }
                 }
 
                 if (string.IsNullOrEmpty(body) || body == "null") return result;
@@ -999,7 +1024,19 @@ namespace TelegramBot
             // 2) Поиск по названию через kinopoiskapiunofficial.tech (нужен ключ kp_api_key)
             if (!string.IsNullOrEmpty(Config.kp_api_key))
             {
-                var kp = await SearchKpByTitle(sub.title, 0);
+                int year = 0;
+                string originalTitle = null;
+                try
+                {
+                    var show = JObject.Parse(await http.GetStringAsync(
+                        $"https://api.themoviedb.org/3/tv/{sub.tmdb_id}?api_key={Config.tmdb_api_key}&language={Config.tmdb_lang}"));
+                    originalTitle = show.Value<string>("original_name");
+                    var firstAir = show.Value<string>("first_air_date") ?? "";
+                    if (firstAir.Length >= 4) int.TryParse(firstAir.Substring(0, 4), out year);
+                }
+                catch (Exception ex) { Console.WriteLine($"[TelegramBot] GetKpId TMDB info error: {ex.Message}"); }
+
+                var kp = await SearchKpByTitle(sub.title, year, originalTitle);
                 if (kp > 0)
                 {
                     sub.kp_id = kp;
@@ -1014,50 +1051,81 @@ namespace TelegramBot
         }
 
         // Поиск kinopoisk_id по названию. Точное совпадение nameRu/nameEn + год + type=TV_SERIES имеет приоритет.
-        static async Task<int> SearchKpByTitle(string title, int year)
+        // Нормализация названия для сравнения: убирает апострофы (обычные и типографские),
+        // приводит дефисы/двоеточия/точки к пробелам, схлопывает пробелы, lower-case.
+        static string NormTitle(string s)
+        {
+            if (string.IsNullOrEmpty(s)) return "";
+            s = Regex.Replace(s, @"[\u2018\u2019\u02BC'`]", "");
+            s = Regex.Replace(s, @"[-\u2013\u2014:.,]", " ");
+            s = Regex.Replace(s, @"\s+", " ").Trim().ToLowerInvariant();
+            return s;
+        }
+
+        // Поиск kinopoisk_id по названию. Сопоставление нормализованное ('97 vs '97, регистр).
+        // Приоритет: имя+TV_SERIES+год -> имя+TV_SERIES -> 0. Мусорный fallback (первый попавшийся) убран:
+        // лучше пропустить VideoHub, чем взять чужой фильм.
+        static async Task<int> SearchKpByTitle(string title, int year, string originalTitle = null)
         {
             if (string.IsNullOrEmpty(Config.kp_api_key) || string.IsNullOrEmpty(title)) return 0;
 
-            var cacheKey = $"kp_search:{title}:{year}";
+            var cacheKey = $"kp_search:{title}:{originalTitle}:{year}";
             var cached = GetCache<string>(cacheKey);
             if (cached != null) return int.TryParse(cached, out var c) ? c : 0;
 
+            var queries = new List<string> { title };
+            if (!string.IsNullOrEmpty(originalTitle) && !originalTitle.Equals(title, StringComparison.OrdinalIgnoreCase))
+                queries.Add(originalTitle);
+
+            var wantRu = NormTitle(title);
+            var wantEn = NormTitle(originalTitle);
+
             try
             {
-                var url = $"https://kinopoiskapiunofficial.tech/api/v2.1/films/search-by-keyword?keyword={Uri.EscapeDataString(title)}";
-                using var req = new HttpRequestMessage(HttpMethod.Get, url);
-                req.Headers.Add("X-API-KEY", Config.kp_api_key);
-                req.Headers.Add("accept", "application/json");
+                int exactSeriesYear = 0, exactSeries = 0, exactAny = 0;
 
-                var resp = await httpFast.SendAsync(req);
-                var body = await resp.Content.ReadAsStringAsync();
-                if (string.IsNullOrEmpty(body)) return 0;
-
-                var json = JObject.Parse(body);
-                var films = json["films"] as JArray;
-                if (films == null || films.Count == 0) return 0;
-
-                int exactByYear = 0, firstSeries = 0, firstAny = 0;
-                foreach (var f in films)
+                foreach (var q in queries)
                 {
-                    var id = f.Value<int?>("filmId") ?? 0;
-                    if (id <= 0) continue;
-                    var nameRu = (f.Value<string>("nameRu") ?? "").Trim();
-                    var nameEn = (f.Value<string>("nameEn") ?? "").Trim();
-                    var type = f.Value<string>("type") ?? "";
-                    int.TryParse(f.Value<string>("year"), out var fy);
+                    var url = $"https://kinopoiskapiunofficial.tech/api/v2.1/films/search-by-keyword?keyword={Uri.EscapeDataString(q)}";
+                    using var req = new HttpRequestMessage(HttpMethod.Get, url);
+                    req.Headers.Add("X-API-KEY", Config.kp_api_key);
+                    req.Headers.Add("accept", "application/json");
 
-                    bool nameMatch = nameRu.Equals(title, StringComparison.OrdinalIgnoreCase)
-                                  || nameEn.Equals(title, StringComparison.OrdinalIgnoreCase);
-                    bool isSeries = type == "TV_SERIES";
+                    var resp = await httpFast.SendAsync(req);
+                    var body = await resp.Content.ReadAsStringAsync();
+                    if (string.IsNullOrEmpty(body)) continue;
 
-                    if (firstAny == 0) firstAny = id;
-                    if (isSeries && firstSeries == 0) firstSeries = id;
-                    if (nameMatch && isSeries && (year == 0 || fy == year) && exactByYear == 0)
-                        exactByYear = id;
+                    var films = JObject.Parse(body)["films"] as JArray;
+                    if (films == null) continue;
+
+                    foreach (var f in films)
+                    {
+                        var id = f.Value<int?>("filmId") ?? 0;
+                        if (id <= 0) continue;
+                        var nRu = NormTitle(f.Value<string>("nameRu"));
+                        var nEn = NormTitle(f.Value<string>("nameEn"));
+                        int.TryParse(f.Value<string>("year"), out var fy);
+                        bool isSeries = (f.Value<string>("type") ?? "") == "TV_SERIES";
+
+                        bool nameMatch =
+                            (wantRu.Length > 0 && (nRu == wantRu || (nRu.Length > 3 && wantRu.Length > 3 && (nRu.Contains(wantRu) || wantRu.Contains(nRu))))) ||
+                            (wantEn.Length > 0 && (nEn == wantEn || (nEn.Length > 3 && wantEn.Length > 3 && (nEn.Contains(wantEn) || wantEn.Contains(nEn)))));
+
+                        if (!nameMatch) continue;
+
+                        if (isSeries && year > 0 && fy == year && exactSeriesYear == 0) exactSeriesYear = id;
+                        if (isSeries && exactSeries == 0) exactSeries = id;
+                        if (exactAny == 0) exactAny = id;
+                    }
+
+                    if (exactSeriesYear != 0) break;
                 }
 
-                int result = exactByYear != 0 ? exactByYear : (firstSeries != 0 ? firstSeries : firstAny);
+                int result = exactSeriesYear != 0 ? exactSeriesYear
+                           : exactSeries != 0 ? exactSeries
+                           : exactAny; // 0, если имя нигде не совпало → VideoHub пропустится
+
+                Console.WriteLine($"[TelegramBot] SearchKpByTitle: '{title}' (orig='{originalTitle}') year={year} -> kp={result}");
                 SetCache(cacheKey, result.ToString());
                 return result;
             }

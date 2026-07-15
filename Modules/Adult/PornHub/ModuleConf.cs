@@ -10,6 +10,7 @@ public class ModuleConf
     {
         httpversion = 2,
         displayindex = 11,
+        streamproxy_preview = true,
         rchstreamproxy = "web,cors",
         headers = HeadersModel.Init(
             Http.defaultFullHeaders,

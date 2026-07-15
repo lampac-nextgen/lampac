@@ -70,6 +70,7 @@
       Exclude="..\Modules\**\bin\**;..\Modules\**\obj\**;..\Modules\**\Properties\**"
       CopyToPublishDirectory="Always" Visible="false"
       TargetPath="module\%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="..\Modules\GStreamer\gst-libs\win-x86_64\bin\**\*" CopyToPublishDirectory="Always" Visible="false" TargetPath="module\GStreamer\gst-libs\win-x86_64\bin\%(RecursiveDir)%(Filename)%(Extension)" />
     <None Include="..\TestModules\**\*"
       Exclude="..\TestModules\**\bin\**;..\TestModules\**\obj\**;..\TestModules\**\Properties\**"
       CopyToPublishDirectory="Always" Visible="false"

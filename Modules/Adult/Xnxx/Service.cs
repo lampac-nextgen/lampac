@@ -40,18 +40,19 @@ public static class XnxxTo
             {
                 string img = row.Match("data-src=\"([^\"]+)\"").Replace(".THUMBNUM.", ".1.") ?? string.Empty;
 
-                // https://cdn77-pic.xvideos-cdn.com/videos/thumbs169ll/5a/6d/4f/5a6d4f718214eebf73225ec96b670f62-2/5a6d4f718214eebf73225ec96b670f62.27.jpg
-                // https://cdn77-pic.xvideos-cdn.com/videos/videopreview/5a/6d/4f/5a6d4f718214eebf73225ec96b670f62_169.mp4
-                string preview = Regex.Replace(img, "/thumbs[^/]+/", "/videopreview/") ?? string.Empty;
-                preview = Regex.Replace(preview, "/[^/]+$", "");
-                preview = Regex.Replace(preview, "-[0-9]+$", "");
+                string preview =
+                    row.Match("\"previewVideo\":\"([^\"]+)\"")?.Replace("\\", "") ??
+                    row.Match("data-pvv=\"([^\"]+)\"");
+
+                if (string.IsNullOrEmpty(preview))
+                    preview = Regex.Replace(img, "/[^/]+$", "/preview.mp4");
 
                 var pl = new PlaylistItem()
                 {
                     name = g[2].Value,
                     video = $"{route}?uri={g[1].Value}",
                     picture = img,
-                    preview = preview + "_169.mp4",
+                    preview = preview,
                     time = row.Match("</span>([^<]+)<span class=\"video-hd\">", trim: true),
                     quality = row.Match("<span class=\"superfluous\"> - </span>([^<]+)</span>"),
                     json = true,

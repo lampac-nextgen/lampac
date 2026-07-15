@@ -116,7 +116,11 @@ public static class GSProbe
             process.StartInfo = new ProcessStartInfo
             {
                 FileName = OperatingSystem.IsWindows()
-                    ? Path.Combine(ModInit.conf.PATH, "bin", "gst-discoverer-1.0.exe")
+                    ? Path.Combine(
+                        ModInit.gstRootPath ?? ModInit.conf.PATH,
+                        "bin",
+                        "gst-discoverer-1.0.exe"
+                    )
                     : "gst-discoverer-1.0",
 
                 UseShellExecute = false,
@@ -292,8 +296,123 @@ public static class GSProbe
         };
     }
 
+    static void ParseVideoMetadata(TrackInfo track, string line)
+    {
+        if (!string.Equals(track.Type, "video", StringComparison.OrdinalIgnoreCase) || string.IsNullOrWhiteSpace(line))
+            return;
+
+        track.Colorimetry ??= ReadMetadataField(line, "colorimetry");
+        track.Transfer ??= ReadMetadataField(line, "transfer") ??
+            ReadMetadataField(line, "transfer-characteristics") ??
+            ReadMetadataField(line, "transfer-function");
+        track.Primaries ??= ReadMetadataField(line, "primaries") ?? ReadMetadataField(line, "color-primaries");
+        track.Matrix ??= ReadMetadataField(line, "matrix") ?? ReadMetadataField(line, "matrix-coefficients");
+        track.BitDepth = track.BitDepth > 0 ? track.BitDepth :
+            ReadMetadataInt(line, "bit-depth-luma") ??
+            ReadMetadataInt(line, "bit-depth") ??
+            ReadMetadataInt(line, "bits-per-component") ?? 0;
+
+        if (track.BitDepth == 0 && Regex.IsMatch(line, @"\b(?:P010|10LE|10BE)\b", RegexOptions.IgnoreCase))
+            track.BitDepth = 10;
+        else if (track.BitDepth == 0 && Regex.IsMatch(line, @"\b(?:P012|12LE|12BE)\b", RegexOptions.IgnoreCase))
+            track.BitDepth = 12;
+
+        track.HasMasteringDisplayInfo |= HasMeaningfulMetadataField(line, "mastering-display-info") ||
+            HasMeaningfulMetadataField(line, "mastering-display-metadata");
+        track.HasContentLightLevel |= HasMeaningfulMetadataField(line, "content-light-level") ||
+            HasMeaningfulMetadataField(line, "max-cll") ||
+            HasMeaningfulMetadataField(line, "max-fall");
+
+        if (Regex.IsMatch(line, @"\b(?:dvhe|dvh1|dvcC|dvvC)\b|dolby[\s-]*vision", RegexOptions.IgnoreCase))
+        {
+            track.IsDolbyVision = true;
+            var match = Regex.Match(line,
+                @"(?:dv[\s_-]*profile|profile)\s*(?:=|:)\s*(?:\([^)]*\))?\s*(?<value>\d+)",
+                RegexOptions.IgnoreCase);
+            if (match.Success && int.TryParse(match.Groups["value"].Value, out int profile))
+                track.DolbyVisionProfile = profile;
+        }
+
+        ClassifyVideoTransfer(track);
+    }
+
+    static void ClassifyVideoTransfer(TrackInfo track)
+    {
+        string value = ((track.Transfer ?? "") + " " + (track.Colorimetry ?? "")).Trim().ToLowerInvariant();
+        if (MatchesTransfer(value, 16, "pq", "smpte2084", "smpte-st-2084", "st2084", "bt2100-pq"))
+            track.VideoTransfer = VideoTransfer.Pq;
+        else if (MatchesTransfer(value, 18, "hlg", "arib-std-b67", "arib-std-b-67", "bt2100-hlg"))
+            track.VideoTransfer = VideoTransfer.Hlg;
+        else if (MatchesTransfer(value, 1, "bt709", "bt601", "smpte170m", "smpte240m", "gamma22", "gamma28", "srgb") ||
+            IsKnownSdrNumericTransfer(value))
+            track.VideoTransfer = VideoTransfer.Sdr;
+        else
+            track.VideoTransfer = VideoTransfer.Unknown;
+    }
+
+    static bool MatchesTransfer(string value, int numericValue, params string[] names)
+    {
+        foreach (string name in names)
+        {
+            if (Regex.IsMatch(value,
+                @"(?:^|[^a-z0-9])" + Regex.Escape(name) + @"(?:$|[^a-z0-9])",
+                RegexOptions.IgnoreCase))
+                return true;
+        }
+
+        return Regex.IsMatch(value, @"(?:^|[^0-9])" + numericValue + @"(?:$|[^0-9])");
+    }
+
+    static bool IsKnownSdrNumericTransfer(string value)
+    {
+        foreach (int transfer in new[] { 4, 5, 6, 7, 8, 13, 14, 15 })
+        {
+            if (Regex.IsMatch(value, @"(?:^|[^0-9])" + transfer + @"(?:$|[^0-9])"))
+                return true;
+        }
+        return false;
+    }
+
+    static string ReadMetadataField(string line, string name)
+    {
+        string key = Regex.Escape(name);
+        var caps = Regex.Match(line,
+            @"(?:^|[,\s])" + key + @"\s*=\s*(?:\([^)]*\))?\s*(?:[""'](?<quoted>[^""']+)[""']|(?<plain>[^,\s]+))",
+            RegexOptions.IgnoreCase);
+        if (caps.Success)
+            return (caps.Groups["quoted"].Success ? caps.Groups["quoted"].Value : caps.Groups["plain"].Value).Trim();
+
+        var label = Regex.Match(line,
+            @"^\s*" + key + @"\s*:\s*(?<value>.+?)\s*$",
+            RegexOptions.IgnoreCase);
+        return label.Success ? label.Groups["value"].Value.Trim().Trim('"', '\'') : null;
+    }
+
+    static int? ReadMetadataInt(string line, string name)
+    {
+        string value = ReadMetadataField(line, name);
+        if (value == null)
+            return null;
+
+        var match = Regex.Match(value, @"\d+");
+        return match.Success && int.TryParse(match.Value, out int result) ? result : null;
+    }
+
+    static bool HasMeaningfulMetadataField(string line, string name)
+    {
+        string value = ReadMetadataField(line, name);
+        if (string.IsNullOrWhiteSpace(value))
+            return line.IndexOf(name, StringComparison.OrdinalIgnoreCase) >= 0;
+
+        return !string.Equals(value, "none", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(value, "null", StringComparison.OrdinalIgnoreCase) &&
+            !string.Equals(value, "false", StringComparison.OrdinalIgnoreCase);
+    }
+
     static void ParseTrackLine(TrackInfo track, string line)
     {
+        ParseVideoMetadata(track, line);
+
         if (line.StartsWith("Width:", StringComparison.OrdinalIgnoreCase))
         {
             track.Width = ParseIntAfterColon(line);

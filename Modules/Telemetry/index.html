@@ -1,0 +1,2337 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+    <head>
+        <meta charset="utf-8" />
+        <meta
+            name="viewport"
+            content="width=device-width, initial-scale=1, viewport-fit=cover"
+        />
+        <meta name="theme-color" content="#0c0e12" id="metaTheme" />
+        <title>Telemetry — Lampac</title>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+        <link
+            href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap"
+            rel="stylesheet"
+        />
+        <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <style>
+            *,
+            *::before,
+            *::after {
+                box-sizing: border-box;
+                margin: 0;
+                padding: 0;
+            }
+
+            :root {
+                --font-body: "Inter", system-ui, -apple-system, sans-serif;
+                --font-mono:
+                    "JetBrains Mono", ui-monospace, SFMono-Regular, Consolas,
+                    monospace;
+                --text-xs: 0.6875rem;
+                --text-sm: 0.8125rem;
+                --text-base: 0.875rem;
+                --text-lg: 1rem;
+                --text-xl: 1.25rem;
+                --sp-1: 0.25rem;
+                --sp-2: 0.5rem;
+                --sp-3: 0.75rem;
+                --sp-4: 1rem;
+                --sp-5: 1.25rem;
+                --sp-6: 1.5rem;
+                --sp-8: 2rem;
+                --r-sm: 6px;
+                --r-md: 8px;
+                --r-lg: 12px;
+                --r-xl: 16px;
+                --ease: cubic-bezier(0.16, 1, 0.3, 1);
+                --dur: 180ms;
+            }
+
+            [data-theme="dark"] {
+                --bg: #0c0e12;
+                --surface: #13161d;
+                --surface-2: #1a1e28;
+                --surface-3: #222733;
+                --border: #2a3040;
+                --border-subtle: rgba(255, 255, 255, 0.06);
+                --text: #e2e6ef;
+                --text-muted: #7c849a;
+                --text-faint: #4d5568;
+                --accent: #3ec9d1;
+                --accent-soft: #2ea8b0;
+                --accent-dim: rgba(62, 201, 209, 0.12);
+                --accent-hover: rgba(62, 201, 209, 0.22);
+                --ok: #4ade80;
+                --ok-dim: rgba(74, 222, 128, 0.12);
+                --err: #f87171;
+                --err-dim: rgba(248, 113, 113, 0.12);
+                --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3);
+                --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.35);
+                --overlay: rgba(0, 0, 0, 0.6);
+            }
+
+            [data-theme="light"] {
+                --bg: #f4f5f8;
+                --surface: #ffffff;
+                --surface-2: #f0f1f5;
+                --surface-3: #e8eaf0;
+                --border: #d4d8e3;
+                --border-subtle: rgba(0, 0, 0, 0.06);
+                --text: #1a1e28;
+                --text-muted: #6b7280;
+                --text-faint: #9ca3af;
+                --accent: #0d9499;
+                --accent-soft: #0b7d82;
+                --accent-dim: rgba(13, 148, 153, 0.1);
+                --accent-hover: rgba(13, 148, 153, 0.18);
+                --ok: #16a34a;
+                --ok-dim: rgba(22, 163, 74, 0.1);
+                --err: #dc2626;
+                --err-dim: rgba(220, 38, 38, 0.1);
+                --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.06);
+                --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.08);
+                --overlay: rgba(0, 0, 0, 0.3);
+            }
+
+            html,
+            body {
+                height: 100%;
+            }
+            body {
+                font-family: var(--font-body);
+                font-size: var(--text-base);
+                color: var(--text);
+                background: var(--bg);
+                line-height: 1.5;
+                -webkit-font-smoothing: antialiased;
+            }
+            .app {
+                display: flex;
+                flex-direction: column;
+                min-height: 100dvh;
+            }
+            .app-chrome {
+                display: flex;
+                flex-direction: column;
+                align-items: stretch;
+                flex-shrink: 0;
+                z-index: 35;
+                background: var(--surface);
+            }
+
+            .topbar {
+                display: flex;
+                align-items: center;
+                gap: var(--sp-4);
+                padding: var(--sp-3) var(--sp-6);
+                min-height: 52px;
+                background: var(--surface);
+                border-bottom: 1px solid var(--border);
+                z-index: 30;
+                flex-shrink: 0;
+                flex-wrap: wrap;
+            }
+            .topbar-logo {
+                display: flex;
+                align-items: center;
+                gap: var(--sp-2);
+                font-weight: 700;
+                font-size: var(--text-lg);
+                letter-spacing: -0.02em;
+                color: var(--text);
+                flex-shrink: 0;
+                white-space: nowrap;
+            }
+            .topbar-logo span {
+                font-weight: 400;
+                color: var(--text-muted);
+                margin-left: 2px;
+            }
+            .topbar-divider {
+                width: 1px;
+                height: 24px;
+                background: var(--border);
+                flex-shrink: 0;
+            }
+            .topbar-app-nav {
+                display: flex;
+                align-items: center;
+                gap: var(--sp-2);
+                flex-shrink: 0;
+            }
+            .topbar-app-nav a {
+                font: inherit;
+                font-size: var(--text-xs);
+                font-weight: 600;
+                padding: 6px 12px;
+                border-radius: var(--r-md);
+                border: 1px solid var(--border);
+                background: var(--surface-2);
+                color: var(--text-muted);
+                text-decoration: none;
+                white-space: nowrap;
+                display: inline-flex;
+                align-items: center;
+                justify-content: center;
+                min-height: 34px;
+                min-width: 5.75rem;
+                box-sizing: border-box;
+                transition: all var(--dur) var(--ease);
+            }
+            .topbar-app-nav a:hover {
+                color: var(--text);
+                background: var(--surface-3);
+            }
+            .topbar-app-nav a[aria-current="page"] {
+                background: var(--surface);
+                color: var(--accent);
+                border-color: var(--accent);
+                box-shadow: var(--shadow-sm);
+            }
+            .topbar-spacer {
+                flex: 1;
+                min-width: var(--sp-2);
+            }
+            .topbar-actions {
+                display: flex;
+                align-items: center;
+                gap: var(--sp-2);
+                flex-shrink: 0;
+            }
+
+            .btn {
+                font: inherit;
+                font-size: var(--text-xs);
+                font-weight: 600;
+                padding: 6px 14px;
+                border-radius: var(--r-md);
+                border: 1px solid var(--accent);
+                background: var(--accent-dim);
+                color: var(--accent);
+                cursor: pointer;
+                transition: all var(--dur) var(--ease);
+                display: inline-flex;
+                align-items: center;
+                gap: var(--sp-2);
+                white-space: nowrap;
+                min-height: 34px;
+            }
+            .btn-icon {
+                width: 34px;
+                height: 34px;
+                min-width: 34px;
+                padding: 0;
+                justify-content: center;
+                border-color: var(--border);
+                background: var(--surface-2);
+                color: var(--text-muted);
+            }
+            .btn:hover {
+                background: var(--accent-hover);
+                transform: translateY(-1px);
+                box-shadow: var(--shadow-sm);
+            }
+            .btn-icon:hover {
+                color: var(--text);
+                background: var(--surface-3);
+            }
+            .btn-primary {
+                background: var(--accent);
+                color: #fff;
+                border-color: var(--accent);
+            }
+            .btn-primary:hover {
+                background: var(--accent-soft);
+                border-color: var(--accent-soft);
+            }
+            .btn-danger {
+                background: var(--err-dim);
+                color: var(--err);
+                border-color: var(--err);
+            }
+            .btn-danger:hover {
+                background: rgba(248, 113, 113, 0.2);
+            }
+
+            .main {
+                flex: 1;
+                min-height: 0;
+                overflow-y: auto;
+                padding: var(--sp-4) var(--sp-6) var(--sp-8);
+                display: flex;
+                flex-direction: column;
+                gap: var(--sp-4);
+            }
+            .grid {
+                display: grid;
+                grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+                gap: var(--sp-4);
+            }
+            .card {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: var(--r-lg);
+                padding: var(--sp-4);
+                box-shadow: var(--shadow-sm);
+                display: flex;
+                flex-direction: column;
+                gap: var(--sp-2);
+            }
+            .card-title {
+                font-size: var(--text-xs);
+                font-weight: 600;
+                color: var(--text-muted);
+                text-transform: uppercase;
+                letter-spacing: 0.05em;
+            }
+            .card-value {
+                font-size: var(--text-xl);
+                font-weight: 700;
+                color: var(--text);
+            }
+
+            .chart-container {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: var(--r-lg);
+                padding: var(--sp-4);
+                box-shadow: var(--shadow-sm);
+                height: 350px;
+            }
+            .table-container {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: var(--r-lg);
+                box-shadow: var(--shadow-sm);
+                overflow: hidden;
+                overflow-x: auto;
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                text-align: left;
+            }
+            th {
+                font-size: var(--text-xs);
+                font-weight: 600;
+                color: var(--text-muted);
+                padding: var(--sp-3) var(--sp-4);
+                border-bottom: 1px solid var(--border);
+                background: var(--surface-2);
+                white-space: nowrap;
+            }
+            td {
+                font-size: var(--text-sm);
+                padding: var(--sp-3) var(--sp-4);
+                border-bottom: 1px solid var(--border-subtle);
+                color: var(--text);
+            }
+            tr:last-child td {
+                border-bottom: none;
+            }
+            tr:hover td {
+                background: var(--surface-2);
+            }
+
+            .badge {
+                display: inline-flex;
+                align-items: center;
+                padding: 2px 6px;
+                border-radius: var(--r-sm);
+                font-size: var(--text-xs);
+                font-weight: 600;
+                font-family: var(--font-mono);
+                background: var(--surface-3);
+                color: var(--text-faint);
+            }
+            .badge.success {
+                background: var(--ok-dim);
+                color: var(--ok);
+                border: 1px solid rgba(74, 222, 128, 0.2);
+            }
+            .badge.error {
+                background: var(--err-dim);
+                color: var(--err);
+                border: 1px solid rgba(248, 113, 113, 0.2);
+            }
+
+            .filter-bar {
+                display: flex;
+                gap: var(--sp-2);
+                align-items: center;
+                flex-wrap: wrap;
+                background: var(--surface);
+                padding: var(--sp-3);
+                border-radius: var(--r-lg);
+                border: 1px solid var(--border);
+            }
+            .input {
+                font-family: var(--font-mono);
+                font-size: var(--text-sm);
+                padding: 6px 12px;
+                border-radius: var(--r-md);
+                border: 1px solid var(--border);
+                background: var(--surface-2);
+                color: var(--text);
+                outline: none;
+                transition: all var(--dur) var(--ease);
+                min-width: 150px;
+                height: 34px;
+            }
+            .input:focus {
+                border-color: var(--accent);
+                background: var(--surface);
+            }
+
+            /* Modals */
+            .modal-overlay {
+                position: fixed;
+                inset: 0;
+                background: var(--overlay);
+                z-index: 100;
+                display: none;
+                align-items: center;
+                justify-content: center;
+                backdrop-filter: blur(2px);
+            }
+            .modal {
+                background: var(--surface);
+                border: 1px solid var(--border);
+                border-radius: var(--r-lg);
+                width: 100%;
+                max-width: 500px;
+                max-height: 90vh;
+                overflow-y: auto;
+                display: flex;
+                flex-direction: column;
+                box-shadow: var(--shadow-md);
+            }
+            .modal-header {
+                padding: var(--sp-4);
+                border-bottom: 1px solid var(--border);
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                font-weight: 600;
+                font-size: var(--text-lg);
+            }
+            .modal-body {
+                padding: var(--sp-4);
+                display: flex;
+                flex-direction: column;
+                gap: var(--sp-3);
+            }
+            .modal-footer {
+                padding: var(--sp-4);
+                border-top: 1px solid var(--border);
+                display: flex;
+                justify-content: flex-end;
+                gap: var(--sp-2);
+            }
+
+            .form-group {
+                display: flex;
+                flex-direction: column;
+                gap: 4px;
+            }
+            .form-group label {
+                font-size: var(--text-xs);
+                color: var(--text-muted);
+                font-weight: 600;
+            }
+            .form-group textarea,
+            .form-group input {
+                font-family: var(--font-mono);
+                font-size: var(--text-sm);
+                padding: 8px;
+                border-radius: var(--r-md);
+                border: 1px solid var(--border);
+                background: var(--surface-2);
+                color: var(--text);
+                outline: none;
+                resize: vertical;
+                min-height: 60px;
+            }
+            .form-group textarea:focus,
+            .form-group input:focus {
+                border-color: var(--accent);
+            }
+
+            .clickable {
+                cursor: pointer;
+                color: var(--accent);
+                text-decoration: underline;
+                text-decoration-color: var(--accent-dim);
+                text-underline-offset: 3px;
+            }
+            .clickable:hover {
+                color: var(--accent-soft);
+            }
+        </style>
+    </head>
+    <body>
+        <div class="app">
+            <div class="app-chrome">
+                <div class="topbar">
+                    <div class="topbar-logo">
+                        <svg
+                            width="28"
+                            height="28"
+                            viewBox="0 0 28 28"
+                            fill="none"
+                            aria-hidden="true"
+                        >
+                            <rect
+                                x="2"
+                                y="2"
+                                width="24"
+                                height="24"
+                                rx="6"
+                                stroke="currentColor"
+                                stroke-width="1.5"
+                                fill="none"
+                            />
+                            <rect
+                                x="7"
+                                y="16"
+                                width="3"
+                                height="6"
+                                rx="1"
+                                fill="var(--accent)"
+                            />
+                            <rect
+                                x="12.5"
+                                y="11"
+                                width="3"
+                                height="11"
+                                rx="1"
+                                fill="var(--accent)"
+                                opacity="0.7"
+                            />
+                            <rect
+                                x="18"
+                                y="6"
+                                width="3"
+                                height="16"
+                                rx="1"
+                                fill="var(--accent)"
+                                opacity="0.45"
+                            />
+                        </svg>
+                        Lampac <span>Telemetry</span>
+                    </div>
+                    <div class="topbar-divider"></div>
+                    <div class="topbar-app-nav">
+                        <a href="/adminpanel">Admin</a>
+                        <a href="/stats">Stats</a>
+                        <a href="/weblog">Weblog</a>
+                        <a href="/telemetry" aria-current="page">Telemetry</a>
+                    </div>
+                    <div class="topbar-spacer"></div>
+                    <div class="topbar-actions">
+                        <button
+                            class="btn btn-icon"
+                            id="themeToggle"
+                            title="Переключить тему"
+                        >
+                            <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                            >
+                                <path
+                                    d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"
+                                ></path>
+                            </svg>
+                        </button>
+                        <button
+                            class="btn btn-icon"
+                            id="safeModeToggle"
+                            title="Безопасный режим (Скрыть IP и UID)"
+                        >
+                            <svg
+                                width="16"
+                                height="16"
+                                viewBox="0 0 24 24"
+                                fill="none"
+                                stroke="currentColor"
+                                stroke-width="2"
+                                stroke-linecap="round"
+                                stroke-linejoin="round"
+                                id="safeModeIcon"
+                            >
+                                <rect
+                                    x="3"
+                                    y="11"
+                                    width="18"
+                                    height="11"
+                                    rx="2"
+                                    ry="2"
+                                ></rect>
+                                <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                            </svg>
+                        </button>
+                        <button class="btn" onclick="openSettings()">
+                            Настройки
+                        </button>
+                        <button
+                            class="btn btn-primary"
+                            onclick="exportDataJson()"
+                        >
+                            Экспорт JSON
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="main">
+                <div class="grid">
+                    <div class="card">
+                        <div class="card-title">Запросов сегодня</div>
+                        <div class="card-value" id="valToday">-</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">Запросов за период</div>
+                        <div class="card-value" id="valMonth">-</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">Уникальных IP</div>
+                        <div class="card-value" id="valIp">-</div>
+                    </div>
+                    <div class="card">
+                        <div class="card-title">Уникальных устройств</div>
+                        <div class="card-value" id="valUa">-</div>
+                    </div>
+                </div>
+
+                <div class="chart-container">
+                    <canvas id="trafficChart"></canvas>
+                </div>
+
+                <div
+                    class="grid"
+                    style="
+                        grid-template-columns: repeat(
+                            auto-fit,
+                            minmax(300px, 1fr)
+                        );
+                    "
+                >
+                    <div class="chart-container" style="position: relative">
+                        <canvas id="balancersChart"></canvas>
+                        <div
+                            id="balancersEmpty"
+                            style="
+                                display: none;
+                                position: absolute;
+                                inset: 0;
+                                justify-content: center;
+                                align-items: center;
+                                color: var(--text-faint);
+                            "
+                        >
+                            Нет данных
+                        </div>
+                    </div>
+                    <div class="chart-container" style="position: relative">
+                        <canvas id="adultChart"></canvas>
+                        <div
+                            id="adultEmpty"
+                            style="
+                                display: none;
+                                position: absolute;
+                                inset: 0;
+                                justify-content: center;
+                                align-items: center;
+                                color: var(--text-faint);
+                            "
+                        >
+                            Нет данных
+                        </div>
+                    </div>
+                    <div class="chart-container" style="position: relative">
+                        <canvas id="usersChart"></canvas>
+                        <div
+                            id="usersEmpty"
+                            style="
+                                display: none;
+                                position: absolute;
+                                inset: 0;
+                                justify-content: center;
+                                align-items: center;
+                                color: var(--text-faint);
+                            "
+                        >
+                            Нет данных
+                        </div>
+                    </div>
+                </div>
+
+                <div
+                    class="chart-container"
+                    style="
+                        position: relative;
+                        margin-top: 1.5rem;
+                        min-height: 350px;
+                    "
+                >
+                    <canvas id="moviesChart"></canvas>
+                    <div
+                        id="moviesEmpty"
+                        style="
+                            display: none;
+                            position: absolute;
+                            inset: 0;
+                            justify-content: center;
+                            align-items: center;
+                            color: var(--text-faint);
+                        "
+                    >
+                        Нет данных
+                    </div>
+                </div>
+
+                <div
+                    class="grid"
+                    style="
+                        grid-template-columns: repeat(
+                            auto-fit,
+                            minmax(300px, 1fr)
+                        );
+                        gap: 1.5rem;
+                        margin-top: 1.5rem;
+                    "
+                >
+                    <div
+                        class="chart-container"
+                        style="position: relative; min-height: 350px"
+                    >
+                        <canvas id="devicesChart"></canvas>
+                        <div
+                            id="devicesEmpty"
+                            style="
+                                display: none;
+                                position: absolute;
+                                inset: 0;
+                                justify-content: center;
+                                align-items: center;
+                                color: var(--text-faint);
+                            "
+                        >
+                            Нет данных
+                        </div>
+                    </div>
+                    <div
+                        class="chart-container"
+                        style="position: relative; min-height: 350px"
+                    >
+                        <canvas id="hoursChart"></canvas>
+                        <div
+                            id="hoursEmpty"
+                            style="
+                                display: none;
+                                position: absolute;
+                                inset: 0;
+                                justify-content: center;
+                                align-items: center;
+                                color: var(--text-faint);
+                            "
+                        >
+                            Нет данных
+                        </div>
+                    </div>
+                    <div
+                        class="chart-container"
+                        style="position: relative; min-height: 350px"
+                    >
+                        <canvas id="contentTypesChart"></canvas>
+                        <div
+                            id="contentTypesEmpty"
+                            style="
+                                display: none;
+                                position: absolute;
+                                inset: 0;
+                                justify-content: center;
+                                align-items: center;
+                                color: var(--text-faint);
+                            "
+                        >
+                            Нет данных
+                        </div>
+                    </div>
+                </div>
+
+                <div class="filter-bar">
+                    <select
+                        id="periodSelect"
+                        class="input"
+                        style="min-width: 140px"
+                        onchange="refreshAll()"
+                    >
+                        <option value="0">Сегодня</option>
+                        <option value="-1">Вчера</option>
+                        <option value="7">Неделя</option>
+                        <option value="30" selected>Месяц</option>
+                        <option value="90">3 месяца</option>
+                    </select>
+                    <div
+                        style="
+                            width: 1px;
+                            height: 24px;
+                            background: var(--border);
+                            margin: 0 var(--sp-2);
+                        "
+                    ></div>
+                    <input
+                        type="text"
+                        id="searchQuery"
+                        class="input"
+                        style="flex: 1"
+                        placeholder="Глобальный поиск (UID, IP, URL, Балансир...)"
+                        onkeydown="if (event.key === 'Enter') refreshAll();"
+                    />
+                    <button class="btn btn-primary" onclick="refreshAll()">
+                        Найти
+                    </button>
+                    <button
+                        class="btn btn-danger"
+                        style="margin-left: auto"
+                        onclick="deleteFilteredLogs()"
+                    >
+                        Массовое удаление
+                    </button>
+                </div>
+
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Время</th>
+                                <th>UID</th>
+                                <th>IP</th>
+                                <th>Путь</th>
+                                <th>Балансир</th>
+                                <th>Статус</th>
+                            </tr>
+                        </thead>
+                        <tbody id="logsBody">
+                            <tr>
+                                <td
+                                    colspan="6"
+                                    style="text-align: center; padding: 2rem"
+                                >
+                                    Загрузка...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- Settings Modal -->
+        <div class="modal-overlay" id="settingsModal">
+            <div class="modal">
+                <div class="modal-header">
+                    Настройки фильтрации
+                    <button
+                        class="btn btn-icon"
+                        onclick="closeModal('settingsModal')"
+                    >
+                        ✕
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label
+                            >Игнорировать префиксы путей (по одному на
+                            строку)</label
+                        >
+                        <textarea id="setPrefixes"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label
+                            >Игнорировать расширения (по одному на
+                            строку)</label
+                        >
+                        <textarea id="setExtensions"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Regex-исключения (защищено от ReDoS)</label>
+                        <textarea id="setRegexes"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Черный список IP</label>
+                        <textarea id="setIps"></textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>Rate-limit (мс) между запросами с 1 IP</label>
+                        <input
+                            type="number"
+                            id="setRateLimit"
+                            style="min-height: 34px"
+                        />
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" onclick="saveSettings()">
+                        Сохранить
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Info Modal -->
+        <div
+            id="infoModal"
+            class="modal-overlay"
+            onclick="if (event.target === this) closeModal('infoModal');"
+        >
+            <div class="modal">
+                <div class="modal-header">
+                    Информация
+                    <button
+                        class="btn btn-icon"
+                        onclick="closeModal('infoModal')"
+                    >
+                        ✕
+                    </button>
+                </div>
+                <div class="modal-body" id="infoContent">
+                    <!-- Content injected via JS -->
+                </div>
+            </div>
+        </div>
+
+        <div
+            id="linksModal"
+            class="modal-overlay"
+            onclick="if (event.target === this) closeModal('linksModal');"
+        >
+            <div class="modal" style="max-width: 300px">
+                <div class="modal-header">
+                    <span
+                        id="linksModalTitle"
+                        style="
+                            white-space: nowrap;
+                            overflow: hidden;
+                            text-overflow: ellipsis;
+                            max-width: 220px;
+                            display: inline-block;
+                        "
+                        >Открыть фильм</span
+                    >
+                    <button
+                        class="btn btn-icon"
+                        onclick="closeModal('linksModal')"
+                    >
+                        ✕
+                    </button>
+                </div>
+                <div
+                    class="modal-body"
+                    id="linksContent"
+                    style="
+                        display: flex;
+                        flex-direction: row;
+                        justify-content: center;
+                        gap: 1.5rem;
+                        padding: 1.5rem 0;
+                    "
+                >
+                    <!-- Content injected via JS -->
+                </div>
+            </div>
+        </div>
+
+        <script>
+            const balancerNames = {
+                bgs: "BongaCams",
+                chu: "Chaturbate",
+                elo: "Ebalovo",
+                epr: "Eporner",
+                hqr: "HQporner",
+                phub: "PornHub",
+                phubgay: "PornHub Gay",
+                phubsml: "PornHub SML",
+                phubprem: "PornHub Premium",
+                ptx: "Porntrex",
+                runetki: "Runetki",
+                sbg: "Spankbang",
+                tizam: "Tizam",
+                xmr: "Xhamster",
+                xmrgay: "Xhamster Gay",
+                xmrsml: "Xhamster SML",
+                xnx: "Xnxx",
+                xds: "Xvideos",
+                xdsgay: "Xvideos Gay",
+                xdssml: "Xvideos SML",
+                xdsred: "XvideosRED",
+                nexthub: "NextHUB",
+                cdnvideohub: "CdnVideoHub",
+                aniliberty: "AniLiberty",
+                ailiberty: "AiLiberty",
+                animevost: "AnimeVost",
+                dreamerscast: "DreamersCast",
+                kodik: "Kodik",
+                kinopub: "KinoPub",
+                kinoflix: "KinoFlix",
+                animedia: "AniMedia",
+                animelib: "AnimeLib",
+                alloha: "Alloha",
+                rezka: "HDRezka",
+                collaps: "Collaps",
+                videocdn: "VideoCDN",
+                filmix: "Filmix",
+                zetflix: "Zetflix",
+                ashdi: "Ashdi",
+                vibix: "Vibix",
+                vokino: "VoKino",
+                lumex: "Lumex",
+                vdbuilder: "VdBuilder",
+            };
+
+            function getBalancerName(raw) {
+                if (!raw) return raw;
+                let is18 = false;
+                let key = raw.toLowerCase();
+                if (key.startsWith("18+ ")) {
+                    is18 = true;
+                    key = key.substring(4);
+                }
+                let name =
+                    balancerNames[key] ||
+                    key.charAt(0).toUpperCase() + key.slice(1);
+                return is18 ? `[18+] ${name}` : name;
+            }
+
+            let balancersChart = null;
+            let adultChart = null;
+            let moviesChart = null;
+            let usersChart = null;
+
+            const themeToggle = document.getElementById("themeToggle");
+            const applyTheme = (theme) => {
+                document.documentElement.setAttribute("data-theme", theme);
+                localStorage.setItem("theme", theme);
+                const isDark = theme === "dark";
+                document
+                    .getElementById("metaTheme")
+                    .setAttribute("content", isDark ? "#0c0e12" : "#f4f5f8");
+
+                if (
+                    window.trafficChart &&
+                    window.trafficChart.options &&
+                    window.trafficChart.options.scales
+                ) {
+                    window.trafficChart.options.scales.x.ticks.color = isDark
+                        ? "#7c849a"
+                        : "#6b7280";
+                    window.trafficChart.options.scales.y.ticks.color = isDark
+                        ? "#7c849a"
+                        : "#6b7280";
+                    window.trafficChart.options.scales.x.grid.color = isDark
+                        ? "#2a3040"
+                        : "#d4d8e3";
+                    window.trafficChart.options.scales.y.grid.color = isDark
+                        ? "#2a3040"
+                        : "#d4d8e3";
+                    window.trafficChart.update();
+                }
+                if (balancersChart) balancersChart.update();
+                if (adultChart) adultChart.update();
+                if (moviesChart) moviesChart.update();
+                if (usersChart) usersChart.update();
+                if (window.devicesChart instanceof Chart)
+                    window.devicesChart.update();
+                if (window.hoursChart instanceof Chart)
+                    window.hoursChart.update();
+                if (window.contentTypesChart instanceof Chart)
+                    window.contentTypesChart.update();
+            };
+
+            let currentTheme = localStorage.getItem("theme") || "dark";
+            applyTheme(currentTheme);
+
+            themeToggle.addEventListener("click", () => {
+                currentTheme = currentTheme === "light" ? "dark" : "light";
+                applyTheme(currentTheme);
+            });
+
+            let safeMode = localStorage.getItem("safeMode") === "true";
+            const safeModeIcon = document.getElementById("safeModeIcon");
+            const updateSafeModeBtn = () => {
+                if (safeMode) {
+                    safeModeIcon.innerHTML =
+                        '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path>';
+                    document.getElementById("safeModeToggle").style.color =
+                        "var(--ok)";
+                } else {
+                    safeModeIcon.innerHTML =
+                        '<rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path><line x1="1" y1="1" x2="23" y2="23"></line>';
+                    document.getElementById("safeModeToggle").style.color = "";
+                }
+            };
+            document
+                .getElementById("safeModeToggle")
+                .addEventListener("click", () => {
+                    safeMode = !safeMode;
+                    localStorage.setItem("safeMode", safeMode);
+                    updateSafeModeBtn();
+                    refreshAll();
+                });
+            updateSafeModeBtn();
+
+            function censorUid(uid) {
+                if (!safeMode || !uid || uid === "anonymous") return uid;
+                return uid.substring(0, Math.min(3, uid.length)) + "****";
+            }
+
+            function censorIp(ip) {
+                if (!safeMode || !ip || ip === "unknown") return ip;
+                const parts = ip.split(".");
+                if (parts.length === 4) {
+                    return `${parts[0]}.${parts[1]}.*.*`;
+                }
+                return ip;
+            }
+
+            function escapeHtml(str) {
+                if (!str) return str;
+                return String(str)
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#39;");
+            }
+
+            function escapeAttr(str) {
+                if (!str) return "";
+                return String(str)
+                    .replace(/&/g, "&amp;")
+                    .replace(/'/g, "&#39;")
+                    .replace(/"/g, "&quot;");
+            }
+
+            async function loadStats() {
+                try {
+                    const days = document.getElementById("periodSelect").value;
+                    const search = document.getElementById("searchQuery").value;
+                    const res = await fetch(
+                        `/telemetry/api/stats?days=${days}&search=${encodeURIComponent(search)}`,
+                    );
+                    const json = await res.json();
+                    if (json.success) {
+                        document.getElementById("valToday").innerText =
+                            json.data?.today?.toLocaleString() ?? "0";
+                        document.getElementById("valMonth").innerText =
+                            json.data?.total?.toLocaleString() ?? "0";
+                        document.getElementById("valIp").innerText =
+                            json.data?.ips?.toLocaleString() ?? "0";
+                        document.getElementById("valUa").innerText =
+                            json.data?.uas?.toLocaleString() ?? "0";
+                    }
+                } catch (e) {
+                    console.error("Error loading stats:", e);
+                }
+            }
+
+            async function loadChart() {
+                try {
+                    const days = document.getElementById("periodSelect").value;
+                    const search = document.getElementById("searchQuery").value;
+                    const res = await fetch(
+                        `/telemetry/api/chart?days=${days}&search=${encodeURIComponent(search)}`,
+                    );
+                    const json = await res.json();
+                    if (json.success) {
+                        const ctx = document
+                            .getElementById("trafficChart")
+                            .getContext("2d");
+                        const labels = json.data.map((d) =>
+                            new Date(d.date).toLocaleDateString(),
+                        );
+                        const data = json.data.map((d) => d.count);
+
+                        if (
+                            window.trafficChart &&
+                            typeof window.trafficChart.destroy === "function"
+                        ) {
+                            window.trafficChart.destroy();
+                        }
+
+                        const isDark = currentTheme === "dark";
+                        const accentColor = "#3ec9d1";
+                        const accentBg = "rgba(62, 201, 209, 0.12)";
+
+                        window.trafficChart = new Chart(ctx, {
+                            type: "line",
+                            data: {
+                                labels: labels,
+                                datasets: [
+                                    {
+                                        label: "Запросы",
+                                        data: data,
+                                        borderColor: accentColor,
+                                        backgroundColor: accentBg,
+                                        borderWidth: 2,
+                                        pointBackgroundColor: accentColor,
+                                        pointBorderColor: isDark
+                                            ? "#13161d"
+                                            : "#ffffff",
+                                        pointBorderWidth: 2,
+                                        pointRadius: 4,
+                                        pointHoverRadius: 6,
+                                        fill: true,
+                                        tension: 0.4,
+                                    },
+                                ],
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                plugins: { legend: { display: false } },
+                                scales: {
+                                    x: {
+                                        grid: {
+                                            color: isDark
+                                                ? "#2a3040"
+                                                : "#d4d8e3",
+                                            drawBorder: false,
+                                        },
+                                        ticks: {
+                                            color: isDark
+                                                ? "#7c849a"
+                                                : "#6b7280",
+                                            font: {
+                                                family: "JetBrains Mono",
+                                                size: 11,
+                                            },
+                                        },
+                                    },
+                                    y: {
+                                        beginAtZero: true,
+                                        grid: {
+                                            color: isDark
+                                                ? "#2a3040"
+                                                : "#d4d8e3",
+                                            drawBorder: false,
+                                        },
+                                        ticks: {
+                                            color: isDark
+                                                ? "#7c849a"
+                                                : "#6b7280",
+                                            font: {
+                                                family: "JetBrains Mono",
+                                                size: 11,
+                                            },
+                                            maxTicksLimit: 6,
+                                        },
+                                    },
+                                },
+                            },
+                        });
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            async function loadTops() {
+                try {
+                    const days = document.getElementById("periodSelect").value;
+                    const search = document.getElementById("searchQuery").value;
+                    const res = await fetch(
+                        `/telemetry/api/tops?days=${days}&search=${encodeURIComponent(search)}`,
+                    );
+                    const json = await res.json();
+                    if (json.success) {
+                        const isDark = currentTheme === "dark";
+                        const colors = [
+                            "#3ec9d1",
+                            "#2ea8b0",
+                            "#9d7bff",
+                            "#4ade80",
+                            "#facc15",
+                            "#f87171",
+                            "#3db0f7",
+                            "#6b42e0",
+                            "#0f766e",
+                            "#ca8a04",
+                        ];
+
+                        if (balancersChart) balancersChart.destroy();
+                        if (
+                            json.data.balancers &&
+                            json.data.balancers.length > 0
+                        ) {
+                            document.getElementById(
+                                "balancersEmpty",
+                            ).style.display = "none";
+                            document.getElementById(
+                                "balancersChart",
+                            ).style.display = "block";
+                            balancersChart = new Chart(
+                                document
+                                    .getElementById("balancersChart")
+                                    .getContext("2d"),
+                                {
+                                    type: "doughnut",
+                                    data: {
+                                        labels: json.data.balancers.map((b) =>
+                                            getBalancerName(b.balancer),
+                                        ),
+                                        datasets: [
+                                            {
+                                                data: json.data.balancers.map(
+                                                    (b) => b.count,
+                                                ),
+                                                backgroundColor: [
+                                                    "#3ec9d1",
+                                                    "#2ea8b0",
+                                                    "#9d7bff",
+                                                    "#4ade80",
+                                                    "#facc15",
+                                                    "#f87171",
+                                                    "#3db0f7",
+                                                    "#6b42e0",
+                                                    "#0f766e",
+                                                    "#ca8a04",
+                                                ],
+                                                borderWidth: 2,
+                                                borderColor: isDark
+                                                    ? "#13161d"
+                                                    : "#ffffff",
+                                            },
+                                        ],
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        plugins: {
+                                            title: {
+                                                display: true,
+                                                text: "Топ Балансиров",
+                                                color: isDark
+                                                    ? "#e2e6ef"
+                                                    : "#1a1e28",
+                                            },
+                                            legend: {
+                                                display: true,
+                                                position: "right",
+                                                labels: {
+                                                    color: isDark
+                                                        ? "#7c849a"
+                                                        : "#6b7280",
+                                                    font: {
+                                                        family: "JetBrains Mono",
+                                                        size: 10,
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            );
+                        } else {
+                            document.getElementById(
+                                "balancersEmpty",
+                            ).style.display = "flex";
+                            document.getElementById(
+                                "balancersChart",
+                            ).style.display = "none";
+                        }
+
+                        if (adultChart) adultChart.destroy();
+                        if (json.data.adult && json.data.adult.length > 0) {
+                            document.getElementById(
+                                "adultEmpty",
+                            ).style.display = "none";
+                            document.getElementById(
+                                "adultChart",
+                            ).style.display = "block";
+                            adultChart = new Chart(
+                                document
+                                    .getElementById("adultChart")
+                                    .getContext("2d"),
+                                {
+                                    type: "doughnut",
+                                    data: {
+                                        labels: json.data.adult.map((b) =>
+                                            getBalancerName(b.balancer),
+                                        ),
+                                        datasets: [
+                                            {
+                                                data: json.data.adult.map(
+                                                    (b) => b.count,
+                                                ),
+                                                backgroundColor: [
+                                                    "#ef4444",
+                                                    "#f43f5e",
+                                                    "#ec4899",
+                                                    "#d946ef",
+                                                    "#f87171",
+                                                    "#fb7185",
+                                                    "#f472b6",
+                                                    "#dc2626",
+                                                    "#e11d48",
+                                                    "#db2777",
+                                                ],
+                                                borderWidth: 2,
+                                                borderColor: isDark
+                                                    ? "#13161d"
+                                                    : "#ffffff",
+                                            },
+                                        ],
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        plugins: {
+                                            title: {
+                                                display: true,
+                                                text: "Топ источников 18+",
+                                                color: isDark
+                                                    ? "#e2e6ef"
+                                                    : "#1a1e28",
+                                            },
+                                            legend: {
+                                                display: true,
+                                                position: "right",
+                                                labels: {
+                                                    color: isDark
+                                                        ? "#7c849a"
+                                                        : "#6b7280",
+                                                    font: {
+                                                        family: "JetBrains Mono",
+                                                        size: 10,
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            );
+                        } else {
+                            document.getElementById(
+                                "adultEmpty",
+                            ).style.display = "flex";
+                            document.getElementById(
+                                "adultChart",
+                            ).style.display = "none";
+                        }
+
+                        if (moviesChart) moviesChart.destroy();
+                        if (json.data.movies && json.data.movies.length > 0) {
+                            document.getElementById(
+                                "moviesEmpty",
+                            ).style.display = "none";
+                            document.getElementById(
+                                "moviesChart",
+                            ).style.display = "block";
+                            moviesChart = new Chart(
+                                document
+                                    .getElementById("moviesChart")
+                                    .getContext("2d"),
+                                {
+                                    type: "bar",
+                                    data: {
+                                        labels: json.data.movies.map((b) =>
+                                            decodeURIComponent(b.title),
+                                        ),
+                                        datasets: [
+                                            {
+                                                label: "Запросы",
+                                                data: json.data.movies.map(
+                                                    (b) => b.count,
+                                                ),
+                                                backgroundColor: [
+                                                    "#f59e0b",
+                                                    "#d97706",
+                                                    "#fbbf24",
+                                                    "#fcd34d",
+                                                    "#b45309",
+                                                    "#fde68a",
+                                                    "#78350f",
+                                                    "#fef3c7",
+                                                    "#d97706",
+                                                    "#f59e0b",
+                                                ],
+                                                borderRadius: 4,
+                                            },
+                                        ],
+                                    },
+                                    options: {
+                                        indexAxis: "y",
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        onClick: (e, elements) => {
+                                            if (elements.length > 0) {
+                                                const item =
+                                                    json.data.movies[
+                                                        elements[0].index
+                                                    ];
+                                                openLinksModal(
+                                                    encodeURIComponent(
+                                                        JSON.stringify(item),
+                                                    ),
+                                                );
+                                            }
+                                        },
+                                        onHover: (event, chartElement) => {
+                                            event.native.target.style.cursor =
+                                                chartElement[0]
+                                                    ? "pointer"
+                                                    : "default";
+                                        },
+                                        plugins: {
+                                            title: {
+                                                display: true,
+                                                text: "Топ Контента (TMDB)",
+                                                color: isDark
+                                                    ? "#e2e6ef"
+                                                    : "#1a1e28",
+                                            },
+                                            legend: { display: false },
+                                            tooltip: {
+                                                callbacks: {
+                                                    footer: () =>
+                                                        "Кликните, чтобы открыть меню ссылок",
+                                                },
+                                            },
+                                        },
+                                        scales: {
+                                            x: {
+                                                ticks: {
+                                                    color: isDark
+                                                        ? "#7c849a"
+                                                        : "#6b7280",
+                                                },
+                                                grid: {
+                                                    color: isDark
+                                                        ? "#1f2937"
+                                                        : "#e5e7eb",
+                                                },
+                                                beginAtZero: true,
+                                            },
+                                            y: {
+                                                ticks: {
+                                                    color: isDark
+                                                        ? "#7c849a"
+                                                        : "#6b7280",
+                                                },
+                                                grid: { display: false },
+                                            },
+                                        },
+                                    },
+                                },
+                            );
+                        } else {
+                            document.getElementById(
+                                "moviesEmpty",
+                            ).style.display = "flex";
+                            document.getElementById(
+                                "moviesChart",
+                            ).style.display = "none";
+                        }
+
+                        if (usersChart) usersChart.destroy();
+                        if (json.data.users && json.data.users.length > 0) {
+                            document.getElementById(
+                                "usersEmpty",
+                            ).style.display = "none";
+                            document.getElementById(
+                                "usersChart",
+                            ).style.display = "block";
+                            usersChart = new Chart(
+                                document
+                                    .getElementById("usersChart")
+                                    .getContext("2d"),
+                                {
+                                    type: "doughnut",
+                                    data: {
+                                        labels: json.data.users.map((u) =>
+                                            censorUid(u.uid),
+                                        ),
+                                        datasets: [
+                                            {
+                                                data: json.data.users.map(
+                                                    (u) => u.count,
+                                                ),
+                                                backgroundColor: [
+                                                    "#9d7bff",
+                                                    "#6b42e0",
+                                                    "#3ec9d1",
+                                                    "#3db0f7",
+                                                    "#4ade80",
+                                                    "#facc15",
+                                                    "#f87171",
+                                                    "#0f766e",
+                                                    "#2ea8b0",
+                                                    "#ca8a04",
+                                                ],
+                                                borderWidth: 2,
+                                                borderColor: isDark
+                                                    ? "#13161d"
+                                                    : "#ffffff",
+                                            },
+                                        ],
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        plugins: {
+                                            title: {
+                                                display: true,
+                                                text: "Топ Пользователей",
+                                                color: isDark
+                                                    ? "#e2e6ef"
+                                                    : "#1a1e28",
+                                            },
+                                            legend: {
+                                                display: true,
+                                                position: "right",
+                                                labels: {
+                                                    color: isDark
+                                                        ? "#7c849a"
+                                                        : "#6b7280",
+                                                    font: {
+                                                        family: "JetBrains Mono",
+                                                        size: 10,
+                                                    },
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            );
+                        } else {
+                            document.getElementById(
+                                "usersEmpty",
+                            ).style.display = "flex";
+                            document.getElementById(
+                                "usersChart",
+                            ).style.display = "none";
+                        }
+
+                        if (window.devicesChart instanceof Chart)
+                            window.devicesChart.destroy();
+                        if (json.data.devices && json.data.devices.length > 0) {
+                            document.getElementById(
+                                "devicesEmpty",
+                            ).style.display = "none";
+                            document.getElementById(
+                                "devicesChart",
+                            ).style.display = "block";
+                            window.devicesChart = new Chart(
+                                document
+                                    .getElementById("devicesChart")
+                                    .getContext("2d"),
+                                {
+                                    type: "doughnut",
+                                    data: {
+                                        labels: json.data.devices.map(
+                                            (d) => d.name,
+                                        ),
+                                        datasets: [
+                                            {
+                                                data: json.data.devices.map(
+                                                    (d) => d.count,
+                                                ),
+                                                backgroundColor: [
+                                                    "#3ec9d1",
+                                                    "#f59e0b",
+                                                    "#ec4899",
+                                                    "#8b5cf6",
+                                                    "#10b981",
+                                                    "#3b82f6",
+                                                    "#ef4444",
+                                                ],
+                                                borderWidth: 0,
+                                            },
+                                        ],
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        plugins: {
+                                            title: {
+                                                display: true,
+                                                text: "Платформы",
+                                                color: isDark
+                                                    ? "#e2e6ef"
+                                                    : "#1a1e28",
+                                            },
+                                            legend: {
+                                                position: "right",
+                                                labels: {
+                                                    color: isDark
+                                                        ? "#7c849a"
+                                                        : "#6b7280",
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            );
+                        } else {
+                            document.getElementById(
+                                "devicesEmpty",
+                            ).style.display = "flex";
+                            document.getElementById(
+                                "devicesChart",
+                            ).style.display = "none";
+                        }
+
+                        if (window.contentTypesChart instanceof Chart)
+                            window.contentTypesChart.destroy();
+                        if (
+                            json.data.contentTypes &&
+                            json.data.contentTypes.length > 0
+                        ) {
+                            document.getElementById(
+                                "contentTypesEmpty",
+                            ).style.display = "none";
+                            document.getElementById(
+                                "contentTypesChart",
+                            ).style.display = "block";
+                            window.contentTypesChart = new Chart(
+                                document
+                                    .getElementById("contentTypesChart")
+                                    .getContext("2d"),
+                                {
+                                    type: "doughnut",
+                                    data: {
+                                        labels: json.data.contentTypes.map(
+                                            (d) => d.name,
+                                        ),
+                                        datasets: [
+                                            {
+                                                data: json.data.contentTypes.map(
+                                                    (d) => d.count,
+                                                ),
+                                                backgroundColor: [
+                                                    "#f43f5e",
+                                                    "#a855f7",
+                                                    "#3b82f6",
+                                                ],
+                                                borderWidth: 0,
+                                            },
+                                        ],
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        plugins: {
+                                            title: {
+                                                display: true,
+                                                text: "Типы Контента",
+                                                color: isDark
+                                                    ? "#e2e6ef"
+                                                    : "#1a1e28",
+                                            },
+                                            legend: {
+                                                position: "right",
+                                                labels: {
+                                                    color: isDark
+                                                        ? "#7c849a"
+                                                        : "#6b7280",
+                                                },
+                                            },
+                                        },
+                                    },
+                                },
+                            );
+                        } else {
+                            document.getElementById(
+                                "contentTypesEmpty",
+                            ).style.display = "flex";
+                            document.getElementById(
+                                "contentTypesChart",
+                            ).style.display = "none";
+                        }
+
+                        if (window.hoursChart instanceof Chart)
+                            window.hoursChart.destroy();
+                        if (json.data.hours && json.data.hours.length > 0) {
+                            document.getElementById(
+                                "hoursEmpty",
+                            ).style.display = "none";
+                            document.getElementById(
+                                "hoursChart",
+                            ).style.display = "block";
+                            window.hoursChart = new Chart(
+                                document
+                                    .getElementById("hoursChart")
+                                    .getContext("2d"),
+                                {
+                                    type: "bar",
+                                    data: {
+                                        labels: json.data.hours.map(
+                                            (d) => d.hour + ":00",
+                                        ),
+                                        datasets: [
+                                            {
+                                                label: "Запросы",
+                                                data: json.data.hours.map(
+                                                    (d) => d.count,
+                                                ),
+                                                backgroundColor:
+                                                    "rgba(139, 92, 246, 0.5)",
+                                                borderColor: "#8b5cf6",
+                                                borderWidth: 1,
+                                                borderRadius: 4,
+                                            },
+                                        ],
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        plugins: {
+                                            title: {
+                                                display: true,
+                                                text: "Активность по часам (UTC)",
+                                                color: isDark
+                                                    ? "#e2e6ef"
+                                                    : "#1a1e28",
+                                            },
+                                            legend: { display: false },
+                                        },
+                                        scales: {
+                                            x: {
+                                                ticks: {
+                                                    color: isDark
+                                                        ? "#7c849a"
+                                                        : "#6b7280",
+                                                },
+                                                grid: { display: false },
+                                            },
+                                            y: {
+                                                ticks: {
+                                                    color: isDark
+                                                        ? "#7c849a"
+                                                        : "#6b7280",
+                                                },
+                                                grid: {
+                                                    color: isDark
+                                                        ? "#1f2937"
+                                                        : "#e5e7eb",
+                                                },
+                                                beginAtZero: true,
+                                            },
+                                        },
+                                    },
+                                },
+                            );
+                        } else {
+                            document.getElementById(
+                                "hoursEmpty",
+                            ).style.display = "flex";
+                            document.getElementById(
+                                "hoursChart",
+                            ).style.display = "none";
+                        }
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            async function showUser(uid) {
+                if (!uid || uid === "anonymous") return;
+                try {
+                    const days = document.getElementById("periodSelect").value;
+                    const res = await fetch(
+                        `/telemetry/api/user?uid=${encodeURIComponent(uid)}&days=${days}`,
+                    );
+                    const json = await res.json();
+                    if (json.success) {
+                        const d = json.data;
+                        const adultBals = d.balancers.filter((b) =>
+                            b.name.startsWith("18+ "),
+                        );
+                        const normBals = d.balancers.filter(
+                            (b) => !b.name.startsWith("18+ "),
+                        );
+                        const adultHTML =
+                            adultBals
+                                .map(
+                                    (b) =>
+                                        `<span class="badge clickable" style="background:var(--danger);color:#fff;" onclick="showBalancer('${b.name}')">${getBalancerName(b.name)} (${b.count})</span>`,
+                                )
+                                .join(" ") || "-";
+                        const normHTML =
+                            normBals
+                                .map(
+                                    (b) =>
+                                        `<span class="badge clickable" style="background:var(--primary);color:#fff;" onclick="showBalancer('${b.name}')">${getBalancerName(b.name)} (${b.count})</span>`,
+                                )
+                                .join(" ") || "-";
+
+                        let content = `
+            <div style="display:flex; flex-direction:column; gap: 1rem; font-family: var(--font-body); font-size: var(--text-sm);">
+              <div class="card" style="box-shadow: none; background: var(--surface-2);">
+                 <div class="card-title">Всего запросов</div>
+                 <div class="card-value">${d.totalRequests}</div>
+              </div>
+              <div style="height: 150px; position:relative;"><canvas id="modalChart"></canvas></div>
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-family: var(--font-mono); font-size: var(--text-xs);">
+                <div><span style="color:var(--text-muted)">Первый:</span> <br/>${new Date(d.firstSeen).toLocaleString()}</div>
+                <div><span style="color:var(--text-muted)">Последний:</span> <br/>${new Date(d.lastSeen).toLocaleString()}</div>
+              </div>
+              <div><div class="card-title" style="margin-bottom: 4px;">IP адреса (${d.ips.length}):</div><div style="font-family: var(--font-mono); color: var(--text);">${d.ips.map((ip) => `<span class="clickable" onclick="showIp('${escapeAttr(ip)}')">${censorIp(ip)}</span>`).join("<br/>")}</div></div>
+              <div><div class="card-title" style="margin-bottom: 4px;">Устройства (${d.userAgents.length}):</div><div style="font-family: var(--font-mono);">${d.userAgents.map((ua) => `<div style="font-size:0.9em;color:var(--text-faint); margin-bottom: 4px;">${escapeHtml(ua)}</div>`).join("")}</div></div>
+              <div><div class="card-title" style="margin-bottom: 4px;">Источники (Обычные):</div><div style="font-family: var(--font-mono); color: var(--text);">${normHTML}</div></div>
+              <div><div class="card-title" style="margin-bottom: 4px;">Источники (18+):</div><div style="font-family: var(--font-mono); color: var(--text);">${adultHTML}</div></div>
+              ${d.movies && d.movies.length > 0 ? `<div><div class="card-title" style="margin-bottom: 4px;">Топ контента:</div><div style="font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text); display:flex; flex-direction:column; gap:4px;">${d.movies.map((m) => `<span class="clickable" style="text-decoration:none;" onclick="openLinksModal('${encodeURIComponent(JSON.stringify(m))}')">• ${decodeURIComponent(m.title || "Unknown")} (${m.count})</span>`).join("")}</div></div>` : ""}
+            </div>
+          `;
+                        document.querySelector(
+                            "#infoModal .modal-header",
+                        ).childNodes[0].nodeValue =
+                            `Пользователь: ${censorUid(uid)} `;
+                        document.getElementById("infoContent").innerHTML =
+                            content;
+                        document.getElementById("infoModal").style.display =
+                            "flex";
+
+                        if (d.timeline) renderModalChart(d.timeline);
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            async function showIp(ip) {
+                if (!ip) return;
+                try {
+                    const days = document.getElementById("periodSelect").value;
+                    const res = await fetch(
+                        `/telemetry/api/ip?ip=${encodeURIComponent(ip)}&days=${days}`,
+                    );
+                    const json = await res.json();
+                    if (json.success) {
+                        const d = json.data;
+                        const adultBals = d.balancers.filter((b) =>
+                            b.name.startsWith("18+ "),
+                        );
+                        const normBals = d.balancers.filter(
+                            (b) => !b.name.startsWith("18+ "),
+                        );
+                        const adultHTML =
+                            adultBals
+                                .map(
+                                    (b) =>
+                                        `<span class="badge clickable" style="background:var(--danger);color:#fff;" onclick="showBalancer('${b.name}')">${getBalancerName(b.name)} (${b.count})</span>`,
+                                )
+                                .join(" ") || "-";
+                        const normHTML =
+                            normBals
+                                .map(
+                                    (b) =>
+                                        `<span class="badge clickable" style="background:var(--primary);color:#fff;" onclick="showBalancer('${b.name}')">${getBalancerName(b.name)} (${b.count})</span>`,
+                                )
+                                .join(" ") || "-";
+
+                        let content = `
+            <div style="display:flex; flex-direction:column; gap: 1rem; font-family: var(--font-body); font-size: var(--text-sm);">
+              <div class="card" style="box-shadow: none; background: var(--surface-2);">
+                 <div class="card-title">Всего запросов</div>
+                 <div class="card-value">${d.totalRequests}</div>
+              </div>
+              <div style="height: 150px; position:relative;"><canvas id="modalChart"></canvas></div>
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem; font-family: var(--font-mono); font-size: var(--text-xs);">
+                <div><span style="color:var(--text-muted)">Первый:</span> <br/>${new Date(d.firstSeen).toLocaleString()}</div>
+                <div><span style="color:var(--text-muted)">Последний:</span> <br/>${new Date(d.lastSeen).toLocaleString()}</div>
+              </div>
+              <div><div class="card-title" style="margin-bottom: 4px;">Пользователи (${d.uids.length}):</div><div style="font-family: var(--font-mono); color: var(--text);">${d.uids.map((uid) => `<span class="clickable" onclick="showUser('${escapeAttr(uid)}')">${censorUid(escapeHtml(uid))}</span>`).join("<br/>")}</div></div>
+              <div><div class="card-title" style="margin-bottom: 4px;">Устройства (${d.userAgents.length}):</div><div style="font-family: var(--font-mono);">${d.userAgents.map((ua) => `<div style="font-size:0.9em;color:var(--text-faint); margin-bottom: 4px;">${escapeHtml(ua)}</div>`).join("")}</div></div>
+              <div><div class="card-title" style="margin-bottom: 4px;">Источники (Обычные):</div><div style="font-family: var(--font-mono); color: var(--text);">${normHTML}</div></div>
+              <div><div class="card-title" style="margin-bottom: 4px;">Источники (18+):</div><div style="font-family: var(--font-mono); color: var(--text);">${adultHTML}</div></div>
+              ${d.movies && d.movies.length > 0 ? `<div><div class="card-title" style="margin-bottom: 4px;">Топ контента:</div><div style="font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text); display:flex; flex-direction:column; gap:4px;">${d.movies.map((m) => `<span class="clickable" style="text-decoration:none;" onclick="openLinksModal('${encodeURIComponent(JSON.stringify(m))}')">• ${decodeURIComponent(m.title || "Unknown")} (${m.count})</span>`).join("")}</div></div>` : ""}
+            </div>
+          `;
+                        document.querySelector(
+                            "#infoModal .modal-header",
+                        ).childNodes[0].nodeValue =
+                            `IP-адрес: ${censorIp(ip)} `;
+                        document.getElementById("infoContent").innerHTML =
+                            content;
+                        document.getElementById("infoModal").style.display =
+                            "flex";
+
+                        if (d.timeline) renderModalChart(d.timeline);
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            async function showBalancer(rawBalancer) {
+                if (!rawBalancer) return;
+                try {
+                    const days = document.getElementById("periodSelect").value;
+                    const res = await fetch(
+                        `/telemetry/api/balancer?balancer=${encodeURIComponent(rawBalancer)}&days=${days}`,
+                    );
+                    const json = await res.json();
+                    if (json.success) {
+                        const d = json.data;
+
+                        const uidsHTML =
+                            d.uids && d.uids.length
+                                ? d.uids
+                                      .map(
+                                          (u) =>
+                                              `<span class="clickable" onclick="showUser('${u.uid}')">${censorUid(u.uid)} (${u.count})</span>`,
+                                      )
+                                      .join("<br/>")
+                                : "-";
+                        const ipsHTML =
+                            d.ips && d.ips.length
+                                ? d.ips
+                                      .map(
+                                          (u) =>
+                                              `<span class="clickable" onclick="showIp('${u.ip}')">${censorIp(u.ip)} (${u.count})</span>`,
+                                      )
+                                      .join("<br/>")
+                                : "-";
+
+                        let content = `
+            <div style="display:flex; flex-direction:column; gap: 1rem; font-family: var(--font-body); font-size: var(--text-sm);">
+              <div class="card" style="box-shadow: none; background: var(--surface-2);">
+                 <div class="card-title">Всего запросов</div>
+                 <div class="card-value">${d.total.toLocaleString()}</div>
+                 <span style="font-size:0.9em;color:var(--text-faint)">Запросов сегодня: ${d.today.toLocaleString()}</span>
+              </div>
+              <div style="height: 150px; position:relative;"><canvas id="modalChart"></canvas></div>
+              <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 1rem;">
+                <div class="card" style="box-shadow: none; background: var(--surface-2); padding: 1rem;">
+                  <div class="card-title" style="margin-bottom:0.5rem">Топ UID</div>
+                  <div style="font-family:var(--font-mono); font-size:var(--text-xs); color:var(--text-muted)">${uidsHTML}</div>
+                </div>
+                <div class="card" style="box-shadow: none; background: var(--surface-2); padding: 1rem;">
+                  <div class="card-title" style="margin-bottom:0.5rem">Топ IP</div>
+                  <div style="font-family:var(--font-mono); font-size:var(--text-xs); color:var(--text-muted)">${ipsHTML}</div>
+                </div>
+              </div>
+              ${d.movies && d.movies.length > 0 ? `<div><div class="card-title" style="margin-bottom: 4px;">Топ контента:</div><div style="font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text); display:flex; flex-direction:column; gap:4px;">${d.movies.map((m) => `<span class="clickable" style="text-decoration:none;" onclick="openLinksModal('${encodeURIComponent(JSON.stringify(m))}')">• ${decodeURIComponent(m.title || "Unknown")} (${m.count})</span>`).join("")}</div></div>` : ""}
+              <div style="margin-top:0.5rem;">
+                 <button class="btn btn-primary" style="width:100%" onclick="document.getElementById('searchQuery').value = '${rawBalancer}'; closeModal('infoModal'); refreshAll();">Показать логи этого источника</button>
+              </div>
+            </div>
+          `;
+                        document.querySelector(
+                            "#infoModal .modal-header",
+                        ).childNodes[0].nodeValue =
+                            `Источник: ${getBalancerName(rawBalancer)} `;
+                        document.getElementById("infoContent").innerHTML =
+                            content;
+                        document.getElementById("infoModal").style.display =
+                            "flex";
+
+                        if (d.timeline) renderModalChart(d.timeline);
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            let modalChartInstance = null;
+            function renderModalChart(timeline) {
+                if (modalChartInstance) {
+                    modalChartInstance.destroy();
+                }
+                const isDark = currentTheme === "dark";
+
+                let labels = timeline.map((t) => {
+                    const d = new Date(t.date);
+                    return d.getHours() === 0 && d.getMinutes() === 0
+                        ? d.toLocaleDateString()
+                        : d.toLocaleTimeString([], {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                          });
+                });
+
+                modalChartInstance = new Chart(
+                    document.getElementById("modalChart").getContext("2d"),
+                    {
+                        type: "line",
+                        data: {
+                            labels: labels,
+                            datasets: [
+                                {
+                                    label: "Запросы",
+                                    data: timeline.map((t) => t.count),
+                                    borderColor: "#9d7bff",
+                                    backgroundColor: "rgba(157, 123, 255, 0.1)",
+                                    borderWidth: 2,
+                                    fill: true,
+                                    tension: 0.4,
+                                },
+                            ],
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            plugins: { legend: { display: false } },
+                            scales: {
+                                x: {
+                                    ticks: {
+                                        color: isDark ? "#7c849a" : "#6b7280",
+                                    },
+                                    grid: {
+                                        color: isDark ? "#1f2937" : "#e5e7eb",
+                                    },
+                                },
+                                y: {
+                                    ticks: {
+                                        color: isDark ? "#7c849a" : "#6b7280",
+                                    },
+                                    grid: {
+                                        color: isDark ? "#1f2937" : "#e5e7eb",
+                                    },
+                                    beginAtZero: true,
+                                },
+                            },
+                        },
+                    },
+                );
+            }
+
+            async function loadLogs() {
+                const days = document.getElementById("periodSelect").value;
+                const search = document.getElementById("searchQuery").value;
+                let url = `/telemetry/api/logs?take=100&days=${days}`;
+                if (search) url += "&search=" + encodeURIComponent(search);
+
+                try {
+                    const res = await fetch(url);
+                    const json = await res.json();
+                    const tbody = document.getElementById("logsBody");
+                    tbody.innerHTML = "";
+
+                    if (json.success && json.data.length > 0) {
+                        json.data.forEach((log) => {
+                            const tr = document.createElement("tr");
+                            const d = new Date(log.time);
+                            const time =
+                                d.toLocaleDateString() +
+                                " " +
+                                d.toLocaleTimeString();
+                            const statusClass =
+                                log.statusCode >= 400
+                                    ? "error"
+                                    : log.statusCode > 0
+                                      ? "success"
+                                      : "";
+                            const statusBadge = log.statusCode
+                                ? `<span class="badge ${statusClass}">${log.statusCode}</span>`
+                                : "-";
+
+                            tr.innerHTML = `
+              <td style="font-family: var(--font-mono); color: var(--text-muted); font-size: var(--text-xs);">${time}</td>
+              <td style="font-family: var(--font-mono); font-size: var(--text-xs);"><span class="${log.uid !== "anonymous" ? "clickable" : ""}" onclick="showUser('${escapeAttr(log.uid)}')">${censorUid(escapeHtml(log.uid)) || "-"}</span></td>
+              <td style="font-family: var(--font-mono); font-size: var(--text-xs);">
+                 <span class="clickable" onclick="showIp('${escapeAttr(log.ip)}')">${censorIp(log.ip)}</span>
+              </td>
+              <td style="word-break: break-all; max-width: 300px; font-family: var(--font-mono); font-size: var(--text-xs); color: var(--text-muted);">${escapeHtml(log.uri)}</td>
+              <td style="font-family: var(--font-mono); font-size: var(--text-xs);"><span class="${log.balancer ? "clickable" : ""}" onclick="showBalancer('${escapeAttr(log.balancer || "")}')">${log.balancer ? escapeHtml(getBalancerName(log.balancer)) : "-"}</span></td>
+              <td>${statusBadge}</td>
+            `;
+                            tbody.appendChild(tr);
+                        });
+                    } else {
+                        tbody.innerHTML =
+                            '<tr><td colspan="6" style="text-align:center; padding: 2rem; color: var(--text-faint);">Ничего не найдено</td></tr>';
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            async function deleteFilteredLogs() {
+                const search = document.getElementById("searchQuery").value;
+
+                if (!search) {
+                    if (
+                        !confirm(
+                            `Вы не ввели поисковый запрос! Это удалит ВСЕ логи за все время. Вы уверены?`,
+                        )
+                    )
+                        return;
+                } else {
+                    if (
+                        !confirm(
+                            `Удалить все логи для фильтра: "${search}"? Это действие нельзя отменить.`,
+                        )
+                    )
+                        return;
+                }
+
+                const fd = new FormData();
+                if (search) fd.append("search", search);
+                fd.append(
+                    "days",
+                    document.getElementById("periodSelect").value,
+                );
+
+                try {
+                    const res = await fetch("/telemetry/api/logs/delete", {
+                        method: "POST",
+                        body: fd,
+                    });
+                    const json = await res.json();
+                    if (json.success) {
+                        alert(`Удалено записей: ${json.deleted}`);
+                        loadLogs();
+                        loadStats();
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            async function exportDataJson() {
+                try {
+                    const res = await fetch("/telemetry/api/export");
+                    const json = await res.json();
+                    const exportData = json.map((log) => ({
+                        ...log,
+                        uid: censorUid(log.uid),
+                        ip: censorIp(log.ip),
+                    }));
+                    const dataStr =
+                        "data:text/json;charset=utf-8," +
+                        encodeURIComponent(JSON.stringify(exportData, null, 2));
+                    const downloadAnchorNode = document.createElement("a");
+                    downloadAnchorNode.setAttribute("href", dataStr);
+                    downloadAnchorNode.setAttribute(
+                        "download",
+                        "telemetry_export.json",
+                    );
+                    document.body.appendChild(downloadAnchorNode);
+                    downloadAnchorNode.click();
+                    downloadAnchorNode.remove();
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            // Modal Logic
+            window.closeModal = function (id) {
+                document.getElementById(id).style.display = "none";
+            };
+
+            window.openLinksModal = function (itemStr) {
+                const item = JSON.parse(decodeURIComponent(itemStr));
+                const title = decodeURIComponent(item.title || "");
+                document.getElementById("linksModalTitle").innerText =
+                    title || "Открыть контент";
+
+                let html = "";
+
+                const tmdbIcon = `<div title="TMDB" style="width:48px;height:48px;border-radius:50%;background:#032541;color:#01b4e4;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:12px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">TMDB</div>`;
+                const kpIcon = `<div title="Кинопоиск" style="width:48px;height:48px;border-radius:50%;background:#ff6600;color:#fff;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:24px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">К</div>`;
+                const imdbIcon = `<div title="IMDb" style="width:48px;height:48px;border-radius:50%;background:#f5c518;color:#000;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:14px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">IMDb</div>`;
+                const googleIcon = `<div title="Google Поиск" style="width:48px;height:48px;border-radius:50%;background:#fff;border:1px solid #e5e7eb;color:#4285f4;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:24px;box-shadow:0 4px 6px rgba(0,0,0,0.1);">G</div>`;
+
+                const linkStyle = `text-decoration:none; display:block; transition: transform 0.2s cubic-bezier(0.4, 0, 0.2, 1);`;
+                const hoverScript = `onmouseover="this.style.transform='scale(1.15) translateY(-2px)'" onmouseout="this.style.transform='scale(1) translateY(0)'"`;
+
+                if (item.tmdb && item.tmdb !== "0") {
+                    const tmdbUrl =
+                        "https://www.themoviedb.org/" +
+                        (item.isTv ? "tv/" : "movie/") +
+                        item.tmdb;
+                    html += `<a href="${tmdbUrl}" target="_blank" style="${linkStyle}" ${hoverScript}>${tmdbIcon}</a>`;
+                }
+                if (item.kp && item.kp !== "0") {
+                    html += `<a href="https://www.kinopoisk.ru/film/${item.kp}/" target="_blank" style="${linkStyle}" ${hoverScript}>${kpIcon}</a>`;
+                }
+                if (item.imdb && item.imdb !== "0") {
+                    html += `<a href="https://www.imdb.com/title/${item.imdb}/" target="_blank" style="${linkStyle}" ${hoverScript}>${imdbIcon}</a>`;
+                }
+                html += `<a href="https://www.google.com/search?q=${encodeURIComponent(title)}" target="_blank" style="${linkStyle}" ${hoverScript}>${googleIcon}</a>`;
+
+                document.getElementById("linksContent").innerHTML = html;
+                document.getElementById("linksModal").style.display = "flex";
+            };
+
+            async function openSettings() {
+                try {
+                    const res = await fetch("/telemetry/api/settings");
+                    const json = await res.json();
+                    if (json.success) {
+                        document.getElementById("setPrefixes").value =
+                            json.data.prefixes;
+                        document.getElementById("setExtensions").value =
+                            json.data.extensions;
+                        document.getElementById("setRegexes").value =
+                            json.data.regexes;
+                        document.getElementById("setIps").value = json.data.ips;
+                        document.getElementById("setRateLimit").value =
+                            json.data.rateLimit;
+                        document.getElementById("settingsModal").style.display =
+                            "flex";
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            async function saveSettings() {
+                const fd = new FormData();
+                fd.append(
+                    "prefixes",
+                    document.getElementById("setPrefixes").value,
+                );
+                fd.append(
+                    "extensions",
+                    document.getElementById("setExtensions").value,
+                );
+                fd.append(
+                    "regexes",
+                    document.getElementById("setRegexes").value,
+                );
+                fd.append("ips", document.getElementById("setIps").value);
+                fd.append(
+                    "rateLimit",
+                    document.getElementById("setRateLimit").value,
+                );
+
+                try {
+                    const res = await fetch("/telemetry/api/settings", {
+                        method: "POST",
+                        body: fd,
+                    });
+                    const json = await res.json();
+                    if (json.success) {
+                        closeModal("settingsModal");
+                    }
+                } catch (e) {
+                    console.error(e);
+                }
+            }
+
+            function refreshAll() {
+                loadStats();
+                loadChart();
+                loadTops();
+                loadLogs();
+            }
+
+            refreshAll();
+            setInterval(refreshAll, 60000);
+        </script>
+    </body>
+</html>

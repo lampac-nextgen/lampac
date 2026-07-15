@@ -4,6 +4,7 @@
     <TargetFramework>net10.0</TargetFramework>
     <OutputType>library</OutputType>
     <IsPackable>true</IsPackable>
+    <DefaultItemExcludes>$(DefaultItemExcludes);native\build-*\**</DefaultItemExcludes>
   </PropertyGroup>
 
   <ItemGroup>
@@ -24,6 +25,15 @@
     </None>
     <None Update="plugins\tracks.js">
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Remove="native\runtimes\**\*" />
+    <None Include="native\runtimes\**\*">
+      <Link>runtimes\%(RecursiveDir)%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
     </None>
   </ItemGroup>
 

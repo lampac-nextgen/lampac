@@ -40,10 +40,10 @@ public class TracksController : BaseController
         if (media.Contains("/dlna/stream"))
         {
             string path = Regex.Match(media, "\\?path=([^&]+)").Groups[1].Value;
-            if (!System.IO.File.Exists("dlna/" + HttpUtility.UrlDecode(path)))
+            if (string.IsNullOrWhiteSpace(path))
                 return ContentTo(showerror ? "path" : "{}");
 
-            magnethash = path;
+            magnethash = HttpUtility.UrlDecode(path);
         }
         else if (media.Contains("/stream/") || media.Contains("/lite/pidtor/"))
         {
@@ -90,7 +90,10 @@ public class TracksController : BaseController
             }
 
             if (string.IsNullOrEmpty(magnethash))
-                magnethash = CrypTo.md5(media);
+                magnethash = media;
+
+            // A cache key must never remain a user-controlled filesystem path.
+            magnethash = CrypTo.md5(magnethash);
 
             if (System.IO.File.Exists(getFolder(magnethash)))
                 outPut = await BrotliTo.DecompressAsync(getFolder(magnethash));

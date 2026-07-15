@@ -1,0 +1,2 @@
+option('static-ffmpeg', type: 'boolean', value: false,
+  description: 'Link FFmpeg and zimg statically into the GStreamer plugin')

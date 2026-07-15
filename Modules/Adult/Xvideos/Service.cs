@@ -83,8 +83,15 @@ public static class XvideosTo
                 img = Regex.Replace(img, "/videos/thumbs([0-9]+)/", "/videos/thumbs$1lll/");
                 img = Regex.Replace(img, "THUMBNUM", "1", RegexOptions.IgnoreCase);
 
-                string preview = Regex.Replace(img, "/thumbs[^/]+/", "/");
-                preview = Regex.Replace(preview, "/[^/]+$", "/3/preview.mp4");
+                string preview =
+                    row.Match("\"previewVideo\":\"([^\"]+)\"")?.Replace("\\", "") ??
+                    row.Match("data-pvv=\"([^\"]+)\"");
+
+                if (string.IsNullOrEmpty(preview))
+                {
+                    preview = Regex.Replace(img, "/thumbs[^/]+/", "/");
+                    preview = Regex.Replace(preview, "/[^/]+$", "/3/preview.mp4");
+                }
 
                 img = img.Replace("thumbs169l/", "thumbs169lll/").Replace("thumbs169ll/", "thumbs169lll/");
 

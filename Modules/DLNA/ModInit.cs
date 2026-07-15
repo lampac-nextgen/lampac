@@ -31,6 +31,7 @@ public class ModInit : IModuleLoaded
     {
         EventListener.UpdateInitFile -= updateConf;
         TrackersCron.Stop();
+        DLNAController.Shutdown();
     }
 
     void updateConf()
@@ -48,5 +49,7 @@ public class ModInit : IModuleLoaded
                 new("^/dlna/", new WafLimitMap { limit = 50, second = 1 })
             }
         });
+
+        DLNAController.UpdateEngineSettings();
     }
 }

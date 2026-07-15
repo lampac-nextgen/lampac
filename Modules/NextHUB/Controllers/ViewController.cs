@@ -1,4 +1,5 @@
 using HtmlAgilityPack;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.Routing;
 using Microsoft.Playwright;
@@ -14,6 +15,9 @@ public class ViewController : BaseSisiController<NxtSettings>
 {
     static readonly Serilog.ILogger Log = Serilog.Log.ForContext<ViewController>();
 
+    IQueryCollection evalQuery = QueryCollection.Empty;
+    string evalQueryCacheKey = string.Empty;
+
     public ViewController() : base(default) { }
 
     [HttpGet]
@@ -22,12 +26,15 @@ public class ViewController : BaseSisiController<NxtSettings>
     async public Task<ActionResult> Index(string uri, bool related)
     {
         uri = DecryptQuery(uri);
-        string[] _urisplit = uri.Split("_-:-_");
-        if (_urisplit.Length != 2)
+        if (string.IsNullOrEmpty(uri))
             return OnError("uri", rcache: false);
 
-        string plugin = _urisplit[0];
-        string url = _urisplit[1];
+        int separator = uri.IndexOf("_-:-_", StringComparison.Ordinal);
+        if (separator <= 0 || separator + 5 >= uri.Length)
+            return OnError("uri", rcache: false);
+
+        string plugin = uri.Substring(0, separator);
+        string url = uri.Substring(separator + 5);
 
         var _nxtInit = Root.goInit(plugin);
         if (_nxtInit == null)
@@ -36,11 +43,16 @@ public class ViewController : BaseSisiController<NxtSettings>
         if (await IsRequestBlocked(_nxtInit, rch: _nxtInit.rch_access != null))
             return badInitMsg;
 
+        (evalQuery, evalQueryCacheKey) = Root.getEvalQuery(HttpContext.Request.Query, init);
+
         if (init.view.initUrlEval != null)
-            url = CSharpEval.Execute<string>(init.view.initUrlEval, new NxtUrlRequest(init.host, plugin, url, HttpContext.Request.Query, related));
+            url = CSharpEval.Execute<string>(init.view.initUrlEval, new NxtUrlRequest(init.host, plugin, url, evalQuery, related));
+
+        if (!Root.isSafeHttpUrl(url))
+            return OnError("url", rcache: false);
 
         SemaphorManager semaphore = null;
-        string semaphoreKey = $"nexthub:InvkSemaphore:{url}";
+        string semaphoreKey = $"nexthub:InvkSemaphore:{url}{evalQueryCacheKey}";
 
         try
         {
@@ -114,7 +126,7 @@ public class ViewController : BaseSisiController<NxtSettings>
 
         try
         {
-            string memKey = $"nexthub:view18:goVideo:{url}";
+            string memKey = $"nexthub:view18:goVideo:{url}{evalQueryCacheKey}";
             if (init.view.bindingToIP && proxyManager != null)
                 memKey += $":{proxyManager.CurrentProxyIp}";
 
@@ -124,6 +136,9 @@ public class ViewController : BaseSisiController<NxtSettings>
 
             var headers = httpHeaders(init);
             string targetHost = init.cors(url);
+            if (!Root.isSafeHttpUrl(targetHost))
+                return default;
+
             var cache = new VideoModel();
 
             using (var browser = new PlaywrightBrowser(init.view.priorityBrowser ?? init.priorityBrowser))
@@ -147,6 +162,12 @@ public class ViewController : BaseSisiController<NxtSettings>
                 {
                     try
                     {
+                        if (!Root.isSafeHttpUrl(route.Request.Url))
+                        {
+                            await route.AbortAsync();
+                            return;
+                        }
+
                         if (browser.IsCompleted || (init.view.patternAbort != null && Regex.IsMatch(route.Request.Url, init.view.patternAbort, RegexOptions.IgnoreCase)))
                         {
                             PlaywrightBase.ConsoleLog(() => $"Playwright: Abort {route.Request.Url}");
@@ -157,7 +178,7 @@ public class ViewController : BaseSisiController<NxtSettings>
                         #region routeEval
                         if (routeEval != null)
                         {
-                            bool _next = await CSharpEval.ExecuteAsync<bool>(routeEval, new NxtRoute(route, HttpContext.Request.Query, targetHost, null, null, null, null, 0), Root.routeOptions);
+                            bool _next = await CSharpEval.ExecuteAsync<bool>(routeEval, new NxtRoute(route, evalQuery, targetHost, null, null, null, null, 0), Root.routeOptions);
                             if (!_next)
                                 return;
                         }
@@ -266,7 +287,11 @@ public class ViewController : BaseSisiController<NxtSettings>
                 #endregion
 
                 #region GotoAsync
-            resetGotoAsync: string html = null;
+            resetGotoAsync:
+                if (!Root.isSafeHttpUrl(targetHost))
+                    return default;
+
+                string html = null;
                 var responce = await page.GotoAsync(init.view.viewsource ? $"view-source:{targetHost}" : targetHost, new PageGotoOptions()
                 {
                     Timeout = 10_000,
@@ -402,7 +427,7 @@ public class ViewController : BaseSisiController<NxtSettings>
                                 if (infile.EndsWith(".js"))
                                     return page.EvaluateAsync<string>($"(html, plugin, url, file) => {{ {evaluate} }}", new { _content, plugin, targetHost, cache.file });
 
-                                var nxt = new NxtEvalView(init, HttpContext.Request.Query, _content, plugin, targetHost, cache.file, cache.headers, proxyManager);
+                                var nxt = new NxtEvalView(init, evalQuery, _content, plugin, targetHost, cache.file, cache.headers, proxyManager);
                                 return CSharpEval.ExecuteAsync<string>(goEval(evaluate), nxt, Root.evalOptionsFull);
                             }
                             else
@@ -410,7 +435,7 @@ public class ViewController : BaseSisiController<NxtSettings>
                                 if (init.view.evalJS != null)
                                     return page.EvaluateAsync<string>($"(html, plugin, url, file) => {{ {init.view.evalJS} }}", new { _content, plugin, targetHost, cache.file });
 
-                                var nxt = new NxtEvalView(init, HttpContext.Request.Query, _content, plugin, targetHost, cache.file, cache.headers, proxyManager);
+                                var nxt = new NxtEvalView(init, evalQuery, _content, plugin, targetHost, cache.file, cache.headers, proxyManager);
                                 return CSharpEval.ExecuteAsync<string>(goEval(init.view.eval), nxt, Root.evalOptionsFull);
                             }
                         }
@@ -450,6 +475,9 @@ public class ViewController : BaseSisiController<NxtSettings>
                     targetHost = cache.file.Replace("GotoAsync:", "").Trim();
                     goto resetGotoAsync;
                 }
+
+                if (!Root.isSafeHttpUrl(cache.file))
+                    return default;
 
                 #region related
                 if (init.view.related && cache.recomends == null)
@@ -491,7 +519,7 @@ public class ViewController : BaseSisiController<NxtSettings>
 
         try
         {
-            string memKey = $"nexthub:view18:goVideo:{url}";
+            string memKey = $"nexthub:view18:goVideo:{url}{evalQueryCacheKey}";
 
             if (init.view.bindingToIP)
                 memKey = ipkey(memKey);
@@ -501,6 +529,9 @@ public class ViewController : BaseSisiController<NxtSettings>
                 return entryCache.value;
 
         resetGotoAsync:
+            if (!Root.isSafeHttpUrl(url))
+                return default;
+
             string html = await httpHydra.Get(url);
             if (string.IsNullOrEmpty(html))
                 return default;
@@ -547,7 +578,7 @@ public class ViewController : BaseSisiController<NxtSettings>
             #region eval
             if (!string.IsNullOrEmpty(init.view.eval))
             {
-                var nxt = new NxtEvalView(init, HttpContext.Request.Query, html, plugin, url, cache.file, cache.headers, proxyManager);
+                var nxt = new NxtEvalView(init, evalQuery, html, plugin, url, cache.file, cache.headers, proxyManager);
                 cache.file = await CSharpEval.ExecuteAsync<string>(goEval(init.view.eval), nxt, Root.evalOptionsFull).ConfigureAwait(false);
 
                 PlaywrightBase.ConsoleLog(() => $"Playwright: SET {cache.file}");
@@ -565,6 +596,9 @@ public class ViewController : BaseSisiController<NxtSettings>
                 url = cache.file.Replace("GotoAsync:", "").Trim();
                 goto resetGotoAsync;
             }
+
+            if (!Root.isSafeHttpUrl(cache.file))
+                return default;
 
             if (init.view.related && cache.recomends == null)
             {

@@ -18,6 +18,7 @@ public class ModInit : IModuleLoaded
 {
     public static string modpath;
     public static ModuleConf conf;
+    public static string gstRootPath;
     static double? gstVersion;
 
     public void Loaded(InitspaceModel initspace)
@@ -25,16 +26,17 @@ public class ModInit : IModuleLoaded
         modpath = initspace.path;
 
         string cachePath = Path.Combine("cache", "gstranscoding");
-        Directory.CreateDirectory(cachePath);
 
-        foreach (string file in Directory.GetFiles(cachePath))
+        if (Directory.Exists(cachePath))
         {
             try
             {
-                File.Delete(file);
+                Directory.Delete(cachePath, true);
             }
             catch { }
         }
+
+        Directory.CreateDirectory(cachePath);
 
         updateConf();
         EventListener.UpdateInitFile += updateConf;
@@ -42,11 +44,18 @@ public class ModInit : IModuleLoaded
         foreach (var m in conf.limit_map)
             CoreInit.conf.WAF.limit_map.Insert(0, m);
 
+        SetupGStreamer();
+
         gstVersion = ReadGstVersion();
         if (gstVersion.HasValue)
             conf.gst_version = gstVersion.Value;
 
         InitGst();
+        if (conf.useGpu)
+        {
+            HardwareVideoBackend.Initialize();
+            HdrToneMappingBackend.Initialize();
+        }
     }
 
     public void Dispose()
@@ -75,8 +84,6 @@ public class ModInit : IModuleLoaded
 
     static void InitGst()
     {
-        SetupGStreamer();
-
         Gst.Module.Initialize();
         GstApp.Module.Initialize();
 
@@ -86,25 +93,79 @@ public class ModInit : IModuleLoaded
 
     static void SetupGStreamer()
     {
+        string registryPath = Path.Combine(
+            AppContext.BaseDirectory,
+            "cache",
+            "gstreamer-registry.bin"
+        );
+
         Environment.SetEnvironmentVariable(
             "GST_REGISTRY",
-            Path.Combine(
-                AppContext.BaseDirectory,
-                "cache",
-                "gstreamer-registry.bin"
-            ),
+            registryPath,
+            EnvironmentVariableTarget.Process
+        );
+
+        Environment.SetEnvironmentVariable(
+            "GST_REGISTRY_1_0",
+            registryPath,
             EnvironmentVariableTarget.Process
         );
 
         if (!OperatingSystem.IsWindows())
             return;
 
-        var gstBin = Path.Combine(conf.PATH, "bin");
-        if (!Directory.Exists(gstBin))
+        string gstRoot = conf.PATH;
+        string gstBin = string.IsNullOrWhiteSpace(gstRoot)
+            ? null
+            : Path.Combine(gstRoot, "bin");
+
+        if (gstBin == null ||
+            !File.Exists(Path.Combine(gstBin, "gst-discoverer-1.0.exe")))
         {
-            gstBin = Path.Combine(modpath, "gst-libs", "win-x86_64", "bin");
-            if (!Directory.Exists(gstBin))
-                return;
+            gstRoot = Path.Combine(modpath, "gst-libs", "win-x86_64");
+            gstBin = Path.Combine(gstRoot, "bin");
+        }
+
+        if (!Directory.Exists(gstBin))
+            return;
+
+        gstRootPath = gstRoot;
+        conf.PATH = gstRoot;
+
+        string gstPlugins = Path.Combine(gstRoot, "lib", "gstreamer-1.0");
+        string gstPluginScanner = Path.Combine(
+            gstRoot,
+            "libexec",
+            "gstreamer-1.0",
+            "gst-plugin-scanner.exe"
+        );
+
+        Environment.SetEnvironmentVariable(
+            "GSTREAMER_1_0_ROOT_MINGW_X86_64",
+            gstRoot,
+            EnvironmentVariableTarget.Process
+        );
+
+        Environment.SetEnvironmentVariable(
+            "GST_PLUGIN_SYSTEM_PATH_1_0",
+            gstPlugins,
+            EnvironmentVariableTarget.Process
+        );
+
+        Environment.SetEnvironmentVariable(
+            "GST_PLUGIN_SCANNER_1_0",
+            gstPluginScanner,
+            EnvironmentVariableTarget.Process
+        );
+
+        string gioModules = Path.Combine(gstRoot, "lib", "gio", "modules");
+        if (Directory.Exists(gioModules))
+        {
+            Environment.SetEnvironmentVariable(
+                "GIO_EXTRA_MODULES",
+                gioModules,
+                EnvironmentVariableTarget.Process
+            );
         }
 
         var currentPath = Environment.GetEnvironmentVariable("PATH");
@@ -134,7 +195,11 @@ public class ModInit : IModuleLoaded
                 StartInfo = new ProcessStartInfo
                 {
                     FileName = OperatingSystem.IsWindows()
-                        ? Path.Combine(conf.PATH, "bin", "gst-inspect-1.0.exe")
+                        ? Path.Combine(
+                            gstRootPath ?? conf.PATH,
+                            "bin",
+                            "gst-inspect-1.0.exe"
+                        )
                         : "gst-inspect-1.0",
 
                     Arguments = "--version",

@@ -2,10 +2,7 @@ using Shared.Services;
 using System;
 using System.Collections.Generic;
 using System.IO;
-using System.Linq;
-using System.Net.Sockets;
 using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -13,124 +10,309 @@ namespace DLNA;
 
 public static class TrackersCron
 {
-    static readonly Serilog.ILogger Log = Serilog.Log.ForContext("SourceContext", nameof(TrackersCron));
+    static readonly Serilog.ILogger Log =
+        Serilog.Log.ForContext(
+            "SourceContext",
+            nameof(TrackersCron)
+        );
+
+    static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
+
+    static readonly (string Url, string CachePath)[] Sources =
+    {
+        (
+            "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all_ip.txt",
+            "cache/trackers_ngosang.txt"
+        ),
+        (
+            "https://raw.githubusercontent.com/XIU2/TrackersListCollection/master/all.txt",
+            "cache/trackers_xiu2.txt"
+        ),
+        (
+            "https://newtrackon.com/api/all",
+            "cache/trackers_newtrackon.txt"
+        )
+    };
+
+    const string TrackersPath = "cache/trackers.txt";
+
+    static Timer _cronTimer;
+    static int _updating;
 
     public static void Start()
     {
-        _cronTimer = new Timer(cron, null, TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(ModInit.conf.intervalUpdateTrackers));
+        int intervalMinutes = Math.Max(1, ModInit.conf.intervalUpdateTrackers);
+
+        _cronTimer = new Timer(
+            Cron,
+            null,
+            TimeSpan.FromMinutes(1),
+            TimeSpan.FromMinutes(intervalMinutes)
+        );
     }
 
     public static void Stop()
     {
-        _cronTimer.Dispose();
+        Interlocked.Exchange(ref _cronTimer, null)?.Dispose();
     }
 
-    static Timer _cronTimer;
-
-    static int _updatingDb = 0;
-
-    async static void cron(object state)
+    static async void Cron(object state)
     {
-        if (Interlocked.Exchange(ref _updatingDb, 1) == 1)
+        if (Interlocked.Exchange(ref _updating, 1) != 0)
             return;
 
         try
         {
-            if (ModInit.conf.autoupdatetrackers)
-            {
-                var trackers = new HashSet<string>();
-                var trackers_bad = new HashSet<string>();
-                var temp = new HashSet<string>();
+            if (!ModInit.conf.autoupdatetrackers)
+                return;
 
-                foreach (string uri in new string[]
-                {
-                    "https://raw.githubusercontent.com/ngosang/trackerslist/master/trackers_all_ip.txt",
-                    "https://raw.githubusercontent.com/XIU2/TrackersListCollection/master/all.txt",
-                    "https://newtrackon.com/api/all"
-                })
-                {
-                    await Http.GetSpan(uri, plain =>
-                    {
-                        foreach (var r in plain.Split("\n"))
-                        {
-                            ReadOnlySpan<char> line = plain[r];
-                            line = line.Trim('\r').Trim('\t').Trim();
-                            if (line.IsEmpty)
-                                continue;
-
-                            temp.Add(line.ToString());
-                        }
-                    });
-                }
-
-                foreach (string url in temp)
-                {
-                    if (await ckeck(url))
-                        trackers.Add(url);
-                    else
-                        trackers_bad.Add(url);
-                }
-
-                File.WriteAllLines("cache/trackers_bad.txt", trackers_bad);
-                File.WriteAllLines("cache/trackers.txt", trackers.OrderByDescending(i => Regex.IsMatch(i, "[0-9]+\\.[0-9]+\\.[0-9]+\\.[0-9]+")).ThenByDescending(i => i.StartsWith("http")));
-            }
+            await UpdateAsync().ConfigureAwait(false);
         }
-        catch (System.Exception ex)
+        catch (Exception ex)
         {
-            Log.Error(ex, "CatchId={CatchId}", "id_w8gwnxlr");
+            Log.Error(
+                ex,
+                "CatchId={CatchId}",
+                "id_trackers_update"
+            );
         }
         finally
         {
-            Volatile.Write(ref _updatingDb, 0);
+            Volatile.Write(ref _updating, 0);
         }
     }
 
-
-    async static Task<bool> ckeck(string tracker)
+    static async Task UpdateAsync()
     {
-        if (string.IsNullOrWhiteSpace(tracker) || tracker.Contains("["))
-            return false;
+        Directory.CreateDirectory("cache");
 
-        if (tracker.StartsWith("http"))
+        var trackers = new List<string>();
+        var unique = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        foreach (var source in Sources)
+        {
+            List<string> sourceTrackers = await LoadSourceAsync(source).ConfigureAwait(false);
+
+            foreach (string tracker in sourceTrackers)
+            {
+                if (unique.Add(tracker))
+                    trackers.Add(tracker);
+            }
+        }
+
+        // Не затираем существующий общий файл пустым списком
+        if (trackers.Count == 0)
+        {
+            Log.Warning(
+                "Tracker update returned no usable trackers. " +
+                "Existing file was preserved."
+            );
+
+            return;
+        }
+
+        WriteAtomic(TrackersPath, trackers);
+
+        Log.Information(
+            "Updated tracker list. Count={Count}",
+            trackers.Count
+        );
+    }
+
+    static async Task<List<string>> LoadSourceAsync((string Url, string CachePath) source)
+    {
+        try
+        {
+            string content = await Http.Get(
+                source.Url,
+                timeoutSeconds: 20
+            ).ConfigureAwait(false);
+
+            List<string> trackers = ParseTrackers(content);
+
+            if (trackers.Count > 0)
+            {
+                try
+                {
+                    WriteAtomic(
+                        source.CachePath,
+                        trackers
+                    );
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning(
+                        ex,
+                        "Failed to save tracker source cache. Url={Url}",
+                        source.Url
+                    );
+                }
+
+                return trackers;
+            }
+
+            Log.Warning(
+                "Tracker source returned no usable trackers. " +
+                "Using cached source data. Url={Url}",
+                source.Url
+            );
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(
+                ex,
+                "Failed to download tracker source. " +
+                "Using cached source data. Url={Url}",
+                source.Url
+            );
+        }
+
+        return ReadCachedSource(
+            source.CachePath,
+            source.Url
+        );
+    }
+
+    static List<string> ReadCachedSource(string cachePath, string sourceUrl)
+    {
+        try
+        {
+            if (!File.Exists(cachePath))
+            {
+                Log.Warning(
+                    "Tracker source cache does not exist. Url={Url}",
+                    sourceUrl
+                );
+
+                return new List<string>();
+            }
+
+            string content = File.ReadAllText(
+                cachePath,
+                Encoding.UTF8
+            );
+
+            List<string> trackers = ParseTrackers(content);
+
+            Log.Information(
+                "Loaded cached tracker source. " +
+                "Url={Url}, Count={Count}",
+                sourceUrl,
+                trackers.Count
+            );
+
+            return trackers;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(
+                ex,
+                "Failed to read tracker source cache. " +
+                "Url={Url}, Path={Path}",
+                sourceUrl,
+                cachePath
+            );
+
+            return new List<string>();
+        }
+    }
+
+    static List<string> ParseTrackers(string content)
+    {
+        var trackers = new List<string>();
+
+        if (string.IsNullOrWhiteSpace(content))
+            return trackers;
+
+        var unique = new HashSet<string>(
+            StringComparer.OrdinalIgnoreCase
+        );
+
+        foreach (string rawLine in content.Split('\n'))
+        {
+            string tracker = rawLine
+                .Trim()
+                .TrimStart('\uFEFF');
+
+            if (string.IsNullOrWhiteSpace(tracker))
+                continue;
+
+            if (tracker.StartsWith('#'))
+                continue;
+
+            if (!Uri.TryCreate(tracker, UriKind.Absolute, out Uri uri))
+                continue;
+
+            bool supported =
+                uri.Scheme.Equals(
+                    Uri.UriSchemeHttp,
+                    StringComparison.OrdinalIgnoreCase
+                )
+                ||
+                uri.Scheme.Equals(
+                    Uri.UriSchemeHttps,
+                    StringComparison.OrdinalIgnoreCase
+                )
+                ||
+                uri.Scheme.Equals(
+                    "udp",
+                    StringComparison.OrdinalIgnoreCase
+                );
+
+            // исключаем ws://, wss:// и остальные неподдерживаемые схемы
+            if (!supported)
+                continue;
+
+            if (string.IsNullOrWhiteSpace(uri.Host))
+                continue;
+
+            // UDP tracker без порта практически бесполезен
+            if (uri.Scheme.Equals("udp", StringComparison.OrdinalIgnoreCase) && uri.Port <= 0)
+                continue;
+
+            if (unique.Add(tracker))
+                trackers.Add(tracker);
+        }
+
+        return trackers;
+    }
+
+    static void WriteAtomic(string path, IEnumerable<string> lines)
+    {
+        string directory = Path.GetDirectoryName(path);
+
+        if (!string.IsNullOrEmpty(directory))
+            Directory.CreateDirectory(directory);
+
+        string tempPath = path + ".tmp";
+
+        try
+        {
+            File.WriteAllLines(
+                tempPath,
+                lines,
+                Utf8NoBom
+            );
+
+            File.Move(
+                tempPath,
+                path,
+                overwrite: true
+            );
+        }
+        finally
         {
             try
             {
-                using (var handler = new System.Net.Http.HttpClientHandler())
-                {
-                    handler.ServerCertificateCustomValidationCallback = Http.AlwaysAllowCertificate;
-
-                    using (var client = new System.Net.Http.HttpClient(handler))
-                    {
-                        client.Timeout = TimeSpan.FromSeconds(7);
-                        await client.GetAsync(tracker, System.Net.Http.HttpCompletionOption.ResponseHeadersRead);
-                        return true;
-                    }
-                }
+                if (File.Exists(tempPath))
+                    File.Delete(tempPath);
             }
-            catch { }
-        }
-        else if (tracker.StartsWith("udp:"))
-        {
-            try
+            catch
             {
-                tracker = tracker.Replace("udp://", "");
-
-                string host = tracker.Split(':')[0].Split('/')[0];
-                int port = tracker.Contains(":") ? int.Parse(tracker.Split(':')[1].Split('/')[0]) : 6969;
-
-                using (UdpClient client = new UdpClient(host, port))
-                {
-                    CancellationTokenSource cts = new CancellationTokenSource();
-                    cts.CancelAfter(7000);
-
-                    string uri = Regex.Match(tracker, "^[^/]/(.*)").Groups[1].Value;
-                    await client.SendAsync(Encoding.UTF8.GetBytes($"GET /{uri} HTTP/1.1\r\nHost: {host}\r\n\r\n"), cts.Token);
-                    return true;
-                }
+                // Временный файл будет перезаписан при следующем обновлении
             }
-            catch { }
         }
-
-        return false;
     }
 }

@@ -1,0 +1,11 @@
+{
+  "enable": false,
+  "dynamic": true,
+  "tree": [
+    "Controllers",
+    "Models",
+    "AppDbContext.cs",
+    "ModInit.cs",
+    "RequestListener.cs"
+  ]
+}

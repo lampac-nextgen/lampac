@@ -1,16 +1,44 @@
 ﻿using Microsoft.IO;
 using Shared.Services.Pools;
 using System;
+using System.Buffers;
 using System.Buffers.Binary;
 using System.Collections.Generic;
 using System.IO;
 
 namespace GStreamer;
 
-public readonly record struct Segment(
-    RecyclableMemoryStream data,
-    double startSeconds
-);
+public readonly struct Segment
+{
+    readonly Action<Stream> _writeTo;
+
+    public readonly long length;
+    public readonly ulong startNs;
+    public readonly ulong endNs;
+
+    internal Segment(
+        long length,
+        ulong startNs,
+        ulong endNs,
+        Action<Stream> writeTo
+    )
+    {
+        this.length = length;
+        this.startNs = startNs;
+        this.endNs = endNs;
+        _writeTo = writeTo ?? throw new ArgumentNullException(nameof(writeTo));
+    }
+
+    public void WriteTo(Stream output)
+    {
+        ArgumentNullException.ThrowIfNull(output);
+
+        if (_writeTo == null)
+            throw new InvalidOperationException("Segment writer is not initialized.");
+
+        _writeTo(output);
+    }
+}
 
 /// <summary>
 /// Собирает отдельные однодорожечные fragments mp4mux в один HLS fMP4 segment:
@@ -46,6 +74,10 @@ public sealed class Mp4BoxReader : IDisposable
     const uint BoxHdlr = 0x68646C72;
     const uint BoxMvex = 0x6D766578;
     const uint BoxTrex = 0x74726578;
+    const uint BoxMfra = 0x6D667261;
+
+    bool _sourceMfraDone;
+    bool _sourceFinalMoovDone;
 
     const uint HandlerVideo = 0x76696465; // vide
     const uint HandlerAudio = 0x736F756E; // soun
@@ -64,9 +96,41 @@ public sealed class Mp4BoxReader : IDisposable
     const uint TrunSampleFlagsPresent = 0x000400;
     const uint TrunCompositionOffsetPresent = 0x000800;
 
-    readonly Action<byte[]> _onInit;
+    const ulong GstSecond = 1_000_000_000UL;
+    const uint MaxRunSamplePreallocation = 4096;
+    const int VideoPayloadBlockSize = 16 * 1024;
+    const int AudioPayloadBlockSize = 4 * 1024;
+
+    static readonly RecyclableMemoryStreamManager VideoPayloadPool =
+        CreatePayloadPool(VideoPayloadBlockSize, 42L * 1024 * 1024);
+
+    static readonly RecyclableMemoryStreamManager AudioPayloadPool =
+        CreatePayloadPool(AudioPayloadBlockSize, 2L * 1024 * 1024);
+
+    static RecyclableMemoryStreamManager CreatePayloadPool(
+        int blockSize,
+        long maximumSmallPoolFreeBytes
+    )
+    {
+        return new RecyclableMemoryStreamManager(
+            new RecyclableMemoryStreamManager.Options(
+                blockSize,
+                1024 * 1024,
+                10 * 1024 * 1024,
+                maximumSmallPoolFreeBytes,
+                0
+            )
+            {
+                AggressiveBufferReturn = false
+            }
+        );
+    }
+
+    readonly Action<ReadOnlyMemory<byte>> _onInit;
     readonly Action<Segment> _onSegment;
-    readonly double _segmentSeconds;
+    readonly int _segmentSeconds;
+    readonly int _segmentDiff;
+    readonly bool _cueMode;
 
     readonly MemoryStream _init = new();
     readonly MemoryStream _sourceMoof = new(16 * 1024);
@@ -81,7 +145,6 @@ public sealed class Mp4BoxReader : IDisposable
 
     RecyclableMemoryStream _sourcePayload;
     RecyclableMemoryStream _prefix;
-    RecyclableMemoryStream _segment;
 
     Fragment _pending;
     byte[] _styp;
@@ -95,12 +158,26 @@ public sealed class Mp4BoxReader : IDisposable
     bool _initDone;
     bool _moovDone;
     long _sourcePayloadFromMoof;
+    int _deferredStart;
 
     TrackInfo _videoTrack;
     TrackInfo _audioTrack;
 
-    double _tfdtOffsetSeconds;
+    uint _videoSampleDurationHint;
+    uint _videoSampleDurationHintTimescale;
+    uint _audioSampleDurationHint;
+    uint _audioSampleDurationHintTimescale;
+
+    ulong _tfdtOffsetNs;
     uint _sequence = 1;
+
+    ulong _lastVideoEndTime;
+    int _completedVideoSegmentsCount;
+
+    bool _hasTargetSegment;
+    ulong _targetSegmentStartNs;
+    ulong _targetSegmentEndNs;
+    ulong _targetToleranceNs;
 
     enum Target
     {
@@ -136,15 +213,21 @@ public sealed class Mp4BoxReader : IDisposable
 
     sealed class Run
     {
+        public Run(int sampleCapacity)
+        {
+            Samples = new List<Sample>(sampleCapacity);
+        }
+
         public byte Version;
         public bool HasCompositionOffset;
+        public bool HasInferredDuration;
         public int? SourceDataOffset;
         public ulong Duration;
         public ulong DataSize;
         public long PayloadOffset;
         public long OutputOffset;
         public bool StartsWithSync;
-        public readonly List<Sample> Samples = new();
+        public readonly List<Sample> Samples;
 
         public int SampleCount => Samples.Count;
     }
@@ -157,7 +240,8 @@ public sealed class Mp4BoxReader : IDisposable
         public ulong DecodeTime;
         public ulong Duration;
         public bool StartsWithSync;
-        public byte[] Tfhd;
+        public bool HasInferredDuration;
+        public uint SampleDescriptionIndexOverride;
         public readonly List<Run> Runs = new();
         public RecyclableMemoryStream Payload;
 
@@ -184,15 +268,17 @@ public sealed class Mp4BoxReader : IDisposable
     }
 
     public Mp4BoxReader(
-        Action<byte[]> onInit,
+        Action<ReadOnlyMemory<byte>> onInit,
         Action<Segment> onSegment,
-        double segmentSeconds
+        int segmentSeconds,
+        int segmentDiff,
+        bool cueMode = false
     )
     {
         _onInit = onInit ?? throw new ArgumentNullException(nameof(onInit));
         _onSegment = onSegment ?? throw new ArgumentNullException(nameof(onSegment));
 
-        if (!double.IsFinite(segmentSeconds) || segmentSeconds <= 0)
+        if (segmentSeconds <= 0)
         {
             throw new ArgumentOutOfRangeException(
                 nameof(segmentSeconds),
@@ -202,35 +288,66 @@ public sealed class Mp4BoxReader : IDisposable
         }
 
         _segmentSeconds = segmentSeconds;
+        _segmentDiff = segmentDiff;
+        _cueMode = cueMode;
     }
 
-    public void ResetSegment()
+    public void SeekReset()
     {
-        _segment?.Dispose();
-        _segment = null;
+        SeekReset(0UL);
     }
 
-    public void SeekReset(double seconds = 0)
+    public void SeekReset(ulong offsetNs)
     {
         _initDone = false;
         _moovDone = false;
+        _sourceMfraDone = false;
+        _sourceFinalMoovDone = false;
         _videoTrack = default;
         _audioTrack = default;
-        _tfdtOffsetSeconds = double.IsFinite(seconds) && seconds > 0 ? seconds : 0;
+        _tfdtOffsetNs = offsetNs == ulong.MaxValue ? 0 : offsetNs;
         _sequence = 1;
         _styp = null;
+
+        _lastVideoEndTime = 0;
+        _completedVideoSegmentsCount = 0;
+
+        _hasTargetSegment = false;
+        _targetSegmentStartNs = 0;
+        _targetSegmentEndNs = 0;
+        _targetToleranceNs = 0;
 
         Reset(_init);
         Reset(_sourceMoof);
         Reset(_sourceStyp);
-        Reset(_deferred);
+        ResetDeferred();
 
         ClearSource();
         ClearFragments(_video);
         ClearFragments(_audio);
         ResetPrefix();
         ResetBox();
-        ResetSegment();
+    }
+
+    public void SetTimelineOffsetNs(ulong offsetNs)
+    {
+        _tfdtOffsetNs = offsetNs == ulong.MaxValue
+            ? 0
+            : offsetNs;
+    }
+
+    public void SetTargetSegment(ulong startNs, ulong endNs, ulong toleranceNs)
+    {
+        if (!_cueMode)
+            return;
+
+        if (endNs <= startNs)
+            throw new ArgumentOutOfRangeException(nameof(endNs));
+
+        _targetSegmentStartNs = startNs;
+        _targetSegmentEndNs = endNs;
+        _targetToleranceNs = toleranceNs;
+        _hasTargetSegment = true;
     }
 
     public void Push(Gst.Buffer buffer, int size)
@@ -242,8 +359,7 @@ public sealed class Mp4BoxReader : IDisposable
 
         if (TryProcessDeferred())
         {
-            AppendGstBuffer(buffer, 0, size, _deferred);
-            _deferred.Position = 0;
+            AppendGstBufferToDeferred(buffer, 0, size);
             return;
         }
 
@@ -271,12 +387,11 @@ public sealed class Mp4BoxReader : IDisposable
                 continue;
 
             if (consumed < copied)
-                _deferred.Write(_readBuffer.AsSpan(consumed, copied - consumed));
+                AppendDeferred(_readBuffer.AsSpan(consumed, copied - consumed));
 
             if (sourceOffset < size)
-                AppendGstBuffer(buffer, sourceOffset, size - sourceOffset, _deferred);
+                AppendGstBufferToDeferred(buffer, sourceOffset, size - sourceOffset);
 
-            _deferred.Position = 0;
             return;
         }
     }
@@ -286,28 +401,37 @@ public sealed class Mp4BoxReader : IDisposable
         if (TryBuildSegment())
             return true;
 
-        if (_deferred.Length == 0)
-            return false;
+        int deferredEnd = checked((int)_deferred.Length);
 
-        int length = checked((int)_deferred.Length);
+        if ((uint)_deferredStart > (uint)deferredEnd)
+            throw new InvalidOperationException("Deferred buffer range is invalid.");
+
+        int length = deferredEnd - _deferredStart;
+
+        if (length == 0)
+        {
+            ResetDeferred();
+            return false;
+        }
+
         ReadOnlySpan<byte> data;
         byte[] copy = null;
 
         if (_deferred.TryGetBuffer(out ArraySegment<byte> segment) && segment.Array != null)
         {
-            data = segment.Array.AsSpan(segment.Offset, length);
+            data = segment.Array.AsSpan(segment.Offset + _deferredStart, length);
         }
         else
         {
             copy = _deferred.ToArray();
-            data = copy;
+            data = copy.AsSpan(_deferredStart, length);
         }
 
         int consumed = Process(data, out bool completed);
 
         if (completed)
         {
-            KeepDeferred(data, consumed);
+            KeepDeferred(length, consumed);
             return true;
         }
 
@@ -318,12 +442,15 @@ public sealed class Mp4BoxReader : IDisposable
             );
         }
 
-        Reset(_deferred);
+        ResetDeferred();
         return false;
     }
 
     public bool TryBuildEndOfStreamRemainder()
     {
+        if (_cueMode && !_hasTargetSegment)
+            return false;
+
         int videoCount = _video.Count;
         int audioCount = _audio.Count;
 
@@ -341,9 +468,7 @@ public sealed class Mp4BoxReader : IDisposable
         if (videoCount > 0 && audioCount > 0)
         {
             ulong videoEnd = _video[videoCount - 1].EndTime;
-
-            if (TryPrepareAudioForVideoEnd(videoEnd, out int selectedAudioCount))
-                audioCount = selectedAudioCount;
+            TryPrepareAudioForVideoEnd(videoEnd, out audioCount);
         }
 
         BuildSegment(
@@ -465,84 +590,192 @@ public sealed class Mp4BoxReader : IDisposable
         _boxRemaining = size - (ulong)headerSize;
         _target = Target.None;
 
-        // mp4mux writes init first and starts media with styp or moof.
         if (!_initDone && (_boxType == BoxStyp || _boxType == BoxMoof))
             CompleteInit();
 
         if (!_initDone)
         {
             if (_boxType == BoxMdat)
-                throw new InvalidDataException("mdat appeared before init was completed.");
+            {
+                throw new InvalidDataException(
+                    "mdat appeared before init was completed."
+                );
+            }
+
+            if (_boxType == BoxMfra)
+            {
+                throw new InvalidDataException(
+                    "mfra appeared before init was completed."
+                );
+            }
 
             _target = Target.Init;
             Write(_boxHeader.AsSpan(0, headerSize));
             return;
         }
 
+        // После rewritten terminal moov никаких новых MP4 boxes
+        // в append-only представлении appsink уже быть не должно
+        if (_sourceFinalMoovDone)
+        {
+            throw new InvalidDataException(
+                $"Unexpected top-level MP4 box after terminal moov: " +
+                $"{FourCC(_boxType)}."
+            );
+        }
+
+        if (_sourceMfraDone && _boxType != BoxMoov)
+        {
+            throw new InvalidDataException(
+                $"Only the rewritten terminal moov is allowed after mfra; " +
+                $"got {FourCC(_boxType)}."
+            );
+        }
+
         switch (_boxType)
         {
             case BoxMoof:
-                if (_pending != null)
-                    throw new InvalidDataException("A new moof appeared before the previous mdat.");
-
-                Reset(_sourceMoof);
-                _sourcePayloadFromMoof = 0;
-                _target = Target.Moof;
-                Write(_boxHeader.AsSpan(0, headerSize));
-                return;
-
-            case BoxMdat:
-                if (_pending == null)
-                    throw new InvalidDataException("mdat does not follow a supported moof.");
-
-                _sourcePayload?.Dispose();
-                _sourcePayload = PoolInvk.msm.GetStream();
-                _sourcePayloadFromMoof = checked(
-                    _sourcePayloadFromMoof + headerSize
-                );
-                _target = Target.Payload;
-                return;
-
-            case BoxSidx:
-                // Source sidx offsets become invalid after fragment merging.
-                if (_pending != null)
-                    _sourcePayloadFromMoof = checked(
-                        _sourcePayloadFromMoof + (long)size
-                    );
-                return;
-
-            case BoxStyp:
-                if (_pending != null)
                 {
-                    throw new InvalidDataException(
-                        "styp cannot appear between moof and mdat."
-                    );
+                    if (_pending != null)
+                    {
+                        throw new InvalidDataException(
+                            "A new moof appeared before the previous mdat."
+                        );
+                    }
+
+                    Reset(_sourceMoof);
+                    _sourcePayloadFromMoof = 0;
+
+                    _target = Target.Moof;
+                    Write(_boxHeader.AsSpan(0, headerSize));
+                    return;
                 }
 
-                Reset(_sourceStyp);
-                _target = Target.Styp;
-                Write(_boxHeader.AsSpan(0, headerSize));
-                return;
+            case BoxMdat:
+                {
+                    if (_pending == null)
+                    {
+                        throw new InvalidDataException(
+                            "mdat does not follow a supported moof."
+                        );
+                    }
+
+                    _sourcePayload?.Dispose();
+                    _sourcePayload = CreatePayloadStream(_pending.TrackId);
+
+                    _sourcePayloadFromMoof = checked(
+                        _sourcePayloadFromMoof + headerSize
+                    );
+
+                    _target = Target.Payload;
+                    return;
+                }
+
+            case BoxSidx:
+                {
+                    // Source sidx offsets become invalid after fragment merging
+                    // Не сохраняем box, но учитываем его размер, если он почему-то расположен между moof и mdat
+                    if (_pending != null)
+                    {
+                        _sourcePayloadFromMoof = checked(
+                            _sourcePayloadFromMoof + (long)size
+                        );
+                    }
+
+                    return;
+                }
+
+            case BoxStyp:
+                {
+                    if (_pending != null)
+                    {
+                        throw new InvalidDataException(
+                            "styp cannot appear between moof and mdat."
+                        );
+                    }
+
+                    Reset(_sourceStyp);
+
+                    _target = Target.Styp;
+                    Write(_boxHeader.AsSpan(0, headerSize));
+                    return;
+                }
 
             case BoxEmsg:
             case BoxFree:
             case BoxPrft:
-                if (_pending != null)
                 {
-                    _sourcePayloadFromMoof = checked(
-                        _sourcePayloadFromMoof + (long)size
-                    );
+                    if (_pending != null)
+                    {
+                        _sourcePayloadFromMoof = checked(
+                            _sourcePayloadFromMoof + (long)size
+                        );
+                    }
+
+                    EnsurePrefix();
+
+                    _target = Target.Prefix;
+                    Write(_boxHeader.AsSpan(0, headerSize));
+                    return;
                 }
 
-                EnsurePrefix();
-                _target = Target.Prefix;
-                Write(_boxHeader.AsSpan(0, headerSize));
-                return;
+            case BoxMfra:
+                {
+                    if (_pending != null)
+                    {
+                        throw new InvalidDataException(
+                            "mfra cannot appear between moof and mdat."
+                        );
+                    }
+
+                    if (_sourceMfraDone)
+                        throw new InvalidDataException("Duplicate terminal mfra.");
+
+                    // mfra содержит file-level index с абсолютными offsets исходного GStreamer MP4-потока
+                    // После объединения и пересегментации offsets недействительны
+                    //
+                    // Target.None: тело box будет полностью прочитано и отброшено
+                    return;
+                }
+
+            case BoxMoov:
+                {
+                    if (!_sourceMfraDone)
+                    {
+                        throw new InvalidDataException(
+                            "Unexpected moov after init."
+                        );
+                    }
+
+                    if (_sourceFinalMoovDone)
+                    {
+                        throw new InvalidDataException(
+                            "Duplicate terminal moov."
+                        );
+                    }
+
+                    if (_pending != null)
+                    {
+                        throw new InvalidDataException(
+                            "Final moov cannot appear between moof and mdat."
+                        );
+                    }
+
+                    // Это rewritten moov от non-streamable mp4mux
+                    // Исходный init segment уже передан через _onInit
+                    // Повторный moov для HLS segments не нужен
+                    //
+                    // Target.None: полностью прочитать и отбросить
+                    return;
+                }
 
             default:
-                throw new InvalidDataException(
-                    $"Unsupported top-level MP4 box after init: {FourCC(_boxType)}."
-                );
+                {
+                    throw new InvalidDataException(
+                        $"Unsupported top-level MP4 box after init: " +
+                        $"{FourCC(_boxType)}."
+                    );
+                }
         }
     }
 
@@ -582,9 +815,19 @@ public sealed class Mp4BoxReader : IDisposable
                 Reset(_sourceStyp);
                 return false;
 
+            case BoxMfra:
+                _sourceMfraDone = true;
+                return false;
+
             case BoxMoov:
                 if (_initDone)
-                    throw new InvalidDataException("Unexpected moov after init.");
+                {
+                    if (!_sourceMfraDone || _sourceFinalMoovDone)
+                        throw new InvalidDataException("Unexpected moov after init.");
+
+                    _sourceFinalMoovDone = true;
+                    return false;
+                }
 
                 _moovDone = true;
                 return false;
@@ -607,10 +850,17 @@ public sealed class Mp4BoxReader : IDisposable
         if (!_moovDone || _init.Length == 0)
             throw new InvalidDataException("Incomplete MP4 initialization.");
 
-        byte[] init = _init.ToArray();
+        if (!_init.TryGetBuffer(out ArraySegment<byte> buffer) || buffer.Array == null)
+            throw new InvalidOperationException("MP4 init buffer is not accessible.");
+
+        var init = new ReadOnlyMemory<byte>(
+            buffer.Array,
+            buffer.Offset,
+            checked((int)_init.Length)
+        );
 
         if (!TryParseInit(
-            init,
+            init.Span,
             out _videoTrack,
             out _audioTrack,
             out string error
@@ -622,7 +872,16 @@ public sealed class Mp4BoxReader : IDisposable
         }
 
         _initDone = true;
-        _onInit(init);
+
+        try
+        {
+            _onInit(init);
+        }
+        finally
+        {
+            Reset(_init);
+            _init.Capacity = 0;
+        }
     }
 
     void CompleteMoof()
@@ -633,6 +892,12 @@ public sealed class Mp4BoxReader : IDisposable
             moof,
             _videoTrack,
             _audioTrack,
+            _videoSampleDurationHintTimescale == _videoTrack.Timescale
+                ? _videoSampleDurationHint
+                : 0,
+            _audioSampleDurationHintTimescale == _audioTrack.Timescale
+                ? _audioSampleDurationHint
+                : 0,
             out Fragment fragment,
             out string error
         ))
@@ -640,8 +905,116 @@ public sealed class Mp4BoxReader : IDisposable
             throw new InvalidDataException($"Unable to parse source moof: {error}");
         }
 
+        ResolvePreviousInferredDuration(fragment);
+
+        uint durationHint = fragment.HasInferredDuration
+            ? 0
+            : LastSampleDuration(fragment);
+
+        if (durationHint != 0)
+        {
+            if (fragment.TrackId == _videoTrack.Id)
+            {
+                _videoSampleDurationHint = durationHint;
+                _videoSampleDurationHintTimescale = fragment.Timescale;
+            }
+            else if (fragment.TrackId == _audioTrack.Id)
+            {
+                _audioSampleDurationHint = durationHint;
+                _audioSampleDurationHintTimescale = fragment.Timescale;
+            }
+        }
+
         _pending = fragment;
         _sourcePayloadFromMoof = _sourceMoof.Length;
+    }
+
+    void ResolvePreviousInferredDuration(Fragment current)
+    {
+        List<Fragment> fragments = current.TrackId == _videoTrack.Id
+            ? _video
+            : current.TrackId == _audioTrack.Id
+                ? _audio
+                : null;
+
+        if (fragments == null || fragments.Count == 0)
+            return;
+
+        Fragment previous = fragments[^1];
+        if (!previous.HasInferredDuration)
+            return;
+
+        Run inferredRun = null;
+
+        for (int i = previous.Runs.Count - 1; i >= 0; i--)
+        {
+            if (previous.Runs[i].HasInferredDuration)
+            {
+                inferredRun = previous.Runs[i];
+                break;
+            }
+        }
+
+        if (inferredRun == null || inferredRun.Samples.Count == 0)
+            throw new InvalidDataException("Inferred sample duration marker is missing.");
+
+        int sampleIndex = inferredRun.Samples.Count - 1;
+        Sample sample = inferredRun.Samples[sampleIndex];
+        ulong durationBeforeSample = previous.Duration - sample.Duration;
+        ulong sampleStart = checked(previous.DecodeTime + durationBeforeSample);
+
+        if (current.DecodeTime < sampleStart)
+        {
+            throw new InvalidDataException(
+                $"Inferred sample moves decode time backwards: " +
+                $"track={current.TrackId}, previous_tfdt={previous.DecodeTime}, " +
+                $"previous_duration={previous.Duration}, sample_duration={sample.Duration}, " +
+                $"sample_start={sampleStart}, next_tfdt={current.DecodeTime}, " +
+                $"runs={previous.Runs.Count}, samples={previous.SampleCount}."
+            );
+        }
+
+        ulong exactDuration = current.DecodeTime - sampleStart;
+        if (exactDuration > uint.MaxValue)
+            throw new InvalidDataException("Inferred sample duration exceeds UInt32.");
+
+        uint exactDuration32 = (uint)exactDuration;
+        inferredRun.Samples[sampleIndex] = sample with { Duration = exactDuration32 };
+        inferredRun.Duration = checked(inferredRun.Duration - sample.Duration + exactDuration);
+        previous.Duration = checked(previous.Duration - sample.Duration + exactDuration);
+
+        foreach (Run run in previous.Runs)
+            run.HasInferredDuration = false;
+
+        previous.HasInferredDuration = false;
+
+        if (exactDuration32 != 0 && current.TrackId == _videoTrack.Id)
+        {
+            _videoSampleDurationHint = exactDuration32;
+            _videoSampleDurationHintTimescale = current.Timescale;
+        }
+        else if (exactDuration32 != 0)
+        {
+            _audioSampleDurationHint = exactDuration32;
+            _audioSampleDurationHintTimescale = current.Timescale;
+        }
+    }
+
+    static uint LastSampleDuration(Fragment fragment)
+    {
+        for (int runIndex = fragment.Runs.Count - 1; runIndex >= 0; runIndex--)
+        {
+            List<Sample> samples = fragment.Runs[runIndex].Samples;
+
+            for (int sampleIndex = samples.Count - 1; sampleIndex >= 0; sampleIndex--)
+            {
+                uint duration = samples[sampleIndex].Duration;
+                if (duration != 0)
+                    return duration;
+            }
+        }
+
+        return 0;
     }
 
     void CompleteMdat()
@@ -667,6 +1040,17 @@ public sealed class Mp4BoxReader : IDisposable
         _pending = null;
         _sourcePayloadFromMoof = 0;
         Reset(_sourceMoof);
+    }
+
+    RecyclableMemoryStream CreatePayloadStream(uint trackId)
+    {
+        if (trackId == _videoTrack.Id)
+            return VideoPayloadPool.GetStream();
+
+        if (trackId == _audioTrack.Id)
+            return AudioPayloadPool.GetStream();
+
+        return PoolInvk.msm.GetStream();
     }
 
     static void AttachPayload(
@@ -723,6 +1107,8 @@ public sealed class Mp4BoxReader : IDisposable
         return true;
     }
 
+    double _debugLastDiff;
+
     int SelectVideoCount()
     {
         if (_video.Count == 0)
@@ -736,19 +1122,151 @@ public sealed class Mp4BoxReader : IDisposable
             );
         }
 
-        ulong target = ToUnits(_segmentSeconds, _videoTrack.Timescale);
-        ulong duration = 0;
+        if (_cueMode)
+            return SelectCueVideoCount();
 
-        // Нужен один fragment look-ahead: следующий segment должен начинаться с sync sample.
+        ulong target = ToUnits(_segmentSeconds, _videoTrack.Timescale);
+        bool takeFirstSyncBoundary = false;
+
+        if (_completedVideoSegmentsCount > 0 && _segmentDiff > 0)
+        {
+            // ожидаемая позиция видео сегмента браузером
+            ulong expectedEnd = checked(
+                (ulong)_completedVideoSegmentsCount *
+                (ulong)_segmentSeconds *
+                _videoTrack.Timescale
+            );
+
+            // на сколько реальная позиция видео сегмента должна быть выше expectedEnd
+            ulong diff = checked(
+                (ulong)(_segmentSeconds + _segmentDiff) *
+                _videoTrack.Timescale
+            );
+
+            // реальная позиция видео сегмента выше expectedEnd
+            if (_lastVideoEndTime > expectedEnd)
+            {
+                ulong ahead = _lastVideoEndTime - expectedEnd;
+
+                if (ahead >= diff)
+                {
+                    takeFirstSyncBoundary = true;
+
+                    if (ModInit.conf.debugType == "mp4box-diff")
+                    {
+                        double lastDiff = (double)(ahead - diff) / _videoTrack.Timescale;
+
+                        if (lastDiff != _debugLastDiff)
+                        {
+                            _debugLastDiff = lastDiff;
+                            Console.WriteLine($"diff: {lastDiff:F3}s");
+                        }
+                    }
+                }
+            }
+        }
+
+        ulong duration = 0;
+        int selectedCount = 0;
+
+        // Нужен один fragment look-ahead:
+        // следующий сегмент должен начинаться с sync sample
         for (int i = 0; i + 1 < _video.Count; i++)
         {
             duration = checked(duration + _video[i].Duration);
 
-            if (duration >= target && _video[i + 1].StartsWithSync)
+            if (!takeFirstSyncBoundary)
+            {
+                if (duration >= target && _video[i + 1].StartsWithSync)
+                    return i + 1;
+
+                continue;
+            }
+
+            if (duration <= target)
+            {
+                if (_video[i + 1].StartsWithSync)
+                {
+                    selectedCount = i + 1;
+
+                    if (duration == target)
+                        return selectedCount;
+                }
+
+                continue;
+            }
+
+            // Есть допустимая граница <= target
+            if (selectedCount > 0)
+                return selectedCount;
+
+            // До target sync-границ не было:
+            // ждём первую допустимую границу выше target
+            if (_video[i + 1].StartsWithSync)
                 return i + 1;
         }
 
         return 0;
+    }
+
+    int SelectCueVideoCount()
+    {
+        if (!_hasTargetSegment || _video.Count < 2)
+            return 0;
+
+        long firstPresentationTime = FirstPresentationTime(_video[0]);
+        ulong targetDurationNs = _targetSegmentEndNs - _targetSegmentStartNs;
+
+        for (int i = 1; i < _video.Count; i++)
+        {
+            Fragment boundary = _video[i];
+
+            if (!boundary.StartsWithSync)
+                continue;
+
+            long boundaryPresentationTime = FirstPresentationTime(boundary);
+
+            if (boundaryPresentationTime <= firstPresentationTime)
+                throw new InvalidDataException("Cue presentation timeline is not increasing.");
+
+            ulong durationNs = ToNanoseconds(
+                checked((ulong)(boundaryPresentationTime - firstPresentationTime)),
+                _videoTrack.Timescale
+            );
+
+            if (durationNs < targetDurationNs &&
+                targetDurationNs - durationNs > _targetToleranceNs)
+            {
+                continue;
+            }
+
+            if (durationNs > targetDurationNs &&
+                durationNs - targetDurationNs > _targetToleranceNs)
+            {
+                throw new InvalidDataException(
+                    $"Cue sync boundary duration is {durationNs}, " +
+                    $"expected {targetDurationNs}."
+                );
+            }
+
+            return i;
+        }
+
+        return 0;
+    }
+
+    static long FirstPresentationTime(Fragment fragment)
+    {
+        if (fragment.Runs.Count == 0 || fragment.Runs[0].Samples.Count == 0)
+            throw new InvalidDataException("Video fragment has no first sample.");
+
+        Run run = fragment.Runs[0];
+        Sample sample = run.Samples[0];
+        long compositionOffset = run.Version == 1
+            ? unchecked((int)sample.CompositionOffset)
+            : sample.CompositionOffset;
+
+        return checked((long)fragment.DecodeTime + compositionOffset);
     }
 
     bool TryPrepareAudioForVideoEnd(ulong videoEnd, out int audioCount)
@@ -821,7 +1339,7 @@ public sealed class Mp4BoxReader : IDisposable
         return count;
     }
 
-    static void SplitFragment(List<Fragment> fragments, int index, int firstSampleCount)
+    void SplitFragment(List<Fragment> fragments, int index, int firstSampleCount)
     {
         Fragment source = fragments[index];
         int totalSamples = source.SampleCount;
@@ -849,7 +1367,7 @@ public sealed class Mp4BoxReader : IDisposable
         fragments.Insert(index + 1, tail);
     }
 
-    static Fragment SliceFragment(Fragment source, int startSample, int sampleCount)
+    Fragment SliceFragment(Fragment source, int startSample, int sampleCount)
     {
         if (sampleCount <= 0)
             throw new ArgumentOutOfRangeException(nameof(sampleCount));
@@ -862,8 +1380,8 @@ public sealed class Mp4BoxReader : IDisposable
             Timescale = source.Timescale,
             SampleDescriptionIndex = source.SampleDescriptionIndex,
             DecodeTime = decodeTime,
-            Tfhd = source.Tfhd,
-            Payload = PoolInvk.msm.GetStream()
+            SampleDescriptionIndexOverride = source.SampleDescriptionIndexOverride,
+            Payload = CreatePayloadStream(source.TrackId)
         };
 
         try
@@ -952,7 +1470,7 @@ public sealed class Mp4BoxReader : IDisposable
 
     static Run CloneRunSlice(Run source, int startSample, int sampleCount, long payloadOffset)
     {
-        var result = new Run
+        var result = new Run(sampleCount)
         {
             Version = source.Version,
             HasCompositionOffset = source.HasCompositionOffset,
@@ -985,7 +1503,7 @@ public sealed class Mp4BoxReader : IDisposable
     }
 
     static void CopyPayloadRange(
-        Stream source,
+        RecyclableMemoryStream source,
         long offset,
         ulong length,
         Stream destination
@@ -997,30 +1515,18 @@ public sealed class Mp4BoxReader : IDisposable
         if (length > long.MaxValue)
             throw new InvalidDataException("Payload range is too large.");
 
-        long oldPosition = source.Position;
-        byte[] buffer = new byte[64 * 1024];
-        ulong remaining = length;
+        long count = (long)length;
+        ReadOnlySequence<byte> sequence = source.GetReadOnlySequence();
 
-        try
+        if (offset < 0 ||
+            count > sequence.Length ||
+            offset > sequence.Length - count)
         {
-            source.Position = offset;
-
-            while (remaining > 0)
-            {
-                int requested = (int)Math.Min((ulong)buffer.Length, remaining);
-                int read = source.Read(buffer.AsSpan(0, requested));
-
-                if (read <= 0)
-                    throw new EndOfStreamException("Unexpected end of fragment payload.");
-
-                destination.Write(buffer.AsSpan(0, read));
-                remaining -= (uint)read;
-            }
+            throw new EndOfStreamException("Unexpected end of fragment payload.");
         }
-        finally
-        {
-            source.Position = oldPosition;
-        }
+
+        foreach (ReadOnlyMemory<byte> block in sequence.Slice(offset, count))
+            destination.Write(block.Span);
     }
 
     void BuildSegment(int videoCount, int audioCount, bool allowSingleTrack = false)
@@ -1081,70 +1587,106 @@ public sealed class Mp4BoxReader : IDisposable
                 ? 8
                 : 16;
 
-        ResetSegment();
-        _segment = PoolInvk.msm.GetStream();
-
-        if (_styp != null)
-            _segment.Write(_styp);
-
-        Append(_prefix, _segment);
-
-        WriteHeader(_segment, moofSize, BoxMoof);
-        WriteMfhd(_segment, _sequence++);
-
-        if (hasVideo)
-        {
-            WriteTraf(
-                _segment,
-                _video,
-                videoCount,
-                moofSize,
-                mdatHeaderSize
-            );
-        }
-
-        if (hasAudio)
-        {
-            WriteTraf(
-                _segment,
-                _audio,
-                audioCount,
-                moofSize,
-                mdatHeaderSize
-            );
-        }
-
-        WriteMdatHeader(
-            _segment,
-            checked((ulong)payloadLength),
-            mdatHeaderSize
-        );
-
-        if (hasVideo)
-            AppendPayloads(_video, videoCount, _segment);
-
-        if (hasAudio)
-            AppendPayloads(_audio, audioCount, _segment);
-
         Fragment first = hasVideo
             ? _video[0]
             : _audio[0];
 
-        double startSeconds =
-            (double)first.DecodeTime /
-            first.Timescale;
+        Fragment last = hasVideo
+            ? _video[videoCount - 1]
+            : _audio[audioCount - 1];
 
-        _segment.Position = 0;
+        byte[] styp = _styp;
+        RecyclableMemoryStream prefix = _prefix;
+        uint sequence = _sequence++;
+        ulong tfdtOffsetNs = _tfdtOffsetNs;
 
-        _onSegment(
-            new Segment(
-                _segment,
-                startSeconds
-            )
+        long segmentLength = checked(
+            (long)(styp?.Length ?? 0) +
+            (prefix?.Length ?? 0L) +
+            moofSize +
+            mdatHeaderSize +
+            payloadLength
         );
 
+        bool writerActive = true;
+
+        void WriteSegment(Stream output)
+        {
+            if (!writerActive)
+            {
+                throw new InvalidOperationException(
+                    "Segment writer can only be used during the segment callback."
+                );
+            }
+
+            if (styp != null)
+                output.Write(styp);
+
+            Append(prefix, output);
+
+            WriteHeader(output, moofSize, BoxMoof);
+            WriteMfhd(output, sequence);
+
+            if (hasVideo)
+            {
+                WriteTraf(
+                    output,
+                    _video,
+                    videoCount,
+                    moofSize,
+                    mdatHeaderSize,
+                    tfdtOffsetNs
+                );
+            }
+
+            if (hasAudio)
+            {
+                WriteTraf(
+                    output,
+                    _audio,
+                    audioCount,
+                    moofSize,
+                    mdatHeaderSize,
+                    tfdtOffsetNs
+                );
+            }
+
+            WriteMdatHeader(
+                output,
+                checked((ulong)payloadLength),
+                mdatHeaderSize
+            );
+
+            if (hasVideo)
+                AppendPayloads(_video, videoCount, output);
+
+            if (hasAudio)
+                AppendPayloads(_audio, audioCount, output);
+        }
+
+        try
+        {
+            _onSegment(new Segment(
+                segmentLength,
+                AddClockTime(_tfdtOffsetNs, ToNanoseconds(first.DecodeTime, first.Timescale)),
+                AddClockTime(_tfdtOffsetNs, ToNanoseconds(last.EndTime, last.Timescale)),
+                WriteSegment
+            ));
+
+            if (_cueMode)
+                _hasTargetSegment = false;
+        }
+        finally
+        {
+            writerActive = false;
+        }
+
         if (hasVideo)
+        {
+            _lastVideoEndTime = last.EndTime;
+            _completedVideoSegmentsCount++;
             Remove(_video, videoCount);
+        }
 
         if (hasAudio)
             Remove(_audio, audioCount);
@@ -1195,7 +1737,11 @@ public sealed class Mp4BoxReader : IDisposable
 
     static long GetTrafSize(List<Fragment> fragments, int count)
     {
-        long size = 8L + fragments[0].Tfhd.Length + 20L;
+        long tfhdSize = fragments[0].SampleDescriptionIndexOverride == 0
+            ? 16L
+            : 20L;
+
+        long size = 8L + tfhdSize + 20L;
 
         for (int i = 0; i < count; i++)
         {
@@ -1212,12 +1758,13 @@ public sealed class Mp4BoxReader : IDisposable
         return checked(20L + (long)run.SampleCount * fieldsPerSample * 4L);
     }
 
-    void WriteTraf(
+    static void WriteTraf(
         Stream output,
         List<Fragment> fragments,
         int count,
         uint moofSize,
-        int mdatHeaderSize
+        int mdatHeaderSize,
+        ulong tfdtOffsetNs
     )
     {
         long size64 = GetTrafSize(fragments, count);
@@ -1228,10 +1775,11 @@ public sealed class Mp4BoxReader : IDisposable
         Fragment first = fragments[0];
 
         WriteHeader(output, (uint)size64, BoxTraf);
-        output.Write(first.Tfhd);
+        WriteTfhd(output, first.TrackId, first.SampleDescriptionIndexOverride);
+
         WriteTfdt(
             output,
-            AddTfdtOffset(first.DecodeTime, first.Timescale, _tfdtOffsetSeconds)
+            AddTfdtOffset(first.DecodeTime, first.Timescale, tfdtOffsetNs)
         );
 
         for (int i = 0; i < count; i++)
@@ -1254,7 +1802,7 @@ public sealed class Mp4BoxReader : IDisposable
 
     static void WriteTrun(Stream output, Run run, int dataOffset)
     {
-        if (run.SampleCount == 0 || run.SampleCount > uint.MaxValue)
+        if (run.SampleCount == 0)
             throw new InvalidDataException("Invalid trun sample count.");
 
         long size64 = GetTrunSize(run);
@@ -1313,6 +1861,8 @@ public sealed class Mp4BoxReader : IDisposable
         ReadOnlySpan<byte> moof,
         TrackInfo videoTrack,
         TrackInfo audioTrack,
+        uint videoDurationHint,
+        uint audioDurationHint,
         out Fragment fragment,
         out string error
     )
@@ -1361,6 +1911,8 @@ public sealed class Mp4BoxReader : IDisposable
                 headerSize,
                 videoTrack,
                 audioTrack,
+                videoDurationHint,
+                audioDurationHint,
                 out fragment,
                 out error
             ))
@@ -1383,6 +1935,8 @@ public sealed class Mp4BoxReader : IDisposable
         int trafHeader,
         TrackInfo videoTrack,
         TrackInfo audioTrack,
+        uint videoDurationHint,
+        uint audioDurationHint,
         out Fragment fragment,
         out string error
     )
@@ -1463,16 +2017,20 @@ public sealed class Mp4BoxReader : IDisposable
 
         uint timescale;
         Trex trex;
+        uint durationHint;
+        bool defaultDurationIsHint = false;
 
         if (trackId == videoTrack.Id)
         {
             timescale = videoTrack.Timescale;
             trex = videoTrack.Trex;
+            durationHint = videoDurationHint;
         }
         else if (trackId == audioTrack.Id)
         {
             timescale = audioTrack.Timescale;
             trex = audioTrack.Trex;
+            durationHint = audioDurationHint;
         }
         else
         {
@@ -1490,8 +2048,22 @@ public sealed class Mp4BoxReader : IDisposable
             ? sampleDescriptionIndex
             : trex.DescriptionIndex;
 
+        if (effectiveSampleDescriptionIndex == 0)
+        {
+            error =
+                $"sample_description_index is zero for track_ID={trackId}";
+
+            return false;
+        }
+
         if (defaultDuration == 0)
             defaultDuration = trex.Duration;
+
+        if (defaultDuration == 0)
+        {
+            defaultDuration = durationHint;
+            defaultDurationIsHint = defaultDuration != 0;
+        }
 
         if (defaultSize == 0)
             defaultSize = trex.Size;
@@ -1499,12 +2071,11 @@ public sealed class Mp4BoxReader : IDisposable
         if (!hasDefaultFlags)
             defaultFlags = trex.Flags;
 
-        byte[] tfhd = BuildCanonicalTfhd(
-            trackId,
-            hasSampleDescriptionIndex && sampleDescriptionIndex != trex.DescriptionIndex
+        uint sampleDescriptionIndexOverride =
+            hasSampleDescriptionIndex &&
+            sampleDescriptionIndex != trex.DescriptionIndex
                 ? sampleDescriptionIndex
-                : 0
-        );
+                : 0;
 
         var result = new Fragment
         {
@@ -1512,7 +2083,7 @@ public sealed class Mp4BoxReader : IDisposable
             Timescale = timescale,
             SampleDescriptionIndex = effectiveSampleDescriptionIndex,
             DecodeTime = decodeTime,
-            Tfhd = tfhd
+            SampleDescriptionIndexOverride = sampleDescriptionIndexOverride
         };
 
         ulong duration = 0;
@@ -1535,6 +2106,7 @@ public sealed class Mp4BoxReader : IDisposable
                 defaultDuration,
                 defaultSize,
                 defaultFlags,
+                defaultDurationIsHint,
                 out Run run,
                 out error
             ))
@@ -1544,11 +2116,13 @@ public sealed class Mp4BoxReader : IDisposable
             }
 
             duration = checked(duration + run.Duration);
+            result.HasInferredDuration |= run.HasInferredDuration;
             result.Runs.Add(run);
         }
 
         if (result.Runs.Count == 0 || duration == 0)
         {
+            result.Dispose();
             error = "trun/duration was not found";
             return false;
         }
@@ -1648,26 +2222,30 @@ public sealed class Mp4BoxReader : IDisposable
         return true;
     }
 
-    static byte[] BuildCanonicalTfhd(uint trackId, uint sampleDescriptionIndexOverride)
+    static void WriteTfhd(
+        Stream output,
+        uint trackId,
+        uint sampleDescriptionIndexOverride
+    )
     {
         bool hasSampleDescriptionIndex = sampleDescriptionIndexOverride != 0;
         int size = hasSampleDescriptionIndex ? 20 : 16;
-        byte[] tfhd = new byte[size];
+        Span<byte> tfhd = stackalloc byte[20];
 
         uint flags = TfhdDefaultBaseIsMoof;
 
         if (hasSampleDescriptionIndex)
             flags |= TfhdSampleDescriptionIndexPresent;
 
-        BinaryPrimitives.WriteUInt32BigEndian(tfhd.AsSpan(0, 4), (uint)size);
-        BinaryPrimitives.WriteUInt32BigEndian(tfhd.AsSpan(4, 4), BoxTfhd);
-        BinaryPrimitives.WriteUInt32BigEndian(tfhd.AsSpan(8, 4), flags);
-        BinaryPrimitives.WriteUInt32BigEndian(tfhd.AsSpan(12, 4), trackId);
+        BinaryPrimitives.WriteUInt32BigEndian(tfhd[..4], (uint)size);
+        BinaryPrimitives.WriteUInt32BigEndian(tfhd.Slice(4, 4), BoxTfhd);
+        BinaryPrimitives.WriteUInt32BigEndian(tfhd.Slice(8, 4), flags);
+        BinaryPrimitives.WriteUInt32BigEndian(tfhd.Slice(12, 4), trackId);
 
         if (hasSampleDescriptionIndex)
-            BinaryPrimitives.WriteUInt32BigEndian(tfhd.AsSpan(16, 4), sampleDescriptionIndexOverride);
+            BinaryPrimitives.WriteUInt32BigEndian(tfhd.Slice(16, 4), sampleDescriptionIndexOverride);
 
-        return tfhd;
+        output.Write(tfhd[..size]);
     }
 
     static bool TryNormalizeTrun(
@@ -1676,6 +2254,7 @@ public sealed class Mp4BoxReader : IDisposable
         uint defaultDuration,
         uint defaultSize,
         uint defaultFlags,
+        bool defaultDurationIsHint,
         out Run run,
         out string error
     )
@@ -1741,7 +2320,9 @@ public sealed class Mp4BoxReader : IDisposable
 
         if (!hasDuration && defaultDuration == 0)
         {
-            error = "sample duration is absent";
+            error =
+                $"sample duration is absent " +
+                $"(sample_count={sampleCount}, trun_flags=0x{flags:X6})";
             return false;
         }
 
@@ -1751,10 +2332,15 @@ public sealed class Mp4BoxReader : IDisposable
             return false;
         }
 
-        var result = new Run
+        int sampleCapacity = sampleCount <= MaxRunSamplePreallocation
+            ? (int)sampleCount
+            : 0;
+
+        var result = new Run(sampleCapacity)
         {
             Version = version,
             HasCompositionOffset = hasCompositionOffset,
+            HasInferredDuration = !hasDuration && defaultDurationIsHint,
             SourceDataOffset = sourceDataOffset
         };
 
@@ -1810,9 +2396,33 @@ public sealed class Mp4BoxReader : IDisposable
             result.DataSize = checked(result.DataSize + sampleSize);
         }
 
-        if (cursor != box.Length || sampleCount == 0 || result.Duration == 0 || result.DataSize == 0)
+        if (cursor != box.Length)
         {
-            error = "invalid trun body";
+            error =
+                $"invalid trun body length: parsed={cursor}, actual={box.Length}, " +
+                $"sample_count={sampleCount}, flags=0x{flags:X6}";
+            return false;
+        }
+
+        if (sampleCount == 0)
+        {
+            error = $"empty trun (flags=0x{flags:X6})";
+            return false;
+        }
+
+        if (result.Duration == 0)
+        {
+            error =
+                $"trun duration is zero (sample_count={sampleCount}, " +
+                $"flags=0x{flags:X6})";
+            return false;
+        }
+
+        if (result.DataSize == 0)
+        {
+            error =
+                $"trun data size is zero (sample_count={sampleCount}, " +
+                $"flags=0x{flags:X6})";
             return false;
         }
 
@@ -1984,16 +2594,36 @@ public sealed class Mp4BoxReader : IDisposable
             return false;
         }
 
+        if (!TryFindTrex(
+            trex,
+            videoId,
+            out Trex videoTrex,
+            out error
+        ))
+        {
+            return false;
+        }
+
+        if (!TryFindTrex(
+            trex,
+            audioId,
+            out Trex audioTrex,
+            out error
+        ))
+        {
+            return false;
+        }
+
         video = new TrackInfo(
             videoId,
             videoTimescale,
-            FindTrex(trex, videoId)
+            videoTrex
         );
 
         audio = new TrackInfo(
             audioId,
             audioTimescale,
-            FindTrex(trex, audioId)
+            audioTrex
         );
 
         return true;
@@ -2102,39 +2732,97 @@ public sealed class Mp4BoxReader : IDisposable
     {
         entry = default;
 
-        // FullBox(4), track_ID, description index, duration, size, flags.
-        if (box.Length < header + 24)
+        // FullBox(4), track_ID, description index, duration, size, flags
+        if (box.Length != header + 24)
+            return false;
+
+        uint versionFlags = BinaryPrimitives.ReadUInt32BigEndian(
+            box.Slice(header, 4)
+        );
+
+        // trex version 0, flags 0.
+        if (versionFlags != 0)
             return false;
 
         uint trackId = BinaryPrimitives.ReadUInt32BigEndian(
             box.Slice(header + 4, 4)
         );
 
-        if (trackId == 0)
+        uint descriptionIndex = BinaryPrimitives.ReadUInt32BigEndian(
+            box.Slice(header + 8, 4)
+        );
+
+        uint duration = BinaryPrimitives.ReadUInt32BigEndian(
+            box.Slice(header + 12, 4)
+        );
+
+        uint size = BinaryPrimitives.ReadUInt32BigEndian(
+            box.Slice(header + 16, 4)
+        );
+
+        uint flags = BinaryPrimitives.ReadUInt32BigEndian(
+            box.Slice(header + 20, 4)
+        );
+
+        if (trackId == 0 || descriptionIndex == 0)
             return false;
 
         entry = new TrexEntry(
             trackId,
             new Trex(
-                BinaryPrimitives.ReadUInt32BigEndian(box.Slice(header + 8, 4)),
-                BinaryPrimitives.ReadUInt32BigEndian(box.Slice(header + 12, 4)),
-                BinaryPrimitives.ReadUInt32BigEndian(box.Slice(header + 16, 4)),
-                BinaryPrimitives.ReadUInt32BigEndian(box.Slice(header + 20, 4))
+                descriptionIndex,
+                duration,
+                size,
+                flags
             )
         );
 
         return true;
     }
 
-    static Trex FindTrex(List<TrexEntry> entries, uint trackId)
+    static bool TryFindTrex(
+        List<TrexEntry> entries,
+        uint trackId,
+        out Trex value,
+        out string error
+    )
     {
+        value = default;
+        error = null;
+
+        bool found = false;
+
         foreach (TrexEntry entry in entries)
         {
-            if (entry.TrackId == trackId)
-                return entry.Value;
+            if (entry.TrackId != trackId)
+                continue;
+
+            if (found)
+            {
+                error = $"duplicate trex for track_ID={trackId}";
+                return false;
+            }
+
+            value = entry.Value;
+            found = true;
         }
 
-        return default;
+        if (!found)
+        {
+            error = $"trex was not found for track_ID={trackId}";
+            return false;
+        }
+
+        if (value.DescriptionIndex == 0)
+        {
+            error =
+                $"trex.default_sample_description_index is zero " +
+                $"for track_ID={trackId}";
+
+            return false;
+        }
+
+        return true;
     }
 
     static bool FindBox(
@@ -2239,14 +2927,15 @@ public sealed class Mp4BoxReader : IDisposable
         return true;
     }
 
-    static ulong ToUnits(double seconds, uint timescale)
+    static ulong ToUnits(int seconds, uint timescale)
     {
-        double value = seconds * timescale;
+        if (seconds <= 0)
+            throw new InvalidDataException("Invalid segment duration.");
 
-        if (!double.IsFinite(value) || value < 0 || value > ulong.MaxValue)
-            throw new InvalidDataException("Invalid timeline value.");
+        if (timescale == 0)
+            throw new InvalidDataException("Invalid timescale.");
 
-        return (ulong)Math.Ceiling(value);
+        return checked((ulong)seconds * timescale);
     }
 
     static ulong ConvertTimeCeiling(
@@ -2267,17 +2956,20 @@ public sealed class Mp4BoxReader : IDisposable
         return (ulong)result;
     }
 
-    static ulong AddTfdtOffset(ulong value, uint timescale, double seconds)
+    static ulong AddTfdtOffset(ulong value, uint timescale, ulong offsetNs)
     {
-        if (seconds <= 0)
+        if (offsetNs == 0)
             return value;
 
-        double units = seconds * timescale;
+        if (timescale == 0)
+            throw new InvalidDataException("Invalid timescale.");
 
-        if (!double.IsFinite(units) || units < 0 || units > ulong.MaxValue)
+        UInt128 units = ((UInt128)offsetNs * timescale + GstSecond / 2) / GstSecond;
+
+        if (units > ulong.MaxValue)
             throw new InvalidDataException("Invalid tfdt offset.");
 
-        return checked(value + (ulong)Math.Round(units));
+        return checked(value + (ulong)units);
     }
 
     static void WriteTfdt(Stream output, ulong decodeTime)
@@ -2406,15 +3098,37 @@ public sealed class Mp4BoxReader : IDisposable
         _target = Target.None;
     }
 
-    void KeepDeferred(ReadOnlySpan<byte> data, int consumed)
+    void ResetDeferred()
     {
-        int count = data.Length - consumed;
+        _deferredStart = 0;
+        Reset(_deferred);
+    }
 
-        if (count <= 0)
+    void KeepDeferred(int length, int consumed)
+    {
+        if (length < 0 ||
+            (uint)consumed > (uint)length ||
+            checked(_deferredStart + length) != _deferred.Length)
         {
-            Reset(_deferred);
+            throw new InvalidOperationException("Deferred buffer range is invalid.");
+        }
+
+        if (consumed == length)
+        {
+            ResetDeferred();
             return;
         }
+
+        _deferredStart = checked(_deferredStart + consumed);
+        _deferred.Position = 0;
+    }
+
+    void AppendDeferred(ReadOnlySpan<byte> data)
+    {
+        if (data.IsEmpty)
+            return;
+
+        EnsureDeferredAppendCapacity(data.Length);
 
         if (!_deferred.TryGetBuffer(out ArraySegment<byte> segment) ||
             segment.Array == null)
@@ -2422,40 +3136,109 @@ public sealed class Mp4BoxReader : IDisposable
             throw new InvalidOperationException("Deferred buffer is not accessible.");
         }
 
-        Buffer.BlockCopy(
-            segment.Array,
-            segment.Offset + consumed,
-            segment.Array,
-            segment.Offset,
-            count
-        );
+        int start = checked((int)_deferred.Length);
+        data.CopyTo(segment.Array.AsSpan(segment.Offset + start, data.Length));
 
-        _deferred.SetLength(count);
-        _deferred.Position = count;
+        _deferred.SetLength(checked(start + data.Length));
+        _deferred.Position = 0;
     }
 
-    void AppendGstBuffer(
+    void EnsureDeferredAppendCapacity(int count)
+    {
+        if (count <= 0)
+            return;
+
+        int end = checked((int)_deferred.Length);
+
+        if ((uint)_deferredStart > (uint)end)
+            throw new InvalidOperationException("Deferred buffer range is invalid.");
+
+        if (count <= _deferred.Capacity - end)
+            return;
+
+        int activeLength = end - _deferredStart;
+
+        if (_deferredStart != 0)
+        {
+            if (!_deferred.TryGetBuffer(out ArraySegment<byte> segment) ||
+                segment.Array == null)
+            {
+                throw new InvalidOperationException("Deferred buffer is not accessible.");
+            }
+
+            if (activeLength != 0)
+            {
+                Buffer.BlockCopy(
+                    segment.Array,
+                    segment.Offset + _deferredStart,
+                    segment.Array,
+                    segment.Offset,
+                    activeLength
+                );
+            }
+
+            _deferredStart = 0;
+            _deferred.SetLength(activeLength);
+            _deferred.Position = 0;
+            end = activeLength;
+
+            if (count <= _deferred.Capacity - end)
+                return;
+        }
+
+        int requiredEnd = checked(end + count);
+        long doubled = (long)_deferred.Capacity * 2;
+        int newCapacity = requiredEnd;
+
+        if (doubled > newCapacity)
+        {
+            newCapacity = doubled > Array.MaxLength
+                ? Math.Max(requiredEnd, Array.MaxLength)
+                : (int)doubled;
+        }
+
+        _deferred.Capacity = newCapacity;
+    }
+
+    void AppendGstBufferToDeferred(
         Gst.Buffer buffer,
         int offset,
-        int count,
-        Stream destination
+        int count
     )
     {
-        while (count > 0)
+        if (count <= 0)
+            return;
+
+        EnsureDeferredAppendCapacity(count);
+
+        if (!_deferred.TryGetBuffer(out ArraySegment<byte> segment) ||
+            segment.Array == null)
         {
-            int requested = Math.Min(_readBuffer.Length, count);
+            throw new InvalidOperationException("Deferred buffer is not accessible.");
+        }
+
+        int start = checked((int)_deferred.Length);
+        int written = 0;
+
+        while (written < count)
+        {
+            int requested = Math.Min(_readBuffer.Length, count - written);
             int copied = (int)buffer.Extract(
-                (nuint)offset,
-                _readBuffer.AsSpan(0, requested)
+                (nuint)checked(offset + written),
+                segment.Array.AsSpan(
+                    segment.Offset + start + written,
+                    requested
+                )
             );
 
             if (copied <= 0)
-                return;
+                break;
 
-            destination.Write(_readBuffer.AsSpan(0, copied));
-            offset += copied;
-            count -= copied;
+            written += copied;
         }
+
+        _deferred.SetLength(checked(start + written));
+        _deferred.Position = 0;
     }
 
     static string FourCC(uint type)
@@ -2470,7 +3253,6 @@ public sealed class Mp4BoxReader : IDisposable
 
     public void Dispose()
     {
-        ResetSegment();
         ResetPrefix();
         ClearSource();
         ClearFragments(_video);
@@ -2481,4 +3263,25 @@ public sealed class Mp4BoxReader : IDisposable
         _sourceStyp.Dispose();
         _init.Dispose();
     }
+
+    static ulong ToNanoseconds(ulong value, uint timescale)
+    {
+        if (timescale == 0)
+            throw new InvalidDataException("Invalid timescale.");
+
+        UInt128 result = ((UInt128)value * GstSecond + timescale / 2) / timescale;
+
+        if (result > ulong.MaxValue)
+            throw new InvalidDataException("Timeline value is too large.");
+
+        return (ulong)result;
+    }
+
+    static ulong AddClockTime(ulong left, ulong right)
+    {
+        return ulong.MaxValue - left < right
+            ? ulong.MaxValue
+            : left + right;
+    }
+
 }

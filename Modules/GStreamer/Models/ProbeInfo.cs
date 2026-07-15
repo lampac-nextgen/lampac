@@ -21,6 +21,9 @@ public sealed class ProbeInfo
         ContainerCapsName == "audio/webm" ||
         ContainerCapsName == "video/webm";
 
+    public bool IsAVI
+        => ContainerCapsName == "video/x-msvideo";
+
     public List<TrackInfo> Tracks { get; } = new();
 
     public TrackInfo Video =>

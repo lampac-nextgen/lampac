@@ -5,37 +5,36 @@ namespace GStreamer.Models;
 
 public class SubtitleStore
 {
-    public TrackInfo Track;
     public string Pending;
+    public ulong ParsedToNs;
     public readonly List<SubtitleCue> Cues = new(256);
     public readonly HashSet<SubtitleCueKey> Seen = new();
 }
 
 public class SubtitleCue
 {
-    public double StartSeconds;
-    public double EndSeconds;
-    public string Settings;
+    public ulong StartNs;
+    public ulong EndNs;
     public string Text;
 }
 
 public readonly struct SubtitleCueKey : IEquatable<SubtitleCueKey>
 {
-    readonly int StartMs;
-    readonly int EndMs;
+    readonly ulong StartNs;
+    readonly ulong EndNs;
     readonly string Text;
 
-    public SubtitleCueKey(double startSeconds, double endSeconds, string text)
+    public SubtitleCueKey(ulong startNs, ulong endNs, string text)
     {
-        StartMs = (int)Math.Round(startSeconds * 1000d);
-        EndMs = (int)Math.Round(endSeconds * 1000d);
+        StartNs = startNs;
+        EndNs = endNs;
         Text = text ?? string.Empty;
     }
 
     public bool Equals(SubtitleCueKey other)
     {
-        return StartMs == other.StartMs &&
-               EndMs == other.EndMs &&
+        return StartNs == other.StartNs &&
+               EndNs == other.EndNs &&
                string.Equals(Text, other.Text, StringComparison.Ordinal);
     }
 
@@ -46,6 +45,6 @@ public readonly struct SubtitleCueKey : IEquatable<SubtitleCueKey>
 
     public override int GetHashCode()
     {
-        return HashCode.Combine(StartMs, EndMs, Text);
+        return HashCode.Combine(StartNs, EndNs, Text);
     }
 }

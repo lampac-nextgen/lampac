@@ -24,6 +24,7 @@
     <Project Path="Modules/Transcoding/Transcoding.csproj" />
     <Project Path="Modules/WatchTogether/WatchTogether.csproj" />
     <Project Path="Modules/WebLog/WebLog.csproj" />
+    <Project Path="Modules/Telemetry/Telemetry.csproj" />
   </Folder>
   <Folder Name="/Modules/Adult/">
     <Project Path="Modules/Adult/BongaCams/BongaCams.csproj" />
@@ -53,6 +54,7 @@
     <Project Path="Modules/LogUserRequest-Lite/LogUserRequest.csproj" />
   </Folder>
   <Folder Name="/Modules/OnlineAnime/">
+    <Project Path="Modules/OnlineAnime/AiLiberty/AiLiberty.csproj" />
     <Project Path="Modules/OnlineAnime/AniLiberty/AniLiberty.csproj" />
     <Project Path="Modules/OnlineAnime/AniLibria/AniLibria.csproj" />
     <Project Path="Modules/OnlineAnime/Animebesst/Animebesst.csproj" />

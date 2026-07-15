@@ -112,6 +112,10 @@
       var path = [];
       var managers = [];
       var managers_timer;
+      var managers_active = false;
+      var managers_generation = 0;
+      var managers_network = new Lampa.Reguest();
+      var empty_start;
       var media_formats = ['asf', 'wmv', 'divx', 'avi', 'mp4', 'm4v', 'mov', '3gp', '3g2', 'mkv', 'trp', 'tp', 'mts', 'mpg', 'mpeg', 'dat', 'vob', 'rm', 'rmvb', 'm2ts', 'ts', 'aac', 'flac', 'mpga', 'mpega', 'mp2', 'm4a', 'oga', 'ogg', 'spx', 'weba', 'wav', 'dif', 'dv', 'fli', 'mpe', 'mpv', 'm4s', 'ogv', 'qt'];
       var icon_back = "<svg width=\"27\" height=\"27\" viewBox=\"0 0 27 27\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">\n        <path d=\"M0.772278 13.4178L13.2417 6.21863V20.617L0.772278 13.4178Z\" fill=\"white\"/>\n        <rect x=\"13.2416\" y=\"10.0508\" width=\"12.6296\" height=\"6.73407\" fill=\"white\"/>\n    </svg>";
       var icon_folder = "<svg width=\"43\" height=\"43\" viewBox=\"0 0 43 43\" fill=\"none\" xmlns=\"http://www.w3.org/2000/svg\">\n        <rect x=\"6.10352e-05\" y=\"5.39496\" width=\"42.7872\" height=\"31.9492\" rx=\"4\" fill=\"white\"/>\n        <rect x=\"2.89471\" y=\"2.18591\" width=\"36.9979\" height=\"27.6263\" rx=\"4\" fill=\"white\" fill-opacity=\"0.45\"/>\n        <path d=\"M7.5722 2.18591H35.2151C34.5457 0.913208 33.2105 0.0453491 31.6727 0.0453491H11.1147C9.57678 0.0453491 8.24164 0.913208 7.5722 2.18591Z\" fill=\"white\" fill-opacity=\"0.24\"/>\n    </svg>";
@@ -159,6 +163,7 @@
         this.activity.loader(false);
       };
       this.draw = function (data) {
+        empty_start = false;
         this.clear();
         if (path.length > 1) {
           Lampa.Arrays.insert(data, 0, {
@@ -177,7 +182,7 @@
           descr: msg
         });
         html.empty().append(empty.render());
-        this.start = empty.start.bind(empty);
+        empty_start = empty.start.bind(empty);
         this.activity.loader(false);
         this.activity.toggle();
       };
@@ -200,15 +205,37 @@
       };
       this.managers = function () {
         var _this2 = this;
+
+        if (managers_active) return;
+
+        managers_active = true;
+        var generation = ++managers_generation;
+
         var update = function update() {
-          network.timeout(2000);
-          network["native"](account(window.lampac_dlna_adres + '/tracker/managers'), function (data) {
-            managers = data;
+          if (!managers_active || generation != managers_generation) return;
+
+          managers_network.timeout(2000);
+          managers_network["native"](account(window.lampac_dlna_adres + '/tracker/managers'), function (data) {
+            if (!managers_active || generation != managers_generation) return;
+
+            managers = Array.isArray(data) ? data : [];
             _this2.progress();
+            managers_timer = setTimeout(update, managers.length ? 3000 : 10000);
+          }, function () {
+            if (!managers_active || generation != managers_generation) return;
+
+            managers_timer = setTimeout(update, 10000);
           });
         };
-        managers_timer = setInterval(update, 3000);
+
         update();
+      };
+      this.stopManagers = function () {
+        managers_active = false;
+        managers_generation++;
+        clearTimeout(managers_timer);
+        managers_timer = false;
+        managers_network.clear();
       };
       this.findManager = function (file_name) {
         var finded;
@@ -395,7 +422,7 @@
 					Lampa.Controller.toggle('content');
 					
                     if (a.action == 'stop' || a.action == 'start' || a.action == 'pause') {
-                      network["native"](account(window.lampac_dlna_adres + '/tracker/'+a.action+'?infohash=' + encodeURIComponent(download)), false, false, false, {
+                      network["native"](account(window.lampac_dlna_adres + '/tracker/'+a.action+'?infohash=' + encodeURIComponent(download)), false, false, {}, {
                         dataType: 'text'
                       });
                     }
@@ -418,7 +445,7 @@
 								  return 'indexs=' + s.index;
 								}).join('&');
 								
-								network["native"](account(window.lampac_dlna_adres + '/tracker/changefilepriority?infohash=' + encodeURIComponent(download) + '&' + select), false, false, false, {
+								network["native"](account(window.lampac_dlna_adres + '/tracker/changefilepriority?infohash=' + encodeURIComponent(download) + '&' + select), false, false, {}, {
 									dataType: 'text'
 								});
 								
@@ -432,7 +459,7 @@
                       var files = body.find('.card');
                       last = files.eq(files.index(card) - 1)[0];
                       card.remove();
-                      network["native"](account(window.lampac_dlna_adres + '/delete?path=' + encodeURIComponent(element.path)), false, false, false, {
+                      network["native"](account(window.lampac_dlna_adres + '/delete?path=' + encodeURIComponent(element.path)), false, false, {}, {
                         dataType: 'text'
                       });
                     }
@@ -465,6 +492,13 @@
         }
       };
       this.start = function () {
+        this.managers();
+
+        if (empty_start) {
+          empty_start();
+          return;
+        }
+
         Lampa.Controller.add('content', {
           toggle: function toggle() {
             Lampa.Controller.collectionSet(scroll.render());
@@ -486,14 +520,18 @@
         });
         Lampa.Controller.toggle('content');
       };
-      this.pause = function () {};
-      this.stop = function () {};
+      this.pause = function () {
+        this.stopManagers();
+      };
+      this.stop = function () {
+        this.stopManagers();
+      };
       this.render = function () {
         return html;
       };
       this.destroy = function () {
 		hidePreview()
-        clearInterval(managers_timer);
+        this.stopManagers();
         network.clear();
         scroll.destroy();
         html.remove();
@@ -600,7 +638,7 @@
 							  }, function () {
 								//down();
 								Lampa.Bell.push({text:'Ошибка при добавление в загрузку'});
-							  },false,{timeout:timeout});
+							  },{},{timeout:timeout});
 						}
 						else if(a.action == 'latest'){
 							var files = []
@@ -627,7 +665,7 @@
 									  }, function () {
 										//down();
 										Lampa.Bell.push({text:'Ошибка при добавление в загрузку'});
-									  },false,{timeout:timeout});
+									  },{},{timeout:timeout});
 								},
 								onBack: function onBack() {
 									Lampa.Controller.toggle(enabled);
@@ -680,7 +718,7 @@
 									  }, function () {
 										//down();
 										Lampa.Bell.push({text:'Ошибка при добавление в загрузку'});
-									  });
+									  }, {});
 									}
 									Lampa.Controller.toggle(enabled);
 								  },

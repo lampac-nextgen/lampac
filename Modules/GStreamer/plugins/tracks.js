@@ -11,7 +11,7 @@
     }
 
     function reguest(params, callback) {
-        if (params.ffprobe) {
+        if (params && Array.isArray(params.ffprobe) && params.ffprobe.length) {
             setTimeout(function () {
                 callback({
                     streams: params.ffprobe
@@ -19,8 +19,58 @@
             }, 200);
         }
         else {
-            callback({
-                streams: []
+            if (!params || !params.url) {
+                callback({ streams: [] });
+                return;
+            }
+
+            var completed = false;
+            var done = function done(result) {
+                if (completed) return;
+                completed = true;
+                callback(result);
+            };
+
+            var net = new Lampa.Reguest();
+            net.timeout(1000 * 45);
+
+            var sourceUrl = String(params.url).replace(/&(preload|stat|m3u)/g, '&play');
+            var url = connect_host + '/gst/probe?link=' + encodeURIComponent(sourceUrl);
+
+            if (url.indexOf('account_email=') == -1) {
+                var email = Lampa.Storage.get('account_email');
+                if (email) url = Lampa.Utils.addUrlComponent(url, 'account_email=' + encodeURIComponent(email));
+            }
+
+            if (url.indexOf('uid=') == -1 && unic_id) {
+                url = Lampa.Utils.addUrlComponent(url, 'uid=' + encodeURIComponent(unic_id));
+            }
+
+            if (url.indexOf('token=') == -1) {
+                var token = '{token}';
+                if (token != '') url = Lampa.Utils.addUrlComponent(url, 'token={token}');
+            }
+
+            net["native"](url, function (response) {
+                var json = response;
+
+                if (typeof response === 'string') {
+                    try {
+                        json = JSON.parse(response);
+                    }
+                    catch (e) {
+                        json = null;
+                    }
+                }
+
+                var tracks = json && (json.tracks || json.Tracks);
+                done(Array.isArray(tracks)
+                    ? { streams: [], probe: json }
+                    : { streams: [] });
+            }, function () {
+                done({ streams: [] });
+            }, false, {
+                dataType: 'text'
             });
         }
     }
@@ -266,6 +316,88 @@
       listenStart();
     }
 
+    function probeValue(track, name) {
+      if (!track) return null;
+      if (typeof track[name] !== 'undefined') return track[name];
+
+      var pascalName = name.charAt(0).toUpperCase() + name.slice(1);
+      return typeof track[pascalName] !== 'undefined' ? track[pascalName] : null;
+    }
+
+    function probeCodec(track) {
+      var codec = probeValue(track, 'codec');
+
+      if (!codec) {
+        var caps = probeValue(track, 'capsName') || '';
+        codec = caps.replace(/^[^/]+\//, '').replace(/^x-/, '');
+      }
+
+      return codec ? String(codec).toUpperCase() : '';
+    }
+
+    function probeChannels(channels) {
+      var names = {
+        1: '1.0',
+        2: '2.0',
+        6: '5.1',
+        7: '6.1',
+        8: '7.1'
+      };
+
+      return names[channels] || String(channels);
+    }
+
+    function fillProbeMetainfo(probe, video, audio, subs) {
+      var tracks = probe && (probe.tracks || probe.Tracks);
+      if (!Array.isArray(tracks)) return;
+
+      var videoTracks = tracks.filter(function (track) {
+        return probeValue(track, 'type') == 'video';
+      });
+      var audioTracks = tracks.filter(function (track) {
+        return probeValue(track, 'type') == 'audio';
+      });
+      var subtitleTracks = tracks.filter(function (track) {
+        return probeValue(track, 'type') == 'subtitle';
+      });
+
+      videoTracks.slice(0, 1).forEach(function (track) {
+        var line = {};
+        var width = probeValue(track, 'width');
+        var height = probeValue(track, 'height');
+        var codec = probeCodec(track);
+
+        if (width && height) line.video = width + 'x' + height;
+        if (codec) line.codec = codec;
+        if (Lampa.Arrays.getKeys(line).length) video.push(line);
+      });
+
+      audioTracks.forEach(function (track, index) {
+        var line = { num: index + 1 };
+        var language = probeValue(track, 'language');
+        var title = probeValue(track, 'title');
+        var codec = probeCodec(track);
+        var channels = probeValue(track, 'channels');
+        var rate = probeValue(track, 'rate');
+
+        if (language) line.lang = String(language).toUpperCase();
+        line.name = title || '';
+        if (codec) line.codec = codec;
+        if (channels) line.channels = probeChannels(channels);
+        if (rate) line.rate = Math.round(rate / 1000) + ' kHz';
+        audio.push(line);
+      });
+
+      subtitleTracks.forEach(function (track, index) {
+        var line = { num: index + 1 };
+        var language = probeValue(track, 'language');
+
+        if (language) line.lang = String(language).toUpperCase();
+        line.name = probeValue(track, 'title') || '';
+        subs.push(line);
+      });
+    }
+
     function parseMetainfo(data) {
       var loading = Lampa.Template.get('tracks_loading');
       data.item.after(loading);
@@ -296,13 +428,19 @@
           var video = [];
           var audio = [];
           var subs = [];
-          var codec_video = result.streams.filter(function (a) {
+
+          if (result.probe) {
+            fillProbeMetainfo(result.probe, video, audio, subs);
+          }
+
+          var streams = result.probe ? [] : result.streams;
+          var codec_video = streams.filter(function (a) {
             return a.codec_type == 'video';
           });
-          var codec_audio = result.streams.filter(function (a) {
+          var codec_audio = streams.filter(function (a) {
             return a.codec_type == 'audio';
           });
-          var codec_subs = result.streams.filter(function (a) {
+          var codec_subs = streams.filter(function (a) {
             return a.codec_type == 'subtitle';
           });
           codec_video.slice(0, 1).forEach(function (v) {
@@ -340,6 +478,7 @@
             line.name = a.tags ? a.tags.title || a.tags.handler_name : '';
             if (Lampa.Arrays.getKeys(line).length) subs.push(line);
           });
+
           var html = Lampa.Template.get('tracks_metainfo', {});
           append('video', video);
           append('audio', audio);

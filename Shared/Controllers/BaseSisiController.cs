@@ -418,7 +418,12 @@ public class BaseSisiController<T> : BaseController where T : BaseSettings, IClo
                     writer.WriteString("picture"u8, HostImgProxy(init, pl.picture, 0, headers_image));
 
                 if (pl.preview != null)
-                    writer.WriteString("preview"u8, pl.preview);
+                {
+                    if (init.streamproxy_preview)
+                        writer.WriteString("preview"u8, HostStreamProxy(pl.preview, headers_stream, force_streamproxy: true));
+                    else
+                        writer.WriteString("preview"u8, pl.preview);
+                }
 
                 if (pl.quality != null)
                     writer.WriteString("quality"u8, pl.quality);

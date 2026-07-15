@@ -39,8 +39,11 @@ public class ModInit : IModuleLoaded, IModuleOnline
         EventListener.UpdateInitFile += updateConf;
         EventListener.OnlineApiQuality += onlineApiQuality;
 
-        database = JsonConvert.DeserializeObject<Dictionary<string, DbModel>>(File.ReadAllText("data/kinoukr.json"));
-        kinoukrTimer = new Timer(CronParse.Kinoukr, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(20));
+        if (conf.enable)
+        {
+            database = JsonConvert.DeserializeObject<Dictionary<string, DbModel>>(File.ReadAllText("data/kinoukr.json"));
+            kinoukrTimer = new Timer(CronParse.Kinoukr, null, TimeSpan.FromMinutes(5), TimeSpan.FromMinutes(20));
+        }
     }
 
     public void Dispose()
@@ -57,6 +60,7 @@ public class ModInit : IModuleLoaded, IModuleOnline
     {
         conf = ModuleInvoke.Init("Kinoukr", new OnlinesSettings("Kinoukr", "https://kinoukr.com")
         {
+            enable = false,
             displayindex = 815,
             rch_access = "apk,cors",
             stream_access = "apk,cors",

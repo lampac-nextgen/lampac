@@ -1,48 +1,68 @@
 ﻿using Gst;
 using GStreamer.Models;
-using Shared.Services.Pools;
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
-using System.Globalization;
-using System.IO;
+using System.Collections.Concurrent;
 using System.Linq;
-using System.Text;
-using System.Text.RegularExpressions;
 using System.Threading;
 
 namespace GStreamer.Services;
 
-public class GStask
+public partial class GStask
 {
     #region GStask
     public System.DateTime lastActive { get; private set; } = System.DateTime.UtcNow;
 
-    public SemaphoreSlim semaphore { get; private set; } = new(1, 1);
+    public readonly SemaphoreSlim semaphore = new(1, 1);
 
-    public bool IsDead { get; private set; }
+    int isDead, isEos;
+
+    public bool IsDead
+        => Volatile.Read(ref isDead) != 0;
+
+    public bool IsEos
+    {
+        get => Volatile.Read(ref isEos) != 0;
+        private set => Volatile.Write(ref isEos, value ? 1 : 0);
+    }
 
     public bool IsFrozen { get; private set; }
 
-    public bool IsEos { get; private set; }
-
-    public int lastSentSegment = -1;
     int audioIndex;
     long? contentLength;
 
-    double positionSeconds = 0;
-    double positionSeekSeconds = 0;
+    const ulong GstSecond = 1_000_000_000UL;
+
+    ulong positionSeconds = 0;
+    ulong positionSeekSeconds = 0;
+
+    readonly ConcurrentDictionary<int, ulong> segmentStartNsByIndex = new();
+    int lastClientSegmentIndex = -1;
 
     public readonly ulong id;
     public readonly string user_uid;
     public readonly ProbeInfo probe;
     public readonly string sourceUrl;
     public readonly ModuleConf conf;
-
-    public byte[] initMp4 { get; private set; }
+    public readonly CueTimeline cueTimeline;
 
     bool statePlaying = false;
-    (int index, bool complete, Segment seg) readySegment = (-1, false, default);
+
+    int pipelineGeneration;
+    int pipelineStopping;
+    int ensureSegmentActive;
+
+    readonly object pipelineLock = new();
+
+    readonly ManualResetEventSlim busWatchIdle = new(true);
+    readonly ManualResetEventSlim ensureSegmentIdle = new(true);
+    readonly ManualResetEventSlim pipelineDisposeIdle = new(true);
+
+    long initMp4Length;
+
+    bool InitMp4Ready
+        => Volatile.Read(ref initMp4Length) > 0;
+
+    public HlsVariantInfo hlsVariantInfo { get; private set; }
 
     Mp4BoxReader mp4Reader;
 
@@ -51,14 +71,19 @@ public class GStask
     Gst.Bin bin;
     GstApp.AppSink sink;
 
-    readonly Dictionary<int, GstApp.AppSink> subsSinks = new();
-    public readonly Dictionary<int, SubtitleStore> subtitles = new();
-    readonly List<TrackInfo> subtitleTracks = new();
-
     CancellationTokenSource busWatchCts;
     System.Threading.Tasks.Task busWatchTask;
 
-    public GStask(ProbeInfo probe, ModuleConf conf, string sourceUrl, ulong id, string user_uid, int audio, long? contentLength)
+    public GStask(
+        ProbeInfo probe,
+        ModuleConf conf,
+        string sourceUrl,
+        ulong id,
+        string user_uid,
+        int audio,
+        long? contentLength,
+        CueTimeline cueTimeline = null
+    )
     {
         this.id = id;
         this.probe = probe;
@@ -66,436 +91,176 @@ public class GStask
         this.sourceUrl = sourceUrl;
         this.conf = conf;
         this.contentLength = contentLength;
+        this.cueTimeline = cueTimeline;
+
+        InitSegmentCache();
 
         if (probe.Tracks.FirstOrDefault(i => i.Type == "audio" && i.Index == audio) != null)
             audioIndex = audio;
 
         mp4Reader = new Mp4BoxReader(
-           onInit: data =>
-           {
-               initMp4 = data;
-           },
-           onSegment: seg =>
-           {
-               readySegment.seg = seg;
-               readySegment.complete = true;
-
-               if (seg.startSeconds >= 0)
-                   positionSeconds = seg.startSeconds + positionSeekSeconds;
-           },
-           segmentSeconds: conf.segment_seconds
+           onInit: OnInitMp4,
+           onSegment: OnSegmentReady,
+           segmentSeconds: conf.segment_seconds,
+           segmentDiff: IsVideoTranscoded ? 0 : conf.segment_diff,
+           cueMode: cueTimeline != null
         );
     }
     #endregion
 
-    #region CreatePipelineArgs
-    string CreatePipelineArgs(ProbeInfo probe)
+    #region OnSegmentReady
+    void OnSegmentReady(Segment segment)
     {
-        var sb = StringBuilderPool.ThreadInstance;
-        double version = ModInit.conf.gst_version;
+        int index = activeSegmentIndex;
+        if (index < 0)
+            return;
 
-        #region AppendTranscodeToH264
-        void AppendTranscodeToH264()
+        ulong segmentPositionNs = segment.startNs;
+
+        if (cueTimeline != null)
         {
-            int segmentSeconds = Math.Max(1, conf.segment_seconds);
-            int frameRateNum = probe.Video?.FrameRateNum ?? 0;
-            int frameRateDen = probe.Video?.FrameRateDen ?? 0;
+            if (!cueTimeline.TryGetSegment(index, out CueSegment expected))
+                throw new InvalidOperationException($"Cue segment {index} does not exist.");
 
-            int keyIntMax = frameRateNum > 0 && frameRateDen > 0
-                ? Math.Max(
-                    1,
-                    (int)Math.Round(
-                        (double)frameRateNum * segmentSeconds / frameRateDen
-                    )
-                )
-                : 25 * segmentSeconds;
-
-            sb.AppendLine($$"""
-            mq.src_0 !
-            decodebin !
-            videoconvert !
-            video/x-raw,
-                format=I420 !
-            x264enc
-                tune=zerolatency
-                speed-preset=veryfast
-                bitrate={{conf.video_bitrate}}
-                key-int-max={{keyIntMax}}
-                bframes=0
-                byte-stream=false !
-            video/x-h264,
-                profile=main,
-                stream-format=avc,
-                alignment=au !
-            h264parse
-                config-interval=0 !
-            h264timestamper !
-            video/x-h264,
-                profile=main,
-                stream-format=avc,
-                alignment=au !
-            mux.video_0
-            """);
-        }
-        #endregion
-
-        #region souphttpsrc
-        string downloadLimit = conf.pipeline_downloadRate > 0
-            ? $$"""
-            identity
-                datarate={{conf.pipeline_downloadRate * 1_000_000 / 8}}
-                sync=true
-                silent=true !
-            """
-            : string.Empty;
-
-        string httpqueue = string.Empty;
-
-        if (conf.tempfs)
-        {
-            const int targetSeconds = 30;
-            int maxBytes = 32 * 1024 * 1024;
-
-            if (contentLength.HasValue && contentLength.Value > 0 && probe.DurationSeconds > 0)
-            {
-                maxBytes = (int)Math.Ceiling(
-                    (double)contentLength.Value / probe.DurationSeconds * targetSeconds
-                );
-            }
-
-            long ringBytes = (long)maxBytes * (conf.tempfs_ring + 3);
-
-            string tempTemplate = Path.Combine(
-                "cache",
-                "gstranscoding",
-                $"{id}-XXXXXX"
-            ).Replace('\\', '/');
-
-            httpqueue = $$"""
-            queue2
-                use-buffering=false
-                temp-template="{{tempTemplate}}"
-                temp-remove=true
-                ring-buffer-max-size={{ringBytes + (1024 * 1024)}}
-                max-size-bytes={{maxBytes}}
-                max-size-buffers=0
-                max-size-time=0 !
-            """;
+            segmentPositionNs = expected.StartNs;
         }
 
-        sb.AppendLine($$"""
-        souphttpsrc
-            location="{{sourceUrl}}"
-            is-live=false
-            keep-alive=true
-            timeout=60
-            retries=5
-            {{(version >= 1.26 ? "retry-backoff-factor=0.5 retry-backoff-max=10" : string.Empty)}} !
-        {{downloadLimit}}
-        {{httpqueue}}
-        """);
-        #endregion
+        if (segmentPositionNs > 0)
+            Volatile.Write(ref positionSeconds, segmentPositionNs);
 
-        sb.AppendLine($$"""
-        matroskademux
-            name=d
-        multiqueue
-            name=mq
-            use-buffering=false
-            max-size-buffers=5
-        """);
-
-        #region d.video
-        sb.AppendLine("""
-        d.video_0 !
-        mq.sink_0
-        """);
-
-        if (probe.IsH264)
+        if (!StoreSegmentFile(index, segment))
         {
-            #region H264
-            if (conf.transcodeH264)
-            {
-                AppendTranscodeToH264();
-            }
-            else
-            {
-                sb.AppendLine("""
-                mq.src_0 !
-                h264parse
-                    config-interval=0 !
-                h264timestamper !
-                video/x-h264,
-                    stream-format=avc,
-                    alignment=au !
-                mux.video_0
-                """);
-            }
-            #endregion
-        }
-        else if (probe.IsH265)
-        {
-            #region H265
-            if (conf.transcodeH265)
-            {
-                AppendTranscodeToH264();
-            }
-            else
-            {
-                sb.AppendLine("""
-                mq.src_0 !
-                h265parse
-                    config-interval=0 !
-                h265timestamper !
-                video/x-h265,
-                    stream-format=hvc1,
-                    alignment=au !
-                mux.video_0
-                """);
-            }
-            #endregion
-        }
-        else if (probe.IsAV1)
-        {
-            #region AV1
-            if (conf.transcodeAV1)
-            {
-                AppendTranscodeToH264();
-            }
-            else
-            {
-                sb.AppendLine("""
-                mq.src_0 !
-                av1parse !
-                video/x-av1,
-                    stream-format=obu-stream,
-                    alignment=tu !
-                mux.video_0
-                """);
-            }
-            #endregion
-        }
-        else if (probe.IsVP9)
-        {
-            #region VP9
-            if (conf.transcodeVP9)
-            {
-                AppendTranscodeToH264();
-            }
-            else
-            {
-                sb.AppendLine("""
-                mq.src_0 !
-                vp9parse !
-                video/x-vp9,
-                    alignment=frame !
-                mux.video_0
-                """);
-            }
-            #endregion
+            activeSegmentStoreFailed = true;
         }
         else
         {
-            throw new NotSupportedException("Unsupported video codec");
+            segmentStartNsByIndex[index] = segmentPositionNs;
+            Volatile.Write(ref readerSegmentIndex, index);
         }
-        #endregion
+    }
+    #endregion
 
-        #region d.audio
-        var selectedAudio = probe.Tracks.FirstOrDefault(i =>
-            i.Type == "audio" &&
-            i.Index == audioIndex
-        );
+    #region OnInitMp4
+    void OnInitMp4(ReadOnlyMemory<byte> data)
+    {
+        if (data.IsEmpty || InitMp4Ready)
+            return;
 
-        int aacChannels = conf.aac_channels > 0 ? conf.aac_channels : (selectedAudio?.Channels ?? 2);
-        int aacSamplerate = conf.aac_samplerate > 0 ? conf.aac_samplerate : (selectedAudio?.Rate ?? 48000);
-
-        sb.AppendLine($$"""
-        d.audio_{{audioIndex}} !
-        mq.sink_1
-        """);
-
-        if (selectedAudio?.IsAAC == true)
+        HlsVariantInfo parsed = Mp4InitInfoReader.Read(data.Span);
+        if (parsed != null)
         {
-            sb.AppendLine("""
-            mq.src_1 !
-            aacparse !
-            audio/mpeg,
-                mpegversion=4,
-                stream-format=raw !
-            mux.audio_0
-            """);
-        }
-        else
-        {
-            sb.AppendLine($$"""
-            mq.src_1 !
-            decodebin !
-            audioconvert
-                dithering=none
-                noise-shaping=none !
-            audioresample
-                quality=2
-                sinc-filter-mode=full !
-            audio/x-raw,
-                format=F32LE,
-                layout=interleaved,
-                rate={{aacSamplerate}},
-                channels={{aacChannels}} !
-            avenc_aac
-                bitrate={{conf.aac_bitrate * 1000}} !
-            aacparse !
-            audio/mpeg,
-                mpegversion=4,
-                stream-format=raw,
-                rate={{aacSamplerate}},
-                channels={{aacChannels}} !
-            mux.audio_0
-            """);
-        }
-        #endregion
-
-        #region d.subtitle
-        if (conf.subtitles)
-        {
-            subtitleTracks.Clear();
-
-            foreach (var track in probe.Tracks)
+            parsed.FrameRate = probe.Video?.FrameRate ?? 0;
+            if (parsed.Width <= 0)
+                parsed.Width = probe.Video?.Width ?? 0;
+            if (parsed.Height <= 0)
+                parsed.Height = probe.Video?.Height ?? 0;
+            if (conf.hdr_to_sdr && probe.Video?.IsHdr == true)
+                parsed.VideoRange = "SDR";
+            else if (parsed.VideoRange == null && !IsVideoTranscoded)
             {
-                if (track.Type != "subtitle")
-                    continue;
-
-                switch (track.Codec)
+                parsed.VideoRange = probe.Video?.VideoTransfer switch
                 {
-                    case "text":
-                    case "subrip":
-                    case "utf8":
-                    case "ass":
-                    case "ssa":
-                        break;
-
-                    default:
-                        continue;
-                }
-
-                subtitleTracks.Add(track);
-
-                if (!subtitles.ContainsKey(track.Index))
-                {
-                    subtitles[track.Index] = new SubtitleStore
-                    {
-                        Track = track
-                    };
-                }
-
-                string subparse = track.Codec == "ass" || track.Codec == "ssa"
-                    ? "ssaparse !"
-                    : string.Empty;
-
-                sb.AppendLine($$"""
-                d.{{track.PadName}} !
-                queue
-                    max-size-buffers=16
-                    max-size-bytes=0
-                    max-size-time=0 !
-                {{subparse}}
-                webvttenc !
-                appsink
-                    name=subs_{{track.Index}}
-                    emit-signals=false
-                    sync=false
-                    async=false
-                    max-buffers=16
-                    {{(version >= 1.28 ? "leaky-type=none" : "drop=false")}}
-                    wait-on-eos=false
-                """);
+                    VideoTransfer.Pq => "PQ",
+                    VideoTransfer.Hlg => "HLG",
+                    VideoTransfer.Sdr => "SDR",
+                    _ => null
+                };
             }
         }
-        #endregion
 
-        sb.AppendLine($$"""
-        mp4mux
-            name=mux
-            fragment-mode=dash-or-mss
-            fragment-duration={{conf.segment_seconds * 1000}}
-            streamable=true !
-        """);
-
-        if (version >= 1.24 && conf.pipeline_appsinkBuffers > 1)
-        {
-            sb.AppendLine($$"""
-            appsink
-                name=out
-                emit-signals=false
-                sync=false
-                max-buffers={{conf.pipeline_appsinkBuffers}}
-                max-bytes={{136L * 1024 * 1024}}
-                {{(version >= 1.28 ? "leaky-type=none" : "drop=false")}}
-                wait-on-eos=false
-            """);
-        }
-        else
-        {
-            sb.AppendLine($$"""
-            appsink
-                name=out
-                emit-signals=false
-                sync=false
-                max-buffers={{(conf.pipeline_appsinkBuffers > 1 ? conf.pipeline_appsinkBuffers : 1)}}
-                {{(version >= 1.28 ? "leaky-type=none" : "drop=false")}}
-                wait-on-eos=false
-            """);
-        }
-
-        return sb.ToString();
+        StoreInitFile(data.Span);
+        hlsVariantInfo = parsed;
+        Volatile.Write(ref initMp4Length, data.Length);
     }
     #endregion
 
     #region BusWatch
-    void StartBusWatch()
+    bool StartBusWatch()
     {
-        busWatchCts = new CancellationTokenSource();
+        lock (pipelineLock)
+        {
+            if (Volatile.Read(ref pipelineStopping) != 0 ||
+                IsDead ||
+                pipeline == null ||
+                bus == null)
+            {
+                return false;
+            }
 
-        var token = busWatchCts.Token;
+            if (busWatchCts != null)
+                return true;
 
-        busWatchTask = System.Threading.Tasks.Task.Factory.StartNew(
-            () => BusWatch(token),
-            token,
-            System.Threading.Tasks.TaskCreationOptions.LongRunning,
-            System.Threading.Tasks.TaskScheduler.Default
-        );
+            var watchBus = bus;
+            int generation = Volatile.Read(ref pipelineGeneration);
+            var cts = new CancellationTokenSource();
+
+            busWatchCts = cts;
+            busWatchIdle.Reset();
+
+            try
+            {
+                busWatchTask = System.Threading.Tasks.Task.Factory.StartNew(
+                    () => BusWatch(watchBus, generation, cts.Token),
+                    CancellationToken.None,
+                    System.Threading.Tasks.TaskCreationOptions.LongRunning,
+                    System.Threading.Tasks.TaskScheduler.Default
+                );
+
+                return true;
+            }
+            catch
+            {
+                busWatchCts = null;
+                busWatchTask = null;
+
+                busWatchIdle.Set();
+                cts.Dispose();
+
+                throw;
+            }
+        }
     }
 
-    void StopBusWatch()
+    CancellationTokenSource StopBusWatch()
     {
         var cts = busWatchCts;
-        var task = busWatchTask;
 
         busWatchCts = null;
         busWatchTask = null;
 
         if (cts == null)
-            return;
-
-        cts.Cancel();
+            return null;
 
         try
         {
-            if (task != null && System.Threading.Tasks.Task.CurrentId != task.Id)
-                task.Wait(TimeSpan.FromMilliseconds(100));
+            cts.Cancel();
         }
         catch { }
 
-        cts.Dispose();
+        return cts;
     }
 
-    void BusWatch(CancellationToken ct)
+    void BusWatch(Bus watchBus, int generation, CancellationToken ct)
     {
-        while (!ct.IsCancellationRequested)
+        bool disposeTask = false;
+
+        try
         {
-            try
+            while (!ct.IsCancellationRequested && !IsDead)
             {
-                using (var msg = bus.TimedPop(50_000_000UL))
+                try
                 {
+                    if (generation != Volatile.Read(ref pipelineGeneration))
+                        return;
+
+                    using var msg = watchBus.TimedPop(50_000_000UL);
+
+                    if (ct.IsCancellationRequested)
+                        return;
+
+                    if (generation != Volatile.Read(ref pipelineGeneration))
+                        return;
+
                     if (msg == null)
                         continue;
 
@@ -503,44 +268,107 @@ public class GStask
 
                     if (type == BusReader.Error)
                     {
-                        IsDead = true;
-                        Dispose();
+                        BusReader.TryParseError(
+                            msg,
+                            out string error,
+                            out string debug
+                        );
+
+                        lock (pipelineLock)
+                        {
+                            if (ct.IsCancellationRequested ||
+                                generation != Volatile.Read(ref pipelineGeneration) ||
+                                !ReferenceEquals(watchBus, bus))
+                            {
+                                return;
+                            }
+
+                            disposeTask = true;
+                        }
+
+                        LogTaskError(
+                            "BusWatch",
+                            $"GStreamer bus error. Error={error}, Debug={debug}",
+                            messageType: type
+                        );
+
                         return;
                     }
-                    else if (type == BusReader.Eos)
+
+                    if (type == BusReader.Eos)
                     {
-                        double duration = probe.DurationSeconds;
-                        if (duration <= 0)
+                        lock (pipelineLock)
                         {
-                            // длительность неизвестна — EOS нельзя признать ошибочным
-                            IsEos = true;
-                            return;
+                            if (ct.IsCancellationRequested ||
+                                generation != Volatile.Read(ref pipelineGeneration) ||
+                                !ReferenceEquals(watchBus, bus))
+                            {
+                                return;
+                            }
+
+                            int duration = probe.DurationSeconds;
+                            if (duration <= 0)
+                            {
+                                IsEos = true;
+                                return;
+                            }
+
+                            ulong durationNs = SecondsToClockTime(duration);
+                            ulong eosBackoffNs = SecondsToClockTime(120);
+
+                            ulong eosThreshold = durationNs > eosBackoffNs
+                                ? durationNs - eosBackoffNs
+                                : 0;
+
+                            if (Volatile.Read(ref positionSeconds) >= eosThreshold)
+                            {
+                                IsEos = true;
+                                return;
+                            }
+
+                            LogTaskError(
+                                "BusWatch",
+                                "GStreamer bus emitted EOS before the allowed end threshold.",
+                                messageType: type
+                            );
+
+                            disposeTask = true;
                         }
 
-                        double eosThreshold = duration -
-                            conf.segment_seconds -
-                            120; // 120s
-
-                        if (Volatile.Read(ref positionSeconds) >= eosThreshold)
-                        {
-                            // выход в пределах допустимого отступления от конца
-                            IsEos = true;
-                            return;
-                        }
-                        else
-                        {
-                            IsDead = true;
-                            Dispose();
-                            return;
-                        }
+                        return;
                     }
                 }
+                catch (ObjectDisposedException)
+                {
+                    return;
+                }
+                catch (Exception ex)
+                {
+                    if (ct.IsCancellationRequested)
+                        return;
+
+                    if (generation != Volatile.Read(ref pipelineGeneration))
+                        return;
+
+                    LogTaskError(
+                        "BusWatch",
+                        "Unhandled exception while polling GStreamer bus.",
+                        ex
+                    );
+
+                    return;
+                }
             }
-            catch { }
+        }
+        finally
+        {
+            busWatchIdle.Set();
+
+            if (disposeTask)
+                Dispose();
         }
     }
     #endregion
-
 
     #region UpdateLastActive
     public void UpdateLastActive()
@@ -549,533 +377,57 @@ public class GStask
     }
     #endregion
 
-    #region Seek
-    public bool Seek(double seconds)
+    #region GetHlsBandwidth
+    public long GetHlsBandwidth(out long? averageBandwidth)
     {
-        if (IsDead || !statePlaying)
-            return false;
+        var audio = probe.Tracks.FirstOrDefault(track =>
+            track.Type == "audio" &&
+            track.Index == audioIndex
+        );
 
-        if (pipeline != null)
+        int channels = conf.aac_channels > 0
+            ? conf.aac_channels
+            : Math.Max(1, audio?.Channels ?? 2);
+
+        long audioBitrate = Math.Max(1, conf.aac_bitrate) * 1000L;
+
+        if (channels > 2)
+            audioBitrate *= 2;
+
+        if (IsVideoTranscoded)
         {
-            StopBusWatch();
-            pipeline.SetState(State.Null);
-            pipeline.Dispose();
-            sink.Dispose();
-            bus.Dispose();
+            averageBandwidth =
+                Math.Max(1, conf.video_bitrate) * 1000L +
+                audioBitrate;
+
+            // x264 bitrate является целевым, отдельные сегменты могут быть больше
+            return averageBandwidth.Value * 125 / 100;
         }
 
-        string pipelineArgs = CreatePipelineArgs(probe);
-        pipeline = (Pipeline)Gst.Functions.ParseLaunch(pipelineArgs);
-        bus = pipeline.GetBus();
-
-        bin = pipeline;
-        sink = (GstApp.AppSink)bin.GetByName("out");
-
-        subsSinks.Clear();
-
-        foreach (var track in subtitleTracks)
+        if (contentLength is > 0 && probe.DurationNs > 0)
         {
-            var subSink = (GstApp.AppSink)bin.GetByName($"subs_{track.Index}");
-            if (subSink != null)
-                subsSinks[track.Index] = subSink;
-        }
+            double durationSeconds =
+                probe.DurationNs / 1_000_000_000d;
 
-        StateChangeReturn ret;
+            double average =
+                contentLength.Value * 8d / durationSeconds;
 
-        if (seconds > 0)
-        {
-            ret = pipeline.SetState(State.Paused);
-            if (ret == StateChangeReturn.Failure)
+            if (double.IsFinite(average) &&
+                average > 0 &&
+                average <= long.MaxValue / 2d)
             {
-                IsDead = true;
-                Dispose();
-                return false;
-            }
-
-            if (ret == StateChangeReturn.Async)
-            {
-                // ждём завершение команды в pipeline
-                using (var msg = bus.TimedPopFiltered(5_000_000_000UL, MessageType.AsyncDone | MessageType.Error | MessageType.Eos))
-                {
-                    if (BusReader.GetType(msg) == BusReader.Error || BusReader.GetType(msg) == BusReader.Eos)
-                    {
-                        IsDead = true;
-                        Dispose();
-                        return false;
-                    }
-                }
-            }
-
-            bool ok = pipeline.SeekSimple(
-                Format.Time,
-                SeekFlags.Flush | SeekFlags.KeyUnit | SeekFlags.SnapAfter,
-                (long)Math.Round(seconds * 1_000_000_000d)
-            );
-
-            if (!ok)
-            {
-                IsDead = true;
-                Dispose();
-                return false;
-            }
-
-            // После flushing seek тоже лучше дождаться ASYNC_DONE.
-            using (var flushing = bus.TimedPopFiltered(5_000_000_000UL, MessageType.AsyncDone | MessageType.Error | MessageType.Eos))
-            {
-                if (BusReader.GetType(flushing) == BusReader.Error || BusReader.GetType(flushing) == BusReader.Eos)
-                {
-                    IsDead = true;
-                    Dispose();
-                    return false;
-                }
+                averageBandwidth = (long)Math.Ceiling(average);
+                return averageBandwidth.Value * 150 / 100;
             }
         }
 
-        ret = pipeline.SetState(State.Playing);
-        if (ret == StateChangeReturn.Failure)
-        {
-            IsDead = true;
-            Dispose();
-            return false;
-        }
+        averageBandwidth = null;
 
-        if (ret == StateChangeReturn.Async)
-        {
-            using (var msg = bus.TimedPopFiltered(5_000_000_000UL, MessageType.AsyncDone | MessageType.Error | MessageType.Eos))
-            {
-                if (BusReader.GetType(msg) == BusReader.Error || BusReader.GetType(msg) == BusReader.Eos)
-                {
-                    IsDead = true;
-                    Dispose();
-                    return false;
-                }
-            }
-        }
+        long fallback =
+            Math.Max(1, conf.video_bitrate) * 1000L +
+            audioBitrate;
 
-        mp4Reader.ResetSegment();
-        mp4Reader.SeekReset(seconds);
-        readySegment = (-1, false, default);
-
-        IsFrozen = false;
-        IsEos = false;
-        positionSeconds = seconds;
-        positionSeekSeconds = seconds;
-        StartBusWatch();
-        return true;
-    }
-    #endregion
-
-
-    #region GetSegment
-    public Segment GetSegment(int index, CancellationToken ct, int audio = 0)
-    {
-        if (IsDead)
-            return default;
-
-        #region start Playing
-        if (!statePlaying)
-        {
-            statePlaying = true;
-
-            if (probe.Tracks.FirstOrDefault(i => i.Type == "audio" && i.Index == audio) != null)
-                audioIndex = audio;
-
-            string pipelineArgs = CreatePipelineArgs(probe);
-            pipeline = (Pipeline)Gst.Functions.ParseLaunch(pipelineArgs);
-            bus = pipeline.GetBus();
-
-            bin = pipeline;
-            sink = (GstApp.AppSink)bin.GetByName("out");
-
-            subsSinks.Clear();
-
-            foreach (var track in subtitleTracks)
-            {
-                var subSink = (GstApp.AppSink)bin.GetByName($"subs_{track.Index}");
-                if (subSink != null)
-                    subsSinks[track.Index] = subSink;
-            }
-
-            var ret = pipeline.SetState(State.Playing);
-            if (ret == StateChangeReturn.Failure)
-            {
-                IsDead = true;
-                Dispose();
-                return default;
-            }
-
-            if (ret == StateChangeReturn.Async)
-            {
-                using (var msg = bus.TimedPopFiltered(5_000_000_000UL, MessageType.AsyncDone | MessageType.Error | MessageType.Eos))
-                {
-                    if (BusReader.GetType(msg) == BusReader.Error || BusReader.GetType(msg) == BusReader.Eos)
-                    {
-                        IsDead = true;
-                        Dispose();
-                        return default;
-                    }
-                }
-            }
-
-            StartBusWatch();
-        }
-        else if (IsFrozen)
-        {
-            if (!Seek(positionSeconds))
-            {
-                IsDead = true;
-                Dispose();
-                return default;
-            }
-        }
-        #endregion
-
-        if (readySegment.index == index && readySegment.complete)
-        {
-            DrainSubtitles();
-            return readySegment.seg;
-        }
-
-        mp4Reader.ResetSegment();
-        readySegment = (-1, false, default);
-
-        try
-        {
-            long start = Stopwatch.GetTimestamp();
-            var timeout = TimeSpan.FromSeconds(10);
-
-            while (Stopwatch.GetElapsedTime(start) < timeout)
-            {
-                if (ct.IsCancellationRequested || IsDead)
-                    return default;
-
-                DrainSubtitles();
-
-                // 100 ms
-                using (var sample = sink.TryPullSample(100_000_000UL))
-                {
-                    using (var buffer = sample?.GetBuffer())
-                    {
-                        if (buffer == null)
-                        {
-                            if (IsEos)
-                            {
-                                // В _deferred может лежать полный Segment
-                                if (mp4Reader.TryProcessDeferred() && readySegment.complete)
-                                {
-                                    readySegment.index = index;
-                                    return readySegment.seg;
-                                }
-
-                                // Последний fragment может быть неполным:
-                                // только moof, только часть mdat либо fragment одной дорожки
-                                if (mp4Reader.TryBuildEndOfStreamRemainder() && readySegment.complete)
-                                {
-                                    readySegment.index = index;
-                                    return readySegment.seg;
-                                }
-
-                                // очередь appsink полностью вычитана
-                                return default;
-                            }
-
-                            continue;
-                        }
-
-                        nuint size = buffer.GetSize();
-                        if (size == 0)
-                            continue;
-
-                        mp4Reader.Push(buffer, (int)size);
-
-                        if (readySegment.complete)
-                        {
-                            DrainSubtitles();
-                            readySegment.index = index > 0 ? index : 0;
-                            return readySegment.seg;
-                        }
-                    }
-                }
-            }
-
-            return default;
-        }
-        catch (Exception ex)
-        {
-            Serilog.Log.Error(ex, "CatchId={CatchId}", "id_qv6la4ny");
-            IsDead = true;
-            Dispose();
-            return default;
-        }
-    }
-    #endregion
-
-    #region GetSubtitleVtt
-    public StringBuilder GetSubtitleVtt(StringBuilder sb, int subtitleIndex, int seg)
-    {
-        DrainSubtitles();
-
-        double segDur = Math.Max(1, conf.segment_seconds);
-        double from = seg * segDur;
-        double to = from + segDur;
-
-        long mpegts = (long)Math.Round(from * 90000d);
-
-        sb.AppendLine("WEBVTT");
-        sb.AppendLine($"X-TIMESTAMP-MAP=LOCAL:00:00:00.000,MPEGTS:{mpegts}");
-        sb.AppendLine();
-
-        if (!subtitles.TryGetValue(subtitleIndex, out var store))
-            return sb;
-
-        lock (store.Cues)
-        {
-            foreach (var cue in store.Cues)
-            {
-                if (cue.EndSeconds <= from || cue.StartSeconds >= to)
-                    continue;
-
-                double startSeconds = Math.Max(cue.StartSeconds, from) - from;
-                double endSeconds = Math.Min(cue.EndSeconds, to) - from;
-
-                if (endSeconds <= startSeconds)
-                    continue;
-
-                var start = TimeSpan.FromSeconds(startSeconds);
-                var end = TimeSpan.FromSeconds(endSeconds);
-
-                sb.AppendLine($"{start:hh\\:mm\\:ss\\.fff} --> {end:hh\\:mm\\:ss\\.fff}");
-                sb.AppendLine(cue.Text);
-                sb.AppendLine();
-            }
-        }
-
-        return sb;
-    }
-    #endregion
-
-    #region DrainSubtitles
-    const int MaxSubtitleBufferBytes = 1024 * 1024;
-    const int MaxPendingVttChars = 64 * 1024;
-
-    static readonly Regex VttCueRegex = new(
-        @"(?:^|\n)(?:[^\n]*\n)?(?<start>\d{2,}:\d{2}:\d{2}\.\d{3})[ \t]+-->[ \t]+(?<end>\d{2,}:\d{2}:\d{2}\.\d{3})(?<settings>[^\n]*)\n(?<text>.*?)(?:\n[ \t]*\n)",
-        RegexOptions.Compiled |
-        RegexOptions.CultureInvariant |
-        RegexOptions.Singleline
-    );
-
-    void DrainSubtitles()
-    {
-        if (subsSinks.Count == 0)
-            return;
-
-        foreach (var pair in subsSinks)
-        {
-            int subtitleIndex = pair.Key;
-
-            if (!subtitles.TryGetValue(subtitleIndex, out var store))
-                continue;
-
-            var subSink = pair.Value;
-
-            while (true)
-            {
-                using var sample = subSink.TryPullSample(0);
-                if (sample == null)
-                    break;
-
-                using var buffer = sample.GetBuffer();
-                if (buffer == null)
-                    continue;
-
-                nuint nsize = buffer.GetSize();
-                if (nsize == 0 || nsize > MaxSubtitleBufferBytes)
-                    continue;
-
-                int size = (int)nsize;
-                byte[] data = new byte[size];
-
-                int copied = (int)buffer.Extract(
-                    (nuint)0,
-                    data.AsSpan(0, size)
-                );
-
-                if (copied <= 0)
-                    continue;
-
-                string chunk = Encoding.UTF8.GetString(data, 0, copied);
-                if (string.IsNullOrWhiteSpace(chunk))
-                    continue;
-
-                if (chunk.IndexOf('\r') >= 0)
-                    chunk = chunk.Replace("\r\n", "\n").Replace('\r', '\n');
-
-                lock (store.Cues)
-                {
-                    string vtt = string.IsNullOrEmpty(store.Pending)
-                        ? chunk
-                        : store.Pending + chunk;
-
-                    int consumed = 0;
-
-                    foreach (Match match in VttCueRegex.Matches(vtt))
-                    {
-                        if (!TryVttSeconds(match.Groups["start"].Value, out double startSeconds) ||
-                            !TryVttSeconds(match.Groups["end"].Value, out double endSeconds) ||
-                            endSeconds <= startSeconds)
-                        {
-                            consumed = match.Index + match.Length;
-                            continue;
-                        }
-
-                        string text = match.Groups["text"].Value.Trim();
-                        if (text.Length == 0)
-                        {
-                            consumed = match.Index + match.Length;
-                            continue;
-                        }
-
-                        if (positionSeekSeconds > 0 &&
-                            startSeconds < positionSeekSeconds - conf.segment_seconds)
-                        {
-                            startSeconds += positionSeekSeconds;
-                            endSeconds += positionSeekSeconds;
-                        }
-
-                        var key = new SubtitleCueKey(startSeconds, endSeconds, text);
-
-                        if (store.Seen.Add(key))
-                        {
-                            store.Cues.Add(new SubtitleCue
-                            {
-                                StartSeconds = startSeconds,
-                                EndSeconds = endSeconds,
-                                Settings = match.Groups["settings"].Value.Trim(),
-                                Text = text
-                            });
-                        }
-
-                        consumed = match.Index + match.Length;
-                    }
-
-                    if (consumed > 0)
-                    {
-                        store.Pending = consumed < vtt.Length
-                            ? vtt[consumed..]
-                            : null;
-                    }
-                    else
-                    {
-                        store.Pending = vtt;
-                    }
-
-                    if (!string.IsNullOrEmpty(store.Pending) &&
-                        store.Pending.Length > MaxPendingVttChars)
-                    {
-                        int cut = store.Pending.Length - MaxPendingVttChars;
-                        int nl = store.Pending.IndexOf('\n', cut);
-
-                        store.Pending = nl >= 0
-                            ? store.Pending[(nl + 1)..]
-                            : store.Pending[^MaxPendingVttChars..];
-                    }
-                }
-            }
-        }
-    }
-
-    static bool TryVttSeconds(string value, out double seconds)
-    {
-        seconds = 0;
-
-        if (string.IsNullOrEmpty(value))
-            return false;
-
-        ReadOnlySpan<char> span = value.AsSpan().Trim();
-
-        int p1 = span.IndexOf(':');
-        if (p1 <= 0)
-            return false;
-
-        int p2 = span[(p1 + 1)..].IndexOf(':');
-        if (p2 < 0)
-            return false;
-
-        p2 += p1 + 1;
-
-        ReadOnlySpan<char> hSpan = span[..p1];
-        ReadOnlySpan<char> mSpan = span[(p1 + 1)..p2];
-        ReadOnlySpan<char> sSpan = span[(p2 + 1)..];
-
-        int dot = sSpan.IndexOf('.');
-        if (dot < 0)
-            dot = sSpan.IndexOf(',');
-
-        if (dot <= 0)
-            return false;
-
-        ReadOnlySpan<char> secSpan = sSpan[..dot];
-        ReadOnlySpan<char> msSpan = sSpan[(dot + 1)..];
-
-        if (!int.TryParse(hSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out int h) ||
-            !int.TryParse(mSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out int m) ||
-            !int.TryParse(secSpan, NumberStyles.Integer, CultureInfo.InvariantCulture, out int s))
-        {
-            return false;
-        }
-
-        int ms = 0;
-        int mul = 100;
-
-        for (int i = 0; i < msSpan.Length && i < 3; i++)
-        {
-            char c = msSpan[i];
-            if (c < '0' || c > '9')
-                return false;
-
-            ms += (c - '0') * mul;
-            mul /= 10;
-        }
-
-        if (h < 0 || m < 0 || m > 59 || s < 0 || s > 59)
-            return false;
-
-        seconds = h * 3600d + m * 60d + s + ms / 1000d;
-        return true;
-    }
-    #endregion
-
-
-    #region Dispose
-    public void Dispose()
-    {
-        mp4Reader?.Dispose();
-        mp4Reader = null;
-
-        StopBusWatch();
-
-        if (pipeline == null)
-            return;
-
-        pipeline.SetState(State.Null);
-        pipeline.Dispose();
-        pipeline = null;
-
-        foreach (var subSink in subsSinks.Values)
-            subSink.Dispose();
-
-        subsSinks.Clear();
-
-        sink.Dispose();
-        sink = null;
-        bus.Dispose();
-        bus = null;
-
-        semaphore.Dispose();
-        semaphore = null;
-        initMp4 = null;
-        bin = null;
+        return Math.Max(4_000_000L, fallback * 150 / 100);
     }
     #endregion
 
@@ -1086,22 +438,241 @@ public class GStask
             return;
 
         IsFrozen = true;
-        StopBusWatch();
-
-        pipeline.SetState(State.Null);
-        pipeline.Dispose();
-        pipeline = null;
-
-        foreach (var subSink in subsSinks.Values)
-            subSink.Dispose();
-
-        subsSinks.Clear();
-
-        sink.Dispose();
-        sink = null;
-        bus.Dispose();
-        bus = null;
-        bin = null;
+        DisposePipeline();
+        ClearSegmentCache();
     }
+    #endregion
+
+    #region Defrost
+    public void Defrost()
+    {
+        if (IsFrozen)
+        {
+            ulong seekNs;
+
+            if (cueTimeline?.TryGetSegment(lastClientSegmentIndex, out CueSegment cueSegment) == true)
+                seekNs = cueSegment.StartNs;
+            else if (segmentStartNsByIndex.TryGetValue(lastClientSegmentIndex, out ulong startNs))
+                seekNs = startNs;
+            else
+                seekNs = positionSeconds;
+
+            InitSegmentCache();
+            if (!SeekClockTime(seekNs, accurate: cueTimeline != null))
+            {
+                LogTaskError(
+                    "Defrost",
+                    "SeekClockTime failed while defrosting task.",
+                    seekNs: seekNs
+                );
+
+                Dispose();
+            }
+        }
+    }
+    #endregion
+
+    #region Dispose
+    public void Dispose()
+    {
+        if (Interlocked.Exchange(ref isDead, 1) != 0)
+            return;
+
+        DisposePipeline();
+        ClearSegmentCache();
+        Volatile.Write(ref initMp4Length, 0);
+        TryDeleteFile(initMp4Path);
+        segmentStartNsByIndex.Clear();
+        mp4Reader?.Dispose();
+        mp4Reader = null;
+        hlsVariantInfo = null;
+    }
+    #endregion
+
+    #region DisposePipeline
+    void DisposePipeline()
+    {
+        Pipeline disposingPipeline = null;
+        CancellationTokenSource watchCts = null;
+        bool waitForOtherDispose;
+
+        lock (pipelineLock)
+        {
+            if (Volatile.Read(ref pipelineStopping) != 0)
+            {
+                waitForOtherDispose = true;
+            }
+            else
+            {
+                if (pipeline == null)
+                    return;
+
+                waitForOtherDispose = false;
+
+                Volatile.Write(ref pipelineStopping, 1);
+                pipelineDisposeIdle.Reset();
+
+                disposingPipeline = pipeline;
+
+                Interlocked.Increment(ref pipelineGeneration);
+
+                watchCts = StopBusWatch();
+                CancelSegmentPrefetch();
+            }
+        }
+
+        if (waitForOtherDispose)
+        {
+            pipelineDisposeIdle.Wait();
+            return;
+        }
+
+        try
+        {
+            ensureSegmentIdle.Wait();
+            busWatchIdle.Wait();
+
+            lock (pipelineLock)
+            {
+                if (!ReferenceEquals(pipeline, disposingPipeline))
+                    return;
+
+                RemoveVideoStartProbe();
+                RemoveVideoSegmentClipProbe();
+                RemoveSourceThrottleProbe();
+
+                try
+                {
+                    disposingPipeline.SetState(State.Null);
+                }
+                catch { }
+
+                try
+                {
+                    disposingPipeline.Dispose();
+                }
+                catch { }
+
+                foreach (var subSink in subsSinks.Values)
+                {
+                    try
+                    {
+                        subSink.Dispose();
+                    }
+                    catch { }
+                }
+
+                subsSinks.Clear();
+
+                try
+                {
+                    sink?.Dispose();
+                }
+                catch { }
+
+                sink = null;
+
+                try
+                {
+                    bus?.Dispose();
+                }
+                catch { }
+
+                bus = null;
+                bin = null;
+                pipeline = null;
+            }
+        }
+        finally
+        {
+            watchCts?.Dispose();
+
+            lock (pipelineLock)
+            {
+                Volatile.Write(ref pipelineStopping, 0);
+                pipelineDisposeIdle.Set();
+            }
+        }
+    }
+    #endregion
+
+    #region Helpers
+    static ulong SecondsToClockTime(int seconds)
+    {
+        if (seconds <= 0)
+            return 0;
+
+        return checked((ulong)seconds * GstSecond);
+    }
+
+    static ulong AddClockTime(ulong left, ulong right)
+    {
+        return ulong.MaxValue - left < right
+            ? ulong.MaxValue
+            : left + right;
+    }
+
+    bool IsVideoTranscoded
+        => conf.hdr_to_sdr && probe.Video?.IsHdr == true ||
+           probe.IsH264 && conf.transcodeH264 ||
+           probe.IsH265 && conf.transcodeH265 ||
+           probe.IsAV1 && conf.transcodeAV1 ||
+           probe.IsVP9 && conf.transcodeVP9 ||
+           probe.IsVP8 && conf.transcodeVP8 ||
+           probe.IsAVI && conf.transcodeAVI;
+
+    void LogTaskError(
+        string stage,
+        string reason,
+        Exception exception = null,
+        int? segmentIndex = null,
+        ulong? seekNs = null,
+        uint? messageType = null
+    )
+    {
+        if (exception == null)
+        {
+            Serilog.Log.Error(
+                "GStreamer task error. Stage={Stage}, Reason={Reason}, TaskId={TaskId}, User={User}, Segment={Segment}, SeekNs={SeekNs}, MessageType={MessageType}, PositionNs={PositionNs}, PositionSeekNs={PositionSeekNs}, ReaderSegment={ReaderSegment}, ActiveSegment={ActiveSegment}, IsDead={IsDead}, IsFrozen={IsFrozen}, IsEos={IsEos}, StatePlaying={StatePlaying}",
+                stage,
+                reason,
+                id,
+                user_uid,
+                segmentIndex,
+                seekNs,
+                messageType,
+                positionSeconds,
+                positionSeekSeconds,
+                Volatile.Read(ref readerSegmentIndex),
+                Volatile.Read(ref activeSegmentIndex),
+                IsDead,
+                IsFrozen,
+                IsEos,
+                statePlaying
+            );
+            return;
+        }
+
+        Serilog.Log.Error(
+            exception,
+            "GStreamer task error. Stage={Stage}, Reason={Reason}, TaskId={TaskId}, User={User}, Segment={Segment}, SeekNs={SeekNs}, MessageType={MessageType}, PositionNs={PositionNs}, PositionSeekNs={PositionSeekNs}, ReaderSegment={ReaderSegment}, ActiveSegment={ActiveSegment}, IsDead={IsDead}, IsFrozen={IsFrozen}, IsEos={IsEos}, StatePlaying={StatePlaying}",
+            stage,
+            reason,
+            id,
+            user_uid,
+            segmentIndex,
+            seekNs,
+            messageType,
+            positionSeconds,
+            positionSeekSeconds,
+            Volatile.Read(ref readerSegmentIndex),
+            Volatile.Read(ref activeSegmentIndex),
+            IsDead,
+            IsFrozen,
+            IsEos,
+            statePlaying
+        );
+    }
+
     #endregion
 }

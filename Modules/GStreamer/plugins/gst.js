@@ -28,9 +28,20 @@
         var url = resolveMediaUrl(data);
         if (!url) return false;
 
+        if (
+            /\/dlna\/stream(?:\?|$)/i.test(url) &&
+            /[?&]path=[^&#]*\.mkv(?:[&#]|$)/i.test(url)
+        ) {
+            return true;
+        }
+
         url = url.split('#')[0].split('?')[0];
 
-        return /\.mkv$/i.test(url) || /\/lite\/pidtor\//i.test(url);
+        return (
+            /\.mkv$/i.test(url) ||
+            /\.avi$/i.test(url) ||
+            /\/lite\/pidtor\//i.test(url)
+        );
     }
 
     function nameAudioCodec(capsName) {

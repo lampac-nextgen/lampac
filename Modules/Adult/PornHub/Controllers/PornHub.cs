@@ -130,7 +130,7 @@ public class PornHubController : BaseSisiController
             return badInitMsg;
 
     rhubFallback:
-        var cache = await InvokeCacheResult($"phub:vidosik:{vkey}", 20, jsonContext.StreamItem, async e =>
+        var cache = await InvokeCacheResult(ipkey($"phub:vidosik:{vkey}"), 20, jsonContext.StreamItem, async e =>
         {
             string url = PornHubTo.StreamLinksUri(init.host, vkey);
             if (url == null)

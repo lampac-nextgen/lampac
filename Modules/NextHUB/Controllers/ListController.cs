@@ -1,4 +1,5 @@
 using HtmlAgilityPack;
+using Microsoft.AspNetCore.Http;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.CodeAnalysis;
 using Microsoft.IO;
@@ -17,6 +18,9 @@ namespace NextHUB;
 
 public class ListController : BaseSisiController<NxtSettings>
 {
+    IQueryCollection evalQuery = QueryCollection.Empty;
+    string evalQueryCacheKey = string.Empty;
+
     public ListController() : base(default) { }
 
     [HttpGet, Staticache]
@@ -38,12 +42,9 @@ public class ListController : BaseSisiController<NxtSettings>
         if (await IsRequestBlocked(_nxtInit, rch: _nxtInit.rch_access != null))
             return badInitMsg;
 
-        string semaphoreKey = $"nexthub:{plugin}:{search}:{sort}:{cat}:{model}:{pg}";
-        if (init.menu?.customs != null)
-        {
-            foreach (var item in init.menu.customs)
-                semaphoreKey += $":{HttpContext.Request.Query[item.arg]}";
-        }
+        (evalQuery, evalQueryCacheKey) = Root.getEvalQuery(HttpContext.Request.Query, init);
+
+        string semaphoreKey = $"nexthub:{plugin}:{search}:{sort}:{cat}:{model}:{pg}{evalQueryCacheKey}";
 
     rhubFallback:
         var cache = await InvokeCacheResult(semaphoreKey, init.cache_time, jsonContext.ListPlaylistItem, async e =>
@@ -494,10 +495,16 @@ public class ListController : BaseSisiController<NxtSettings>
                 {
                     try
                     {
+                        if (!Root.isSafeHttpUrl(route.Request.Url))
+                        {
+                            await route.AbortAsync();
+                            return;
+                        }
+
                         #region routeEval
                         if (routeEval != null)
                         {
-                            bool _next = await CSharpEval.ExecuteAsync<bool>(routeEval, new NxtRoute(route, HttpContext.Request.Query, url, search, sort, cat, model, pg), Root.routeOptions);
+                            bool _next = await CSharpEval.ExecuteAsync<bool>(routeEval, new NxtRoute(route, evalQuery, url, search, sort, cat, model, pg), Root.routeOptions);
                             if (!_next)
                                 return;
                         }
@@ -610,7 +617,7 @@ public class ListController : BaseSisiController<NxtSettings>
                 else if (init.model?.format != null)
                 {
                     string eval = $"return $\"{init.model.format}\";";
-                    url = CSharpEval.BaseExecute<string>(eval, new NxtMenuRoute(init.host, plugin, url, search, cat, sort, model, HttpContext.Request.Query, pg));
+                    url = CSharpEval.BaseExecute<string>(eval, new NxtMenuRoute(init.host, plugin, url, search, cat, sort, model, evalQuery, pg));
                 }
             }
             else if (init.menu?.customs != null)
@@ -635,17 +642,19 @@ public class ListController : BaseSisiController<NxtSettings>
                     return string.Empty;
                 }
 
-                string eval = $"return (cat != null && sort != null) ? $\"{goroute("catsort")}\" : (model != null && sort != null) ? $\"{goroute("modelsort")}\" : model != null ? $\"{goroute("model")}\" : cat != null ? $\"{goroute("cat")}\" : sort != null ? $\"{goroute("sort")}\" : \"{url}\";";
-                url = CSharpEval.BaseExecute<string>(eval, new NxtMenuRoute(init.host, plugin, url, search, cat, sort, model, HttpContext.Request.Query, pg));
+                string eval = $"return (cat != null && sort != null) ? $\"{goroute("catsort")}\" : (model != null && sort != null) ? $\"{goroute("modelsort")}\" : model != null ? $\"{goroute("model")}\" : cat != null ? $\"{goroute("cat")}\" : sort != null ? $\"{goroute("sort")}\" : url;";
+                url = CSharpEval.BaseExecute<string>(eval, new NxtMenuRoute(init.host, plugin, url, search, cat, sort, model, evalQuery, pg));
             }
         }
 
         if (init.route?.eval != null)
-            url = CSharpEval.Execute<string>(init.route.eval, new NxtMenuRoute(init.host, plugin, url, search, cat, sort, model, HttpContext.Request.Query, pg));
+            url = CSharpEval.Execute<string>(init.route.eval, new NxtMenuRoute(init.host, plugin, url, search, cat, sort, model, evalQuery, pg));
         #endregion
 
         var headers = httpHeaders(init);
         string targetHost = init.cors(url.Replace("{page}", pg.ToString()), headers, requestInfo);
+        if (!Root.isSafeHttpUrl(targetHost))
+            return null;
 
         if (!string.IsNullOrEmpty(data))
         {
