@@ -500,6 +500,69 @@
             <tbody>
               <tr>
                 <td><span class="method method-get">GET</span></td>
+                <td><code>/music.js</code></td>
+                <td>Music</td>
+                <td>Клиентский плагин Lampa. Подключается вручную. Также <code>/music/js/{token}</code>.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/music/home</code></td>
+                <td>Music</td>
+                <td>Главный экран: история, плейлисты, discovery-полки. Также <code>/music</code>.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/music/search</code></td>
+                <td>Music</td>
+                <td>Поиск. Параметр: <code>?q=</code>.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/music/play</code></td>
+                <td>Music</td>
+                <td>Playable-ответ для трека (источники + stream URL).</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/music/stream</code></td>
+                <td>Music</td>
+                <td>Relay стрима (Range, тикеты, авто re-resolve).</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/lampac.apk</code></td>
+                <td>LampacApk</td>
+                <td>Android APK с адресом текущего сервера. Также <code>/android.apk</code>.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/media</code></td>
+                <td>CorsMedia</td>
+                <td>Прокси медиа-ссылок. Токен в <code>CorsMedia.tokens</code>. Также
+                  <code>/media/{type}/{token}/…</code>, <code>/media/rsize/…</code>.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/corseu</code></td>
+                <td>Corseu</td>
+                <td>HTTP/browser CORS-прокси. Токен в <code>Corseu.tokens</code>.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/telemetry</code></td>
+                <td>Telemetry</td>
+                <td>Дашборд статистики запросов. API: <code>/telemetry/api/stats</code>, <code>/logs</code>,
+                  <code>/chart</code>, <code>/tops</code>. По умолчанию отключён.</td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
+                <td><code>/naked-gun</code></td>
+                <td>Potok</td>
+                <td>Плагин potok.rip (онлайн). 18+: <code>/blue-oyster</code>. В <code>SkipModules</code> по умолчанию.
+                </td>
+              </tr>
+              <tr>
+                <td><span class="method method-get">GET</span></td>
                 <td><code>/ts/</code></td>
                 <td>TorrServer</td>
                 <td>Прокси к TorrServer API. Случайный пароль за сессию. Документация — сайт TorrServer.</td>

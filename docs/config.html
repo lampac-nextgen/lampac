@@ -178,6 +178,7 @@
           <li><a href="#gc">Управление памятью GC</a></li>
           <li><a href="#providers-cfg">Конфигурация провайдеров</a></li>
           <li><a href="#lampa-plugins">Плагины Lampa UI</a></li>
+          <li><a href="#music">Music</a></li>
           <li><a href="#telegrambot">TelegramBot (Tg-notify)</a></li>
         </ul>
       </div>
@@ -316,8 +317,10 @@
         </div>
         <div class="callout callout-info"><span class="callout-icon">ℹ️</span>
           <p><strong>По умолчанию отключены</strong> (в <code>SkipModules</code> в <code>base.conf</code>): Catalog,
-            DLNA, Tracks, Transcoding, WebLog, CacheMedia, ProxyLimiter, ForkPlayerXML, MsxNative, TelegramAuth,
-            TelegramAuthBot.<br>WAF и accsdb отключены через <code>"enable": false</code> в <code>base.conf</code>, а не
+            Tracks, Transcoding, WebLog, CacheMedia, ForkPlayerXML, MsxNative, Potok, TelegramAuth,
+            TelegramAuthBot.<br>Также отключены через <code>manifest.json</code> (<code>enable: false</code>):
+            AdminPanel, ExternalBind, LogUserRequest-Lite, Telemetry, Tg-notify.bot, WatchTogether,
+            Tracks, Transcoding.<br>WAF и accsdb отключены через <code>"enable": false</code> в <code>base.conf</code>, а не
             через SkipModules. Модуль <strong>GStreamer</strong> загружается, но транскодинг выключен до
             <code>gst.enable: true</code> — см. <a href="#gst">секцию gst</a>.</p>
         </div>
@@ -804,6 +807,78 @@
           <p>Плагины <code>/online.js</code> и <code>/sisi.js</code> совместимы с <strong>Lampa 3.0</strong>. Виджеты
             Smart TV собираются на лету с подстановкой <code>{localhost}</code>; кеш — в
             <code>cache/widgets/</code>. Подробнее о Tg-notify — в <a href="#telegrambot">секции TelegramBot</a>.</p>
+        </div>
+      </div>
+
+      <hr class="divider" style="margin-bottom:40px" />
+
+      <!-- MUSIC -->
+      <div id="music" class="config-section">
+        <div class="section-label">Музыка</div>
+        <h2 class="section-title">Music</h2>
+        <p class="section-sub" style="margin-bottom:20px">Музыкальный модуль включён по умолчанию. Клиентский плагин —
+          <code>/music.js</code> (подключается в Lampa вручную). Полное описание —
+          <a href="https://github.com/lampac-nextgen/lampac/blob/main/Modules/Music/README.md" target="_blank"
+            rel="noopener">Modules/Music/README.md</a>.</p>
+        <div class="code-wrap">
+          <div class="code-header"><span class="code-title">init.conf — Music</span><button class="copy-btn"
+              onclick="copyCode(this)"><svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor">
+                <path
+                  d="M0 6.75C0 5.784.784 5 1.75 5h1.5a.75.75 0 010 1.5h-1.5a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-1.5a.75.75 0 011.5 0v1.5A1.75 1.75 0 019.25 16h-7.5A1.75 1.75 0 010 14.25v-7.5z" />
+                <path
+                  d="M5 1.75C5 .784 5.784 0 6.75 0h7.5C15.216 0 16 .784 16 1.75v7.5A1.75 1.75 0 0114.25 11h-7.5A1.75 1.75 0 015 9.25v-7.5zm1.75-.25a.25.25 0 00-.25.25v7.5c0 .138.112.25.25.25h7.5a.25.25 0 00.25-.25v-7.5a.25.25 0 00-.25-.25h-7.5z" />
+              </svg> Копировать</button></div>
+          <pre>{
+  <span class="hl-key">"Music"</span>: {
+    <span class="hl-key">"default_metadata_provider"</span>: <span class="hl-string">"musicbrainz"</span>,
+    <span class="hl-key">"default_audio_provider"</span>:    <span class="hl-string">"youtubeaudio"</span>,
+    <span class="hl-key">"youtube_audio_enabled"</span>:      <span class="hl-bool">true</span>,
+    <span class="hl-key">"sefon_audio_enabled"</span>:        <span class="hl-bool">true</span>,
+    <span class="hl-key">"soundcloud_enabled"</span>:         <span class="hl-bool">true</span>,
+    <span class="hl-key">"soundcloud_country"</span>:         <span class="hl-string">"US"</span>,
+    <span class="hl-key">"z3fm_enabled"</span>:              <span class="hl-bool">false</span>,
+    <span class="hl-key">"z3fm_audio_enabled"</span>:        <span class="hl-bool">false</span>,
+    <span class="hl-key">"client_debug_enabled"</span>:      <span class="hl-bool">false</span>
+  }
+}</pre>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Параметр</th>
+                <th>По умолчанию</th>
+                <th>Описание</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><code>default_metadata_provider</code></td>
+                <td><code>musicbrainz</code></td>
+                <td>Каноническая metadata-база каталога</td>
+              </tr>
+              <tr>
+                <td><code>default_audio_provider</code></td>
+                <td><code>youtubeaudio</code></td>
+                <td>Основной audio-провайдер для воспроизведения</td>
+              </tr>
+              <tr>
+                <td><code>soundcloud_country</code></td>
+                <td><code>US</code></td>
+                <td>Регион чартов и подборок SoundCloud</td>
+              </tr>
+              <tr>
+                <td><code>z3fm_enabled</code> / <code>z3fm_audio_enabled</code></td>
+                <td><code>false</code></td>
+                <td>Z3Fm (требует Playwright для антибота)</td>
+              </tr>
+              <tr>
+                <td><code>client_debug_enabled</code></td>
+                <td><code>false</code></td>
+                <td>Приём клиентских трейсов на <code>/music/clientlog</code></td>
+              </tr>
+            </tbody>
+          </table>
         </div>
       </div>
 

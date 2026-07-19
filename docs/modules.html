@@ -5,7 +5,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="description"
-    content="Модули и провайдеры Lampac NextGen: Online, SISI, TorrServer, DLNA, JacRed, GStreamer, Transcoding и 70+ источников контента." />
+    content="Модули и провайдеры Lampac NextGen: Online, SISI, Music, TorrServer, DLNA, JacRed, GStreamer, Transcoding и 70+ источников контента." />
   <meta property="og:title" content="Модули и провайдеры — Lampac NextGen" />
   <meta property="og:image" content="assets/logo.png" />
   <link rel="icon" href="assets/logo.png" type="image/png" />
@@ -259,8 +259,8 @@
         <span>Модули</span>
       </div>
       <h1>Модули и провайдеры</h1>
-      <p class="page-hero-sub">Все встроенные модули, их статус по умолчанию и 70+ провайдеров контента: VOD, аниме,
-        ENG, UKR, GEO и 18+.</p>
+      <p class="page-hero-sub">Все встроенные модули, их статус по умолчанию и 70+ провайдеров контента: VOD, Music,
+        аниме, ENG, UKR, GEO и 18+.</p>
     </div>
   </div>
 
@@ -275,7 +275,7 @@
           <li><a href="#modules-list">Все модули</a></li>
           <li><a href="#custom">Пользовательские модули</a></li>
           <li><a href="#providers">Провайдеры VOD (RUS/Paid)</a></li>
-          <li><a href="#anime">Аниме (12 источников)</a></li>
+          <li><a href="#anime">Аниме (13 источников)</a></li>
           <li><a href="#eng">Англоязычный контент (10)</a></li>
           <li><a href="#ukr">Украинские CDN (8)</a></li>
           <li><a href="#geo">Грузинские CDN (3)</a></li>
@@ -323,6 +323,23 @@
           </div>
           <div class="module-row">
             <div class="dot dot-on"></div>
+            <div class="module-row-name"><a href="https://github.com/lampac-nextgen/lampac/tree/main/Modules/Music"
+                target="_blank" rel="noopener">Music</a></div>
+            <div class="module-row-desc">Музыкальный сервис для Lampa: home/чарты, поиск, плейлисты, импорт Spotify /
+              Apple Music / SoundCloud, лирика, radio. Плагин <code>/music.js</code>, API <code>/music/*</code>, SQLite
+              в <code>database/music/</code>. Подключите плагин вручную в Lampa.
+            </div><span class="module-row-tag">Музыка</span>
+          </div>
+          <div class="module-row">
+            <div class="dot dot-on"></div>
+            <div class="module-row-name"><a href="https://github.com/lampac-nextgen/lampac/tree/main/Modules/LampacApk"
+                target="_blank" rel="noopener">LampacApk</a></div>
+            <div class="module-row-desc">Генерация Android APK под адрес сервера: <code>/lampac.apk</code>,
+              <code>/android.apk</code>. Нужны JDK, <code>apksigner</code>, <code>zipalign</code>.
+            </div><span class="module-row-tag">Клиент</span>
+          </div>
+          <div class="module-row">
+            <div class="dot dot-on"></div>
             <div class="module-row-name"><a href="https://github.com/lampac-nextgen/lampac/tree/main/Modules/TorrServer"
                 target="_blank" rel="noopener">TorrServer</a></div>
             <div class="module-row-desc">Управление процессом TorrServer, прокси <code>/ts/</code>. Случайный пароль за
@@ -356,6 +373,24 @@
             <div class="module-row-name">CubProxy</div>
             <div class="module-row-desc">HTTP/HTTPS прокси с файловым кешем (<code>cache/cub/</code>).</div><span
               class="module-row-tag">Прокси</span>
+          </div>
+          <div class="module-row">
+            <div class="dot dot-on"></div>
+            <div class="module-row-name"><a
+                href="https://github.com/lampac-nextgen/lampac/tree/main/Modules/Proxy/CorsMedia" target="_blank"
+                rel="noopener">CorsMedia</a></div>
+            <div class="module-row-desc">Прокси медиа-ссылок (img/HLS/mp4) и ресайз картинок. Маршруты
+              <code>/media</code>, <code>/media/{type}/…</code>, <code>/media/rsize/…</code>. Токены в
+              <code>CorsMedia.tokens</code>.
+            </div><span class="module-row-tag">Прокси</span>
+          </div>
+          <div class="module-row">
+            <div class="dot dot-on"></div>
+            <div class="module-row-name"><a href="https://github.com/lampac-nextgen/lampac/tree/main/Modules/Proxy/Corseu"
+                target="_blank" rel="noopener">Corseu</a></div>
+            <div class="module-row-desc">HTTP/browser CORS-прокси API (<code>/corseu</code>). Токены в
+              <code>Corseu.tokens</code>.
+            </div><span class="module-row-tag">Прокси</span>
           </div>
           <div class="module-row">
             <div class="dot dot-on"></div>
@@ -398,7 +433,7 @@
             </div><span class="module-row-tag">VOD</span>
           </div>
           <div class="module-row">
-            <div class="dot dot-off"></div>
+            <div class="dot dot-on"></div>
             <div class="module-row-name"><a href="https://github.com/lampac-nextgen/lampac/tree/main/Modules/DLNA"
                 target="_blank" rel="noopener">DLNA</a></div>
             <div class="module-row-desc">Торрент-клиент + DLNA стриминг: каталог раздач, управление загрузками
@@ -426,13 +461,14 @@
             </div><span class="module-row-tag">Медиа</span>
           </div>
           <div class="module-row">
-            <div class="dot dot-off"></div>
+            <div class="dot dot-on"></div>
             <div class="module-row-name"><a
                 href="https://github.com/lampac-nextgen/lampac/tree/main/Modules/GStreamer" target="_blank"
                 rel="noopener">GStreamer</a></div>
             <div class="module-row-desc">HLS/fMP4 транскодинг через GStreamer. Плагин <code>/gst.js</code>, API
-              <code>/gst/*</code>, кеш в <code>cache/gstranscoding/</code>. Включите секцию <code>gst</code> в
-              <code>init.conf</code>. WAF: 50 req/s. <strong style="color:var(--red)">Только доверенная сеть.</strong>
+              <code>/gst/*</code>, кеш в <code>cache/gstranscoding/</code>. Модуль загружается по умолчанию; транскодинг
+              включается секцией <code>gst.enable</code> в <code>init.conf</code>. WAF: 50 req/s. <strong
+                style="color:var(--red)">Только доверенная сеть.</strong>
             </div><span class="module-row-tag">Медиа</span>
           </div>
           <div class="module-row">
@@ -466,7 +502,7 @@
               отдельных платформ).</div><span class="module-row-tag">18+</span>
           </div>
           <div class="module-row">
-            <div class="dot dot-off"></div>
+            <div class="dot dot-on"></div>
             <div class="module-row-name">ProxyLimiter</div>
             <div class="module-row-desc">Лимиты параллельных запросов к медиапрокси для SISI. Конфиг
               <code>ProxyLimiter</code>.
@@ -522,6 +558,23 @@
             <div class="module-row-name">TelegramAuthBot</div>
             <div class="module-row-desc">Telegram-бот для привязки устройств (long polling). Зависит от TelegramAuth.
             </div><span class="module-row-tag">Auth</span>
+          </div>
+          <div class="module-row">
+            <div class="dot dot-off"></div>
+            <div class="module-row-name"><a href="https://github.com/lampac-nextgen/lampac/tree/main/Modules/Potok"
+                target="_blank" rel="noopener">Potok</a></div>
+            <div class="module-row-desc">Плагины для <a href="https://potok.rip" target="_blank"
+                rel="noopener">potok.rip</a>: <code>/naked-gun</code> (онлайн), <code>/blue-oyster</code> (18+). В
+              <code>SkipModules</code> по умолчанию.
+            </div><span class="module-row-tag">Плагин</span>
+          </div>
+          <div class="module-row">
+            <div class="dot dot-off"></div>
+            <div class="module-row-name"><a href="https://github.com/lampac-nextgen/lampac/tree/main/Modules/Telemetry"
+                target="_blank" rel="noopener">Telemetry</a></div>
+            <div class="module-row-desc">Сбор и дашборд статистики запросов: UI <code>/telemetry</code>, SQLite
+              <code>database/Telemetry/stats.db</code>. Отключён в <code>manifest.json</code>.
+            </div><span class="module-row-tag">Отладка</span>
           </div>
           <div class="module-row">
             <div class="dot dot-off"></div>
@@ -805,7 +858,7 @@
         <div id="anime" class="provider-group">
           <div class="provider-group-title">
             🎌 OnlineAnime — аниме
-            <span class="provider-count">12</span>
+            <span class="provider-count">13</span>
           </div>
           <div class="table-wrap">
             <table>
@@ -817,6 +870,11 @@
                 </tr>
               </thead>
               <tbody>
+                <tr>
+                  <td>AiLiberty</td>
+                  <td><code>/lite/ailiberty</code></td>
+                  <td>—</td>
+                </tr>
                 <tr>
                   <td>AniLiberty</td>
                   <td><code>/lite/aniliberty</code></td>

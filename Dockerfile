@@ -4,7 +4,6 @@
 # Global ARGs
 ARG DOTNET_VERSION=10.0.10
 ARG DOTNET_SDK_VERSION=10.0.302
-ARG CHROMIUM_VERSION=149.0.7827.196-1~deb13u1
 
 # Builder image — platform set by buildx
 FROM --platform=$BUILDPLATFORM debian:13-slim AS builder
@@ -77,7 +76,6 @@ RUN case "$BUILDARCH" in \
 FROM debian:13-slim AS runner
 
 ARG TARGETARCH
-ARG CHROMIUM_VERSION
 
 LABEL org.opencontainers.image.description="Lampac NextGen - Media aggregator" \
     org.opencontainers.image.licenses="MIT" \
@@ -97,15 +95,9 @@ EXPOSE 9118
 
 # Runtime dependencies
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl \
-    && mkdir -p /tmp/chromium && cd /tmp/chromium \
-    && BASE="https://snapshot.debian.org/archive/debian-security/20260625T165532Z/pool/updates/main/c/chromium" \
-    && for pkg in chromium chromium-common chromium-sandbox; do \
-    curl -fSL -o "${pkg}.deb" "${BASE}/${pkg}_${CHROMIUM_VERSION}_${TARGETARCH}.deb"; \
-    done \
-    && apt-get install -y --no-install-recommends ./*.deb \
-    && rm -rf /tmp/chromium \
     && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    chromium \
     curl \
     fontconfig \
     gstreamer1.0-libav \
