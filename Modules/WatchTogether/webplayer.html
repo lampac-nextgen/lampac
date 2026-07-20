@@ -1,0 +1,263 @@
+<!doctype html>
+<html lang="en">
+    <head>
+        <meta charset="UTF-8" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+        <title>WatchTogether - {room_name}</title>
+        <link
+            rel="stylesheet"
+            href="https://cdn.vidstack.io/player/theme.css"
+        />
+        <link
+            rel="stylesheet"
+            href="https://cdn.vidstack.io/player/video.css"
+        />
+        <style>
+            body {
+                margin: 0;
+                padding: 0;
+                background: #000;
+                color: #fff;
+                font-family: sans-serif;
+                overflow: hidden;
+                height: 100vh;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }
+            media-player {
+                width: 100%;
+                height: 100%;
+            }
+            #overlay {
+                position: absolute;
+                top: 20px;
+                left: 20px;
+                background: rgba(0, 0, 0, 0.5);
+                padding: 10px 20px;
+                border-radius: 8px;
+                z-index: 10;
+                transition: opacity 0.5s;
+                pointer-events: none;
+            }
+            h3 {
+                margin: 0 0 5px 0;
+            }
+            p {
+                margin: 0;
+                color: #ccc;
+            }
+            .hidden {
+                opacity: 0;
+            }
+        </style>
+        <script type="module" src="https://cdn.vidstack.io/player"></script>
+    </head>
+    <body>
+        <div id="overlay">
+            <h3>{room_name}</h3>
+            <p>{title}</p>
+            <p
+                id="status"
+                style="margin-top: 10px; font-size: 0.9em; color: #00e676"
+            >
+                Connecting...
+            </p>
+            <p
+                id="my-name"
+                style="margin-top: 5px; font-size: 0.8em; color: #aaa"
+            ></p>
+        </div>
+
+        <media-player
+            id="player"
+            src="{stream_url}"
+            poster="{poster}"
+            crossorigin
+            playsinline
+        >
+            <media-provider></media-provider>
+            <media-video-layout></media-video-layout>
+        </media-player>
+
+        <script>
+            const STREAM_URL = "{stream_url}";
+            const ROOM_ID = "{room_id}";
+            const PASSWORD = "{password}";
+            const INTERACTIVE = { interactive };
+
+            let uid = localStorage.getItem("watchtogether_uid");
+            if (!uid) {
+                uid = "web_" + Math.random().toString(36).substr(2, 9);
+                localStorage.setItem("watchtogether_uid", uid);
+            }
+
+            let myBaseName = localStorage.getItem("watchtogether_name");
+            if (!myBaseName) {
+                const adjectives = [
+                    "Anonymous",
+                    "Secret",
+                    "Hidden",
+                    "Silent",
+                    "Mystery",
+                    "Ghostly",
+                    "Shadow",
+                ];
+                const nouns = [
+                    "Viewer",
+                    "Watcher",
+                    "Guest",
+                    "Spectator",
+                    "Ninja",
+                    "Phantom",
+                    "Observer",
+                ];
+                myBaseName =
+                    adjectives[Math.floor(Math.random() * adjectives.length)] +
+                    " " +
+                    nouns[Math.floor(Math.random() * nouns.length)];
+                localStorage.setItem("watchtogether_name", myBaseName);
+            }
+
+            const player = document.getElementById("player");
+            const status = document.getElementById("status");
+            const myNameEl = document.getElementById("my-name");
+            const overlay = document.getElementById("overlay");
+            let ws;
+
+            const protocol =
+                window.location.protocol === "https:" ? "wss:" : "ws:";
+            const wsUrl = protocol + "//" + window.location.host + "/nws";
+
+            function sendSync(state, targetTime) {
+                if (!ws || ws.readyState !== WebSocket.OPEN) return;
+                const pos =
+                    targetTime !== undefined ? targetTime : player.currentTime;
+                ws.send(
+                    JSON.stringify({
+                        method: "watchtogether_action",
+                        args: [ROOM_ID, uid, state, pos],
+                    }),
+                );
+            }
+
+            let isRemoteUpdate = false;
+
+            player.addEventListener("media-play-request", (e) => {
+                if (isRemoteUpdate) return;
+                if (INTERACTIVE) sendSync("playing");
+                else e.preventDefault();
+            });
+            player.addEventListener("media-pause-request", (e) => {
+                if (isRemoteUpdate) return;
+                if (INTERACTIVE) sendSync("paused");
+                else e.preventDefault();
+            });
+            player.addEventListener("media-seek-request", (e) => {
+                if (isRemoteUpdate) return;
+                if (INTERACTIVE)
+                    sendSync(player.paused ? "paused" : "playing", e.detail);
+                else e.preventDefault();
+            });
+
+            function connect() {
+                ws = new WebSocket(wsUrl);
+                ws.onopen = () => {
+                    status.innerText = "Connected";
+                    ws.send(
+                        JSON.stringify({
+                            method: "watchtogether_join",
+                            args: [ROOM_ID, uid, myBaseName, PASSWORD],
+                        }),
+                    );
+                };
+                ws.onmessage = (e) => {
+                    try {
+                        const data = JSON.parse(e.data);
+
+                        if (data.method === "watchtogether_error") {
+                            let errMsg = data.args[0];
+                            if (errMsg === "anonymous_disabled")
+                                errMsg =
+                                    "Anonymous access is disabled by server.";
+                            status.innerText = "Error: " + errMsg;
+                            status.style.color = "#ff5252";
+                            ws.close();
+                            return;
+                        }
+
+                        if (data.method === "watchtogether_joined") {
+                            myNameEl.innerText = "You are: " + data.args[0];
+                        } else if (
+                            data.method === "watchtogether_sync_update"
+                        ) {
+                            const state = data.args[0];
+                            const pos = data.args[1];
+
+                            isRemoteUpdate = true;
+
+                            if (Math.abs(player.currentTime - pos) > 1.5) {
+                                player.currentTime = pos;
+                            }
+
+                            if (state === "playing" && player.paused) {
+                                player.play().catch((err) => {
+                                    status.innerText =
+                                        "Click to play (Auto-play blocked)";
+                                    status.style.color = "#ffa000";
+                                });
+                            }
+                            if (state === "paused" && !player.paused) {
+                                player.pause();
+                            }
+
+                            // Use setTimeout to clear flag after current event loop and promises
+                            setTimeout(() => {
+                                isRemoteUpdate = false;
+                            }, 50);
+                        } else if (data.method === "watchtogether_url_change") {
+                            window.location.reload();
+                        } else if (
+                            data.method === "watchtogether_server_ping"
+                        ) {
+                            const now = Date.now();
+                            ws.send(
+                                JSON.stringify({
+                                    method: "watchtogether_ping",
+                                    args: [now],
+                                }),
+                            );
+                        } else if (data.method === "watchtogether_notice") {
+                            status.innerText =
+                                data.args[0] + " " + data.args[1];
+                            status.style.color = "#00e676";
+                            setTimeout(() => {
+                                status.innerText = "Connected";
+                            }, 3000);
+                        }
+                    } catch (err) {}
+                };
+                ws.onclose = () => {
+                    if (status.innerText.startsWith("Error")) return;
+                    status.innerText = "Disconnected, retrying...";
+                    status.style.color = "#ff5252";
+                    setTimeout(connect, 3000);
+                };
+            }
+            connect();
+
+            let hideTimeout;
+            function resetHide() {
+                overlay.classList.remove("hidden");
+                clearTimeout(hideTimeout);
+                hideTimeout = setTimeout(
+                    () => overlay.classList.add("hidden"),
+                    3000,
+                );
+            }
+            document.addEventListener("mousemove", resetHide);
+            player.addEventListener("pointerdown", resetHide);
+            resetHide();
+        </script>
+    </body>
+</html>
