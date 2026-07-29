@@ -1,0 +1,6 @@
+{
+  "enable": false,
+  "references": [
+    "Microsoft.Data.Sqlite"
+  ]
+}

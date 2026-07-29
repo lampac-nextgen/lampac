@@ -5,6 +5,7 @@
     "Models",
     "Controller.cs",
     "ModInit.cs",
-    "Service.cs"
+    "Service.cs",
+    "AnubisFast.cs"
   ]
 }

@@ -6,6 +6,7 @@
   </Configurations>
   <Folder Name="/Modules/">
     <Project Path="Modules/AdminPanel/AdminPanel.csproj" />
+    <Project Path="Modules/DatabaseEditor/DatabaseEditor.csproj" />
     <Project Path="Modules/Proxy/CacheMedia/CacheMedia.csproj" />
     <Project Path="Modules/Catalog/Catalog.csproj" />
     <Project Path="Modules/DLNA/DLNA.csproj" />

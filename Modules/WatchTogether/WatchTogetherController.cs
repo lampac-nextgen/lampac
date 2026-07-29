@@ -109,6 +109,7 @@ button{padding:10px 20px;background:#00e676;color:#000;border:none;border-radius
                     has_password = r.has_password,
                     members = WsEvents.GetConnectionsInRoom(r.id).Length,
                     state = r.state,
+                    speed = r.speed,
                     tmdb_id = r.tmdb_id,
                     source = r.source,
                     type = r.type,
@@ -135,7 +136,8 @@ button{padding:10px 20px;background:#00e676;color:#000;border:none;border-radius
             [FromForm] string source,
             [FromForm] string type,
             [FromForm] string initial_state,
-            [FromForm] double initial_position)
+            [FromForm] double initial_position,
+            [FromForm] double initial_speed = 1.0)
         {
             if (!CheckAuth()) return StatusCode(401);
 
@@ -176,6 +178,7 @@ button{padding:10px 20px;background:#00e676;color:#000;border:none;border-radius
                 type = string.IsNullOrWhiteSpace(type) ? "movie" : type.Trim(),
                 state = startState,
                 position = initial_position > 0 ? initial_position : 0,
+                speed = (initial_speed >= 0.25 && initial_speed <= 4.0) ? initial_speed : 1.0,
                 at_server_time = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(),
                 create_time = DateTime.UtcNow,
                 update_time = DateTime.UtcNow
@@ -215,6 +218,7 @@ button{padding:10px 20px;background:#00e676;color:#000;border:none;border-radius
                 type = room.type,
                 state = room.state,
                 position = room.position,
+                speed = room.speed,
                 at_server_time = room.at_server_time,
                 owner = room.owner_name,
                 owner_uid = room.owner_uid,
@@ -248,6 +252,7 @@ button{padding:10px 20px;background:#00e676;color:#000;border:none;border-radius
                 type = room.type,
                 state = room.state,
                 position = room.position,
+                speed = room.speed,
                 at_server_time = room.at_server_time,
                 members = RoomDb.Members.Values.Count(m => m.room_id == id)
             });

@@ -71,6 +71,9 @@
       notice_host_changed: function (n) {
         return "Новий хост: " + n;
       },
+      notice_speed_changed: function (n, s) {
+        return n + " змінив швидкість на " + s + "x";
+      },
       player_create_descr: "Створити кімнату на цей потік",
       already_in_room: function (n) {
         return 'Ви вже в кімнаті "' + n + '"';
@@ -140,6 +143,9 @@
       },
       notice_host_changed: function (n) {
         return "New host: " + n;
+      },
+      notice_speed_changed: function (n, s) {
+        return n + " changed speed to " + s + "x";
       },
       player_create_descr: "Create a room for this stream",
       already_in_room: function (n) {
@@ -213,6 +219,9 @@
       notice_host_changed: function (n) {
         return "Новый хост: " + n;
       },
+      notice_speed_changed: function (n, s) {
+        return n + " изменил скорость на " + s + "x";
+      },
       player_create_descr: "Создать комнату с этим потоком",
       already_in_room: function (n) {
         return 'Вы уже в комнате "' + n + '"';
@@ -261,6 +270,8 @@
   var currentRoomPassword = "";
   var episodeSwitchPending = false;
   var assignedDisplayName = getDisplayName();
+  var currentRoomSpeed = 1.0;
+  var isRateSyncing = false;
 
   function iAmHost() {
     return !!currentRoomOwnerUid && currentRoomOwnerUid === unic_id;
@@ -410,7 +421,7 @@
       return basePosition;
     var elapsedSec = (serverNow() - atServerTime) / 1000;
     if (elapsedSec < 0 || elapsedSec > 3600) return basePosition;
-    return basePosition + elapsedSec;
+    return basePosition + elapsedSec * currentRoomSpeed;
   }
 
   var passwordParamItem = null;
@@ -643,6 +654,9 @@
     currentRoomOwnerUid = room.owner_uid || null;
     inRoom = true;
 
+    var roomSpeed = room.speed || 1.0;
+    if (roomSpeed >= 0.25 && roomSpeed <= 4.0) currentRoomSpeed = roomSpeed;
+
     var roomState = room.state || "paused";
     var roomPos = room.position || 0;
     var needsInitialSync = roomState === "playing" || roomPos > 0.5;
@@ -848,6 +862,7 @@
       type: seed.type || "",
       initial_state: seed.initial_state || "",
       initial_position: seed.initial_position || 0,
+      initial_speed: seed.initial_speed || 1.0,
       owner_uid: unic_id,
       owner_name: getDisplayName(),
     };
@@ -909,6 +924,7 @@
       password: "",
       initial_state: state,
       initial_position: position,
+      initial_speed: vid ? vid.playbackRate || 1.0 : 1.0,
     };
 
     if (isUsePassword()) {
@@ -1067,7 +1083,11 @@
       clearTimeout(vid._lp_rate_timeout);
       vid._lp_rate_timeout = null;
     }
-    if (vid.playbackRate !== 1) vid.playbackRate = 1;
+    if (Math.abs((vid.playbackRate || 1) - currentRoomSpeed) > 0.01) {
+      isRateSyncing = true;
+      vid.playbackRate = currentRoomSpeed;
+      isRateSyncing = false;
+    }
   }
 
   function applySync(vid, state, basePosition, atServerTime) {
@@ -1087,13 +1107,20 @@
         -SYNC_MAX_RATE_OFFSET,
         Math.min(SYNC_MAX_RATE_OFFSET, raw),
       );
-      var newRate = 1 - offset;
-      if (Math.abs(vid.playbackRate - newRate) > 0.005)
+      var newRate = currentRoomSpeed - offset;
+      if (Math.abs(vid.playbackRate - newRate) > 0.005) {
+        isRateSyncing = true;
         vid.playbackRate = newRate;
+        isRateSyncing = false;
+      }
       if (vid._lp_rate_timeout) clearTimeout(vid._lp_rate_timeout);
       vid._lp_rate_timeout = setTimeout(function () {
         vid._lp_rate_timeout = null;
-        if (vid.playbackRate !== 1) vid.playbackRate = 1;
+        if (Math.abs((vid.playbackRate || 1) - currentRoomSpeed) > 0.01) {
+          isRateSyncing = true;
+          vid.playbackRate = currentRoomSpeed;
+          isRateSyncing = false;
+        }
       }, SYNC_RATE_RESET_MS);
     } else {
       clearRateAdjust(vid);
@@ -1118,7 +1145,11 @@
       setTimeout(function () {
         expectedState.pause = false;
       }, 500);
-      if (vid.playbackRate !== 1) vid.playbackRate = 1;
+      if (Math.abs((vid.playbackRate || 1) - currentRoomSpeed) > 0.01) {
+        isRateSyncing = true;
+        vid.playbackRate = currentRoomSpeed;
+        isRateSyncing = false;
+      }
       if (typeof Lampa.PlayerVideo !== "undefined" && Lampa.PlayerVideo.pause)
         Lampa.PlayerVideo.pause();
       else vid.pause();
@@ -1131,15 +1162,16 @@
     }
   }
 
-  function sendSync(state, isAction) {
+  function sendSync(state, isAction, customSpeed) {
     if (!inRoom || initialSyncLock) return;
     var vid = getVideo();
     if (!vid) return;
     var method = isAction ? "watchtogether_action" : "watchtogether_sync";
-    sendWs(method, [currentRoomId, unic_id, state, vid.currentTime || 0]);
+    var spd = customSpeed !== undefined ? customSpeed : currentRoomSpeed;
+    sendWs(method, [currentRoomId, unic_id, state, vid.currentTime || 0, spd]);
   }
 
-  function formatNotice(verb, who) {
+  function formatNotice(verb, who, extra) {
     if (!who) return "";
     if (verb === "joined") return T.notice_joined(who);
     if (verb === "left") return T.notice_left(who);
@@ -1147,6 +1179,10 @@
     if (verb === "resumed" || verb === "playing") return T.notice_resumed(who);
     if (verb === "seeked") return T.notice_seeked(who);
     if (verb === "host_changed") return T.notice_host_changed(who);
+    if (verb === "speed_changed")
+      return T.notice_speed_changed
+        ? T.notice_speed_changed(who, extra || "")
+        : who + " · " + (extra || "") + "x";
     return who + " · " + verb;
   }
 
@@ -1232,13 +1268,16 @@
         if (data.method === "watchtogether_joined") {
           assignedDisplayName =
             (data.args && data.args[0]) || assignedDisplayName;
+          var jSpd = (data.args && data.args[4]) || 1.0;
+          if (jSpd >= 0.25 && jSpd <= 4.0) currentRoomSpeed = jSpd;
         } else if (data.method === "watchtogether_members") {
           currentRoomMembers = (data.args && data.args[1]) || [];
           updateRoomBadge();
         } else if (data.method === "watchtogether_notice") {
           var verb = (data.args && data.args[0]) || "";
           var who = (data.args && data.args[1]) || "";
-          var text = formatNotice(verb, who);
+          var extra = (data.args && data.args[2]) || "";
+          var text = formatNotice(verb, who, extra);
           if (text) Lampa.Noty.show(text);
         } else if (data.method === "watchtogether_kicked") {
           Lampa.Noty.show(T.kicked);
@@ -1279,6 +1318,23 @@
           var state = data.args[0];
           var position = data.args[1];
           var atServerTime = data.args[2] || 0;
+          var speed = data.args[3] || 1.0;
+          if (
+            speed >= 0.25 &&
+            speed <= 4.0 &&
+            Math.abs(currentRoomSpeed - speed) > 0.005
+          ) {
+            currentRoomSpeed = speed;
+            var vidSpeed = getVideo();
+            if (
+              vidSpeed &&
+              Math.abs((vidSpeed.playbackRate || 1) - currentRoomSpeed) > 0.01
+            ) {
+              isRateSyncing = true;
+              vidSpeed.playbackRate = currentRoomSpeed;
+              isRateSyncing = false;
+            }
+          }
 
           if (initialSyncLock) {
             targetInitialState = {
@@ -1398,7 +1454,11 @@
         clearTimeout(vid._lp_rate_timeout);
         vid._lp_rate_timeout = null;
       }
-      vid.playbackRate = 1;
+      if (Math.abs((vid.playbackRate || 1) - currentRoomSpeed) > 0.01) {
+        isRateSyncing = true;
+        vid.playbackRate = currentRoomSpeed;
+        isRateSyncing = false;
+      }
       if (initialSyncLock) return;
       var wasExpected = expectedState.pause;
       expectedState.pause = false;
@@ -1417,7 +1477,11 @@
           clearTimeout(vid._lp_rate_timeout);
           vid._lp_rate_timeout = null;
         }
-        vid.playbackRate = 1;
+        if (Math.abs((vid.playbackRate || 1) - currentRoomSpeed) > 0.01) {
+          isRateSyncing = true;
+          vid.playbackRate = currentRoomSpeed;
+          isRateSyncing = false;
+        }
       }
       if (initialSyncLock) {
         if (targetInitialState) {
@@ -1444,6 +1508,16 @@
       }
       lastUserActionTime = Date.now();
       sendSync(vid.paused ? "paused" : "playing", true);
+    });
+
+    vid.addEventListener("ratechange", function () {
+      if (isSystemSyncing || isRateSyncing || initialSyncLock || !inRoom)
+        return;
+      var newRate = vid.playbackRate || 1.0;
+      if (Math.abs(newRate - currentRoomSpeed) < 0.01) return;
+      currentRoomSpeed = newRate;
+      lastUserActionTime = Date.now();
+      sendSync(vid.paused ? "paused" : "playing", true, currentRoomSpeed);
     });
 
     clearInterval(syncInterval);

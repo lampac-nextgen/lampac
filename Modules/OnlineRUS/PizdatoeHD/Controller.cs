@@ -8,9 +8,11 @@ using Shared.Models.Base;
 using Shared.Models.Templates;
 using Shared.PlaywrightCore;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Web;
 using BrowserCookie = Microsoft.Playwright.Cookie;
@@ -19,6 +21,11 @@ namespace PizdatoeHD;
 
 public class PizdatoeHDController : BaseOnlineController<ModuleConf>
 {
+    const string anubisChallenge = "anubis_challenge";
+
+    static readonly ConcurrentDictionary<string, BrowserCookie[]> anubisCookies = new();
+    static readonly ConcurrentDictionary<string, SemaphoreSlim> anubisLocks = new();
+
     PizdaInvoke oninvk;
 
     public PizdatoeHDController() : base(ModInit.conf)
@@ -68,6 +75,7 @@ public class PizdatoeHDController : BaseOnlineController<ModuleConf>
                 CacheResult<SearchModel> search;
 
                 string _kp = kinopoisk_id.ToString();
+
                 var matches = ModInit.database
                     .Where(e => (imdb_id != null && e.Value.imdb == imdb_id) || (_kp != "0" && e.Value.kp == _kp))
                     .ToList();
@@ -107,11 +115,9 @@ public class PizdatoeHDController : BaseOnlineController<ModuleConf>
                         {
                             string search_uri = $"{init.host}/search/?do=search&subaction=search&q={HttpUtility.UrlEncode(clarification == 1 ? title : (original_title ?? title))}";
 
-                            page = await browser.NewPageAsync(init.plugin, init.headers, proxy: proxy_data, imitationHuman: true).ConfigureAwait(false);
+                            page = await CreatePageAsync(browser);
                             if (page == null)
                                 return e.Fail("page");
-
-                            await AdsBlockRouteAsync(page);
 
                             var result = await page.GotoAsync(search_uri, new PageGotoOptions()
                             {
@@ -201,11 +207,10 @@ public class PizdatoeHDController : BaseOnlineController<ModuleConf>
                     {
                         if (page == null)
                         {
-                            page = await browser.NewPageAsync(init.plugin, init.headers, proxy: proxy_data, imitationHuman: true).ConfigureAwait(false);
+                            page = await CreatePageAsync(browser);
                             if (page == null)
                                 return e.Fail("page");
 
-                            await AdsBlockRouteAsync(page);
                         }
 
                         var result = await page.GotoAsync($"{init.host}/{href}", new PageGotoOptions()
@@ -260,11 +265,9 @@ public class PizdatoeHDController : BaseOnlineController<ModuleConf>
             {
                 try
                 {
-                    var page = await browser.NewPageAsync(init.plugin, init.headers, proxy: proxy_data, imitationHuman: true).ConfigureAwait(false);
+                    var page = await CreatePageAsync(browser);
                     if (page == null)
                         return result.Fail("page");
-
-                    await AdsBlockRouteAsync(page);
 
                     if (!string.IsNullOrEmpty(init.cookie))
                     {
@@ -355,6 +358,167 @@ public class PizdatoeHDController : BaseOnlineController<ModuleConf>
 
         return ContentTo(result);
     }
+    #endregion
+
+    #region Anubis
+    async Task<IPage> CreatePageAsync(PlaywrightBrowser browser)
+    {
+        var page = await browser.NewPageAsync(
+            init.plugin,
+            init.headers,
+            proxy: proxy_data,
+            imitationHuman: true
+        ).ConfigureAwait(false);
+
+        if (page == null)
+            return null;
+
+        await AdsBlockRouteAsync(page);
+
+        if (!await CheckAnubisAsync(page))
+            return null;
+
+        return page;
+    }
+
+    async Task<bool> CheckAnubisAsync(IPage page)
+    {
+        string key = AnubisCookieKey();
+        anubisCookies.TryGetValue(key, out BrowserCookie[] appliedCookies);
+
+        await ApplyAnubisCookiesAsync(page, appliedCookies);
+
+        var response = await page.GotoAsync(init.host, new PageGotoOptions
+        {
+            WaitUntil = WaitUntilState.DOMContentLoaded,
+            Timeout = 15_000
+        });
+
+        if (response == null)
+            return false;
+
+        if (!HasAnubisChallenge(await response.TextAsync()))
+        {
+            await SaveAnubisCookiesAsync(page, key);
+            return true;
+        }
+
+        var gate = anubisLocks.GetOrAdd(key, static _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync();
+
+        try
+        {
+            if (anubisCookies.TryGetValue(key, out BrowserCookie[] currentCookies) &&
+                !ReferenceEquals(currentCookies, appliedCookies))
+            {
+                await ApplyAnubisCookiesAsync(page, currentCookies);
+
+                response = await page.GotoAsync(init.host, new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.DOMContentLoaded,
+                    Timeout = 15_000
+                });
+
+                if (response != null && !HasAnubisChallenge(await response.TextAsync()))
+                {
+                    await SaveAnubisCookiesAsync(page, key);
+                    return true;
+                }
+            }
+
+            if (!await WaitForAnubisAsync(page))
+                return false;
+
+            await SaveAnubisCookiesAsync(page, key);
+            return true;
+        }
+        finally
+        {
+            gate.Release();
+        }
+    }
+
+    async Task<bool> WaitForAnubisAsync(IPage page)
+    {
+        for (int i = 0; i < 90; i++)
+        {
+            try
+            {
+                if (!HasAnubisChallenge(await page.ContentAsync()) &&
+                    (await page.Context.CookiesAsync()).Any(c =>
+                        c.Name.Equals("techaro.lol-anubis-auth", StringComparison.Ordinal)))
+                {
+                    await page.WaitForLoadStateAsync(
+                        LoadState.DOMContentLoaded,
+                        new PageWaitForLoadStateOptions { Timeout = 10_000 }
+                    );
+
+                    return true;
+                }
+            }
+            catch { }
+
+            await Task.Delay(500);
+        }
+
+        return false;
+    }
+
+    async Task ApplyAnubisCookiesAsync(IPage page, BrowserCookie[] cookies)
+    {
+        if (cookies == null || cookies.Length == 0)
+            return;
+
+        double now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+        var activeCookies = cookies
+            .Where(c => c.Expires <= 0 || c.Expires > now)
+            .ToArray();
+
+        if (activeCookies.Length > 0)
+            await page.Context.AddCookiesAsync(activeCookies);
+    }
+
+    async Task SaveAnubisCookiesAsync(IPage page, string key)
+    {
+        string host = new Uri(init.host).Host;
+        double now = DateTimeOffset.UtcNow.ToUnixTimeSeconds();
+
+        var cookies = (await page.Context.CookiesAsync())
+            .Where(c =>
+                c.Name.StartsWith("techaro.lol-anubis-", StringComparison.Ordinal) &&
+                (c.Expires <= 0 || c.Expires > now) &&
+                (string.Equals(c.Domain.TrimStart('.'), host, StringComparison.OrdinalIgnoreCase) ||
+                 host.EndsWith($".{c.Domain.TrimStart('.')}", StringComparison.OrdinalIgnoreCase)))
+            .Select(c => new BrowserCookie
+            {
+                Name = c.Name,
+                Value = c.Value,
+                Domain = c.Domain,
+                Path = c.Path,
+                Expires = c.Expires,
+                HttpOnly = c.HttpOnly,
+                Secure = c.Secure,
+                SameSite = c.SameSite
+            })
+            .ToArray();
+
+        if (cookies.Length > 0)
+            anubisCookies[key] = cookies;
+        else
+            anubisCookies.TryRemove(key, out _);
+    }
+
+    string AnubisCookieKey()
+    {
+        string userAgent = init.headers?
+            .FirstOrDefault(h => h.Key.Equals("user-agent", StringComparison.OrdinalIgnoreCase))
+            .Value;
+
+        return $"{init.host}\n{proxy_data.ip}\n{proxy_data.username}\n{init.priorityBrowser}\n{userAgent}";
+    }
+
+    static bool HasAnubisChallenge(string html)
+        => html?.Contains(anubisChallenge, StringComparison.OrdinalIgnoreCase) == true;
     #endregion
 
     #region GotoLinkAsync

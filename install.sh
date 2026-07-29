@@ -311,13 +311,6 @@ pick_libicu_package() {
   exit 1
 }
 
-is_ubuntu() {
-  [[ -r /etc/os-release ]] || return 1
-  # shellcheck source=/dev/null
-  . /etc/os-release
-  [[ "${ID:-}" == "ubuntu" ]]
-}
-
 # ─── Version ───────────────────────────────────────────────────────────
 
 # Получить номер последнего [пре-]релиза Лампака с гитхаба
@@ -378,37 +371,54 @@ save_installed_version() {
   echo "$version" > "$version_file"
 }
 
+
 # ─── Install steps ───────────────────────────────────────────────────────────
 
-ensure_chromium_repo_ubuntu() {
-  run_quiet "Adding xtradeb/apps PPA (Chromium .deb)" \
-    env DEBIAN_FRONTEND=noninteractive add-apt-repository -y ppa:xtradeb/apps
+install_google_chrome() {
+  if command -v google-chrome-stable >/dev/null 2>&1; then
+    ln -sf /usr/bin/google-chrome-stable /usr/bin/chromium
+    log_skip "Google Chrome already installed — skipping"
+    return 0
+  fi
+
+  local chrome_url chrome_deb
+  case "$ARCH" in
+    arm64) chrome_url="https://dl.google.com/linux/direct/google-chrome-stable_current_arm64.deb" ;;
+    amd64) chrome_url="https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" ;;
+    *)
+      log_err "Unsupported architecture for Google Chrome: $ARCH"
+      exit 1
+      ;;
+  esac
+
+  chrome_deb="/tmp/google-chrome-stable-$$.deb"
+  CLEANUP_PATHS+=("$chrome_deb")
+
+  run_quiet "Downloading Google Chrome ($ARCH)" \
+    curl -fSL -o "$chrome_deb" "$chrome_url"
+  run_quiet "Installing Google Chrome" \
+    env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$chrome_deb"
+  ln -sf /usr/bin/google-chrome-stable /usr/bin/chromium
 }
 
 install_os_packages() {
   run_quiet "Updating package lists" \
     apt-get update
 
-  if is_ubuntu; then
-    run_quiet "Installing prerequisites for Chromium PPA (ca-certificates, software-properties-common)" \
-      env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ca-certificates software-properties-common
-    ensure_chromium_repo_ubuntu
-    run_quiet "Updating package lists (after PPA)" \
-      apt-get update
-  fi
-
   local icu_pkg
   icu_pkg="$(pick_libicu_package)"
 
-  run_quiet "Installing system packages (chromium, curl, fonts, GStreamer, ICU, ImageMagick, unzip)" \
+  run_quiet "Installing system packages (curl, fonts, GStreamer, ICU, ImageMagick, unzip)" \
     env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      ca-certificates curl chromium fontconfig \
+      ca-certificates curl fontconfig \
       gstreamer1.0-libav gstreamer1.0-plugins-bad gstreamer1.0-plugins-base \
       gstreamer1.0-plugins-base-apps gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly \
       gstreamer1.0-tools \
       imagemagick libgstreamer-plugins-base1.0-0 libgstreamer1.0-0 \
       libjpeg-dev libnspr4 libpng-dev libwebp-dev unzip "$icu_pkg"
+
+  install_google_chrome
+
   apt-get clean -qq 2>/dev/null || true
   rm -rf /var/lib/apt/lists/*
 }
@@ -509,7 +519,7 @@ build_rsync_excludes() {
     "torrserver/"
     "data/ts/"
 
-    # Домашняя директория пользователя lampac (chromium nssdb, сертификаты и т.д.)
+    # Домашняя директория пользователя lampac (Chrome nssdb, сертификаты и т.д.)
     ".local/"
     ".aspnet/"
     ".claude/"
@@ -737,8 +747,8 @@ Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$D
 Environment=DOTNET_RUNNING_IN_CONTAINER=false
 Environment=DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
-Environment=CHROMIUM_PATH=/usr/bin/chromium
-Environment=CHROMIUM_FLAGS=--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage
+Environment=CHROMIUM_PATH=/usr/bin/google-chrome-stable
+Environment="CHROMIUM_FLAGS=--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
 ExecStart=$DOTNET_INSTALL_DIR/dotnet $INSTALL_ROOT/Core.dll
 Restart=on-failure
 RestartSec=10

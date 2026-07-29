@@ -41,7 +41,7 @@ public class RezkaInvoke
         this.host = host != null ? $"{host}/" : null;
         this.route = route;
         this.init = init;
-        this.cookieContainer = cookieContainer;
+        this.cookieContainer = cookieContainer ?? new CookieContainer();
         this.safety = safety;
         apihost = init.host;
         scheme = init.scheme;
@@ -75,12 +75,10 @@ public class RezkaInvoke
 
         result.search_uri = $"{apihost}/search/?do=search&subaction=search&q={HttpUtility.UrlEncode(clarification == 1 ? title : (original_title ?? title))}";
 
-        await httpHydra.GetSpan(
+        bool responseHandled = await GetSpanWithAnubis(
             result.search_uri,
+            HeadersModel.JoinReadOnly(base_headers, defaultHeaders),
             statusCodeOK: false,
-            safety: safety,
-            newheaders: HeadersModel.JoinReadOnly(base_headers, defaultHeaders),
-            cookieContainer: cookieContainer,
             spanAction: search =>
         {
             if (search.Contains("class=\"error-code\"", StringComparison.OrdinalIgnoreCase) && search.Contains("ошибка доступа", StringComparison.OrdinalIgnoreCase))
@@ -166,6 +164,9 @@ public class RezkaInvoke
             }
         });
 
+        if (!responseHandled && !result.IsEmpty)
+            result.IsError = true;
+
         return result;
     }
     #endregion
@@ -199,11 +200,9 @@ public class RezkaInvoke
 
         bool IsTrailer = false;
 
-        await httpHydra.GetSpan(
+        await GetSpanWithAnubis(
             href,
-            safety: safety,
-            cookieContainer: cookieContainer,
-            newheaders: HeadersModel.JoinReadOnly(base_headers, defaultHeaders),
+            HeadersModel.JoinReadOnly(base_headers, defaultHeaders),
             spanAction: html =>
         {
             IsTrailer = html.Contains("Ожидаем фильм в хорошем качестве", StringComparison.OrdinalIgnoreCase);
@@ -246,6 +245,111 @@ public class RezkaInvoke
         }
 
         return result;
+    }
+    #endregion
+
+    #region Anubis
+    async Task<bool> GetSpanWithAnubis(
+        string url,
+        IReadOnlyList<HeadersModel> headers,
+        Action<ReadOnlySpan<char>> spanAction,
+        bool statusCodeOK = true)
+    {
+        string challengeHtml = null;
+        bool responseHandled = false;
+
+        async Task Request()
+        {
+            await httpHydra.GetSpan(
+                url,
+                statusCodeOK: statusCodeOK,
+                safety: safety,
+                newheaders: headers,
+                cookieContainer: cookieContainer,
+                spanAction: content =>
+                {
+                    if (content.Contains("anubis_challenge", StringComparison.OrdinalIgnoreCase))
+                    {
+                        challengeHtml = content.ToString();
+                        return;
+                    }
+
+                    spanAction(content);
+                    responseHandled = true;
+                }
+            );
+        }
+
+        await Request();
+        if (challengeHtml == null)
+            return responseHandled;
+
+        if (!await PassAnubis(challengeHtml, url, headers))
+            return false;
+
+        challengeHtml = null;
+        await Request();
+
+        return responseHandled && challengeHtml == null;
+    }
+
+    async Task<bool> PassAnubis(
+        string html,
+        string redir,
+        IReadOnlyList<HeadersModel> requestHeaders)
+    {
+        try
+        {
+            if (!AnubisFast.TryParseChallenge(html, out AnubisFast.Challenge challenge))
+                return false;
+
+            AnubisFast.Result result = await AnubisFast.SolveAsync(challenge.Json);
+
+            var siteUri = new Uri(apihost);
+            string siteUrl = siteUri.GetLeftPart(UriPartial.Authority);
+
+            cookieContainer.Add(
+                new Uri($"{siteUrl}/"),
+                new Cookie(
+                    "techaro.lol-anubis-cookie-verification",
+                    challenge.Id,
+                    "/"
+                )
+            );
+
+            string userAgent = challenge.UserAgent;
+            if (string.IsNullOrEmpty(userAgent))
+            {
+                userAgent = requestHeaders?
+                    .LastOrDefault(h => h.name.Equals("user-agent", StringComparison.OrdinalIgnoreCase))?
+                    .val ?? Http.UserAgent;
+            }
+
+            var passHeaders = HeadersModel.Init(
+                ("accept", "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8"),
+                ("user-agent", userAgent),
+                ("referer", $"{siteUrl}/"),
+                ("sec-fetch-dest", "document"),
+                ("sec-fetch-mode", "navigate"),
+                ("sec-fetch-site", "same-origin")
+            );
+
+            await httpHydra.GetSpan(
+                result.BuildPassUrl(siteUrl, redir),
+                statusCodeOK: false,
+                safety: safety,
+                newheaders: HeadersModel.JoinReadOnly(requestHeaders, passHeaders),
+                cookieContainer: cookieContainer,
+                spanAction: static _ => { }
+            );
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Anubis challenge failed. Url={Url}", redir);
+            return false;
+        }
     }
     #endregion
 

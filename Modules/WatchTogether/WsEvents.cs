@@ -114,7 +114,8 @@ namespace WatchTogether
                 double position = GetDoubleArg(e.args, 3);
                 if (double.IsNaN(position) || double.IsInfinity(position) || position < 0 || position > 2592000) return;
                 bool isAction = method == "watchtogether_action";
-                _ = HandleSyncAsync(senderInfo.roomId, e.connectionId, state, position, broadcastNotice: isAction);
+                double speed = GetDoubleArg(e.args, 4);
+                _ = HandleSyncAsync(senderInfo.roomId, e.connectionId, state, position, speed, broadcastNotice: isAction);
             }
             else if (method == "watchtogether_url_change")
             {
@@ -192,8 +193,8 @@ namespace WatchTogether
             RoomDb.Members.AddOrUpdate(connectionId, member, (_, __) => member);
 
             long at = room.at_server_time > 0 ? room.at_server_time : ServerNowMs();
-            _ = Startup.Nws.SendAsync(connectionId, "watchtogether_joined", displayName, room.state, room.position, at);
-            _ = Startup.Nws.SendAsync(connectionId, "watchtogether_sync_update", room.state, room.position, at);
+            _ = Startup.Nws.SendAsync(connectionId, "watchtogether_joined", displayName, room.state, room.position, at, room.speed);
+            _ = Startup.Nws.SendAsync(connectionId, "watchtogether_sync_update", room.state, room.position, at, room.speed);
 
             await BroadcastMembersAsync(roomId);
             await BroadcastNoticeAsync(roomId, connectionId, "joined", displayName);
@@ -268,29 +269,42 @@ namespace WatchTogether
             }
         }
 
-        static async Task HandleSyncAsync(string roomId, string senderConnectionId, string state, double position, bool broadcastNotice)
+        static async Task HandleSyncAsync(string roomId, string senderConnectionId, string state, double position, double speed, bool broadcastNotice)
         {
             long atServer = ServerNowMs();
 
+            bool speedChanged = false;
             if (RoomDb.Rooms.TryGetValue(roomId, out var room))
             {
                 room.state = state;
                 room.position = position;
+                if (speed >= 0.25 && speed <= 4.0 && Math.Abs(room.speed - speed) > 0.005)
+                {
+                    room.speed = speed;
+                    speedChanged = true;
+                }
                 room.at_server_time = atServer;
                 room.update_time = DateTime.UtcNow;
             }
 
             var targets = GetConnectionsInRoom(roomId).Where(k => k != senderConnectionId).ToArray();
-            if (targets.Length > 0)
+            if (targets.Length > 0 && RoomDb.Rooms.TryGetValue(roomId, out var currentRoom))
             {
-                var tasks = targets.Select(t => Startup.Nws.SendAsync(t, "watchtogether_sync_update", state, position, atServer));
+                var tasks = targets.Select(t => Startup.Nws.SendAsync(t, "watchtogether_sync_update", state, position, atServer, currentRoom.speed));
                 await Task.WhenAll(tasks);
             }
 
-            if (broadcastNotice && eventClients.TryGetValue(senderConnectionId, out var who))
+            if (broadcastNotice && eventClients.TryGetValue(senderConnectionId, out var who) && RoomDb.Rooms.TryGetValue(roomId, out var r))
             {
-                string verb = state == "paused" ? "paused" : (state == "playing" ? "resumed" : "seeked");
-                await BroadcastNoticeAsync(roomId, senderConnectionId, verb, who.displayName);
+                if (speedChanged)
+                {
+                    await BroadcastNoticeAsync(roomId, senderConnectionId, "speed_changed", who.displayName, r.speed.ToString(System.Globalization.CultureInfo.InvariantCulture));
+                }
+                else
+                {
+                    string verb = state == "paused" ? "paused" : (state == "playing" ? "resumed" : "seeked");
+                    await BroadcastNoticeAsync(roomId, senderConnectionId, verb, who.displayName);
+                }
             }
         }
 
@@ -303,12 +317,14 @@ namespace WatchTogether
             await Task.WhenAll(tasks);
         }
 
-        static async Task BroadcastNoticeAsync(string roomId, string excludeConnectionId, string verb, string displayName)
+        static async Task BroadcastNoticeAsync(string roomId, string excludeConnectionId, string verb, string displayName, string extraArg = null)
         {
             var targets = GetConnectionsInRoom(roomId).Where(k => k != excludeConnectionId).ToArray();
             if (targets.Length == 0) return;
 
-            var tasks = targets.Select(t => Startup.Nws.SendAsync(t, "watchtogether_notice", verb, displayName));
+            var tasks = targets.Select(t => extraArg != null
+                ? Startup.Nws.SendAsync(t, "watchtogether_notice", verb, displayName, extraArg)
+                : Startup.Nws.SendAsync(t, "watchtogether_notice", verb, displayName));
             await Task.WhenAll(tasks);
         }
 

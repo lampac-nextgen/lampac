@@ -1,0 +1,151 @@
+<!doctype html>
+<html lang="ru" data-theme="dark">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#0c0e12" id="metaTheme">
+  <title>Базы — Lampac</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/database-editor/style.css">
+</head>
+<body>
+  <div class="app">
+    <header class="topbar">
+      <a class="topbar-logo" href="/database-editor">
+        <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
+          <rect x="2" y="2" width="24" height="24" rx="6" stroke="currentColor" stroke-width="1.5"/>
+          <rect x="7" y="16" width="3" height="6" rx="1" fill="var(--accent)"/>
+          <rect x="12.5" y="11" width="3" height="11" rx="1" fill="var(--accent)" opacity=".7"/>
+          <rect x="18" y="6" width="3" height="16" rx="1" fill="var(--accent)" opacity=".45"/>
+        </svg>
+        Lampac <span>Базы</span>
+      </a>
+      <div class="topbar-divider"></div>
+      <nav class="topbar-app-nav" aria-label="Разделы Lampac"><a href="/adminpanel">Admin</a><a href="/stats">Stats</a><a href="/weblog">Weblog</a><a href="/telemetry">Telemetry</a><a href="/database-editor" aria-current="page">Базы</a></nav>
+      <div class="topbar-spacer"></div>
+      <button class="icon-btn theme-btn" id="themeBtn" title="Переключить тему" aria-label="Переключить тему">
+        <svg class="theme-icon theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+        <svg class="theme-icon theme-icon-sun" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>
+      </button>
+    </header>
+
+    <main class="main">
+      <section id="listView">
+        <div class="hero">
+          <div><h1>Редактор TimeCode и Sync</h1><p>Пользователи, карточки, позиции просмотра и безопасные копии SQLite.</p></div>
+          <div class="hero-actions"><button class="btn" id="backupAllBtn">⇩ <span>Backup TimeCode + Sync</span></button><button class="btn" id="restoreBtn">↥ <span>Восстановить</span></button><button class="btn" id="renameUserBtn">Переименовать пользователя</button><button class="btn danger" id="deleteUserBtn">Удалить пользователя</button></div>
+        </div>
+
+        <section class="summary" id="summary"></section>
+
+        <section class="workspace">
+          <div class="toolbar">
+            <div class="db-tabs" role="tablist"><button class="db-tab active" data-db="timecode" role="tab">TimeCode</button><button class="db-tab" data-db="sync" role="tab">Sync</button></div>
+            <select class="select user-filter" id="timecodeUserFilter" title="Пользователь TimeCode"><option value="">Все пользователи TimeCode</option></select>
+            <div class="search"><span>⌕</span><input id="searchInput" type="search" placeholder="ID, пользователь, карточка или JSON…" autocomplete="off"></div>
+            <div class="toolbar-spacer"></div>
+            <select class="select" id="pageSize" title="Записей на странице"><option>25</option><option>50</option><option>100</option></select>
+            <button class="icon-btn" id="refreshBtn" title="Обновить" aria-label="Обновить">↻</button>
+          </div>
+          <div class="loading" id="loading"></div>
+          <div class="table-wrap">
+            <table class="data-table"><thead><tr id="tableHead"></tr></thead><tbody id="tableBody"></tbody></table>
+            <div class="empty" id="empty"><div><div class="empty-icon">⌕</div><strong>Записей не найдено</strong><div class="muted">Измените поиск или выберите другую базу.</div></div></div>
+          </div>
+          <div class="pager"><div class="pager-info" id="pagerInfo">—</div><div class="pager-buttons"><button class="icon-btn" id="prevBtn">←</button><span class="page-label" id="pageLabel">1 / 1</span><button class="icon-btn" id="nextBtn">→</button></div></div>
+        </section>
+      </section>
+
+      <section class="sync-detail" id="syncDetail" hidden>
+        <div class="detail-head">
+          <button class="btn" id="backToUsers">← Пользователи</button>
+          <div class="detail-identity"><div class="eyebrow">Sync-пользователь</div><h1 id="syncUserName">—</h1><div class="muted" id="syncUserMeta">—</div></div>
+          <div class="detail-actions"><button class="btn" id="rawSyncBtn">JSON целиком</button><button class="btn" id="refreshSyncBtn">↻ Обновить</button></div>
+        </div>
+        <div class="detail-toolbar">
+          <div class="search"><span>⌕</span><input id="syncSearch" type="search" placeholder="Название или ID карточки…" autocomplete="off"></div>
+          <select class="select" id="syncCategory"><option value="">Все категории</option></select>
+          <span class="result-count" id="syncResultCount"></span>
+        </div>
+        <div class="media-grid" id="syncGrid"></div>
+        <div class="empty sync-empty" id="syncEmpty"><div><div class="empty-icon">□</div><strong>Карточек не найдено</strong></div></div>
+        <div class="detail-pager"><button class="btn" id="syncPrev">← Назад</button><span id="syncPageLabel">1 / 1</span><button class="btn" id="syncNext">Вперёд →</button></div>
+      </section>
+    </main>
+  </div>
+
+  <div class="modal-backdrop" id="recordModal" role="dialog" aria-modal="true">
+    <div class="modal modal-wide">
+      <div class="modal-head"><span class="modal-title" id="recordModalTitle">Запись</span><span class="modal-id" id="recordModalId"></span><button class="icon-btn modal-close" data-close="recordModal">×</button></div>
+      <div class="modal-body"><div class="form-grid">
+        <div class="field full"><label for="userField">Пользователь</label><input id="userField" maxlength="512" autocomplete="off"></div>
+        <div class="field timecode-field"><label for="cardField">Карточка</label><input id="cardField" maxlength="512" autocomplete="off"></div>
+        <div class="field timecode-field"><label for="itemField">Элемент / hash</label><input id="itemField" maxlength="512" autocomplete="off"></div>
+        <div class="field full"><div class="json-tools"><label for="dataField">JSON-данные</label><button class="btn small" type="button" id="formatBtn">Форматировать</button><span class="json-status" id="jsonStatus"></span></div><textarea id="dataField" spellcheck="false"></textarea></div>
+      </div></div>
+      <div class="modal-foot"><button class="btn danger" id="deleteRecordBtn">Удалить</button><button class="btn" data-close="recordModal">Отмена</button><button class="btn primary" id="saveRecordBtn">Сохранить</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="categoryModal" role="dialog" aria-modal="true">
+    <div class="modal modal-compact">
+      <div class="modal-head"><span class="modal-title">Категории карточки</span><button class="icon-btn modal-close" data-close="categoryModal">×</button></div>
+      <div class="modal-body">
+        <div class="category-card-head" id="categoryCardHead"></div>
+        <div class="category-options" id="categoryOptions"></div>
+        <p class="modal-hint">Изменяется только выбранная карточка. Остальные позиции пользователя останутся без изменений.</p>
+      </div>
+      <div class="modal-foot"><button class="btn danger" id="deleteSyncItemBtn">Удалить карточку</button><button class="btn" data-close="categoryModal">Отмена</button><button class="btn primary" id="saveSyncItemBtn">Сохранить категории</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="renameUserModal" role="dialog" aria-modal="true">
+    <div class="modal modal-compact">
+      <div class="modal-head"><span class="modal-title">Переименовать пользователя</span><button class="icon-btn modal-close" data-close="renameUserModal">×</button></div>
+      <div class="modal-body"><div class="form-grid">
+        <div class="field full"><label for="oldUserField">Текущий пользователь</label><select class="select" id="oldUserField"><option value="">Загрузка пользователей…</option></select></div>
+        <div class="field full"><label for="newUserField">Новое имя</label><input id="newUserField" maxlength="512" autocomplete="off"></div>
+        <p class="modal-hint field full">Важно: перед переименованием выйдите из старой учётной записи на всех устройствах или заранее измените её логин/account_email в настройках Lampa и, если пользователь задан там, в init/AccsDB. Активный клиент со старым именем после обновления страницы создаст его в Sync и TimeCode повторно. Новое имя не должно быть занято.</p>
+      </div></div>
+      <div class="modal-foot"><button class="btn" data-close="renameUserModal">Отмена</button><button class="btn primary" id="confirmRenameUserBtn">Переименовать</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="deleteUserModal" role="dialog" aria-modal="true">
+    <div class="modal modal-compact">
+      <div class="modal-head"><span class="modal-title">Удалить пользователя</span><button class="icon-btn modal-close" data-close="deleteUserModal">×</button></div>
+      <div class="modal-body"><div class="form-grid">
+        <div class="field full"><label for="deleteUserField">Пользователь</label><select class="select" id="deleteUserField"><option value="">Загрузка пользователей…</option></select></div>
+        <p class="modal-hint field full">Будут безвозвратно удалены все закладки Sync и все позиции TimeCode выбранного пользователя.</p>
+      </div></div>
+      <div class="modal-foot"><button class="btn" data-close="deleteUserModal">Отмена</button><button class="btn danger" id="confirmDeleteUserBtn">Удалить пользователя</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="backupModal" role="dialog" aria-modal="true">
+    <div class="modal modal-compact">
+      <div class="modal-head"><span class="modal-title">Резервные копии созданы</span><button class="icon-btn modal-close" data-close="backupModal">×</button></div>
+      <div class="modal-body"><div class="backup-results" id="backupResults"></div></div>
+      <div class="modal-foot"><button class="btn primary" data-close="backupModal">Готово</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="restoreModal" role="dialog" aria-modal="true">
+    <div class="modal modal-wide">
+      <div class="modal-head"><span class="modal-title">Восстановление базы</span><button class="icon-btn modal-close" data-close="restoreModal">×</button></div>
+      <div class="modal-body">
+        <p class="modal-hint restore-warning">Выберите резервную копию. Перед восстановлением текущая база будет автоматически сохранена в отдельный файл <code>before-restore</code>.</p>
+        <div class="restore-tabs"><button class="db-tab active" data-restore-db="sync">Sync</button><button class="db-tab" data-restore-db="timecode">TimeCode</button></div>
+        <div class="backup-results restore-results" id="restoreResults"></div>
+        <div class="empty restore-empty" id="restoreEmpty"><div><strong>Резервных копий нет</strong></div></div>
+      </div>
+      <div class="modal-foot"><button class="btn" data-close="restoreModal">Закрыть</button></div>
+    </div>
+  </div>
+
+  <div class="toast-wrap" id="toasts"></div>
+  <script src="/database-editor/app.js"></script>
+</body>
+</html>
