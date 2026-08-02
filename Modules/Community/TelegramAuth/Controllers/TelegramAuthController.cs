@@ -8,6 +8,7 @@ using Shared.Attributes;
 using System;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 using TelegramAuth.Models;
@@ -79,6 +80,9 @@ namespace TelegramAuth.Controllers
         [Route("/tg/auth/bind/complete")]
         public ActionResult BindComplete([FromBody] BindCompleteRequest? request)
         {
+            if (HasConfiguredMutationsSecret() && !HasMutationAccess())
+                return MutationUnauthorized();
+
             if (request == null || string.IsNullOrWhiteSpace(request.Uid) || string.IsNullOrWhiteSpace(request.TelegramId))
                 return JsonError(400, "uid and telegramId are required");
 
@@ -149,9 +153,13 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpGet]
+        [AllowAnonymous]
         [Route("/tg/auth/admin/users")]
         public ActionResult AdminListUsers()
         {
+            if (!HasMutationAccess())
+                return MutationUnauthorized();
+
             var users = store.GetUsers()
                 .OrderBy(u => u.TelegramId, StringComparer.Ordinal)
                 .Select(u => new
@@ -183,9 +191,13 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpGet]
+        [AllowAnonymous]
         [Route("/tg/auth/admin/user")]
         public ActionResult AdminGetUser([FromQuery] string telegramId)
         {
+            if (!HasMutationAccess())
+                return MutationUnauthorized();
+
             if (string.IsNullOrWhiteSpace(telegramId))
                 return JsonError(400, "telegramId is required");
 
@@ -222,9 +234,13 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpPost]
+        [AllowAnonymous]
         [Route("/tg/auth/admin/user/patch")]
         public async Task<ActionResult> AdminPatchUser()
         {
+            if (!HasMutationAccess())
+                return MutationUnauthorized();
+
             string raw;
             using (var reader = new StreamReader(Request.Body, Encoding.UTF8, detectEncodingFromByteOrderMarks: false, leaveOpen: true))
                 raw = await reader.ReadToEndAsync().ConfigureAwait(false);
@@ -256,9 +272,13 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpPost]
+        [AllowAnonymous]
         [Route("/tg/auth/admin/user/disabled")]
         public ActionResult AdminSetUserDisabled([FromBody] AdminSetUserDisabledRequest? request)
         {
+            if (!HasMutationAccess())
+                return MutationUnauthorized();
+
             if (request == null || string.IsNullOrWhiteSpace(request.TelegramId))
                 return JsonError(400, "telegramId is required");
 
@@ -277,9 +297,13 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpPost]
+        [AllowAnonymous]
         [Route("/tg/auth/admin/user/pending")]
         public ActionResult AdminResolveRegistrationPending([FromBody] AdminPendingDecisionRequest? request)
         {
+            if (!HasMutationAccess())
+                return MutationUnauthorized();
+
             if (request == null || string.IsNullOrWhiteSpace(request.TelegramId))
                 return JsonError(400, "telegramId is required");
 
@@ -387,9 +411,13 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpPost]
+        [AllowAnonymous]
         [Route("/tg/auth/devices/cleanup")]
         public ActionResult CleanupDevices()
         {
+            if (!HasMutationAccess())
+                return MutationUnauthorized();
+
             if (!ModInit.conf.enable_cleanup)
                 return JsonError(404, "cleanup disabled");
 
@@ -405,9 +433,13 @@ namespace TelegramAuth.Controllers
         }
 
         [HttpPost]
+        [AllowAnonymous]
         [Route("/tg/auth/import")]
         public ActionResult ImportLegacy()
         {
+            if (!HasMutationAccess())
+                return MutationUnauthorized();
+
             if (!ModInit.conf.enable_import)
                 return JsonError(404, "import disabled");
 
@@ -425,6 +457,39 @@ namespace TelegramAuth.Controllers
                 return JsonError(500, "import failed", ex.Message);
             }
         }
+
+        bool HasConfiguredMutationsSecret() =>
+            !string.IsNullOrEmpty(ModInit.conf.mutations_api_secret?.Trim());
+
+        bool HasMutationAccess()
+        {
+            if (Request.Cookies.TryGetValue("accspasswd", out var passwd)
+                && SecretEquals(passwd, CoreInit.rootPasswd))
+            {
+                return true;
+            }
+
+            var expected = ModInit.conf.mutations_api_secret?.Trim();
+            if (string.IsNullOrEmpty(expected)
+                || !Request.Headers.TryGetValue(MutationsSecretHeaderName, out var supplied))
+            {
+                return false;
+            }
+
+            return SecretEquals(supplied.ToString().Trim(), expected);
+        }
+
+        static bool SecretEquals(string? supplied, string? expected)
+        {
+            if (string.IsNullOrEmpty(supplied) || string.IsNullOrEmpty(expected))
+                return false;
+
+            return CryptographicOperations.FixedTimeEquals(
+                Encoding.UTF8.GetBytes(supplied),
+                Encoding.UTF8.GetBytes(expected));
+        }
+
+        ContentResult MutationUnauthorized() => JsonError(401, "unauthorized");
 
         ContentResult JsonOk(object data)
         {
