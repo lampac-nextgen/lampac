@@ -83,6 +83,9 @@
       join_mode_manual: "Вибрати джерело власноруч",
       copy_link: "Скопіювати веб-посилання",
       link_copied: "Посилання скопійовано!",
+      net_reconnecting: "Зв'язок втрачено. Перепідключення...",
+      net_restored: "Зв'язок відновлено",
+      reconnect_failed: "Не вдалося перепідключитися: кімнату закрито",
     },
     en: {
       menu_title: "WatchTogether",
@@ -156,6 +159,9 @@
       join_mode_manual: "Select Source Manually",
       copy_link: "Copy web link",
       link_copied: "Link copied!",
+      net_reconnecting: "Connection lost. Reconnecting...",
+      net_restored: "Connection restored",
+      reconnect_failed: "Failed to reconnect: room is closed",
     },
     ru: {
       menu_title: "WatchTogether",
@@ -231,6 +237,9 @@
       join_mode_manual: "Выбрать источник вручную",
       copy_link: "Скопировать веб-ссылку",
       link_copied: "Ссылка скопирована!",
+      net_reconnecting: "Связь потеряна. Переподключение...",
+      net_restored: "Связь восстановлена",
+      reconnect_failed: "Не удалось переподключиться: комната закрыта",
     },
   };
   var T = i18n[_rawLang] || i18n["en"];
@@ -272,6 +281,9 @@
   var assignedDisplayName = getDisplayName();
   var currentRoomSpeed = 1.0;
   var isRateSyncing = false;
+  var isReconnecting = false;
+  var reconnectTimer = null;
+  var reconnectAttempts = 0;
 
   function iAmHost() {
     return !!currentRoomOwnerUid && currentRoomOwnerUid === unic_id;
@@ -757,45 +769,6 @@
     }
   }
 
-  function createRoomFromPending(room, streamUrl) {
-    var url = account(localhost + "watchtogether/create");
-    var pwd = isUsePassword() ? getDefaultPassword() : "";
-    var data = {
-      tmdb_id: room.id || 0,
-      source: room.source || "",
-      type: room.method || "",
-      name: "",
-      title: room.title || "",
-      poster: room.img || "",
-      stream_url: streamUrl || "",
-      password: pwd,
-      owner_uid: unic_id,
-      owner_name: getDisplayName(),
-      initial_state: "paused",
-      initial_position: 0,
-    };
-
-    network.clear();
-    network.timeout(5000);
-    network.request(
-      url,
-      function (res) {
-        currentRoomPassword = pwd;
-        if (streamUrl) res.stream_url = streamUrl;
-        if (room.id) res.tmdb_id = room.id;
-        res.title = room.title;
-        res.poster = room.img;
-        res.source = room.source;
-        res.type = room.method;
-        doJoinAndPlay(res);
-      },
-      function (a, c) {
-        Lampa.Noty.show(network.errorDecode(a, c));
-      },
-      data,
-    );
-  }
-
   function promptStreamUrl() {
     Lampa.Input.edit(
       {
@@ -1054,14 +1027,24 @@
     if (!$badge.length) return;
 
     var wsOk = ws && ws.readyState === 1;
-    var dotColor = wsOk ? "#00e676" : "#ff5252";
-    var dotTitle = wsOk ? "WS connected" : "WS disconnected";
+    var dotColor = wsOk ? "#00e676" : isReconnecting ? "#ffb300" : "#ff5252";
+    var dotTitle = wsOk
+      ? "WS connected"
+      : isReconnecting
+        ? "WS reconnecting..."
+        : "WS disconnected";
     var dot =
       '<span style="display:inline-block;width:8px;height:8px;border-radius:50%;background:' +
       dotColor +
       ';margin-right:8px;vertical-align:middle;" title="' +
       dotTitle +
       '"></span>';
+
+    var statusText = isReconnecting
+      ? ' | <b style="color:#ffb300;">' +
+        (T.net_reconnecting || "Reconnecting...") +
+        "</b>"
+      : "";
 
     $badge
       .find(".watchtogether-room-badge-text")
@@ -1074,7 +1057,8 @@
           T.badge_viewers +
           ": <b>" +
           currentRoomMembers.length +
-          "</b>",
+          "</b>" +
+          statusText,
       );
   }
 
@@ -1187,6 +1171,12 @@
   }
 
   function leaveRoomLocal() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    isReconnecting = false;
+    reconnectAttempts = 0;
     clearInterval(syncInterval);
     $(".watchtogether-room-badge").remove();
     var vid = getVideo();
@@ -1203,7 +1193,25 @@
     currentRoomMembers = [];
   }
 
+  function scheduleReconnect() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
+    if (inRoom && !isReconnecting) {
+      isReconnecting = true;
+      Lampa.Noty.show(T.net_reconnecting);
+    }
+    reconnectAttempts++;
+    var delay = Math.min(1000 * Math.pow(1.5, reconnectAttempts - 1), 10000);
+    reconnectTimer = setTimeout(connectWs, delay);
+  }
+
   function connectWs() {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer);
+      reconnectTimer = null;
+    }
     if (!window.lampa_nws_url) {
       var backendIsHttps = localhost.indexOf("https://") === 0;
       var pageIsHttps = window.location.protocol === "https:";
@@ -1218,13 +1226,19 @@
       if (ws.readyState === 1) return;
       if (ws.readyState === 0 || ws.readyState === 2) {
         try {
+          ws.onopen = ws.onclose = ws.onerror = ws.onmessage = null;
           ws.close();
         } catch (err) {}
       }
     }
 
     pingPending = {};
-    ws = new WebSocket(window.lampa_nws_url);
+    try {
+      ws = new WebSocket(window.lampa_nws_url);
+    } catch (err) {
+      scheduleReconnect();
+      return;
+    }
 
     ws.onopen = function () {
       startPingBurst();
@@ -1236,6 +1250,7 @@
           currentRoomId,
           unic_id,
           getDisplayName(),
+          currentRoomPassword || "",
         ]);
         var vid = getVideo();
         if (vid && !initialSyncLock) {
@@ -1270,6 +1285,12 @@
             (data.args && data.args[0]) || assignedDisplayName;
           var jSpd = (data.args && data.args[4]) || 1.0;
           if (jSpd >= 0.25 && jSpd <= 4.0) currentRoomSpeed = jSpd;
+          if (isReconnecting) {
+            isReconnecting = false;
+            reconnectAttempts = 0;
+            Lampa.Noty.show(T.net_restored);
+          }
+          updateRoomBadge();
         } else if (data.method === "watchtogether_members") {
           currentRoomMembers = (data.args && data.args[1]) || [];
           updateRoomBadge();
@@ -1312,7 +1333,16 @@
           } catch (err) {}
         } else if (data.method === "watchtogether_error") {
           var err = (data.args && data.args[0]) || "";
-          if (err === "room_not_found") Lampa.Noty.show(T.no_room);
+          if (err === "room_not_found") {
+            if (inRoom) {
+              Lampa.Noty.show(T.reconnect_failed || T.no_room);
+              leaveRoomLocal();
+            } else {
+              Lampa.Noty.show(T.no_room);
+            }
+          } else if (err === "wrong_password") {
+            Lampa.Noty.show(T.wrong_password);
+          }
         } else if (data.method === "watchtogether_sync_update") {
           if (!inRoom) return;
           var state = data.args[0];
@@ -1362,9 +1392,13 @@
     ws.onclose = function () {
       stopPingTimers();
       updateRoomBadge();
-      setTimeout(connectWs, 5000);
+      scheduleReconnect();
     };
-    ws.onerror = function () {};
+    ws.onerror = function () {
+      stopPingTimers();
+      updateRoomBadge();
+      scheduleReconnect();
+    };
   }
 
   setInterval(function () {

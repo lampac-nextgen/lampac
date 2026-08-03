@@ -16,9 +16,13 @@ namespace WatchTogether
 
         static readonly ConcurrentDictionary<string, (string roomId, string uid, string displayName)> eventClients = new();
         static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, bool>> roomConnections = new();
+        static readonly ConcurrentDictionary<(string roomId, string uid), CancellationTokenSource> pendingDisconnects = new();
 
         public static bool IsConnectionActive(string connectionId) =>
             !string.IsNullOrEmpty(connectionId) && eventClients.ContainsKey(connectionId);
+
+        public static bool HasPendingDisconnects(string roomId) =>
+            !string.IsNullOrEmpty(roomId) && pendingDisconnects.Keys.Any(k => string.Equals(k.roomId, roomId, StringComparison.Ordinal));
 
         static long ServerNowMs() => DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
 
@@ -42,6 +46,13 @@ namespace WatchTogether
             GcTask.Stop();
             heartbeatTimer?.Dispose();
             heartbeatTimer = null;
+
+            foreach (var cts in pendingDisconnects.Values)
+            {
+                try { cts.Cancel(); cts.Dispose(); } catch { }
+            }
+            pendingDisconnects.Clear();
+
             System.Threading.Interlocked.Exchange(ref initialized, 0);
         }
 
@@ -69,7 +80,53 @@ namespace WatchTogether
 
             if (eventClients.TryRemove(e.connectionId, out var info))
             {
-                _ = LeaveAsync(e.connectionId, info.roomId, info.uid, info.displayName, broadcastLeft: true);
+                RoomDb.Members.TryRemove(e.connectionId, out _);
+                if (roomConnections.TryGetValue(info.roomId, out var conns))
+                {
+                    conns.TryRemove(e.connectionId, out _);
+                    if (conns.IsEmpty) roomConnections.TryRemove(info.roomId, out _);
+                }
+
+                bool hasOtherActive = eventClients.Values.Any(x => x.roomId == info.roomId && x.uid == info.uid);
+                if (!hasOtherActive)
+                {
+                    var key = (info.roomId, info.uid);
+                    var cts = new CancellationTokenSource();
+                    pendingDisconnects.AddOrUpdate(key, cts, (_, old) =>
+                    {
+                        try { old.Cancel(); } catch { }
+                        return cts;
+                    });
+
+                    var cid = e.connectionId;
+                    var rId = info.roomId;
+                    var uId = info.uid;
+                    var dName = info.displayName;
+
+                    _ = Task.Run(async () =>
+                    {
+                        try
+                        {
+                            await Task.Delay(25000, cts.Token);
+                        }
+                        catch
+                        {
+                            return;
+                        }
+
+                        if (cts.IsCancellationRequested) return;
+
+                        var kvp = new System.Collections.Generic.KeyValuePair<(string roomId, string uid), CancellationTokenSource>(key, cts);
+                        if (((System.Collections.Generic.ICollection<System.Collections.Generic.KeyValuePair<(string roomId, string uid), CancellationTokenSource>>)pendingDisconnects).Remove(kvp))
+                        {
+                            bool isReconnected = eventClients.Values.Any(x => x.roomId == rId && x.uid == uId);
+                            if (!isReconnected)
+                            {
+                                _ = LeaveAsync(cid, rId, uId, dName, broadcastLeft: true);
+                            }
+                        }
+                    });
+                }
             }
         }
 
@@ -142,24 +199,31 @@ namespace WatchTogether
             else if (method == "watchtogether_leave")
             {
                 if (eventClients.TryRemove(e.connectionId, out var info))
+                {
+                    var key = (info.roomId, info.uid);
+                    if (pendingDisconnects.TryRemove(key, out var cts))
+                    {
+                        try { cts.Cancel(); cts.Dispose(); } catch { }
+                    }
                     _ = LeaveAsync(e.connectionId, info.roomId, info.uid, info.displayName, broadcastLeft: true);
+                }
             }
         }
 
         static async Task JoinAsync(string connectionId, string roomId, string uid, string baseName, string password)
         {
+            if (!string.IsNullOrEmpty(roomId) && !string.IsNullOrEmpty(uid))
+            {
+                var key = (roomId, uid);
+                if (pendingDisconnects.TryRemove(key, out var cts))
+                {
+                    try { cts.Cancel(); cts.Dispose(); } catch { }
+                }
+            }
             if (!ModInit.conf.allow_anonymous && uid.StartsWith("web_"))
             {
                 _ = Startup.Nws.SendAsync(connectionId, "watchtogether_error", "anonymous_disabled");
                 return;
-            }
-
-            var oldConnections = eventClients.Where(x => x.Value.uid == uid && x.Key != connectionId).ToList();
-            foreach (var old in oldConnections)
-            {
-                _ = Startup.Nws.SendAsync(old.Key, "watchtogether_kicked");
-                if (eventClients.TryRemove(old.Key, out var info))
-                    await LeaveAsync(old.Key, info.roomId, info.uid, info.displayName, broadcastLeft: false);
             }
 
             if (!RoomDb.Rooms.TryGetValue(roomId, out var room))
@@ -191,6 +255,14 @@ namespace WatchTogether
                 last_seen = DateTime.UtcNow
             };
             RoomDb.Members.AddOrUpdate(connectionId, member, (_, __) => member);
+
+            var oldConnections = eventClients.Where(x => x.Value.uid == uid && x.Key != connectionId).ToList();
+            foreach (var old in oldConnections)
+            {
+                _ = Startup.Nws.SendAsync(old.Key, "watchtogether_kicked");
+                if (eventClients.TryRemove(old.Key, out var info))
+                    await LeaveAsync(old.Key, info.roomId, info.uid, info.displayName, broadcastLeft: false);
+            }
 
             long at = room.at_server_time > 0 ? room.at_server_time : ServerNowMs();
             _ = Startup.Nws.SendAsync(connectionId, "watchtogether_joined", displayName, room.state, room.position, at, room.speed);
@@ -225,12 +297,15 @@ namespace WatchTogether
 
             var remaining = GetConnectionsInRoom(roomId);
 
+            bool hasPendingDisconnects = pendingDisconnects.Keys.Any(k => string.Equals(k.roomId, roomId, StringComparison.Ordinal));
+
             if (wasHost)
             {
                 var remainingOthers = remaining.Where(x => x != connectionId).ToArray();
                 if (remainingOthers.Length == 0)
                 {
-                    RoomDb.Rooms.TryRemove(roomId, out _);
+                    if (!hasPendingDisconnects)
+                        RoomDb.Rooms.TryRemove(roomId, out _);
                     return;
                 }
 
@@ -257,7 +332,7 @@ namespace WatchTogether
             }
 
             bool hasMembers = remaining.Length > 0;
-            if (!hasMembers)
+            if (!hasMembers && !hasPendingDisconnects)
             {
                 RoomDb.Rooms.TryRemove(roomId, out _);
             }
