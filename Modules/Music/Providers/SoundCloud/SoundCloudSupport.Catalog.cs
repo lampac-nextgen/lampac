@@ -1025,6 +1025,167 @@ public static partial class SoundCloudSupport
         return tracks;
     }
 
+    // доминирующие жанры артиста по его трекам в поиске (сырые display-значения
+    // поля genre, по убыванию частоты) — для жанрового слоя «Миксов недели»
+    public static async Task<List<string>> SearchDominantGenresAsync(string query, CancellationToken cancellationToken = default)
+    {
+        var result = new List<string>();
+        if (string.IsNullOrWhiteSpace(query))
+            return result;
+
+        string clientId = await GetClientIdAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(clientId))
+            return result;
+
+        var elements = await SearchTrackElementsAsync(query, clientId, 10, cancellationToken);
+        if (elements == null)
+            return result;
+
+        var counts = new Dictionary<string, (string display, int count)>(StringComparer.OrdinalIgnoreCase);
+
+        foreach (var item in elements)
+        {
+            string genre = GetString(item, "genre")?.Trim();
+            if (string.IsNullOrWhiteSpace(genre) || genre.Length > 40)
+                continue;
+
+            counts[genre] = counts.TryGetValue(genre, out var current)
+                ? (current.display, current.count + 1)
+                : (genre, 1);
+        }
+
+        return counts.Values
+            .Where(i => i.count >= 2)
+            .OrderByDescending(i => i.count)
+            .Select(i => i.display)
+            .Take(3)
+            .ToList();
+    }
+
+    // свободный genre-тег трека -> канонический жанр-фасет SC (фильтр
+    // поиска регистрозависим и принимает только канон в lower;
+    // проверено живьём: «Hip Hop» — 0 результатов, «hip-hop & rap» — работает)
+    public static string MapToCanonicalGenre(string genre)
+    {
+        string value = (genre ?? string.Empty).ToLowerInvariant();
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        if (value.Contains("hip") || value.Contains("rap") || value.Contains("trap") || value.Contains("phonk"))
+            return "hip-hop & rap";
+        if (value.Contains("edm") || value.Contains("dance"))
+            return "dance & edm";
+        if (value.Contains("r&b") || value.Contains("rnb") || value.Contains("soul"))
+            return "r&b & soul";
+        if (value.Contains("drum") && value.Contains("bass"))
+            return "drum & bass";
+        if (value.Contains("dubstep"))
+            return "dubstep";
+        if (value.Contains("house"))
+            return "house";
+        if (value.Contains("techno"))
+            return "techno";
+        if (value.Contains("trance"))
+            return "trance";
+        if (value.Contains("electro"))
+            return "electronic";
+        if (value.Contains("metal"))
+            return "metal";
+        if (value.Contains("indie"))
+            return "indie";
+        if (value.Contains("rock"))
+            return "rock";
+        if (value.Contains("jazz") || value.Contains("blues"))
+            return "jazz & blues";
+        if (value.Contains("folk") || value.Contains("singer"))
+            return "folk & singer-songwriter";
+        if (value.Contains("reggaeton"))
+            return "reggaeton";
+        if (value.Contains("reggae"))
+            return "reggae";
+        if (value.Contains("dancehall"))
+            return "dancehall";
+        if (value.Contains("latin"))
+            return "latin";
+        if (value.Contains("ambient"))
+            return "ambient";
+        if (value.Contains("classic"))
+            return "classical";
+        if (value.Contains("country"))
+            return "country";
+        if (value.Contains("pop"))
+            return "pop";
+
+        return null;
+    }
+
+    // популярные треки канонического жанра: штатный /charts SC закрыт
+    // (400/404, проверено живьём 2026-07-16), рабочий путь — search/tracks
+    // с filter.genre_or_tag; параметр q обязателен, даже пустой
+    public static async Task<List<MusicTrack>> SearchTracksByGenreAsync(string canonicalGenre, int limit = 30, CancellationToken cancellationToken = default)
+    {
+        var tracks = new List<MusicTrack>();
+        if (string.IsNullOrWhiteSpace(canonicalGenre))
+            return tracks;
+
+        string clientId = await GetClientIdAsync(cancellationToken);
+        if (string.IsNullOrWhiteSpace(clientId))
+            return null;
+
+        try
+        {
+            string url = BuildApiV2Url("search/tracks", new Dictionary<string, string>
+            {
+                ["filter.genre_or_tag"] = canonicalGenre.Trim().ToLowerInvariant(),
+                ["sort"] = "popular",
+                ["client_id"] = clientId,
+                ["limit"] = Math.Max(1, limit).ToString(),
+                ["linked_partitioning"] = "1"
+            });
+
+            // BuildApiV2Url выбрасывает пустые значения, а без q эндпоинт
+            // отвечает 400 — дописываем пустой q вручную
+            url += "&q=";
+
+            using var request = new HttpRequestMessage(HttpMethod.Get, url);
+            foreach (var header in CreatePublicHeaders())
+                request.Headers.TryAddWithoutValidation(header.Key, header.Value);
+
+            using var response = await httpClient.SendAsync(request, cancellationToken);
+            if (!response.IsSuccessStatusCode)
+            {
+                InvalidatePublicClientIdOnUnauthorized(response.StatusCode, clientId);
+                return null;
+            }
+
+            string json = await response.Content.ReadAsStringAsync(cancellationToken);
+            using var document = JsonDocument.Parse(json);
+            if (!document.RootElement.TryGetProperty("collection", out var collection) || collection.ValueKind != JsonValueKind.Array)
+                return null;
+
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+            foreach (var item in collection.EnumerateArray())
+            {
+                var track = MapStandaloneTrack(item);
+                if (track == null || string.IsNullOrWhiteSpace(track.id) || !seen.Add(track.id))
+                    continue;
+
+                tracks.Add(track);
+            }
+
+            return tracks;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public static async Task<List<MusicAlbum>> SearchPlaylistsByQueryAsync(string query, int limit = 8, CancellationToken cancellationToken = default)
     {
         var playlists = new List<MusicAlbum>();

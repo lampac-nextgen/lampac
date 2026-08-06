@@ -94,6 +94,40 @@ public static class MusicUserPlaylistService
         return ParseTracks(payload);
     }
 
+    // треки ВСЕХ плейлистов профиля (свежие плейлисты первыми) — источник
+    // артистов для «Миксов недели»: у пользователя без истории, но с
+    // импортированным плейлистом, миксы собираются из его артистов
+    public static async Task<List<MusicTrack>> GetAllTracksAsync(string profileId, CancellationToken cancellationToken = default)
+    {
+        profileId = NormalizeProfile(profileId);
+        var result = new List<MusicTrack>();
+
+        try
+        {
+            await using var connection = new SqliteConnection(MusicContext.ConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = """
+                SELECT payload
+                FROM user_playlists
+                WHERE profile_id = $profile_id
+                ORDER BY updated DESC;
+                """;
+            command.Parameters.AddWithValue("$profile_id", profileId);
+
+            await using var reader = await command.ExecuteReaderAsync(cancellationToken);
+            while (await reader.ReadAsync(cancellationToken))
+                result.AddRange(ParseTracks(reader.IsDBNull(0) ? null : reader.GetString(0)));
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Music] playlists all tracks failed: {ex.Message}");
+        }
+
+        return result;
+    }
+
     public static async Task<string> CreateAsync(string profileId, string title, CancellationToken cancellationToken = default)
     {
         title = title?.Trim();

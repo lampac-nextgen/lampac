@@ -29,13 +29,42 @@ public class MusicBrainzMetadataProvider : IMusicMetadataProvider
 
         query = query.Trim();
 
+        var artistQuery = query;
+        var usedTranslitArtistFallback = false;
         var artistsJson = await GetJsonAsync($"artist?query={HttpUtility.UrlEncode(query)}&limit={(expanded ? 16 : 8)}&fmt=json", cancellationToken);
         var artists = RankArtists(ParseArtists(artistsJson?["artists"] as JsonArray), query, expanded ? 16 : 8);
+
+        if (artists.Count == 0 && MusicMapSupport.ContainsCyrillic(query))
+        {
+            string fallbackQuery = MusicMapSupport.TransliterateCyrillicToLatinForSearch(query);
+            if (!string.IsNullOrWhiteSpace(fallbackQuery)
+                && !string.Equals(fallbackQuery, query, StringComparison.OrdinalIgnoreCase))
+            {
+                var fallbackArtistsJson = await GetJsonAsync($"artist?query={HttpUtility.UrlEncode(fallbackQuery)}&limit={(expanded ? 16 : 8)}&fmt=json", cancellationToken);
+                var fallbackArtists = DeduplicateFallbackArtists(
+                    RankArtists(ParseArtists(fallbackArtistsJson?["artists"] as JsonArray), fallbackQuery, expanded ? 16 : 8)
+                );
+                if (fallbackArtists.Count > 0)
+                {
+                    artistQuery = fallbackQuery;
+                    artists = fallbackArtists;
+                    usedTranslitArtistFallback = true;
+                }
+            }
+        }
 
         await DiscogsArtistImageService.ApplyCachedAsync(artists, cancellationToken);
         DiscogsArtistImageService.WarmupMissing(artists);
 
-        var context = BuildSearchContext(query, artists);
+        if (usedTranslitArtistFallback)
+        {
+            return new MusicSearchResult
+            {
+                artists = artists
+            };
+        }
+
+        var context = BuildSearchContext(artistQuery, artists);
         var isArtistOnly = context?.BestArtist != null && context.IsArtistOnly;
         var albumsTask = GetJsonAsync(BuildAlbumSearchPath(context, expanded), cancellationToken);
         var tracksTask = isArtistOnly ? null : GetJsonAsync(BuildTrackSearchPath(context, expanded), cancellationToken);
@@ -70,6 +99,26 @@ public class MusicBrainzMetadataProvider : IMusicMetadataProvider
             albums = albums,
             tracks = tracks
         };
+    }
+
+    static List<MusicArtist> DeduplicateFallbackArtists(IEnumerable<MusicArtist> artists)
+    {
+        var result = new List<MusicArtist>();
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (var artist in artists ?? Enumerable.Empty<MusicArtist>())
+        {
+            string key = NormalizeText(artist?.name);
+            if (string.IsNullOrWhiteSpace(key))
+                key = artist?.id ?? string.Empty;
+
+            if (!seen.Add(key))
+                continue;
+
+            result.Add(artist);
+        }
+
+        return result;
     }
 
     public async Task<MusicArtist> GetArtistAsync(string id, CancellationToken cancellationToken = default)

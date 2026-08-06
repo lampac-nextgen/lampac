@@ -12,7 +12,19 @@ public class ModuleConf
 
     public bool client_debug_enabled { get; set; }
 
+    public bool stats_clear_enabled { get; set; }
+
+    // dev-кнопка «Обновить миксы недели» (пересборка раскладки по salt);
+    // в обычном UX неделя обновляется сама по понедельникам
+    public bool daily_reset_enabled { get; set; }
+
     public bool youtube_audio_enabled { get; set; }
+
+    // Spotify-корректор поиска: когда MusicBrainz не понял «человеческий» ввод
+    // (кириллица западного артиста, опечатка), спросить у Spotify каноническое
+    // имя артиста и переспросить MB им. Хрупко к ротации persisted-хэша Spotify,
+    // потому default off; деградирует в «как без него» без падений.
+    public bool spotify_search_fallback_enabled { get; set; }
 
     public bool sefon_audio_enabled { get; set; }
 

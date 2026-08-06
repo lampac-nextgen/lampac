@@ -173,11 +173,44 @@ public static class MusicImageProxyService
             if (image == null || string.IsNullOrWhiteSpace(image.url))
                 continue;
 
+            // кэши секций/сущностей шарят инстансы между запросами, а Apply
+            // мутирует url на месте — хост ПЕРВОГО запросившего запекался в
+            // кэш навсегда (живой баг: SC-полка с 127.0.0.1 после curl-тестов
+            // с хоста — на телефоне все обложки битые). Уже проксированный
+            // url переписываем на хост текущего запроса: токен proxyimg от
+            // хоста не зависит (проверено живьём)
+            if (TryRewriteProxyHost(image.url, controller.host, out string rewritten))
+            {
+                image.url = rewritten;
+                continue;
+            }
+
             if (!NeedProxy(image.url, controller.host))
                 continue;
 
             image.url = controller.HostImgProxy(init, image.url);
         }
+    }
+
+    static bool TryRewriteProxyHost(string url, string host, out string rewritten)
+    {
+        rewritten = null;
+
+        int index = url.IndexOf("/proxyimg", StringComparison.OrdinalIgnoreCase);
+        if (index <= 0 || string.IsNullOrWhiteSpace(host))
+            return false;
+
+        string prefix = url.Substring(0, index);
+        if (string.Equals(prefix, host, StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        // префикс должен быть полноценным origin (а не куском чужого пути)
+        if (!Uri.TryCreate(prefix, UriKind.Absolute, out var prefixUri) ||
+            !prefixUri.Scheme.StartsWith("http", StringComparison.OrdinalIgnoreCase))
+            return false;
+
+        rewritten = host + url.Substring(index);
+        return true;
     }
 
     static bool NeedProxy(string url, string host)

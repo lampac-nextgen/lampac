@@ -17,14 +17,17 @@ public static class MusicCatalogService
     const int browseSectionFullLimit = 100;
     const int searchSectionLimit = 8;
     const int searchSectionFullLimit = 24;
-    // v27: инвалидация после миграции на 1.40.0 — залипшие пустые SC-секции
-    // («Макс Корж»: пустышка пережила 20-минутный emptyTtl, вариантные
-    // запросы работали — классическая ловушка перезаписи HybridFileCache)
-    const string metadataCacheVersion = "v27";
+    // v31: RU->latin fallback metadata-поиска для кириллических запросов
+    // западных артистов ("эминем" -> "eminem"), без fuzzy-расширения.
+    // v34: Spotify artist screen добирает полные discography/appears-on секции
+    // отдельными artistsection-запросами вместо короткого overview.
+    // v35: уточнённые Spotify release labels для singles/EP/appears-on.
+    // v36: Spotify singles/EP отдаются как track-section, не album-section.
+    const string metadataCacheVersion = "v36";
     static readonly object homeWarmLock = new();
     static readonly Dictionary<string, Task<List<MusicBrowseSection>>> homeWarmTasks = new(StringComparer.OrdinalIgnoreCase);
 
-    public static async Task<MusicHomeResponse> GetHomeAsync(string profileId, CancellationToken cancellationToken = default)
+    public static async Task<MusicHomeResponse> GetHomeAsync(string profileId, int dailySalt = 0, CancellationToken cancellationToken = default)
     {
         var sections = new List<MusicSection>
         {
@@ -37,9 +40,14 @@ public static class MusicCatalogService
 
         var recentlyPlayedTask = MusicPlaybackHistoryService.GetRecentAsync(profileId, recentSectionLimit, cancellationToken);
         var userPlaylistsTask = MusicUserPlaylistService.ListAsync(profileId, cancellationToken);
+        // сводки миксов недели — чистое чтение истории + детерминированная
+        // раскладка, без внешних HTTP; треки грузятся лениво в /music/daily
+        var dailyMixesTask = MusicDailyMixService.GetSummariesAsync(profileId, dailySalt, cancellationToken);
         var browseSectionsTask = GetBrowseSectionsAsync(cancellationToken);
 
-        await Task.WhenAll(recentlyPlayedTask, userPlaylistsTask, browseSectionsTask);
+        await Task.WhenAll(recentlyPlayedTask, userPlaylistsTask, dailyMixesTask, browseSectionsTask);
+
+        var browseSectionsResult = await browseSectionsTask;
 
         return new MusicHomeResponse
         {
@@ -52,7 +60,9 @@ public static class MusicCatalogService
             auth_providers = MusicProviderRegistry.DescribeAuth(),
             recently_played = await recentlyPlayedTask,
             user_playlists = await userPlaylistsTask,
-            browse_sections = await browseSectionsTask
+            daily_mixes = await dailyMixesTask,
+            browse_sections = browseSectionsResult.sections,
+            browse_sections_warming = browseSectionsResult.warming
         };
     }
 
@@ -173,6 +183,11 @@ public static class MusicCatalogService
         if (SoundCloudSupport.IsUserArtist(provider, id))
             return SoundCloudSupport.GetUserArtistAsync(id, cancellationToken);
 
+        if (SpotifySupport.IsSearchEnabled && SpotifySupport.IsSpotifyArtist(provider, id))
+            return MusicMetadataCacheService.GetOrCreateAsync(
+                SpotifySupport.ProviderId, "artist", VersionedKey(id), artistCacheTtl,
+                () => SpotifySupport.GetArtistAsync(id, cancellationToken), cancellationToken);
+
         var metadata = MusicProviderRegistry.GetMetadataProvider(provider);
         return metadata == null
             ? Task.FromResult<MusicArtist>(null)
@@ -186,10 +201,20 @@ public static class MusicCatalogService
             );
     }
 
-    public static Task<MusicBrowseSection> GetArtistSectionAsync(string id, string provider = null, string page = null, int limit = 20, CancellationToken cancellationToken = default)
+    public static Task<MusicBrowseSection> GetArtistSectionAsync(string id, string provider = null, string page = null, int limit = 20, string artistName = null, CancellationToken cancellationToken = default)
     {
         if (SoundCloudSupport.IsUserSection(provider, id))
             return SoundCloudSupport.GetUserSectionAsync(id, page, limit, cancellationToken);
+
+        if (SpotifySupport.IsSearchEnabled && SpotifySupport.IsSpotifyArtistSection(provider, id))
+            return MusicMetadataCacheService.GetOrCreateAsync(
+                SpotifySupport.ProviderId,
+                "artist_section",
+                VersionedKey($"{id}|{page}|{limit}|{artistName}"),
+                searchCacheTtl,
+                () => SpotifySupport.GetArtistSectionAsync(id, page, limit, artistName, cancellationToken),
+                cancellationToken
+            );
 
         return Task.FromResult<MusicBrowseSection>(null);
     }
@@ -201,6 +226,11 @@ public static class MusicCatalogService
 
         if (SoundCloudSupport.IsUserTracksAlbum(provider, id))
             return SoundCloudSupport.GetUserTracksAlbumAsync(id, cancellationToken);
+
+        if (SpotifySupport.IsSearchEnabled && SpotifySupport.IsSpotifyAlbum(provider, id))
+            return MusicMetadataCacheService.GetOrCreateAsync(
+                SpotifySupport.ProviderId, "album", VersionedKey(id), albumCacheTtl,
+                () => SpotifySupport.GetAlbumAsync(id, cancellationToken), cancellationToken);
 
         if (string.Equals(provider, SoundCloudSupport.DiscoveryProviderId, StringComparison.OrdinalIgnoreCase))
         {
@@ -246,23 +276,25 @@ public static class MusicCatalogService
             );
     }
 
-    static async Task<List<MusicBrowseSection>> GetBrowseSectionsAsync(CancellationToken cancellationToken)
+    static async Task<(List<MusicBrowseSection> sections, bool warming)> GetBrowseSectionsAsync(CancellationToken cancellationToken)
     {
         var providers = MusicProviderRegistry.DiscoveryProviders.Where(i => i.Enabled).ToList();
         if (providers.Count == 0)
-            return new List<MusicBrowseSection>();
+            return (new List<MusicBrowseSection>(), false);
 
         var results = await Task.WhenAll(providers.Select(provider =>
             GetHomeSectionsForResponseAsync(provider, browseSectionLimit, cancellationToken)));
 
         var sections = new List<MusicBrowseSection>();
-        foreach (var providerSections in results)
+        bool warming = false;
+        foreach (var (providerSections, providerWarming) in results)
         {
+            warming |= providerWarming;
             if (providerSections != null && providerSections.Count > 0)
                 sections.AddRange(providerSections);
         }
 
-        return sections;
+        return (sections, warming);
     }
 
     static async Task<List<MusicBrowseSection>> GetSearchSectionsAsync(string query, bool expanded, CancellationToken cancellationToken)
@@ -280,6 +312,9 @@ public static class MusicCatalogService
 
         if (MusicProviderRegistry.AudioProviders.Any(i => i.Enabled && string.Equals(i.Id, SefonSupport.ProviderId, StringComparison.OrdinalIgnoreCase)))
             tasks.Add(SafeGetSearchSectionsAsync(async token => ToSearchSectionList(await BuildSefonSearchSectionAsync(query, expanded, token)), cancellationToken));
+
+        if (SpotifySupport.IsSearchEnabled)
+            tasks.Add(SafeGetSearchSectionsAsync(token => BuildSpotifySearchSectionsAsync(query, expanded, token), cancellationToken));
 
         if (tasks.Count == 0)
             return new List<MusicBrowseSection>();
@@ -374,6 +409,58 @@ public static class MusicCatalogService
         return sections;
     }
 
+    static async Task<List<MusicBrowseSection>> BuildSpotifySearchSectionsAsync(string query, bool expanded, CancellationToken cancellationToken)
+    {
+        int trackLimit = expanded ? searchSectionFullLimit : searchSectionLimit;
+        int sideLimit = expanded ? 18 : 6;
+        string searchKey = NormalizeSearchKey(query);
+
+        var artistsTask = MusicMetadataCacheService.GetOrCreateAsync(
+            SpotifySupport.ProviderId, "search_artists",
+            VersionedKey($"spotify-artists|{sideLimit}|{searchKey}"), searchCacheTtl,
+            () => SpotifySupport.SearchArtistsAsync(query, sideLimit, cancellationToken), cancellationToken);
+
+        var albumsTask = MusicMetadataCacheService.GetOrCreateAsync(
+            SpotifySupport.ProviderId, "search_albums",
+            VersionedKey($"spotify-albums|{sideLimit}|{searchKey}"), searchCacheTtl,
+            () => SpotifySupport.SearchAlbumsAsync(query, sideLimit, cancellationToken), cancellationToken);
+
+        var tracksTask = MusicMetadataCacheService.GetOrCreateAsync(
+            SpotifySupport.ProviderId, "search_tracks",
+            VersionedKey($"spotify-tracks|{trackLimit}|{searchKey}"), searchCacheTtl,
+            () => SpotifySupport.SearchTracksAsync(query, trackLimit, cancellationToken), cancellationToken);
+
+        await Task.WhenAll(artistsTask, albumsTask, tracksTask);
+
+        var artists = await artistsTask ?? new List<MusicArtist>();
+        var albums = await albumsTask ?? new List<MusicAlbum>();
+        var tracks = await tracksTask ?? new List<MusicTrack>();
+        var sections = new List<MusicBrowseSection>();
+
+        if (artists.Count > 0)
+            sections.Add(new MusicBrowseSection
+            {
+                id = SpotifySupport.ArtistsSectionId, title = "Исполнители", type = "artists",
+                source_provider = SpotifySupport.ProviderId, has_more = false, artists = artists
+            });
+
+        if (albums.Count > 0)
+            sections.Add(new MusicBrowseSection
+            {
+                id = SpotifySupport.AlbumsSectionId, title = "Альбомы", type = "albums",
+                source_provider = SpotifySupport.ProviderId, has_more = false, albums = albums
+            });
+
+        if (tracks.Count > 0)
+            sections.Add(new MusicBrowseSection
+            {
+                id = SpotifySupport.TracksSectionId, title = "Треки", type = "tracks",
+                source_provider = SpotifySupport.ProviderId, has_more = false, tracks = tracks
+            });
+
+        return sections;
+    }
+
     static bool ShouldSkipMetadataTrackLookup(string id, string provider)
     {
         if (StartsWithAny(id, "inline:", "youtube:", "sefon:", "soundcloud:"))
@@ -391,18 +478,20 @@ public static class MusicCatalogService
         return prefixes.Any(prefix => value.StartsWith(prefix, StringComparison.OrdinalIgnoreCase));
     }
 
-    static async Task<List<MusicBrowseSection>> GetHomeSectionsForResponseAsync(IMusicDiscoveryProvider provider, int limit, CancellationToken cancellationToken)
+    static async Task<(List<MusicBrowseSection> sections, bool warming)> GetHomeSectionsForResponseAsync(IMusicDiscoveryProvider provider, int limit, CancellationToken cancellationToken)
     {
         var warmTask = GetOrStartHomeWarmTask(provider, limit);
         if (warmTask.IsCompleted)
-            return await warmTask;
+            return (await warmTask, false);
 
         var completed = await Task.WhenAny(warmTask, Task.Delay(discoveryHomeProviderResponseBudget, cancellationToken));
         if (completed == warmTask)
-            return await warmTask;
+            return (await warmTask, false);
 
         cancellationToken.ThrowIfCancellationRequested();
-        return new List<MusicBrowseSection>();
+        // warming=true: провайдер срезан по 2s-бюджету, прогрев продолжается в фоне —
+        // клиент по этому флагу тихо дозапрашивает home
+        return (new List<MusicBrowseSection>(), true);
     }
 
     static Task<List<MusicBrowseSection>> GetOrStartHomeWarmTask(IMusicDiscoveryProvider provider, int limit)

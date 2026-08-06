@@ -4,7 +4,7 @@
     /*
      * ======================================================================
      * Music-модуль Lampac — весь клиент для Lampa одним файлом.
-     * Сервер отдаёт его как /music.js (шаблоны {localhost}/{client_debug_enabled}
+     * Сервер отдаёт его как /music.js (шаблоны {localhost}/{client_debug_enabled}/{stats_clear_enabled}/{daily_reset_enabled}
      * подставляются при отдаче). Серверная часть: Modules/Music (C#).
      * Обзор архитектуры: README.md, docs/client-architecture.md.
      *
@@ -44,6 +44,29 @@
      *                  QUEUE / IOS PLAYBACK + IOS FULL PLAYER). Полный
      *                  lock screen, включая скраббер перемотки. Весь слой
      *                  iOS-хаков (warmup/keep-alive/lock-kick) — только здесь.
+     *
+     * ПРИФЕТЧ-СЛОЙ (три независимых механизма, все через requestPlay:
+     * общий кэш PLAY_PREFETCH_CACHE 10min + single-flight; греют ТОЛЬКО кэш
+     * /music/play, ничего не запускают; таймеры НЕ переиспользовать между ними):
+     *   schedulePlayPrefetch        hover:focus по карточке (ТВ) — общий 180ms
+     *                               таймер «грей последнее под фокусом»
+     *   scheduleNextTrackPrefetch   следующий трек очереди ~3s после реального
+     *                               старта звука; гейт поколением очереди;
+     *                               зеркалит арифметику embedded-next
+     *   scheduleFirstTrackPrefetch  открытие экрана альбома/плейлиста; на
+     *                               standalone iOS — стартовое окно из
+     *                               getStandaloneIosInitialResolveCount треков
+     * Инварианты тайминга: cache-hit requestPlay отдаёт done СТРОГО асинхронно
+     * (standalone-запуск рассчитан на резолв вне жеста); session-settle ~700ms
+     * между silent-warmup и реальным src (iOS фиксирует capabilities Now
+     * Playing в первые сотни ms сессии).
+     *
+     * ЗАЩИТЫ ОЧЕРЕДИ:
+     *   MUSIC_PLAY_LAUNCH_TOKEN     last-tap-wins для playTrack: стейловые
+     *                               async-флоу не доезжают до плеера
+     *   auto-skip                   мёртвый трек (честный available=false) не
+     *                               тупик — очередь шагает дальше; сеть НЕ
+     *                               скипается, кап 3 подряд, repeat-one свят
      *
      * ЛЕГЕНДА ИМЕНОВАНИЙ:
      *   MUSIC_*             модульное глобальное состояние (паспорта — у объявлений)
@@ -116,7 +139,9 @@
             playlistTrackAdd: '{localhost}/music/playlists/track/add',
             playlistTrackRemove: '{localhost}/music/playlists/track/remove',
             playlistTrackMove: '{localhost}/music/playlists/track/move',
+            daily: '{localhost}/music/daily',
             statsTop: '{localhost}/music/stats/top',
+            statsClear: '{localhost}/music/stats/clear',
             radio: '{localhost}/music/radio',
             markHistory: '{localhost}/music/history/mark',
             removeHistory: '{localhost}/music/history/remove',
@@ -140,6 +165,7 @@
             audio_provider: 'lampac_music_audio_provider',
             player: 'lampac_music_player',
             radio_autoplay_enabled: 'lampac_music_radio_autoplay_enabled',
+            daily_salt: 'lampac_music_daily_salt',
             queue_restore_enabled: 'lampac_music_queue_restore_enabled',
             queue_snapshot: 'lampac_music_queue_snapshot', // legacy v1: только чтение при миграции
             queue_blob_v2: 'lampac_music_queue_blob_v2',
@@ -165,6 +191,8 @@
     };
     var MUSIC_HISTORY_MARK_DELAY = 10000;
     var MUSIC_CLIENT_TRACE_ENABLED = '{client_debug_enabled}' === 'true';
+    var MUSIC_STATS_CLEAR_ENABLED = '{stats_clear_enabled}' !== 'false';
+    var MUSIC_DAILY_RESET_ENABLED = '{daily_reset_enabled}' !== 'false';
     var MUSIC_HEAT_PROBE = {
         timer: 0,
         interval: 10000,
@@ -179,6 +207,13 @@
     var MUSIC_LAST_PLAYER_CONTROLLER_RESTORE_AT = 0;
     var MUSIC_PLAYBACK_LOADING_ACTIVE = false;
     var MUSIC_PLAYBACK_LOADING_TIMER = 0;
+    var MUSIC_ALBUM_DETAILS_CACHE = {};
+    var MUSIC_ALBUM_DETAILS_TTL = 1000 * 60 * 5;
+    var MUSIC_SPOTIFY_RELEASE_TOKEN = 0;
+    // generation-токен запуска playTrack: каждый новый вызов инвалидирует
+    // незавершённые async-флоу предыдущего (requestPlay может резолвиться
+    // секунды — повторный тап в это окно раньше давал два параллельных плеера)
+    var MUSIC_PLAY_LAUNCH_TOKEN = 0;
     /*
      * ПАСПОРТ: состояние standalone iOS-плеера (player=ios). Главный неявный
      * автомат файла — почти все iOS-хаки читают/пишут эти поля.
@@ -289,6 +324,8 @@
     var PLAY_PREFETCH_PENDING = {};
     var PLAY_PREFETCH_TIMER = 0;
     var PLAY_PREFETCH_TTL = 1000 * 60 * 10;
+    var MUSIC_NEXT_PREFETCH_TIMER = 0;
+    var MUSIC_NEXT_PREFETCH_FOR = '';
     var MUSIC_QUEUE_SNAPSHOT_VERSION = 1; // legacy-формат, принимается только при чтении
     var MUSIC_QUEUE_BLOB_VERSION = 2;
     var MUSIC_QUEUE_SNAPSHOT_LIMIT = 500;
@@ -1099,6 +1136,19 @@
         return match ? match[0] : '';
     }
 
+    function albumBadge(album, sectionKey) {
+        var type = String(album && album.type || '').toUpperCase();
+        var key = String(sectionKey || '');
+
+        if (key.indexOf(':appears-on') >= 0) return 'FEAT';
+        if (type.indexOf('SINGLE') >= 0) return 'SINGLE';
+        if (type === 'EP' || type.indexOf(' EP') >= 0) return 'EP';
+        if (type.indexOf('COMPIL') >= 0) return 'COMP';
+        if (type.indexOf('ALBUM') >= 0) return 'ALBUM';
+
+        return formatYear(album && (album.date || album.year)) || 'ALBUM';
+    }
+
     function formatDuration(ms) {
         if (!ms) return '-:--';
 
@@ -1169,6 +1219,17 @@
                 } catch (_) {}
             }
         }, 0);
+    }
+
+    function blurActiveMusicInput() {
+        try {
+            var active = document.activeElement;
+            if (!active) return;
+
+            var tag = String(active.tagName || '').toLowerCase();
+            if (tag === 'input' || tag === 'textarea' || active.isContentEditable)
+                active.blur();
+        } catch (e) {}
     }
 
     function buildMusicFocusKey(item) {
@@ -1503,21 +1564,32 @@
     // глобальном ios видео уходит в НАТИВНЫЙ фулскрин, где панель Lampa с
     // плейлистом недоступна. Единственная ручка — временно подменить глобальное
     // поле на время запуска; восстанавливаем на start/destroy и по таймауту
+    // single-flight состояние подмены: при двух быстрых запусках второй НЕ
+    // должен записать 'inner' первого как «оригинал», а restore устаревшего
+    // поколения не должен дёргать Storage под ногами у нового
+    var MUSIC_TEMP_PLAYER = { generation: 0, active: false, original: '' };
+
     function playWithTemporaryGlobalPlayer(data, temporaryPlayer) {
-        var original = Lampa.Storage.get('player', '');
-        var restored = false;
+        var generation = ++MUSIC_TEMP_PLAYER.generation;
+
+        if (!MUSIC_TEMP_PLAYER.active) {
+            MUSIC_TEMP_PLAYER.original = Lampa.Storage.get('player', '');
+            MUSIC_TEMP_PLAYER.active = true;
+        }
 
         function restore() {
-            if (restored) return;
-            restored = true;
-
-            try {
-                Lampa.Storage.set('player', original);
-            } catch (e) {}
-
+            // свой листенер снимаем всегда, даже если поколение устарело
             try {
                 Lampa.Player.listener.remove('start', restore);
                 Lampa.Player.listener.remove('destroy', restore);
+            } catch (e) {}
+
+            if (!MUSIC_TEMP_PLAYER.active || MUSIC_TEMP_PLAYER.generation !== generation) return;
+
+            MUSIC_TEMP_PLAYER.active = false;
+
+            try {
+                Lampa.Storage.set('player', MUSIC_TEMP_PLAYER.original);
             } catch (e) {}
         }
 
@@ -1964,8 +2036,10 @@
 
         return provider === 'youtubeaudio'
             || provider === 'soundcloudcharts'
+            || provider === 'spotify'
             || /^youtube:channel:/i.test(id)
-            || /^soundcloud:user:/i.test(id);
+            || /^soundcloud:user:/i.test(id)
+            || /^spotify:artist:/i.test(id);
     }
 
     function buildTrackRequestParams(track) {
@@ -2040,6 +2114,87 @@
             PLAY_PREFETCH_TIMER = 0;
             requestPlay(track, function () {}, function () {});
         }, 180);
+    }
+
+    // Прифетч резолва СЛЕДУЮЩЕГО трека очереди во время воспроизведения текущего:
+    // к моменту next ответ /music/play уже лежит в PLAY_PREFETCH_CACHE, и
+    // переключение не ждёт холодный YouTube-матч. Таймер свой, НЕ
+    // schedulePlayPrefetch — у того hover-семантика с общим 180ms-таймером
+    // («грей последнее, на чём фокус»), два потребителя молча отменяли бы друг
+    // друга. Гейт поколения: очередь перечитывается в момент срабатывания,
+    // устаревший таймер выходит по несовпадению currentTrackId.
+    function scheduleNextTrackPrefetch(trackId) {
+        if (!trackId || !supportsPlayPrefetch()) return;
+        if (MUSIC_NEXT_PREFETCH_FOR === trackId) return;
+
+        MUSIC_NEXT_PREFETCH_FOR = trackId;
+
+        if (MUSIC_NEXT_PREFETCH_TIMER) {
+            clearTimeout(MUSIC_NEXT_PREFETCH_TIMER);
+            MUSIC_NEXT_PREFETCH_TIMER = 0;
+        }
+
+        MUSIC_NEXT_PREFETCH_TIMER = setTimeout(function () {
+            MUSIC_NEXT_PREFETCH_TIMER = 0;
+
+            // у standalone iOS свой background warm всей очереди
+            if (isStandaloneIosAudioActive()) return;
+            if (MUSIC_QUEUE.currentTrackId !== trackId) return;
+            if (getStandaloneIosRepeatMode() === 'one') return;
+
+            var tracks = queueTracks();
+            if (tracks.length < 2) return;
+
+            var index = queueCurrentIndex();
+            if (index < 0) return;
+
+            // порядок MUSIC_QUEUE.tracks — уже порядок воспроизведения
+            // (shuffle запечён при сборке очереди), index+1 корректен
+            var next = index + 1 < tracks.length
+                ? tracks[index + 1]
+                : (getStandaloneIosRepeatMode() === 'all' ? tracks[0] : null);
+
+            if (!next || !next.title) return;
+
+            requestPlay(next, function () {}, function () {});
+        }, 3000);
+    }
+
+    // Прифетч стартового окна при открытии экрана альбома/плейлиста: пока
+    // пользователь разглядывает hero-шапку, холодный /music/play (5-7s даже
+    // после batch-parallel поиска) греется в фоне — «Слушать» стартует с
+    // тёплым резолвом. Ничего не запускает; isStale — гейт активности экрана
+    // (destroyed компонента). Обычные плееры: только первый трек. Standalone
+    // iOS: первые getStandaloneIosInitialResolveCount треков — запуск там
+    // ЖДЁТ жадный резолв этого окна (лок-скрин должен уметь next без сети
+    // из hidden-страницы), греем ровно его; треки идут ПОСЛЕДОВАТЕЛЬНО
+    // (без бёрста), жадная фаза запуска бьёт в кэш или single-flight
+    function scheduleFirstTrackPrefetch(tracks, isStale) {
+        if (!Array.isArray(tracks) || !tracks.length || !supportsPlayPrefetch()) return;
+
+        var count = shouldUseStandaloneIosAudio()
+            ? Math.min(tracks.length, Math.max(1, getStandaloneIosInitialResolveCount(getAudioProviderId())))
+            : 1;
+        var index = 0;
+
+        function warmNext() {
+            if (isStale && isStale()) return;
+            if (index >= count) return;
+
+            var track = tracks[index++];
+            if (!track || !track.title) {
+                warmNext();
+                return;
+            }
+
+            requestPlay(track, function () {
+                setTimeout(warmNext, 400);
+            }, function () {
+                setTimeout(warmNext, 400);
+            });
+        }
+
+        setTimeout(warmNext, 1000);
     }
 
     function getQualityMenuItems(playbackMode) {
@@ -2148,41 +2303,136 @@
         });
     }
 
+    function resetStatsTopClientState() {
+        MUSIC_STATS_TOP.summary = null;
+        MUSIC_STATS_TOP.checkedAt = 0;
+    }
+
+    // salt «Миксов недели»: счётчик в Storage, уходит параметром на сервер и
+    // меняет seed раскладки — «сброс» пересобирает неделю без серверного state
+    function getDailyMixSalt() {
+        return Number(Lampa.Storage.get(MUSIC.storage.daily_salt, 0)) || 0;
+    }
+
+    function withDailyMixSalt(url) {
+        var salt = getDailyMixSalt();
+        if (!salt) return url;
+        return url + (url.indexOf('?') >= 0 ? '&' : '?') + 'daily_salt=' + salt;
+    }
+
+    function resetDailyMixesWithConfirm(focusContext) {
+        focusContext = focusContext || captureMusicFocusContext('content');
+
+        showContextMenu('Обновить миксы недели?', [
+            {
+                title: 'Собрать заново',
+                subtitle: 'Новые артисты и треки до следующего понедельника',
+                action: 'confirm_reset_daily'
+            },
+            { title: 'Отмена', action: 'cancel' }
+        ], function (selected) {
+            if (!selected || selected.action !== 'confirm_reset_daily') {
+                restoreMusicFocusContext(focusContext, 120);
+                return;
+            }
+
+            Lampa.Storage.set(MUSIC.storage.daily_salt, getDailyMixSalt() + 1);
+            Lampa.Noty.show('Миксы недели пересобраны.');
+            emitRecentChanged('daily_mixes', {
+                restoreState: { sectionKey: 'daily_mixes', entryIndex: 0 }
+            });
+            restoreMusicFocusContext(focusContext, 180);
+        }, focusContext);
+    }
+
+    function clearStatsTopWithConfirm(focusContext) {
+        focusContext = focusContext || captureMusicFocusContext('content');
+
+        showContextMenu('Очистить статистику?', [
+            {
+                title: 'Очистить «Твой топ»',
+                subtitle: 'Недавно слушали и плейлисты останутся',
+                action: 'confirm_clear_stats'
+            },
+            { title: 'Отмена', action: 'cancel' }
+        ], function (selected) {
+            if (!selected || selected.action !== 'confirm_clear_stats') {
+                restoreMusicFocusContext(focusContext, 120);
+                return;
+            }
+
+            requestPost(MUSIC.endpoints.statsClear, '', function (json) {
+                if (!json || !json.cleared) {
+                    Lampa.Noty.show('Не удалось очистить статистику.');
+                    restoreMusicFocusContext(focusContext, 120);
+                    return;
+                }
+
+                resetStatsTopClientState();
+                Lampa.Noty.show('Статистика очищена.');
+                emitRecentChanged('user_playlists', {
+                    restoreState: { sectionKey: 'user_playlists', entryIndex: 0 }
+                });
+                restoreMusicFocusContext(focusContext, 180);
+            }, function () {
+                Lampa.Noty.show('Не удалось очистить статистику.');
+                restoreMusicFocusContext(focusContext, 120);
+            });
+        }, focusContext);
+    }
+
     function openFilterMenu(button, focusContext) {
         focusContext = focusContext || captureMusicFocusContext('content');
 
         var currentMode = getStreamMode();
         var playbackMode = getPlaybackMode();
+        var items = [
+            {
+                title: 'Режим воспроизведения',
+                subtitle: getPlaybackModeTitle(playbackMode),
+                action: 'playback_mode'
+            },
+            {
+                title: 'Источник звука',
+                subtitle: getAudioProviderTitle(getAudioProviderId()),
+                action: 'audio_provider'
+            },
+            {
+                title: 'Качество',
+                subtitle: getQualityModeTitle(currentMode, playbackMode),
+                action: 'stream_mode'
+            },
+            {
+                title: 'Восстановление очереди',
+                subtitle: isQueueRestoreEnabled() ? 'Включено' : 'Выключено',
+                action: 'queue_restore'
+            },
+            {
+                title: 'Автоподборка треков',
+                subtitle: isRadioAutoplayEnabled() ? 'Включено' : 'Выключено',
+                action: 'radio_autoplay'
+            }
+        ];
+
+        if (MUSIC_DAILY_RESET_ENABLED) {
+            items.push({
+                title: 'Обновить миксы недели',
+                subtitle: 'Собрать новую подборку',
+                action: 'reset_daily'
+            });
+        }
+
+        if (MUSIC_STATS_CLEAR_ENABLED) {
+            items.push({
+                title: 'Очистить статистику',
+                subtitle: 'Сбросить «Твой топ»',
+                action: 'clear_stats'
+            });
+        }
 
         Lampa.Select.show({
             title: 'Фильтр',
-            items: [
-                {
-                    title: 'Режим воспроизведения',
-                    subtitle: getPlaybackModeTitle(playbackMode),
-                    action: 'playback_mode'
-                },
-                {
-                    title: 'Источник звука',
-                    subtitle: getAudioProviderTitle(getAudioProviderId()),
-                    action: 'audio_provider'
-                },
-                {
-                    title: 'Качество',
-                    subtitle: getQualityModeTitle(currentMode, playbackMode),
-                    action: 'stream_mode'
-                },
-                {
-                    title: 'Восстановление очереди',
-                    subtitle: isQueueRestoreEnabled() ? 'Включено' : 'Выключено',
-                    action: 'queue_restore'
-                },
-                {
-                    title: 'Автоподборка треков',
-                    subtitle: isRadioAutoplayEnabled() ? 'Включено' : 'Выключено',
-                    action: 'radio_autoplay'
-                }
-            ],
+            items: items,
             onBack: function () {
                 restoreMusicFocusContext(focusContext, 0);
             },
@@ -2220,6 +2470,16 @@
                     setRadioAutoplayEnabled(radioEnabled);
                     Lampa.Noty.show(radioEnabled ? 'Автоподборка треков включена.' : 'Автоподборка треков выключена.');
                     restoreMusicFocusContext(focusContext, 120);
+                    return;
+                }
+
+                if (selected.action === 'reset_daily') {
+                    resetDailyMixesWithConfirm(focusContext);
+                    return;
+                }
+
+                if (selected.action === 'clear_stats') {
+                    clearStatsTopWithConfirm(focusContext);
                 }
             }
         });
@@ -2499,8 +2759,36 @@
         return remote || artwork('track', track.title, track.artist_name || track.album_title || 'Track', ['#1d2128', '#46505e']);
     }
 
+    // Дебаунс фона: setBackground зовётся с каждого hover:focus карточек и
+    // строк — при листании пультом это десятки смен большого фонового
+    // изображения подряд (главный подозреваемый в микрофризах навигации на
+    // Android TV). Схема: первый вызов после покоя применяется сразу (leading),
+    // частые последующие схлопываются в один trailing-апдейт ~180ms
+    // (последний запрошенный URL выигрывает), повторный URL не применяется.
+    var MUSIC_BACKGROUND_URL = '';
+    var MUSIC_BACKGROUND_TIMER = 0;
+    var MUSIC_BACKGROUND_APPLIED_AT = 0;
+
     function setBackground(url) {
-        Lampa.Background.change(url || IMG_BG);
+        url = url || IMG_BG;
+        if (url === MUSIC_BACKGROUND_URL) return;
+
+        MUSIC_BACKGROUND_URL = url;
+
+        var now = Date.now();
+        if (!MUSIC_BACKGROUND_TIMER && now - MUSIC_BACKGROUND_APPLIED_AT >= 180) {
+            MUSIC_BACKGROUND_APPLIED_AT = now;
+            Lampa.Background.change(url);
+            return;
+        }
+
+        if (MUSIC_BACKGROUND_TIMER) return;
+
+        MUSIC_BACKGROUND_TIMER = setTimeout(function () {
+            MUSIC_BACKGROUND_TIMER = 0;
+            MUSIC_BACKGROUND_APPLIED_AT = Date.now();
+            Lampa.Background.change(MUSIC_BACKGROUND_URL);
+        }, 180);
     }
 
     function emitRecentChanged(sectionKey, payload) {
@@ -3349,6 +3637,7 @@
         var provider = getEntityProviderId(artist);
 
         saveRecentEntity(MUSIC.storage.recent_artists, artist);
+        blurActiveMusicInput();
         Lampa.Activity.push({
             title: artist.name || 'Артист',
             component: 'lampac_music_artist',
@@ -3703,6 +3992,131 @@
         });
     }
 
+    function cloneJsonObject(value) {
+        if (!value || typeof value !== 'object') return value;
+
+        try {
+            return JSON.parse(JSON.stringify(value));
+        } catch (e) {
+            return value;
+        }
+    }
+
+    function getAlbumProviderId(album) {
+        var provider = getEntityProviderId(album);
+        var id = String(album && album.id || '');
+
+        if (!provider && /^spotify:album:/i.test(id)) provider = 'spotify';
+        return provider || null;
+    }
+
+    function requestAlbumDetails(album, provider, done, fail) {
+        var albumId = album && album.id;
+        if (!albumId) {
+            if (fail) fail();
+            return;
+        }
+
+        provider = provider || getAlbumProviderId(album);
+
+        var cacheKey = (provider || '') + '|' + albumId;
+        var cached = MUSIC_ALBUM_DETAILS_CACHE[cacheKey];
+        var now = Date.now();
+
+        if (cached && cached.expires > now && cached.album) {
+            setTimeout(function () {
+                done(cloneJsonObject(cached.album));
+            }, 0);
+            return;
+        }
+
+        var albumUrl = MUSIC.endpoints.album + '?id=' + encodeURIComponent(albumId);
+        if (provider)
+            albumUrl += '&provider=' + encodeURIComponent(provider);
+
+        request(albumUrl, function (json) {
+            var parsed = parseJson(json);
+            if (parsed && parsed.id) {
+                MUSIC_ALBUM_DETAILS_CACHE[cacheKey] = {
+                    expires: Date.now() + MUSIC_ALBUM_DETAILS_TTL,
+                    album: cloneJsonObject(parsed)
+                };
+            }
+
+            done(parsed);
+        }, fail);
+    }
+
+    function pushAlbumActivity(resolvedAlbum, provider) {
+        saveRecentEntity(MUSIC.storage.recent_albums, resolvedAlbum);
+        Lampa.Activity.push({
+            title: resolvedAlbum.title || 'Альбом',
+            component: 'lampac_music_album',
+            id: resolvedAlbum.id,
+            provider: provider || getAlbumProviderId(resolvedAlbum),
+            page: 1,
+            noinfo: true
+        });
+    }
+
+    function normalizeAlbumTracksForPlayback(album) {
+        var tracks = Array.isArray(album && album.tracks) ? album.tracks : [];
+
+        return tracks.map(function (track) {
+            track.artist_name = track.artist_name || album.artist_name;
+            track.album_id = track.album_id || album.id;
+            track.album_title = track.album_title || album.title;
+            if (!track.images || !track.images.length)
+                track.images = Array.isArray(album.images) ? album.images : [];
+            return track;
+        });
+    }
+
+    function isSpotifyReleaseTrack(track) {
+        if (!track) return false;
+
+        return /^spotify:release:/i.test(String(track.id || ''))
+            && /^spotify:album:/i.test(String(track.album_id || ''))
+            && getTrackProviderId(track) === 'spotify';
+    }
+
+    function playSpotifyReleaseTrack(track, playlistTracks, startIndex, options) {
+        if (!isSpotifyReleaseTrack(track)) return false;
+
+        var token = ++MUSIC_SPOTIFY_RELEASE_TOKEN;
+        startMusicPlaybackLoading('Открываю релиз');
+
+        requestAlbumDetails({ id: track.album_id }, 'spotify', function (loadedAlbum) {
+            if (token !== MUSIC_SPOTIFY_RELEASE_TOKEN) return;
+
+            stopMusicPlaybackLoading();
+
+            if (!loadedAlbum || loadedAlbum.available === false || !loadedAlbum.id) {
+                Lampa.Noty.show('Не удалось открыть релиз.');
+                return;
+            }
+
+            var tracks = normalizeAlbumTracksForPlayback(loadedAlbum);
+            if (tracks.length === 1) {
+                var queue = playlistTracks && playlistTracks.length ? playlistTracks.slice() : [track];
+                var index = typeof startIndex === 'number' ? startIndex : 0;
+                index = Math.max(0, Math.min(index, queue.length - 1));
+                queue[index] = tracks[0];
+                playTrack(tracks[0], queue, index, options);
+                return;
+            }
+
+            pushAlbumActivity(loadedAlbum, 'spotify');
+        }, function () {
+            if (token !== MUSIC_SPOTIFY_RELEASE_TOKEN) return;
+
+            stopMusicPlaybackLoading();
+            Lampa.Noty.show('Не удалось открыть релиз.');
+        });
+
+        return true;
+    }
+
     function openAlbum(album, options) {
         options = options || {};
 
@@ -3717,19 +4131,7 @@
                 return;
             }
 
-            var provider = null;
-            if (resolvedAlbum && Array.isArray(resolvedAlbum.provider_refs) && resolvedAlbum.provider_refs.length)
-                provider = resolvedAlbum.provider_refs[0] && resolvedAlbum.provider_refs[0].provider ? resolvedAlbum.provider_refs[0].provider : null;
-
-            saveRecentEntity(MUSIC.storage.recent_albums, resolvedAlbum);
-            Lampa.Activity.push({
-                title: resolvedAlbum.title || 'Альбом',
-                component: 'lampac_music_album',
-                id: resolvedAlbum.id,
-                provider: provider,
-                page: 1,
-                noinfo: true
-            });
+            pushAlbumActivity(resolvedAlbum, getAlbumProviderId(resolvedAlbum));
         }, function () {
             stopMusicPlaybackLoading();
             Lampa.Noty.show('Не удалось подобрать альбом.');
@@ -4483,6 +4885,7 @@
         if (maybeSyntheticStandaloneIosEnded('timeupdate')) return;
         if (expireStandaloneIosSleepTimer('timeupdate', false)) return;
 
+        updatePendingTrackPlayedProgress(MUSIC_IOS_AUDIO.audio);
         traceStandaloneIosAudio('timeupdate', '', false);
         scheduleQueueSnapshotSave(false);
         maybeRequestRadioAutoplay('standalone-timeupdate');
@@ -4587,6 +4990,10 @@
             MUSIC_IOS_AUDIO.playing = true;
             MUSIC_IOS_AUDIO.lastPlayingAt = Date.now();
 
+            // реальный звук пошёл — цепочка авто-скипов мёртвых треков прервана
+            if (audio.getAttribute('data-source-url') !== 'silent-warmup')
+                resetAutoSkipCounter();
+
             if (!MUSIC_IOS_AUDIO.keepAliveActive || (MUSIC_IOS_KEEPALIVE_WEBAUDIO && MUSIC_IOS_AUDIO.keepAliveCtx && MUSIC_IOS_AUDIO.keepAliveCtx.state !== 'running'))
                 startStandaloneIosKeepAlive('audio-playing');
 
@@ -4596,7 +5003,7 @@
                 flushPendingTrackPlayed({
                     from_music_cluster: true,
                     music_track_id: track.id
-                });
+                }, audio);
             }
 
             traceStandaloneIosAudio('audio-playing', '', true);
@@ -7510,7 +7917,28 @@
         updateStandaloneIosPlayerBar();
         startStandaloneIosKeepAlive('playlist-start');
 
-        return standaloneIosPlayIndex(startIndex) ? MUSIC_IOS_AUDIO.prepareToken : 0;
+        // выдержка сессии: iOS фиксирует capabilities Now Playing (в т.ч.
+        // seekable — скраббер локскрина) в первые сотни ms после жестового
+        // play(). С тёплым кэшем (prefetch rev 313/314) реальный src подменял
+        // silent-warmup через ~30ms — сессия строилась на emptied-элементе с
+        // пустым seekable, скраббер оставался серым. Даём warmup-тишине
+        // доиграть минимум settle-окно, как это естественно происходило при
+        // холодном резолве; при медленном резолве задержка равна нулю
+        var settleElapsed = Date.now() - (MUSIC_IOS_AUDIO.gestureWarmupAt || 0);
+        var settleDelay = Math.max(0, 700 - settleElapsed);
+
+        if (!settleDelay)
+            return standaloneIosPlayIndex(startIndex) ? MUSIC_IOS_AUDIO.prepareToken : 0;
+
+        var settleToken = MUSIC_IOS_AUDIO.prepareToken;
+        traceStandaloneIosAudio('session-settle-delay', 'ms=' + settleDelay, true);
+
+        setTimeout(function () {
+            if (MUSIC_IOS_AUDIO.prepareToken !== settleToken || !MUSIC_IOS_AUDIO.active) return;
+            standaloneIosPlayIndex(startIndex);
+        }, settleDelay);
+
+        return settleToken;
     }
 
     // --- Media Session: общие хелперы обоих режимов ---
@@ -7832,6 +8260,8 @@
         } catch (e) {}
 
         musicPlayerPanelSyntheticEndKey = '';
+        musicPlayerVisualMode = 'art';
+        musicPlayerVisualLyricsRequest = '';
         renderMusicPlayerVisual(playback);
     }
 
@@ -7955,10 +8385,22 @@
             media.currentTime = 0;
             media.load();
 
+            if (Lampa.PlayerVideo && typeof Lampa.PlayerVideo.play === 'function')
+                Lampa.PlayerVideo.play();
+
             var promise = media.play();
-            if (promise && typeof promise.catch === 'function') promise.catch(function (error) {
-                traceEmbeddedIos('queue-inplace-play-rejected', error && error.name ? error.name : String(error || ''), true);
-            });
+            if (promise && typeof promise.then === 'function') {
+                promise.then(function () {
+                    updateEmbeddedIosPlaybackState();
+                    applyMusicPlayerPanelFix(false);
+                }).catch(function (error) {
+                    traceEmbeddedIos('queue-inplace-play-rejected', error && error.name ? error.name : String(error || ''), true);
+                    updateEmbeddedIosPlaybackState();
+                });
+            } else {
+                updateEmbeddedIosPlaybackState();
+                applyMusicPlayerPanelFix(false);
+            }
         } catch (e) {
             traceEmbeddedIos('queue-inplace-error', e && e.name ? e.name : String(e || ''), true);
             return false;
@@ -8002,7 +8444,15 @@
             traceEmbeddedIos('queue-inplace-started', 'index=' + index, true);
         }, function (json) {
             traceEmbeddedIos('queue-inplace-failed', (json && json.message) || ('index=' + index), true);
-            Lampa.Noty.show(json && json.message ? json.message : 'Источник для трека пока не найден.');
+
+            if (!maybeAutoSkipUnavailableTrack(json, function () {
+                var queued = queueTracks();
+                if (index + 1 >= queued.length) return;
+
+                scheduleTrackPlayed(queued[index + 1]);
+                playEmbeddedQueueIndexInPlace(index + 1, 'auto-skip');
+            }))
+                Lampa.Noty.show(json && json.message ? json.message : 'Источник для трека пока не найден.');
         });
 
         return true;
@@ -8562,7 +9012,16 @@
         var cached = getCachedPlayResponse(track);
         if (cached) {
             bumpMusicHeatMetric('playCacheHit');
-            if (done) done(cached);
+            // done строго асинхронно: standalone iOS-запуск рассчитан на резолв
+            // ВНЕ жеста (silent-warmup даёт gesture-кредит в тапе, реальный src
+            // приезжает следующим тиком — так тестировалась вся локскрин-сага).
+            // Синхронный done из кэша (после prefetch-ревизий кэш тёплый почти
+            // всегда) запускал плеер в одном тике с warmup — ломался скраббер
+            if (done) {
+                setTimeout(function () {
+                    done(cached);
+                }, 0);
+            }
             return;
         }
 
@@ -8607,7 +9066,22 @@
         });
     }
 
-    function markTrackPlayed(track) {
+    function normalizePlayedMs(track, playedMs) {
+        var value = Math.max(0, Math.round(Number(playedMs || 0)));
+        var duration = track && track.duration_ms ? Math.max(0, Number(track.duration_ms)) : 0;
+
+        if (duration && value > duration)
+            value = duration;
+
+        return Math.min(value, 6 * 60 * 60 * 1000);
+    }
+
+    function appendPlayedMsParam(params, track, playedMs) {
+        var value = normalizePlayedMs(track, playedMs);
+        return value > 0 ? params + '&played_ms=' + encodeURIComponent(value) : params;
+    }
+
+    function markTrackPlayed(track, playedMs) {
         if (!track || !track.id) return;
 
         touchHomeCacheEntry('recently_played', mapTrackCard(track), RECENT_SECTION_STORAGE_LIMIT);
@@ -8617,7 +9091,18 @@
         // count_play — только здесь: это честный play-путь (после задержки
         // реального воспроизведения); refreshRecentlyPlayedTrack обновляет
         // payload без прослушивания и счётчик статистики не трогает
-        requestPost(MUSIC.endpoints.markHistory, buildTrackRequestParams(track) + '&count_play=true', function () {}, function () {});
+        requestPost(MUSIC.endpoints.markHistory, appendPlayedMsParam(buildTrackRequestParams(track) + '&count_play=true', track, playedMs), function () {
+            refreshStatsTopAfterPlayedTrack();
+        }, function () {});
+    }
+
+    function markTrackPlayedTime(track, playedMs) {
+        if (!track || !track.id) return;
+
+        var value = normalizePlayedMs(track, playedMs);
+        if (value <= 0) return;
+
+        requestPost(MUSIC.endpoints.markHistory, appendPlayedMsParam(buildTrackRequestParams(track), track, value), function () {}, function () {});
     }
 
     function refreshRecentlyPlayedTrack(track) {
@@ -8774,6 +9259,65 @@
         };
     }
 
+    // --- авто-скип мёртвого трека очереди ---
+    // Раньше провал резолва был тупиком: Noty + стоящая очередь, дальше только
+    // руками. Скипаем ТОЛЬКО честный отказ сервера (available=false — все
+    // провайдеры не нашли источник); сетевой сбой (json=null/битый ответ) НЕ
+    // скипаем — iOS душит сеть скрытой страницы, и авто-скип прощёлкал бы
+    // живые треки под локскрином. Кап подряд идущих скипов ограничивает
+    // каскад по мёртвой полосе плейлиста; счётчик сбрасывается только на
+    // реальном старте звука (playing с настоящим src), не на выборе трека.
+    var MUSIC_AUTO_SKIP_LIMIT = 3;
+    var MUSIC_AUTO_SKIP_COUNT = 0;
+
+    function resetAutoSkipCounter() {
+        MUSIC_AUTO_SKIP_COUNT = 0;
+    }
+
+    function maybeAutoSkipUnavailableTrack(json, advance) {
+        if (!json || json.available !== false) return false;
+        if (getStandaloneIosRepeatMode() === 'one') return false;
+
+        if (MUSIC_AUTO_SKIP_COUNT >= MUSIC_AUTO_SKIP_LIMIT) {
+            Lampa.Noty.show('Несколько треков подряд недоступны.');
+            return false;
+        }
+
+        MUSIC_AUTO_SKIP_COUNT++;
+        Lampa.Noty.show('Трек недоступен — включаю следующий.');
+        // на следующий тик: не конфликтуем с текущим колбэком запуска плеера
+        setTimeout(advance, 0);
+        return true;
+    }
+
+    // переход после мёртвого трека для путей, идущих через buildPlayback:
+    // standalone iOS — сосед по очереди (shuffle/repeat учтены в neighborIndex),
+    // внутренний плеер — штатный next плейлиста Lampa (только если есть куда)
+    function advanceQueueAfterUnavailable(trackId) {
+        if (isStandaloneIosAudioActive()) {
+            var nextIndex = standaloneIosNeighborIndex(1);
+            if (nextIndex >= 0 && nextIndex !== MUSIC_IOS_AUDIO.currentIndex)
+                standaloneIosPlayIndex(nextIndex);
+            return;
+        }
+
+        var tracks = queueTracks();
+        var index = -1;
+        for (var i = 0; i < tracks.length; i++) {
+            if (tracks[i] && tracks[i].id === trackId) {
+                index = i;
+                break;
+            }
+        }
+
+        if (index < 0 || index + 1 >= tracks.length) return;
+
+        try {
+            if (Lampa.PlayerPlaylist && typeof Lampa.PlayerPlaylist.next === 'function')
+                Lampa.PlayerPlaylist.next();
+        } catch (e) {}
+    }
+
     function buildPlayback(track) {
         var image = trackImage(track);
         var playback = {
@@ -8804,7 +9348,12 @@
                     call();
                 }, function (json) {
                     playback.url = '';
-                    Lampa.Noty.show(json && json.message ? json.message : 'Источник для трека пока не найден.');
+
+                    if (!maybeAutoSkipUnavailableTrack(json, function () {
+                        advanceQueueAfterUnavailable(track && track.id);
+                    }))
+                        Lampa.Noty.show(json && json.message ? json.message : 'Источник для трека пока не найден.');
+
                     call();
                 });
             }
@@ -8927,7 +9476,58 @@
         pendingInternalPlaylist = null;
     }
 
-    function clearPendingTrackPlayed() {
+    function activePendingTrackMedia() {
+        return isStandaloneIosAudioActive()
+            ? MUSIC_IOS_AUDIO.audio
+            : (musicPlayerPanelMedia || activeMusicMediaElement());
+    }
+
+    function updatePendingTrackPlayedProgress(media) {
+        var pending = pendingPlayedTrack;
+        if (!pending || !pending.armed) return 0;
+
+        var now = Date.now();
+
+        if (media && isFinite(media.currentTime)) {
+            var current = Number(media.currentTime);
+
+            if (typeof pending.lastMediaTime === 'number' && isFinite(pending.lastMediaTime)) {
+                var mediaDelta = current - pending.lastMediaTime;
+                if (mediaDelta > 0 && mediaDelta < 30)
+                    pending.playedMs += Math.round(mediaDelta * 1000);
+            }
+
+            pending.lastMediaTime = current;
+            pending.lastWallAt = now;
+        } else if (pending.lastWallAt) {
+            var wallDelta = now - pending.lastWallAt;
+            if (wallDelta > 0 && wallDelta < 30000)
+                pending.playedMs += wallDelta;
+
+            pending.lastWallAt = now;
+        }
+
+        pending.playedMs = normalizePlayedMs(pending.track, pending.playedMs);
+        return pending.playedMs;
+    }
+
+    function flushPendingTrackPlayedTime() {
+        var pending = pendingPlayedTrack;
+        if (!pending || !pending.counted) return;
+
+        var playedMs = updatePendingTrackPlayedProgress(activePendingTrackMedia());
+        var delta = normalizePlayedMs(pending.track, playedMs - (pending.sentMs || 0));
+
+        if (delta > 0) {
+            pending.sentMs = normalizePlayedMs(pending.track, (pending.sentMs || 0) + delta);
+            markTrackPlayedTime(pending.track, delta);
+        }
+    }
+
+    function clearPendingTrackPlayed(skipFlush) {
+        if (!skipFlush)
+            flushPendingTrackPlayedTime();
+
         if (pendingPlayedTrack && pendingPlayedTrack.timer) {
             clearTimeout(pendingPlayedTrack.timer);
         }
@@ -8948,38 +9548,65 @@
             track: track,
             trackId: track.id,
             timer: 0,
-            armed: false
+            armed: false,
+            counted: false,
+            playedMs: 0,
+            sentMs: 0,
+            lastWallAt: 0,
+            lastMediaTime: null
         };
     }
 
-    function armPendingTrackPlayed(trackId) {
+    function armPendingTrackPlayed(trackId, media) {
         if (!pendingPlayedTrack || !trackId || pendingPlayedTrack.trackId !== trackId)
             return false;
 
-        if (pendingPlayedTrack.timer)
+        if (pendingPlayedTrack.counted) {
+            updatePendingTrackPlayedProgress(media);
             return true;
+        }
+
+        if (pendingPlayedTrack.timer) {
+            updatePendingTrackPlayedProgress(media);
+            return true;
+        }
 
         pendingPlayedTrack.armed = true;
-        pendingPlayedTrack.timer = setTimeout(function () {
+        pendingPlayedTrack.lastWallAt = Date.now();
+
+        if (media && isFinite(media.currentTime))
+            pendingPlayedTrack.lastMediaTime = Number(media.currentTime);
+
+        function completeWhenListenedEnough() {
             if (!pendingPlayedTrack || pendingPlayedTrack.trackId !== trackId)
                 return;
 
-            var track = pendingPlayedTrack.track;
-            clearPendingTrackPlayed();
-            markTrackPlayed(track);
-        }, MUSIC_HISTORY_MARK_DELAY);
+            pendingPlayedTrack.timer = 0;
+
+            var playedMs = updatePendingTrackPlayedProgress(activePendingTrackMedia());
+            if (playedMs < MUSIC_HISTORY_MARK_DELAY) {
+                pendingPlayedTrack.timer = setTimeout(completeWhenListenedEnough, Math.max(1000, MUSIC_HISTORY_MARK_DELAY - playedMs));
+                return;
+            }
+
+            pendingPlayedTrack.counted = true;
+            pendingPlayedTrack.sentMs = playedMs;
+            markTrackPlayed(pendingPlayedTrack.track, playedMs);
+        }
+
+        pendingPlayedTrack.timer = setTimeout(completeWhenListenedEnough, MUSIC_HISTORY_MARK_DELAY);
 
         return true;
     }
 
-    function flushPendingTrackPlayed(data) {
+    function flushPendingTrackPlayed(data, media) {
         if (!pendingPlayedTrack || !data || !data.from_music_cluster) return false;
         if (!data.music_track_id || data.music_track_id !== pendingPlayedTrack.trackId) return false;
 
-        return armPendingTrackPlayed(data.music_track_id);
+        return armPendingTrackPlayed(data.music_track_id, media);
     }
 
-    function syncActivePlaybackHistory(data) {
+    function syncActivePlaybackHistory(data, media) {
         if (!data || !data.from_music_cluster || !data.music_track_id) return false;
 
         var track = trackFromPlaybackData(data);
@@ -8991,10 +9618,20 @@
         if (historyPlaybackTrackId !== data.music_track_id)
             scheduleTrackPlayed(track);
 
+        // media есть только у panel-событий живого элемента — это «фактический
+        // старт playback», а не тап; дедуп по трек-id внутри
+        if (media) {
+            scheduleNextTrackPrefetch(data.music_track_id);
+
+            // реальный прогресс звука — цепочка авто-скипов прервана
+            if (!media.paused && isFinite(media.currentTime) && media.currentTime > 0.5)
+                resetAutoSkipCounter();
+        }
+
         return flushPendingTrackPlayed({
             from_music_cluster: true,
             music_track_id: data.music_track_id
-        });
+        }, media);
     }
 
     function scheduleInternalPlaylist(track, list) {
@@ -9555,7 +10192,7 @@
                     traceEmbeddedIos('panel-' + event.type, '', true);
                 }
 
-                syncActivePlaybackHistory(activePlayerData());
+                syncActivePlaybackHistory(activePlayerData(), media);
 
                 if (handleMusicPlayerPanelEffectiveEnd(event))
                     return;
@@ -9912,6 +10549,10 @@
         var audio = standaloneIosAudioElement();
         if (!audio) return;
 
+        // точка отсчёта settle-окна перед прицеплением реального src
+        // (см. startStandaloneIosAudioPlayback)
+        MUSIC_IOS_AUDIO.gestureWarmupAt = Date.now();
+
         // обработчики должны существовать ДО play(): iOS фиксирует
         // возможности сессии (в т.ч. seekable) в момент её создания
         armStandaloneIosMediaSessionHandlers();
@@ -9929,11 +10570,25 @@
     }
 
     function playTrack(track, playlistTracks, startIndex, options) {
+        if (playSpotifyReleaseTrack(track, playlistTracks, startIndex, options)) return;
+
+        MUSIC_SPOTIFY_RELEASE_TOKEN++;
         var tracks = playlistTracks && playlistTracks.length ? playlistTracks : [track];
         var index = typeof startIndex === 'number' ? startIndex : 0;
         var standaloneIos = shouldUseStandaloneIosAudio();
         var forceFresh = !!(options && options.forceFresh);
         var resumePosition = Math.max(0, Number(options && options.resumePosition || 0));
+        var launchToken = ++MUSIC_PLAY_LAUNCH_TOKEN;
+        // оверлей предыдущего (только что отменённого) запуска гасим сразу:
+        // дальше любой видимый лоадер принадлежит только новейшему флоу
+        stopMusicPlaybackLoading();
+        // новый запуск = новая сессия прифетча next-трека (иначе повторный
+        // запуск той же очереди с того же трека пропустил бы прогрев)
+        MUSIC_NEXT_PREFETCH_FOR = '';
+
+        function launchStale() {
+            return launchToken !== MUSIC_PLAY_LAUNCH_TOKEN;
+        }
 
         index = Math.max(0, Math.min(index, tracks.length - 1));
         rememberQueue(tracks, index);
@@ -9947,6 +10602,8 @@
         }
 
         function startFreshPlayback() {
+            if (launchStale()) return;
+
             if (!standaloneIos && isStandaloneIosAudioActive())
                 stopStandaloneIosAudioPlayback();
 
@@ -9970,6 +10627,8 @@
             }
 
             requestPlay(tracks[index], function (json) {
+                if (launchStale()) return;
+
                 var providerId = getAudioProviderId();
 
                 function buildLazyList() {
@@ -10038,6 +10697,7 @@
                     if (tracks.length > 1) {
                         startMusicPlaybackLoading('Подготавливаю плейлист');
                         buildStandaloneIosPreparedPlaylist(tracks, index, json, function (preparedList, afterLaunch) {
+                            if (launchStale()) return;
                             stopMusicPlaybackLoading();
                             launchStandalone(preparedList, afterLaunch);
                         }, providerId);
@@ -10051,6 +10711,7 @@
                 if (tracks.length > 1 && !usesInternalPlaybackFlow()) {
                     startMusicPlaybackLoading('Подготавливаю альбом');
                     buildExternalPlaylist(tracks, index, json, function (externalPlaylist) {
+                        if (launchStale()) return;
                         stopMusicPlaybackLoading();
                         launch(externalPlaylist, null);
                     });
@@ -10060,6 +10721,7 @@
                 if (tracks.length > 1 && usesInternalPlaybackFlow() && requiresPreparedInternalPlaylist(providerId)) {
                     startMusicPlaybackLoading('Подготавливаю плейлист');
                     buildInternalPreparedPlaylist(tracks, index, json, function (preparedList) {
+                        if (launchStale()) return;
                         stopMusicPlaybackLoading();
                         launch(null, preparedList);
                     }, providerId);
@@ -10068,6 +10730,7 @@
 
                 launch(null, null);
             }, function (json) {
+                if (launchStale()) return;
                 Lampa.Noty.show(json && json.message ? json.message : 'Источник для трека пока не найден.');
             });
         }
@@ -10451,6 +11114,52 @@
         });
     }
 
+    // ===== DAILY MIXES («Миксы недели») =====
+
+    // свои пары градиентов на каждый день — полка читается по цвету
+    var DAILY_MIX_COLORS = [
+        ['#1f2c46', '#4a6db3'], // Пн
+        ['#20353a', '#3f8f7f'], // Вт
+        ['#3a2b1f', '#b0763a'], // Ср
+        ['#2f2140', '#8a55b5'], // Чт
+        ['#3c2130', '#b54a72'], // Пт
+        ['#1e3536', '#3aa1a8'], // Сб
+        ['#33301f', '#a89a3a']  // Вс
+    ];
+
+    function mapDailyMixCard(summary) {
+        var day = Math.max(1, Math.min(7, Number(summary && summary.day) || 1));
+        var title = (summary && summary.title) || 'Микс';
+        var image = artwork('playlist', title, 'MIX', DAILY_MIX_COLORS[day - 1]);
+
+        return {
+            type: 'daily_mix',
+            id: 'daily:' + day,
+            title: title,
+            subtitle: (summary && summary.artists || []).join(' · '),
+            badge: summary && summary.today ? 'СЕГОДНЯ' : 'MIX',
+            image: image,
+            background: image,
+            raw: summary
+        };
+    }
+
+    // полка начинается с сегодняшнего дня, дальше — по кругу недели
+    function buildDailyMixCards(summaries) {
+        var list = (summaries || []).filter(function (item) { return item && item.day; });
+        if (!list.length) return [];
+
+        var todayIndex = -1;
+        for (var i = 0; i < list.length; i++) {
+            if (list[i].today) { todayIndex = i; break; }
+        }
+
+        if (todayIndex > 0)
+            list = list.slice(todayIndex).concat(list.slice(0, todayIndex));
+
+        return list.map(mapDailyMixCard);
+    }
+
     function mapPlaylistCard(summary) {
         var image = summary && summary.images && summary.images.length && summary.images[summary.images.length - 1].url
             ? summary.images[summary.images.length - 1].url
@@ -10565,9 +11274,21 @@
     function playTracksShuffled(tracks) {
         if (!tracks || !tracks.length) return;
 
-        Lampa.Storage.set(MUSIC.storage.shuffle, true);
-        var start = Math.floor(Math.random() * tracks.length);
-        playTrack(tracks[start], tracks, start);
+        var shuffledTracks = tracks.slice();
+
+        for (var i = shuffledTracks.length - 1; i > 0; i--) {
+            var j = Math.floor(Math.random() * (i + 1));
+            var item = shuffledTracks[i];
+            shuffledTracks[i] = shuffledTracks[j];
+            shuffledTracks[j] = item;
+        }
+
+        Lampa.Storage.set(MUSIC.storage.shuffle, false);
+        MUSIC_IOS_AUDIO.shuffleOrder = null;
+
+        // Это one-shot shuffle: физически кладём в плеер перемешанную очередь.
+        // Отдельный shuffle-флаг выключен, чтобы UI очереди и реальный next совпадали.
+        playTrack(shuffledTracks[0], shuffledTracks, 0, { forceFresh: true });
     }
 
     // ===== USER PLAYLISTS =====
@@ -10608,6 +11329,26 @@
         }, function () {
             // сбой сети не кэшируем — следующая перерисовка попробует снова
             callback(MUSIC_STATS_TOP.summary);
+        });
+    }
+
+    function refreshStatsTopAfterPlayedTrack() {
+        var hadStatsState = !!(MUSIC_STATS_TOP.checkedAt || MUSIC_STATS_TOP.summary);
+        var wasUnlocked = !!(MUSIC_STATS_TOP.summary && MUSIC_STATS_TOP.summary.unlocked);
+
+        // Живая перерисовка нужна только если home уже видел locked-состояние:
+        // тогда этот play мог впервые разблокировать «Твой топ». После unlock
+        // и без открытого home не трогаем сеть и не дёргаем полку/очередь.
+        if (!hadStatsState || wasUnlocked) return;
+
+        MUSIC_STATS_TOP.checkedAt = 0;
+
+        loadStatsTopSummary(function (stats) {
+            if (!stats || !stats.unlocked) return;
+
+            emitRecentChanged('user_playlists', {
+                restoreState: { sectionKey: 'user_playlists', entryIndex: 1 }
+            });
         });
     }
 
@@ -10905,7 +11646,7 @@
             id: album.id,
             title: album.title || 'Untitled',
             subtitle: album.artist_name || formatDate(album.date),
-            badge: formatYear(album.date) || 'ALBUM',
+            badge: albumBadge(album, sectionKey),
             image: albumImage(album, 250),
             background: albumImage(album, 500),
             raw: album,
@@ -11097,12 +11838,16 @@
             if (provider === 'soundcloudcharts' || id.indexOf('search:soundcloud') === 0)
                 return 'search:soundcloud';
 
+            if (provider === 'spotify' || id.indexOf('search:spotify') === 0)
+                return 'search:spotify';
+
             return id || ('source:' + ((section && section.title) || Lampa.Utils.uid()));
         }
 
         function getSearchSourceTitle(section, sourceId) {
             if (sourceId === 'search:youtubemusic') return 'YouTube Music';
             if (sourceId === 'search:soundcloud') return 'SoundCloud';
+            if (sourceId === 'search:spotify') return 'Spotify';
             return (section && section.title) || 'Источник';
         }
 
@@ -11167,7 +11912,7 @@
             source.count += entries.length;
         });
 
-        return ['catalog', 'search:youtubemusic', 'search:soundcloud', 'search:sefon']
+        return ['catalog', 'search:youtubemusic', 'search:soundcloud', 'search:sefon', 'search:spotify']
             .map(function (id) { return sourcesMap[id]; })
             .filter(Boolean);
     }
@@ -11191,7 +11936,7 @@
             id: album.id,
             title: album.title || 'Untitled',
             subtitle: album.artist_name || formatDate(album.date),
-            badge: formatYear(album.date) || 'ALBUM',
+            badge: albumBadge(album),
             image: albumImage(album, 250),
             background: albumImage(album, 500),
             raw: album
@@ -11329,7 +12074,8 @@
             recent_albums: 'Недавние альбомы',
             recent_artists: 'Недавние артисты',
             recent_queries: 'Недавние поиски',
-            user_playlists: 'Мои плейлисты'
+            user_playlists: 'Мои плейлисты',
+            daily_mixes: 'Миксы недели'
         };
         MUSIC_HOME_SECTION_META = {
             recently_played: { has_more: recentlyPlayed.length > HOME_SECTION_LIMIT || !!(home && home.recently_played && home.recently_played.length > HOME_SECTION_LIMIT) },
@@ -11343,9 +12089,11 @@
             recent_albums: getHomeSectionEntries('recent_albums'),
             recent_artists: getHomeSectionEntries('recent_artists'),
             recent_queries: getHomeSectionEntries('recent_queries'),
-            user_playlists: applySectionKey(buildUserPlaylistCards(home && Array.isArray(home.user_playlists) ? home.user_playlists : []), 'user_playlists')
+            user_playlists: applySectionKey(buildUserPlaylistCards(home && Array.isArray(home.user_playlists) ? home.user_playlists : []), 'user_playlists'),
+            daily_mixes: applySectionKey(buildDailyMixCards(home && Array.isArray(home.daily_mixes) ? home.daily_mixes : []), 'daily_mixes')
         };
         MUSIC_HOME_SECTION_META.user_playlists = { has_more: (MUSIC_HOME_CACHE.user_playlists || []).length > HOME_SECTION_LIMIT };
+        MUSIC_HOME_SECTION_META.daily_mixes = { has_more: false };
 
         if (home && Array.isArray(home.browse_sections)) {
             home.browse_sections.forEach(function (section) {
@@ -11384,6 +12132,23 @@
                     return track;
                 }).filter(Boolean);
 
+                done(applySectionKey(tracks.map(mapTrackCard), sectionKey));
+            }, function () {
+                done([]);
+            });
+            return;
+        }
+
+        if (sectionKey.indexOf('daily:') === 0) {
+            var mixDay = parseInt(sectionKey.slice('daily:'.length), 10) || 0;
+
+            var mixUrl = MUSIC.endpoints.daily + '?day=' + mixDay;
+            var mixSalt = getDailyMixSalt();
+            if (mixSalt) mixUrl += '&salt=' + mixSalt;
+
+            request(mixUrl, function (json) {
+                json = parseJson(json);
+                var tracks = json && json.available && Array.isArray(json.tracks) ? json.tracks : [];
                 done(applySectionKey(tracks.map(mapTrackCard), sectionKey));
             }, function () {
                 done([]);
@@ -11436,7 +12201,7 @@
         }
 
         if (sectionKey === 'recently_played') {
-            request(MUSIC.endpoints.home, function (json) {
+            request(withDailyMixSalt(MUSIC.endpoints.home), function (json) {
                 var parsed = parseJson(json) || null;
                 snapshotHomeSections(parsed);
                 done((MUSIC_HOME_CACHE[sectionKey] || []).slice());
@@ -11479,6 +12244,9 @@
     function activateEntry(entry, entries, index) {
         if (!entry) return;
 
+        MUSIC_SPOTIFY_RELEASE_TOKEN++;
+        stopMusicPlaybackLoading();
+
         if (entry.type === 'playlist_action') {
             openPlaylistAddMenu();
             return;
@@ -11491,6 +12259,11 @@
 
         if (entry.type === 'stats_top') {
             openHomeSection('stats:top', 'Твой топ');
+            return;
+        }
+
+        if (entry.type === 'daily_mix') {
+            openHomeSection(entry.id, 'Микс · ' + (entry.title || ''));
             return;
         }
 
@@ -12235,6 +13008,7 @@
         var searchPreserveInputFocus = false;
         var searchInputFocusTime = 0;
         var homeLines = [];
+        var homeLoadToken = 0;
         var homeHeroCard = null;
         var homeMode = false;
         var homeActiveLine = -1;
@@ -13399,6 +14173,7 @@
             homeHeroCard = null;
             homeMode = true;
             homeActiveLine = -1;
+            var loadToken = ++homeLoadToken;
             _this.activity.loader(true);
 
             function appendHomeSection(title, sectionKey, entries) {
@@ -13489,6 +14264,7 @@
                     appendHomeSection('Недавние артисты', 'recent_artists', sections.recent_artists || []);
                     appendHomeSection('Недавние поиски', 'recent_queries', sections.recent_queries || []);
                     appendHomeSection('Мои плейлисты', 'user_playlists', sections.user_playlists || []);
+                    appendHomeSection('Миксы недели', 'daily_mixes', sections.daily_mixes || []);
 
                     if (home && Array.isArray(home.browse_sections)) {
                         home.browse_sections.forEach(function (section) {
@@ -13500,10 +14276,67 @@
                     _this.activity.loader(false);
                     _this.activity.toggle();
                     restoreHomeAfterRender(restoreState);
+
+                    if (home && home.browse_sections_warming)
+                        scheduleBrowseSectionsRetry(0);
                 });
             }
 
-            request(MUSIC.endpoints.home, function (json) {
+            // после ребилда discovery-провайдеры могут не успеть в 2s-бюджет /music/home —
+            // сервер тогда ставит browse_sections_warming, а мы тихо дозапрашиваем home
+            // и доклеиваем недостающие полки в конец, не трогая уже отрисованное
+            var browseRetryDelays = [3000, 5000, 8000];
+
+            function browseRetryCancelled() {
+                return destroyed || !homeMode || loadToken !== homeLoadToken;
+            }
+
+            function appendMissingBrowseSections(home) {
+                if (!home || !Array.isArray(home.browse_sections)) return;
+
+                var existingKeys = {};
+                homeLines.forEach(function (line) {
+                    if (line && line.section_key) existingKeys[line.section_key] = true;
+                });
+
+                home.browse_sections.forEach(function (section) {
+                    if (!section || !section.id || existingKeys[section.id]) return;
+
+                    var entries = getHomeSectionEntries(section.id, home);
+                    if (!entries.length) return;
+
+                    MUSIC_HOME_SECTION_TITLES[section.id] = section.title || 'Секция';
+                    MUSIC_HOME_SECTION_META[section.id] = { has_more: section.has_more === true };
+                    MUSIC_HOME_CACHE[section.id] = entries;
+
+                    appendHomeSection(section.title || 'Секция', section.id, entries);
+                });
+            }
+
+            function scheduleBrowseSectionsRetry(attempt) {
+                if (attempt >= browseRetryDelays.length) return;
+
+                setTimeout(function () {
+                    if (browseRetryCancelled()) return;
+
+                    request(withDailyMixSalt(MUSIC.endpoints.home), function (json) {
+                        if (browseRetryCancelled()) return;
+
+                        var home = parseJson(json);
+                        if (!home) return scheduleBrowseSectionsRetry(attempt + 1);
+
+                        appendMissingBrowseSections(home);
+
+                        if (home.browse_sections_warming)
+                            scheduleBrowseSectionsRetry(attempt + 1);
+                    }, function () {
+                        if (browseRetryCancelled()) return;
+                        scheduleBrowseSectionsRetry(attempt + 1);
+                    });
+                }, browseRetryDelays[attempt]);
+            }
+
+            request(withDailyMixSalt(MUSIC.endpoints.home), function (json) {
                 if (destroyed) return;
                 renderHome(parseJson(json) || null);
             }, function () {
@@ -13797,7 +14630,8 @@
                 if (destroyed) return;
 
                 var isStatsTop = sectionKey === 'stats:top';
-                var isPlaylist = String(sectionKey || '').indexOf('playlist:') === 0 || isStatsTop;
+                var isDailyMix = String(sectionKey || '').indexOf('daily:') === 0;
+                var isPlaylist = String(sectionKey || '').indexOf('playlist:') === 0 || isStatsTop || isDailyMix;
                 var wrapper = $('<div class="lm-full__wrapper"></div>');
                 var header = $('<div class="lm-full__header selector"></div>');
                 var info = $('<div class="lm-full__info"></div>');
@@ -13807,6 +14641,7 @@
                 // остальные секции — сетка карточек
                 if (isPlaylist) {
                     var rawTracks = entries.map(function (entry) { return entry && entry.raw ? entry.raw : null; }).filter(Boolean);
+                    scheduleFirstTrackPrefetch(rawTracks, function () { return destroyed; });
                     var heroImg = entries.length && entries[0].image
                         ? entries[0].image
                         : artwork('album', sectionTitle, 'PLAYLIST', ['#232838', '#4a5a82']);
@@ -13816,7 +14651,13 @@
                     var posterImg = $('<img class="lm-full__poster-img" src="" alt="" />');
                     var metaElem = $('<div class="lm-full__meta"></div>').text(isStatsTop
                         ? buildStatsTopMetaLabel(MUSIC_STATS_TOP.summary, rawTracks.length)
-                        : [formatTrackCountLabel(rawTracks.length), formatTotalDurationLabel(totalMs)].filter(Boolean).join(' · ')
+                        : [
+                            formatTrackCountLabel(rawTracks.length),
+                            formatTotalDurationLabel(totalMs),
+                            // сухое объяснение, почему состав микса не меняется
+                            // сегодня и поменяется потом
+                            isDailyMix ? 'Обновится в понедельник' : ''
+                        ].filter(Boolean).join(' · ')
                     );
                     var actions = $('<div class="lm-full__actions"></div>');
                     var playBtn = $('<div class="selector lm-small-btn lm-small-btn--primary">▶ Слушать</div>');
@@ -13884,7 +14725,9 @@
                         tracksBox.append($('<div class="lm-full__empty"></div>')
                             .text(isStatsTop
                                 ? 'Статистика ещё копится — слушай музыку, топ соберётся сам.'
-                                : 'Плейлист пуст. Долгое нажатие на любом треке → «В плейлист…»'));
+                                : isDailyMix
+                                    ? 'Микс не собрался — послушай больше музыки и загляни позже.'
+                                    : 'Плейлист пуст. Долгое нажатие на любом треке → «В плейлист…»'));
                     }
 
                     entries.forEach(function (entry, index) {
@@ -13894,6 +14737,7 @@
                             last = row[0];
                             scroll.update(row, true);
                             setBackground(entry.background || heroImg);
+                            schedulePlayPrefetch(entry.raw);
                         });
 
                         row.on('hover:enter', function () {
@@ -14020,6 +14864,9 @@
 
             if (pagination.provider)
                 url += '&provider=' + encodeURIComponent(pagination.provider);
+
+            if (pagination.artist_name)
+                url += '&artist_name=' + encodeURIComponent(pagination.artist_name);
 
             url += '&page=' + encodeURIComponent(nextPage);
 
@@ -14437,6 +15284,24 @@
             return false;
         }
 
+        function forceArtistHeaderFocus() {
+            if (destroyed || Lampa.Activity.active().activity !== _this.activity) return;
+            if (!artistHeader) return;
+            if (artistActiveLine >= 0) return;
+            if (last && last !== artistHeader && document.documentElement.contains(last)) return;
+
+            artistActiveLine = -1;
+            last = artistHeader;
+
+            try {
+                Lampa.Controller.toggle('content');
+                Lampa.Controller.collectionSet(scroll.render());
+                Lampa.Controller.collectionFocus(artistHeader, scroll.render());
+            } catch (e) {}
+
+            scroll.update($(artistHeader), true);
+        }
+
         function resetArtistRender() {
             Lampa.Arrays.destroy(items);
             items = [];
@@ -14458,7 +15323,7 @@
             var posterImg = $('<img class="lm-full__poster-img" src="" alt="" />');
             var info = $('<div class="lm-full__info"></div>');
             var title = $('<div class="lm-full__title"></div>').text(artistData.name || 'Unknown Artist');
-            var subtitle = $('<div class="lm-full__artist"></div>').text(artistProvider === 'youtubeaudio' ? 'YouTube Music' : artistProvider === 'soundcloudcharts' ? 'SoundCloud' : artistData.country || artistData.sort_name || 'MusicBrainz Artist');
+            var subtitle = $('<div class="lm-full__artist"></div>').text(artistProvider === 'youtubeaudio' ? 'YouTube Music' : artistProvider === 'soundcloudcharts' ? 'SoundCloud' : artistProvider === 'spotify' ? 'Spotify' : artistData.country || artistData.sort_name || 'MusicBrainz Artist');
             var totalSectionEntries = artistSections.reduce(function (sum, section) {
                 return sum + (Array.isArray(section.entries) ? section.entries.length : 0);
             }, 0);
@@ -14560,6 +15425,7 @@
                                     kind: 'artist_section',
                                     section_id: section.id || '',
                                     provider: artistProvider || section.source_provider || '',
+                                    artist_name: artistData.name || '',
                                     next_page: section.next_page,
                                     limit: HOME_SECTION_LIMIT
                                 } : null
@@ -14602,7 +15468,7 @@
                         id: album.id,
                         title: album.title || 'Untitled',
                         subtitle: album.artist_name || formatDate(album.date),
-                        badge: formatYear(album.date) || 'ALBUM',
+                        badge: albumBadge(album),
                         image: albumImage(album, 250),
                         background: albumImage(album, 500),
                         raw: album
@@ -14614,6 +15480,8 @@
 
             _this.activity.loader(false);
             _this.activity.toggle();
+            requestAnimationFrame(forceArtistHeaderFocus);
+            setTimeout(forceArtistHeaderFocus, 120);
 
             if (typeof focusLineIndex === 'number' && focusLineIndex >= 0) {
                 requestAnimationFrame(function () {
@@ -14711,11 +15579,7 @@
             this.activity.loader(true);
             scroll.minus();
 
-            var albumUrl = MUSIC.endpoints.album + '?id=' + encodeURIComponent(albumId);
-            if (albumProvider)
-                albumUrl += '&provider=' + encodeURIComponent(albumProvider);
-
-            request(albumUrl, function (album) {
+            requestAlbumDetails({ id: albumId }, albumProvider, function (album) {
                 if (destroyed) return;
 
                 if (!album || album.available === false || (!album.id && !album.title && !album.artist_name)) {
@@ -14743,6 +15607,7 @@
                     track.album_title = track.album_title || album.title;
                     return track;
                 });
+                scheduleFirstTrackPrefetch(tracks, function () { return destroyed; });
                 var totalMs = tracks.reduce(function (sum, item) {
                     return sum + (item && item.duration_ms ? item.duration_ms : 0);
                 }, 0);
@@ -14820,6 +15685,7 @@
                         last = row[0];
                         scroll.update(row, true);
                         setBackground(img);
+                        schedulePlayPrefetch(track);
                     });
 
                     row.on('hover:enter', function () {

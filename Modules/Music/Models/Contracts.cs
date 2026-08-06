@@ -248,7 +248,9 @@ public class MusicHomeResponse
     public List<MusicProviderDescriptor> auth_providers { get; set; } = new();
     public List<MusicRecentlyPlayedItem> recently_played { get; set; } = new();
     public List<MusicUserPlaylistSummary> user_playlists { get; set; } = new();
+    public List<MusicDailyMixSummary> daily_mixes { get; set; } = new();
     public List<MusicBrowseSection> browse_sections { get; set; } = new();
+    public bool browse_sections_warming { get; set; }
 }
 
 public class MusicPlayResponse
@@ -267,6 +269,24 @@ public class MusicMatchesResponse
     public string track_id { get; set; }
     public MusicAudioMatch selected_match { get; set; }
     public List<MusicAudioMatch> matches { get; set; } = new();
+}
+
+public class MusicDailyMixSummary
+{
+    public int day { get; set; }
+    public string title { get; set; }
+    public bool today { get; set; }
+    public List<string> artists { get; set; } = new();
+}
+
+public class MusicDailyMixResponse
+{
+    public bool available { get; set; }
+    public string message { get; set; }
+    public int day { get; set; }
+    public string title { get; set; }
+    public List<string> artists { get; set; } = new();
+    public List<MusicTrack> tracks { get; set; } = new();
 }
 
 public class MusicRadioRequest
