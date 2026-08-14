@@ -165,8 +165,17 @@ docker compose -f docker-compose.dev.yaml up -d
 # Установка
 curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash
 
+# Установка конкретной версии
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --tag v1.2.3
+
 # Обновление
 curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update
+
+# Обновление / даунгрейд на конкретный тег
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update --tag v1.2.3
+
+# Повторная установка той же версии (без интерактивного подтверждения)
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update --force
 
 # Проверка обновления без изменений
 curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update --dry-run
@@ -182,6 +191,9 @@ curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.
 
 # Подробный лог при обновлении (для диагностики ошибок)
 curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update --verbose
+
+# Текущая версия (до обновления может показать N/A)
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --version
 ```
 
 ```bash
@@ -223,11 +235,11 @@ journalctl -u lampac -f
 | `TorrServer`, `torrserver/`, `data/ts/` | TorrServer и его данные |
 | `.local/`, `.aspnet/`, `.claude/`, `.config/`, `.playwright/` | Домашние директории пользователя |
 | `users.json`, `passwd`, `current.conf`, `database/` | Пользовательские данные |
-| `wwwroot/*.js` | Пользовательские JS (темы, кнопки) |
-| `wwwroot/lampa-main/` | Кеш Lampa UI |
+| `wwwroot/` | Пользовательская статика и кеш Lampa UI |
 | `plugins/override/` | Переопределения плагинов |
 | `notifications_date.txt` | Состояние уведомлений |
 | `excludes.conf` | Файл дополнительных исключений |
+| `version.txt` | Файл хранения установленной версии |
 
 Чтобы защитить свои файлы, создайте `excludes.conf` рядом с `Core.dll`:
 

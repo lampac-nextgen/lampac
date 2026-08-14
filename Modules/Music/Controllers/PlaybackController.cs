@@ -76,7 +76,9 @@ public class PlaybackController : BaseController
 
         string profileId = MusicProfileIdentity.Resolve(requestInfo, Request);
         var track = await MusicPlaybackService.ResolveRequestTrackAsync(id, provider, title, artist_name, album_title, duration_ms, date);
-        var result = await MusicPlaybackService.ResolveTrackAsync(track, audio_provider, stream_mode, playback_mode, profileId, HttpContext.RequestAborted);
+        // upstream-ссылка умерла (403/410/416 в relay) — кэш sources для этого
+        // трека может держать те же мёртвые URL: пере-резолв идёт с refreshSources
+        var result = await MusicPlaybackService.ResolveTrackAsync(track, audio_provider, stream_mode, playback_mode, profileId, HttpContext.RequestAborted, refreshSources: true);
 
         if (track == null || result?.available != true || result.sources.Count == 0)
             return StatusCode(404);
@@ -90,7 +92,7 @@ public class PlaybackController : BaseController
 
     [HttpPost]
     [Route("music/history/mark")]
-    async public Task<ActionResult> MarkHistory(string id, string provider, string title, string artist_name, string album_title, int? duration_ms, string date, bool count_play = false)
+    async public Task<ActionResult> MarkHistory(string id, string provider, string title, string artist_name, string album_title, int? duration_ms, string date, bool count_play = false, long? played_ms = null)
     {
         var track = await MusicPlaybackService.ResolveRequestTrackAsync(id, provider, title, artist_name, album_title, duration_ms, date);
         string profileId = MusicProfileIdentity.Resolve(requestInfo, Request);
@@ -102,8 +104,8 @@ public class PlaybackController : BaseController
             // статистику инкрементим только по честному прослушиванию:
             // mark дёргается и для обновления payload (смена источника),
             // без флага это накручивало бы счётчики
-            if (count_play)
-                await MusicStatsService.IncrementPlayAsync(profileId, track);
+            if (count_play || played_ms > 0)
+                await MusicStatsService.RecordPlayAsync(profileId, track, count_play, played_ms, HttpContext.RequestAborted);
         }
 
         return ContentTo(MusicJson.Serialize(new

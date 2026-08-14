@@ -33,7 +33,7 @@ namespace WatchTogether
 
                 var garbageRooms = RoomDb.Rooms.Values.Where(r =>
                     r.update_time < oldLimit ||
-                    (r.create_time < emptyLimit && WsEvents.GetConnectionsInRoom(r.id).Length == 0)
+                    (r.create_time < emptyLimit && WsEvents.GetConnectionsInRoom(r.id).Length == 0 && !WsEvents.HasPendingDisconnects(r.id))
                 ).Select(r => r.id).ToList();
 
                 foreach (var roomId in garbageRooms)

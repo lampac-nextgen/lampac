@@ -4,7 +4,7 @@ displayname: Huyamba
 rch_access: apk,cors
 stream_access: apk,cors
 rchstreamproxy: web
-host: https://sxp.huyamba.mobi
+host: https://play.huyamba.mobi
 priorityBrowser: http
 streamproxy_preview: true
 

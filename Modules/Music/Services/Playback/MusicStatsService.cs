@@ -17,49 +17,117 @@ public static class MusicStatsService
     const int UnlockDistinctTracks = 10;
     const int UnlockTotalPlays = 100;
 
-    public static async Task IncrementPlayAsync(string profileId, MusicTrack track, CancellationToken cancellationToken = default)
+    public static Task IncrementPlayAsync(string profileId, MusicTrack track, CancellationToken cancellationToken = default)
+        => RecordPlayAsync(profileId, track, true, null, cancellationToken);
+
+    public static async Task<int> ClearAsync(string profileId, CancellationToken cancellationToken = default)
     {
         profileId = NormalizeProfileId(profileId);
 
-        if (track == null || string.IsNullOrWhiteSpace(track.id) || string.IsNullOrWhiteSpace(profileId))
-            return;
-
-        // V1: длительность прослушивания оценочная — считаем полный duration_ms
-        // трека (в UI подаётся как «примерно»); точный учёт сессий — отдельная задача
-        long durationMs = Math.Max(0, track.duration_ms ?? 0);
-        var now = DateTime.UtcNow;
+        if (string.IsNullOrWhiteSpace(profileId))
+            return 0;
 
         var semaphore = new SemaphorManager(MusicContext.semaphoreKey, TimeSpan.FromSeconds(20));
+        var acquired = false;
 
         try
         {
             if (!await semaphore.WaitAsync())
-                return;
+                return 0;
+
+            acquired = true;
 
             await using var connection = new SqliteConnection(MusicContext.ConnectionString);
             await connection.OpenAsync(cancellationToken);
 
             await using var command = connection.CreateCommand();
             command.CommandText = """
-                INSERT INTO track_stats_daily (profile_id, track_id, day, play_count, total_ms, last_played)
-                VALUES ($profile_id, $track_id, $day, 1, $total_ms, $last_played)
-                ON CONFLICT(profile_id, track_id, day) DO UPDATE SET
-                    play_count = play_count + 1,
-                    total_ms = total_ms + excluded.total_ms,
-                    last_played = excluded.last_played;
+                DELETE FROM track_stats_daily
+                WHERE profile_id = $profile_id;
                 """;
+            command.Parameters.AddWithValue("$profile_id", profileId);
+
+            return await command.ExecuteNonQueryAsync(cancellationToken);
+        }
+        finally
+        {
+            if (acquired)
+                semaphore.Release();
+        }
+    }
+
+    public static async Task RecordPlayAsync(string profileId, MusicTrack track, bool countPlay, long? playedMs = null, CancellationToken cancellationToken = default)
+    {
+        profileId = NormalizeProfileId(profileId);
+
+        if (track == null || string.IsNullOrWhiteSpace(track.id) || string.IsNullOrWhiteSpace(profileId))
+            return;
+
+        long durationMs = Math.Max(0, track.duration_ms ?? 0);
+        long listenedMs = Math.Max(0, playedMs ?? 0);
+
+        // Старые клиенты присылали только count_play=true; для совместимости
+        // оставляем прежнюю оценку полной длительностью. Новый клиент досылает
+        // реальные куски played_ms, поэтому накрутка не превращается в часы.
+        if (listenedMs <= 0 && countPlay)
+            listenedMs = durationMs;
+
+        if (durationMs > 0 && listenedMs > durationMs)
+            listenedMs = durationMs;
+
+        // sanity для треков без duration: один mark не должен записать сутки.
+        listenedMs = Math.Min(listenedMs, TimeSpan.FromHours(6).Ticks / TimeSpan.TicksPerMillisecond);
+
+        if (!countPlay && listenedMs <= 0)
+            return;
+
+        var now = DateTime.UtcNow;
+
+        var semaphore = new SemaphorManager(MusicContext.semaphoreKey, TimeSpan.FromSeconds(20));
+        var acquired = false;
+
+        try
+        {
+            if (!await semaphore.WaitAsync())
+                return;
+
+            acquired = true;
+
+            await using var connection = new SqliteConnection(MusicContext.ConnectionString);
+            await connection.OpenAsync(cancellationToken);
+
+            await using var command = connection.CreateCommand();
+            command.CommandText = countPlay
+                ? """
+                    INSERT INTO track_stats_daily (profile_id, track_id, day, play_count, total_ms, last_played)
+                    VALUES ($profile_id, $track_id, $day, 1, $total_ms, $last_played)
+                    ON CONFLICT(profile_id, track_id, day) DO UPDATE SET
+                        play_count = play_count + 1,
+                        total_ms = total_ms + excluded.total_ms,
+                        last_played = excluded.last_played;
+                    """
+                : """
+                    UPDATE track_stats_daily
+                    SET total_ms = total_ms + $total_ms,
+                        last_played = $last_played
+                    WHERE profile_id = $profile_id
+                        AND track_id = $track_id
+                        AND day = $day
+                        AND play_count > 0;
+                    """;
 
             command.Parameters.AddWithValue("$profile_id", profileId);
             command.Parameters.AddWithValue("$track_id", track.id);
             command.Parameters.AddWithValue("$day", now.ToString("yyyy-MM-dd"));
-            command.Parameters.AddWithValue("$total_ms", durationMs);
+            command.Parameters.AddWithValue("$total_ms", listenedMs);
             command.Parameters.AddWithValue("$last_played", now);
 
             await command.ExecuteNonQueryAsync(cancellationToken);
         }
         finally
         {
-            semaphore.Release();
+            if (acquired)
+                semaphore.Release();
         }
     }
 

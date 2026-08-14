@@ -410,7 +410,10 @@ public class ViewController : BaseSisiController<NxtSettings>
                     cache.file = await browser.WaitPageResult().ConfigureAwait(false);
                 }
 
-                cache.file = cache.file?.Replace("\\", "")?.Replace("&amp;", "&");
+                cache.file = cache.file?
+                    .Replace("\\", "")?
+                    .Replace("&amp;", "&")?
+                    .Replace("u0026", "&");
 
                 #region eval
                 if (!string.IsNullOrEmpty(init.view.eval ?? init.view.evalJS))
@@ -573,7 +576,10 @@ public class ViewController : BaseSisiController<NxtSettings>
                 #endregion
             }
 
-            cache.file = cache.file?.Replace("\\", "")?.Replace("&amp;", "&");
+            cache.file = cache.file?
+                .Replace("\\", "")?
+                .Replace("&amp;", "&")?
+                .Replace("u0026", "&");
 
             #region eval
             if (!string.IsNullOrEmpty(init.view.eval))

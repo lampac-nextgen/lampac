@@ -231,19 +231,20 @@
 				setFavoriteField(ob.data);
 				return;
 			}
-			if (ob.type != 'add' && ob.type != 'remove')
+			if (ob.type != 'add' && ob.type != 'added' && ob.type != 'remove')
 				return;
+			var applyMethod = (ob.type == 'remove') ? 'remove' : 'add';
 			var data = ob.data;
 			if (Array.isArray(data)) {
 			  data.forEach(function(item) {
 			    if (item && item.card) {
 			      item.card.received = true;
-			      Lampa.Favorite[ob.type](item.where, item.card);
+			      Lampa.Favorite[applyMethod](item.where, item.card);
 			    }
 			  });
 			} else if (data && data.card) {
 			  data.card.received = true;
-			  Lampa.Favorite[ob.type](data.where, data.card);
+			  Lampa.Favorite[applyMethod](data.where, data.card);
 			}
           }
         });

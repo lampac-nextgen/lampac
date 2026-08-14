@@ -26,9 +26,15 @@ public static class MusicPlaylistService
         if (string.IsNullOrWhiteSpace(request.ids))
             return string.Empty;
 
+        // защитный кап: 500 = лимит окна снапшота очереди, длиннее клиент
+        // не шлёт; всё сверх — обрезаем, а не отказываем (устойчивость)
+        const int maxPlaylistIds = 500;
+        const int maxTrackIdLength = 256;
+
         var trackIds = request.ids
             .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
-            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Where(id => !string.IsNullOrWhiteSpace(id) && id.Length <= maxTrackIdLength)
+            .Take(maxPlaylistIds)
             .ToArray();
 
         if (trackIds.Length == 0)

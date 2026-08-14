@@ -1,18 +1,32 @@
+using System.Collections.Concurrent;
+
 namespace Music;
 
 public static class MusicResolver
 {
-    public static async Task<MusicPlayResponse> ResolveTrackAsync(MusicTrack track, string provider = null, string playbackMode = null, string profileId = null, CancellationToken cancellationToken = default)
+    // Кэш stream-sources (только youtubeaudio): манифест YouTube стоил ~1-1.5s
+    // на КАЖДЫЙ тёплый /music/play, хотя googlevideo-ссылки живут часами.
+    // TTL 30min — с запасом короче срока жизни ссылок. У Sefon/SoundCloud свои
+    // (короткие/сессионные) сроки жизни — их не кэшируем. Ошибки и пустые
+    // списки не кэшируются. Хранится и отдаётся ГЛУБОКИМИ КОПИЯМИ:
+    // PrepareStreamSources мутирует source.url под хост запроса — общий
+    // инстанс запёк бы хост первого клиента (урок отравления image-proxy).
+    // Инвалидация: refreshSources=true (пере-резолв из /music/stream после
+    // смерти upstream-ссылки в relay) пропускает чтение и перезаписывает свежим.
+    static readonly TimeSpan sourcesCacheTtl = TimeSpan.FromMinutes(30);
+    static readonly ConcurrentDictionary<string, (DateTime at, List<MusicPlaybackSource> sources)> sourcesCache = new(StringComparer.Ordinal);
+
+    public static async Task<MusicPlayResponse> ResolveTrackAsync(MusicTrack track, string provider = null, string playbackMode = null, string profileId = null, CancellationToken cancellationToken = default, bool refreshSources = false)
     {
-        return await ResolveTrackCoreAsync(track, provider, playbackMode, profileId, preferSingleSource: false, cancellationToken);
+        return await ResolveTrackCoreAsync(track, provider, playbackMode, profileId, preferSingleSource: false, refreshSources, cancellationToken);
     }
 
     public static async Task<MusicPlayResponse> ResolvePreferredTrackAsync(MusicTrack track, string provider = null, string playbackMode = null, string profileId = null, CancellationToken cancellationToken = default)
     {
-        return await ResolveTrackCoreAsync(track, provider, playbackMode, profileId, preferSingleSource: true, cancellationToken);
+        return await ResolveTrackCoreAsync(track, provider, playbackMode, profileId, preferSingleSource: true, refreshSources: false, cancellationToken);
     }
 
-    static async Task<MusicPlayResponse> ResolveTrackCoreAsync(MusicTrack track, string provider, string playbackMode, string profileId, bool preferSingleSource, CancellationToken cancellationToken)
+    static async Task<MusicPlayResponse> ResolveTrackCoreAsync(MusicTrack track, string provider, string playbackMode, string profileId, bool preferSingleSource, bool refreshSources, CancellationToken cancellationToken)
     {
         if (track == null)
         {
@@ -57,7 +71,7 @@ public static class MusicResolver
                 if (firstMatch == null)
                     firstMatch = selectedMatch;
 
-                var selectedSources = await ResolveSourcesAsync(sourceProvider, selectedMatch, preferSingleSource, playbackMode, profileId, cancellationToken);
+                var selectedSources = await ResolveSourcesAsync(sourceProvider, selectedMatch, preferSingleSource, playbackMode, profileId, refreshSources, cancellationToken);
                 if (selectedSources.Count > 0)
                 {
                     return new MusicPlayResponse
@@ -81,7 +95,7 @@ public static class MusicResolver
                 if (firstMatch == null)
                     firstMatch = match;
 
-                var sources = await ResolveSourcesAsync(sourceProvider, match, preferSingleSource, playbackMode, profileId, cancellationToken);
+                var sources = await ResolveSourcesAsync(sourceProvider, match, preferSingleSource, playbackMode, profileId, refreshSources, cancellationToken);
                 if (sources.Count == 0)
                     continue;
 
@@ -114,7 +128,7 @@ public static class MusicResolver
         };
     }
 
-    static async Task<List<MusicPlaybackSource>> ResolveSourcesAsync(IMusicAudioProvider provider, MusicAudioMatch match, bool preferSingleSource, string playbackMode, string profileId, CancellationToken cancellationToken)
+    static async Task<List<MusicPlaybackSource>> ResolveSourcesAsync(IMusicAudioProvider provider, MusicAudioMatch match, bool preferSingleSource, string playbackMode, string profileId, bool refreshSources, CancellationToken cancellationToken)
     {
         if (provider == null || match == null)
             return new List<MusicPlaybackSource>();
@@ -126,10 +140,49 @@ public static class MusicResolver
                 return new List<MusicPlaybackSource> { preferred };
         }
 
+        bool cacheable = string.Equals(provider.Id, "youtubeaudio", StringComparison.OrdinalIgnoreCase)
+            && !string.IsNullOrWhiteSpace(match.id);
+        string cacheKey = cacheable ? $"{provider.Id}|{match.id}|{playbackMode ?? string.Empty}" : null;
+
+        if (cacheable && !refreshSources
+            && sourcesCache.TryGetValue(cacheKey, out var entry)
+            && DateTime.UtcNow - entry.at < sourcesCacheTtl)
+            return CloneSources(entry.sources);
+
         var sources = await provider.GetStreamsAsync(match, playbackMode, profileId, cancellationToken);
-        return sources?
+        var result = sources?
             .Where(source => !string.IsNullOrWhiteSpace(source?.url))
             .ToList() ?? new List<MusicPlaybackSource>();
+
+        if (cacheable && result.Count > 0)
+        {
+            if (sourcesCache.Count > 512)
+            {
+                foreach (var stale in sourcesCache.Where(i => DateTime.UtcNow - i.Value.at >= sourcesCacheTtl).Select(i => i.Key).ToList())
+                    sourcesCache.TryRemove(stale, out _);
+            }
+
+            sourcesCache[cacheKey] = (DateTime.UtcNow, CloneSources(result));
+        }
+
+        return result;
+    }
+
+    static List<MusicPlaybackSource> CloneSources(List<MusicPlaybackSource> sources)
+    {
+        return sources.Select(source => new MusicPlaybackSource
+        {
+            provider_id = source.provider_id,
+            url = source.url,
+            external_url = source.external_url,
+            mime_type = source.mime_type,
+            bitrate = source.bitrate,
+            quality = source.quality,
+            headers = source.headers != null ? new Dictionary<string, string>(source.headers) : new(),
+            proxy_url = source.proxy_url,
+            proxy_username = source.proxy_username,
+            proxy_password = source.proxy_password
+        }).ToList();
     }
 
     public static async Task<MusicMatchesResponse> GetMatchesAsync(MusicTrack track, string provider = null, string playbackMode = null, string profileId = null, CancellationToken cancellationToken = default)

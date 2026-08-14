@@ -84,7 +84,7 @@
             const STREAM_URL = "{stream_url}";
             const ROOM_ID = "{room_id}";
             const PASSWORD = "{password}";
-            const INTERACTIVE = { interactive };
+            const INTERACTIVE = {interactive};
 
             let uid = localStorage.getItem("watchtogether_uid");
             if (!uid) {
@@ -129,14 +129,18 @@
                 window.location.protocol === "https:" ? "wss:" : "ws:";
             const wsUrl = protocol + "//" + window.location.host + "/nws";
 
-            function sendSync(state, targetTime) {
+            let currentRoomSpeed = 1.0;
+
+            function sendSync(state, targetTime, targetSpeed) {
                 if (!ws || ws.readyState !== WebSocket.OPEN) return;
                 const pos =
                     targetTime !== undefined ? targetTime : player.currentTime;
+                const spd =
+                    targetSpeed !== undefined ? targetSpeed : currentRoomSpeed;
                 ws.send(
                     JSON.stringify({
                         method: "watchtogether_action",
-                        args: [ROOM_ID, uid, state, pos],
+                        args: [ROOM_ID, uid, state, pos, spd],
                     }),
                 );
             }
@@ -158,6 +162,42 @@
                 if (INTERACTIVE)
                     sendSync(player.paused ? "paused" : "playing", e.detail);
                 else e.preventDefault();
+            });
+            player.addEventListener("media-rate-change-request", (e) => {
+                if (isRemoteUpdate) return;
+                if (INTERACTIVE) {
+                    const newRate = e.detail;
+                    if (
+                        newRate >= 0.25 &&
+                        newRate <= 4.0 &&
+                        Math.abs(newRate - currentRoomSpeed) > 0.01
+                    ) {
+                        currentRoomSpeed = newRate;
+                        sendSync(
+                            player.paused ? "paused" : "playing",
+                            undefined,
+                            currentRoomSpeed,
+                        );
+                    }
+                } else {
+                    e.preventDefault();
+                }
+            });
+            player.addEventListener("ratechange", () => {
+                if (isRemoteUpdate || !INTERACTIVE) return;
+                const newRate = player.playbackRate || 1.0;
+                if (
+                    newRate >= 0.25 &&
+                    newRate <= 4.0 &&
+                    Math.abs(newRate - currentRoomSpeed) > 0.01
+                ) {
+                    currentRoomSpeed = newRate;
+                    sendSync(
+                        player.paused ? "paused" : "playing",
+                        undefined,
+                        currentRoomSpeed,
+                    );
+                }
             });
 
             function connect() {
@@ -188,13 +228,30 @@
 
                         if (data.method === "watchtogether_joined") {
                             myNameEl.innerText = "You are: " + data.args[0];
+                            const spd = data.args[4] || 1.0;
+                            if (spd >= 0.25 && spd <= 4.0) {
+                                currentRoomSpeed = spd;
+                                isRemoteUpdate = true;
+                                player.playbackRate = spd;
+                                isRemoteUpdate = false;
+                            }
                         } else if (
                             data.method === "watchtogether_sync_update"
                         ) {
                             const state = data.args[0];
                             const pos = data.args[1];
+                            const spd = data.args[3] || 1.0;
 
                             isRemoteUpdate = true;
+
+                            if (
+                                spd >= 0.25 &&
+                                spd <= 4.0 &&
+                                Math.abs(player.playbackRate - spd) > 0.01
+                            ) {
+                                currentRoomSpeed = spd;
+                                player.playbackRate = spd;
+                            }
 
                             if (Math.abs(player.currentTime - pos) > 1.5) {
                                 player.currentTime = pos;
@@ -228,8 +285,15 @@
                                 }),
                             );
                         } else if (data.method === "watchtogether_notice") {
-                            status.innerText =
-                                data.args[0] + " " + data.args[1];
+                            const verb = data.args[0];
+                            const who = data.args[1];
+                            const extra = data.args[2];
+                            let noticeText = verb + " " + who;
+                            if (verb === "speed_changed") {
+                                noticeText =
+                                    who + " changed speed to " + extra + "x";
+                            }
+                            status.innerText = noticeText;
                             status.style.color = "#00e676";
                             setTimeout(() => {
                                 status.innerText = "Connected";

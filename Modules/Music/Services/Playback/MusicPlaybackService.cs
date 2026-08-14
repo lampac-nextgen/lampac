@@ -24,9 +24,9 @@ public static class MusicPlaybackService
         };
     }
 
-    public static async Task<MusicPlayResponse> ResolveTrackAsync(MusicTrack track, string audioProvider, string streamMode, string playbackMode, string profileId, CancellationToken cancellationToken = default)
+    public static async Task<MusicPlayResponse> ResolveTrackAsync(MusicTrack track, string audioProvider, string streamMode, string playbackMode, string profileId, CancellationToken cancellationToken = default, bool refreshSources = false)
     {
-        var result = await MusicResolver.ResolveTrackAsync(track, audioProvider, playbackMode, profileId, cancellationToken);
+        var result = await MusicResolver.ResolveTrackAsync(track, audioProvider, playbackMode, profileId, cancellationToken, refreshSources);
         if (result?.sources != null && result.sources.Count > 0)
             result.sources = MusicStreamModeService.Order(result.sources, streamMode);
 

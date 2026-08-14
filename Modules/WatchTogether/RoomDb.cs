@@ -24,6 +24,7 @@ namespace WatchTogether
 
         public string state { get; set; }
         public double position { get; set; }
+        public double speed { get; set; } = 1.0;
 
         public long at_server_time { get; set; }
 

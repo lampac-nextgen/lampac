@@ -40,9 +40,10 @@ contentParse:
 view:
   related: true
   viewsource: true
-  eval: |
-    {include:kt_player.eval}
-    return decode();
+  regexMatch:
+    matches: ["1080p", "480p", "720p"]
+    pattern: "(https://c\\.xxxperevod\\.icu/get_file/[^']+)"
+    format: "{value}"
 
 #view:
 #  related: true

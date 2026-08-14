@@ -118,7 +118,8 @@ public static class MusicRadioService
 
     // round-robin по пулам: 1-й трек каждого пула, потом 2-е и т.д. — иначе
     // первый пул целиком заполняет лимит и «радио» вырождается в один источник
-    static void FillRoundRobin(
+    // (internal: переиспользуется MusicDailyMixService для «Миксов недели»)
+    internal static void FillRoundRobin(
         List<List<MusicTrack>> pools,
         List<MusicTrack> output,
         int limit,
@@ -129,7 +130,9 @@ public static class MusicRadioService
         HashSet<string> excludedTitles,
         HashSet<string> outputIds,
         HashSet<string> outputKeys,
-        HashSet<string> outputTitles)
+        HashSet<string> outputTitles,
+        Dictionary<string, int> outputArtistCounts = null,
+        int maxTracksPerArtist = 0)
     {
         for (int position = 0; output.Count < limit; position++)
         {
@@ -143,11 +146,19 @@ public static class MusicRadioService
                 anyLeft = true;
                 var candidate = NormalizeCandidateMetadata(pool[position]);
 
+                if (maxTracksPerArtist > 0
+                    && outputArtistCounts != null
+                    && !CanAddArtistCandidate(candidate, outputArtistCounts, maxTracksPerArtist))
+                {
+                    continue;
+                }
+
                 if (!AcceptCandidate(candidate, seedNoisyWords, requireCyrillic, excludedIds, excludedKeys, excludedTitles, outputIds, outputKeys, outputTitles))
                     continue;
 
                 candidate.auto_radio = true;
                 output.Add(candidate);
+                AddArtistCandidate(candidate, outputArtistCounts);
 
                 if (output.Count >= limit)
                     break;
@@ -156,6 +167,35 @@ public static class MusicRadioService
             if (!anyLeft)
                 break;
         }
+    }
+
+    static bool CanAddArtistCandidate(MusicTrack track, Dictionary<string, int> counts, int maxTracksPerArtist)
+    {
+        string key = BuildArtistBucketKey(track);
+        if (string.IsNullOrWhiteSpace(key))
+            return true;
+
+        return !counts.TryGetValue(key, out int count) || count < maxTracksPerArtist;
+    }
+
+    static void AddArtistCandidate(MusicTrack track, Dictionary<string, int> counts)
+    {
+        if (counts == null)
+            return;
+
+        string key = BuildArtistBucketKey(track);
+        if (string.IsNullOrWhiteSpace(key))
+            return;
+
+        counts[key] = counts.TryGetValue(key, out int count) ? count + 1 : 1;
+    }
+
+    static string BuildArtistBucketKey(MusicTrack track)
+    {
+        string artist = CleanupArtistName(track?.artist_name);
+        return string.IsNullOrWhiteSpace(artist)
+            ? string.Empty
+            : MusicMapSupport.NormalizeName(artist);
     }
 
     static MusicRadioResponse Available(List<MusicTrack> tracks) => new()
@@ -231,7 +271,7 @@ public static class MusicRadioService
         }
     }
 
-    static string CleanupArtistName(string value)
+    internal static string CleanupArtistName(string value)
     {
         value = (value ?? string.Empty).Trim();
         if (string.IsNullOrWhiteSpace(value))
@@ -242,7 +282,7 @@ public static class MusicRadioService
         return value;
     }
 
-    static Task<List<MusicTrack>> LoadRelatedPoolAsync(MusicTrack seed, CancellationToken cancellationToken)
+    internal static Task<List<MusicTrack>> LoadRelatedPoolAsync(MusicTrack seed, CancellationToken cancellationToken)
     {
         string artist = CleanupArtistName(seed?.artist_name);
         string title = (seed?.title ?? string.Empty).Trim();
@@ -261,7 +301,7 @@ public static class MusicRadioService
             cacheLimit: maxPoolPerArtist);
     }
 
-    static async Task<List<MusicTrack>> LoadArtistPoolAsync(string artist, CancellationToken cancellationToken)
+    internal static async Task<List<MusicTrack>> LoadArtistPoolAsync(string artist, CancellationToken cancellationToken)
     {
         var tasks = new List<Task<List<MusicTrack>>>();
 
@@ -293,9 +333,63 @@ public static class MusicRadioService
         return tasks
             .Where(i => i.IsCompletedSuccessfully)
             .SelectMany(i => i.Result ?? new List<MusicTrack>())
+            .Select(track => NormalizeArtistPoolCandidate(track, artist))
             .Where(i => i != null)
             .Take(maxPoolPerArtist)
             .ToList();
+    }
+
+    static MusicTrack NormalizeArtistPoolCandidate(MusicTrack track, string requestedArtist)
+    {
+        track = NormalizeCandidateMetadata(track);
+        string artist = CleanupArtistName(requestedArtist);
+
+        if (track == null || string.IsNullOrWhiteSpace(artist))
+            return track;
+
+        string requested = NormalizeText(artist);
+        string actual = NormalizeText(track.artist_name);
+        string title = NormalizeText(track.title);
+
+        if (string.IsNullOrWhiteSpace(requested))
+            return track;
+
+        if (!string.IsNullOrWhiteSpace(actual)
+            && (actual == requested
+                || actual.Contains(requested, StringComparison.OrdinalIgnoreCase)
+                || (actual.Length >= 4 && requested.Contains(actual, StringComparison.OrdinalIgnoreCase))))
+        {
+            // SoundCloud/YouTube sometimes expose channel names like
+            // "032 stas mikhaylov"; if the target artist is clearly embedded,
+            // keep the candidate but display the canonical artist name.
+            if (actual != requested)
+            {
+                track.artist_name = artist;
+                track.artists = new List<string> { artist };
+            }
+
+            return track;
+        }
+
+        if (!string.IsNullOrWhiteSpace(title) && title.StartsWith(requested + " ", StringComparison.OrdinalIgnoreCase))
+        {
+            track.artist_name = artist;
+            track.artists = new List<string> { artist };
+            track.title = StripLeadingArtistFromTitle(track.title, artist);
+            return track;
+        }
+
+        return null;
+    }
+
+    static string StripLeadingArtistFromTitle(string title, string artist)
+    {
+        if (string.IsNullOrWhiteSpace(title) || string.IsNullOrWhiteSpace(artist))
+            return title;
+
+        string pattern = @"^\s*" + Regex.Escape(artist.Trim()) + @"\s*(?:[-–—:]|&)?\s*";
+        string stripped = Regex.Replace(title, pattern, "", RegexOptions.IgnoreCase).Trim();
+        return string.IsNullOrWhiteSpace(stripped) ? title : stripped;
     }
 
     static async Task<List<MusicTrack>> LoadCachedTracksAsync(string providerId, string query, Func<CancellationToken, Task<List<MusicTrack>>> factory, CancellationToken cancellationToken, string cacheType = "radio_tracks", int cacheLimit = providerQueryLimit)
@@ -331,7 +425,7 @@ public static class MusicRadioService
         "type beat", "freestyle"
     };
 
-    static HashSet<string> CollectSeedNoisyWords(IEnumerable<MusicTrack> seeds)
+    internal static HashSet<string> CollectSeedNoisyWords(IEnumerable<MusicTrack> seeds)
     {
         var allowed = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
@@ -388,7 +482,7 @@ public static class MusicRadioService
         return true;
     }
 
-    static MusicTrack NormalizeCandidateMetadata(MusicTrack track)
+    internal static MusicTrack NormalizeCandidateMetadata(MusicTrack track)
     {
         if (track == null || string.IsNullOrWhiteSpace(track.title))
             return track;
@@ -481,7 +575,7 @@ public static class MusicRadioService
         return true;
     }
 
-    static bool ContainsCyrillic(string value)
+    internal static bool ContainsCyrillic(string value)
         => !string.IsNullOrWhiteSpace(value) && value.Any(c => c is >= '\u0400' and <= '\u04FF');
 
     static string BuildTrackDedupeKey(MusicTrack track)
@@ -518,7 +612,7 @@ public static class MusicRadioService
         return title;
     }
 
-    static string NormalizeText(string value)
+    internal static string NormalizeText(string value)
     {
         value = RemoveDiacritics((value ?? string.Empty).ToLowerInvariant());
         value = Regex.Replace(value, @"\([^)]*\)|\[[^\]]*\]", " ");

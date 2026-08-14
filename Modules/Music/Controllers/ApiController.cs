@@ -15,7 +15,9 @@ public class ApiController : BaseController
 
         string plugin = FileCache.ReadAllText($"{ModInit.modpath}/plugin.js", "music.js", false)
             .Replace("{localhost}", host)
-            .Replace("{client_debug_enabled}", ModInit.conf?.client_debug_enabled == true ? "true" : "false");
+            .Replace("{client_debug_enabled}", ModInit.conf?.client_debug_enabled == true ? "true" : "false")
+            .Replace("{stats_clear_enabled}", ModInit.conf?.stats_clear_enabled == true ? "true" : "false")
+            .Replace("{daily_reset_enabled}", ModInit.conf?.daily_reset_enabled == true ? "true" : "false");
 
         return Content(plugin, "application/javascript; charset=utf-8");
     }
@@ -44,10 +46,10 @@ public class ApiController : BaseController
     [HttpGet]
     [Route("music")]
     [Route("music/home")]
-    async public Task<ActionResult> Home()
+    async public Task<ActionResult> Home(int? daily_salt)
     {
         string profileId = MusicProfileIdentity.Resolve(requestInfo, Request);
-        var result = await MusicCatalogService.GetHomeAsync(profileId);
+        var result = await MusicCatalogService.GetHomeAsync(profileId, daily_salt ?? 0);
         MusicImageProxyService.Apply(this, result);
         return ContentTo(MusicJson.Serialize(result));
     }
@@ -169,6 +171,19 @@ public class ApiController : BaseController
     }
 
     [HttpGet]
+    [Route("music/daily")]
+    async public Task<ActionResult> DailyMix(int day, int? salt)
+    {
+        string profileId = MusicProfileIdentity.Resolve(requestInfo, Request);
+        var result = await MusicDailyMixService.GetMixAsync(profileId, day, salt ?? 0, HttpContext.RequestAborted);
+
+        foreach (var track in result?.tracks ?? new List<MusicTrack>())
+            MusicImageProxyService.Apply(this, track);
+
+        return ContentTo(MusicJson.Serialize(result));
+    }
+
+    [HttpGet]
     [Route("music/stats/top")]
     async public Task<ActionResult> StatsTop(int? limit)
     {
@@ -180,17 +195,35 @@ public class ApiController : BaseController
     }
 
     [HttpPost]
+    [Route("music/stats/clear")]
+    async public Task<ActionResult> StatsClear()
+    {
+        string profileId = MusicProfileIdentity.Resolve(requestInfo, Request);
+        int removed = await MusicStatsService.ClearAsync(profileId, HttpContext.RequestAborted);
+
+        return ContentTo(MusicJson.Serialize(new { cleared = true, removed }));
+    }
+
+    [HttpPost]
     [Route("music/radio")]
     async public Task<ActionResult> Radio(string seeds, string exclude, int? limit)
     {
-        static List<MusicTrack> parseTracks(string value)
+        // защитные капы: сырой JSON режем ДО десериализации (клиент шлёт
+        // exclude всей очереди ≤500 компакт-треков ≈ 150KB — 400KB с запасом),
+        // распарсенные списки — до разумных размеров
+        const int maxRawJsonLength = 400_000;
+        const int maxSeeds = 10;
+        const int maxExclude = 1000;
+
+        static List<MusicTrack> parseTracks(string value, int maxItems)
         {
-            if (string.IsNullOrWhiteSpace(value))
+            if (string.IsNullOrWhiteSpace(value) || value.Length > maxRawJsonLength)
                 return new List<MusicTrack>();
 
             try
             {
-                return MusicJson.Deserialize<List<MusicTrack>>(value) ?? new List<MusicTrack>();
+                var parsed = MusicJson.Deserialize<List<MusicTrack>>(value) ?? new List<MusicTrack>();
+                return parsed.Count > maxItems ? parsed.Take(maxItems).ToList() : parsed;
             }
             catch
             {
@@ -201,8 +234,8 @@ public class ApiController : BaseController
         string profileId = MusicProfileIdentity.Resolve(requestInfo, Request);
         var result = await MusicRadioService.GetAsync(profileId, new MusicRadioRequest
         {
-            seeds = parseTracks(seeds),
-            exclude = parseTracks(exclude)
+            seeds = parseTracks(seeds, maxSeeds),
+            exclude = parseTracks(exclude, maxExclude)
         }, limit ?? 20, HttpContext.RequestAborted);
 
         foreach (var track in result?.tracks ?? new List<MusicTrack>())

@@ -4,9 +4,23 @@ displayname: FapGuru
 rch_access: apk
 stream_access: apk
 host: https://x.fap-guru.pro
+cookies:
+  - Domain: x.fap-guru.pro
+    Path: /
+    Name: dsktp
+    Value: "1"
+  - Domain: x.fap-guru.pro
+    Path: /
+    Name: steps
+    Value: "1"
+  - Domain: x.fap-guru.pro
+    Path: /
+    Name: is_age_verified
+    Value: "1"
 priorityBrowser: http
 streamproxy: true
 headers_stream:
+  User-Agent: "Mozilla/5.0"
   referer: "{host}/"
 
 menu:
@@ -265,4 +279,4 @@ view:
   bindingToIP: true
   viewsource: true
   regexMatch:
-    pattern: '<source src="([^\"]+)"'
+    pattern: 'src="([^"]*link_cs[^"]*)"'

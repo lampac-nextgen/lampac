@@ -54,6 +54,7 @@ contentParse:
 view:
   related: true
   viewsource: true
-  eval: |
-    {include:kt_player.eval}
-    return decode();
+  regexMatch:
+    matches: ["Best Quality"]
+    pattern: "video_alt_url: '([^']+)'"
+    format: "{value}"

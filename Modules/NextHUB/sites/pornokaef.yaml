@@ -87,4 +87,5 @@ view:
   related: true
   viewsource: true
   regexMatch:
-    pattern: 'property="ya:ovs:content_url" content="([^\"]+)"'
+    pattern: "id[:]\\s*[\"']player_container2[\"'],\\s*file:\\s*[\"']([^\"']+)[\"']"
+    format: "{host}{value}"

@@ -27,9 +27,9 @@ public class SearchController : BaseController
 
     [HttpGet]
     [Route("music/artistsection")]
-    async public Task<ActionResult> ArtistSection(string id, string provider, string page, int limit = 20)
+    async public Task<ActionResult> ArtistSection(string id, string provider, string page, string artist_name, int limit = 20)
     {
-        var result = await MusicCatalogService.GetArtistSectionAsync(id, provider, page, limit);
+        var result = await MusicCatalogService.GetArtistSectionAsync(id, provider, page, limit, artist_name);
         if (result == null)
             return ContentTo(MusicJson.Serialize(new { available = false, message = "Artist section not found." }));
 

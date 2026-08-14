@@ -8,93 +8,92 @@ host: https://veporn.com
 priorityBrowser: http
 
 menu:
+  route:
+    sort: "{host}/videos?page={page}"
+    cat: "{host}/category/{cat}?page={page}"
   categories:
-    format: "{cat}/page/{page}/"
-    4k porn: 4k-porn
-    60fps: 60fps
-    amateur: amateur
-    anal: anal
-    asian: asian
-    babe: babe
-    bdsm: bdsm
-    beach: beach
-    big ass: big-ass
-    big dick: big-dick
-    big tits: big-tits
-    bisexual: bisexual
-    blonde: blonde
-    blowjob: blowjob
-    bondage: bondage
-    brunette: brunette
-    cartoon: cartoon
-    casting: casting
-    creampie: creampie
-    cumshot: cumshot
-    deepthroat: deepthroat
-    ebony: ebony
-    fetish: fetish
-    fingering: fingering
-    fisting: fisting
-    gangbang: gangbang
-    group sex: group-sex
-    hairy: hairy
-    handjob: handjob
-    interracial: interracial
-    japanese: japanese
-    latina: latina
-    lesbians: lesbians
-    long hair: long-hair
-    massage: massage
-    masturbation: masturbation
-    mature: mature
-    milf: milf
-    moaning: moaning
-    old and young: old-and-young
-    orgasm: orgasm
-    orgy: orgy
-    outdoor: outdoor
-    pickup: pickup
-    pov: pov
-    public: public
-    pussy licking: pussy-licking
-    redhead: redhead
-    russian: russian
-    sex party: sex-party
-    shaved pussy: shaved-pussy
-    shemales: shemales
-    small tits: small-tits
-    squeezing tits: squeezing-tits
-    squirt: squirt
-    stockings: stockings
-    tattooed: tattooed
-    teen: teen
-    threesome: threesome
+    Amateur: amateur
+    Anal: anal
+    Asian: asian
+    Babe: babe
+    BDSM: bdsm
+    Beach: beach
+    Big Ass: big-ass
+    Big Dick: big-dick
+    Big Tits: big-tits
+    Bisexual: bisexual
+    Blonde: blonde
+    Blowjob: blowjob
+    Bondage: bondage
+    Brunette: brunette
+    Cartoon: cartoon
+    Casting: casting
+    Creampie: creampie
+    Cumshot: cumshot
+    Deepthroat: deepthroat
+    Ebony: ebony
+    Fetish: fetish
+    Fingering: fingering
+    Fisting: fisting
+    Gangbang: gangbang
+    Group Sex: group-sex
+    Hairy: hairy
+    Handjob: handjob
+    Interracial: interracial
+    Japanese: japanese
+    Latina: latina
+    Lesbians: lesbians
+    Long Hair: long-hair
+    Massage: massage
+    Masturbation: masturbation
+    Mature: mature
+    Milf: milf
+    Moaning: moaning
+    Old And Young: old-and-young
+    Orgasm: orgasm
+    Orgy: orgy
+    Outdoor: outdoor
+    Pickup: pickup
+    Pov: pov
+    Public: public
+    Pussy Licking: pussy-licking
+    Redhead: redhead
+    Russian: russian
+    Sex Party: sex-party
+    Shaved Pussy: shaved-pussy
+    Shemales: shemales
+    Small Tits: small-tits
+    Squeezing Tits: squeezing-tits
+    Squirt: squirt
+    Stockings: stockings
+    Tattooed: tattooed
+    Teen: teen
+    Threesome: threesome
     Uncategorized: uncategorized
-    undressing: undressing
-    uniforms: uniforms
-    vibrator: vibrator
+    Undressing: undressing
+    Uniforms: uniforms
+    Vibrator: vibrator
 
 list:
-  uri: page/{page}/
+  uri: videos?page={page}
 
 search:
-  uri: page/{page}/?s={search}
+  uri: search?q={search}&page={page}
 
 contentParse:
-  nodes: //article[contains(@class, 'loop-post vdeo')]
+  nodes: //a[@class='group block']
   name:
-    node: .//h2
+    node: .//img
+    attribute: alt
   href:
-    node: .//a
+    node: .
     attribute: href
   img:
     node: .//img
     attribute: src
-  duration:
-    node: .//p//span[2]
 
 view:
   related: true
   viewsource: true
   regexMatch:
-    pattern: '<source src="([^\"]+)"'
+    pattern: '"contentUrl":"([^"]+\.mp4)"'

@@ -25,15 +25,21 @@ readonly DOTNET_CHANNEL="${LAMPAC_DOTNET_CHANNEL:-10.0}"
 readonly LISTEN_PORT="${LAMPAC_PORT:-9118}"
 # Имя скрипта — исключается из синхронизации при обновлении
 readonly UPDATE_SCRIPT_NAME="install.sh"
+# Имя файлика для хранения установленной версии Лампака
+readonly VERSION_FILE_NAME="version.txt"
 
 REMOVE=0
 UPDATE=0
 DRY_RUN=0
 PRE_RELEASE=0
 VERBOSE=0
+FORCE=0
+TARGET_VERSION=""
 ARCH=""
 PUBLISH_URL=""
 CLEANUP_PATHS=()
+# Set while service is stopped during --update; EXIT trap may restart it.
+_UPDATE_SERVICE_STOPPED=0
 
 # ─── Colors ──────────────────────────────────────────────────────────────────
 
@@ -169,36 +175,44 @@ usage() {
   printf 'Install, update, or remove Lampac NextGen on Debian/Ubuntu (x86_64 or arm64).\n\n'
 
   printf '%sEnvironment (optional):%s\n' "$C_BOLD" "$C_RESET"
-  printf '  %sLAMPAC_GITHUB_REPO%s   GitHub owner/repo for releases  %s(default: %s)%s\n' \
-    "$C_CYAN" "$C_RESET" "$C_DIM" "$GITHUB_REPO" "$C_RESET"
-  printf '  %sLAMPAC_INSTALL_ROOT%s  Install directory               %s(default: %s)%s\n' \
-    "$C_CYAN" "$C_RESET" "$C_DIM" "$INSTALL_ROOT" "$C_RESET"
-  printf '  %sLAMPAC_USER%s          Service account name            %s(default: %s)%s\n' \
-    "$C_CYAN" "$C_RESET" "$C_DIM" "$LAMPAC_USER" "$C_RESET"
-  printf '  %sLAMPAC_UID%s           Preferred UID                   %s(default: 1000)%s\n' \
-    "$C_CYAN" "$C_RESET" "$C_DIM" "$C_RESET"
-  printf '  %sLAMPAC_GID%s           Preferred GID                   %s(default: 1000)%s\n' \
-    "$C_CYAN" "$C_RESET" "$C_DIM" "$C_RESET"
-  printf '  %sLAMPAC_PORT%s          HTTP port hint                  %s(default: %s)%s\n' \
-    "$C_CYAN" "$C_RESET" "$C_DIM" "$LISTEN_PORT" "$C_RESET"
-  printf '  %sLAMPAC_CONFIRM_REMOVE%s  Set to 1 to skip the %s--remove%s confirmation prompt %s(non-interactive)%s\n' \
-    "$C_CYAN" "$C_RESET" "$C_GREEN" "$C_RESET" "$C_DIM" "$C_RESET"
+  printf '  %s%-24s%s %-34s %s(default: %s)%s\n' \
+    "$C_CYAN" "LAMPAC_GITHUB_REPO" "$C_RESET" "GitHub owner/repo for releases" "$C_DIM" "$GITHUB_REPO" "$C_RESET"
+  printf '  %s%-24s%s %-34s %s(default: %s)%s\n' \
+    "$C_CYAN" "LAMPAC_INSTALL_ROOT" "$C_RESET" "Install directory" "$C_DIM" "$INSTALL_ROOT" "$C_RESET"
+  printf '  %s%-24s%s %-34s %s(default: %s)%s\n' \
+    "$C_CYAN" "LAMPAC_USER" "$C_RESET" "Service account name" "$C_DIM" "$LAMPAC_USER" "$C_RESET"
+  printf '  %s%-24s%s %-34s %s(default: %s)%s\n' \
+    "$C_CYAN" "LAMPAC_UID" "$C_RESET" "Preferred UID" "$C_DIM" "1000" "$C_RESET"
+  printf '  %s%-24s%s %-34s %s(default: %s)%s\n' \
+    "$C_CYAN" "LAMPAC_GID" "$C_RESET" "Preferred GID" "$C_DIM" "1000" "$C_RESET"
+  printf '  %s%-24s%s %-34s %s(default: %s)%s\n' \
+    "$C_CYAN" "LAMPAC_PORT" "$C_RESET" "HTTP port hint" "$C_DIM" "$LISTEN_PORT" "$C_RESET"
+  printf '  %s%-24s%s Skip %s--remove%s confirmation when set to 1\n' \
+    "$C_CYAN" "LAMPAC_CONFIRM_REMOVE" "$C_RESET" "$C_RED" "$C_RESET"
   printf '\n'
 
   printf '%sOptions:%s\n' "$C_BOLD" "$C_RESET"
-  printf '  %s--update%s       Replace app files from latest release, restart service\n' "$C_GREEN" "$C_RESET"
-  printf '  %s--dry-run%s      Show what would be updated/deleted without applying changes\n' "$C_YELLOW" "$C_RESET"
-  printf '  %s--pre-release%s  Use latest GitHub pre-release asset (%s)\n' "$C_YELLOW" "$C_RESET" "$RELEASE_ZIP_NAME"
-  printf '  %s--remove%s       Remove systemd unit, user, and install directory\n' "$C_RED" "$C_RESET"
-  printf '  %s--verbose%s      Show full output of all commands (for debugging)\n' "$C_BLUE" "$C_RESET"
-  printf '  %s-h, --help%s     Show this help and exit\n' "$C_BLUE" "$C_RESET"
+  printf '  %s%-16s%s %s\n' "$C_GREEN"  "--update"      "$C_RESET" "Replace app files from latest (or --tag) release"
+  printf '  %s%-16s%s %s\n' "$C_GREEN"  "--tag VER"     "$C_RESET" "Install or update a specific release tag"
+  printf '  %s%-16s%s %s\n' "$C_YELLOW" "--force"       "$C_RESET" "Reinstall even if the desired version is already installed"
+  printf '  %s%-16s%s %s\n' "$C_YELLOW" "--dry-run"     "$C_RESET" "Show what would change without applying updates"
+  printf '  %s%-16s%s %s\n' "$C_YELLOW" "--pre-release" "$C_RESET" "Use latest GitHub pre-release (${RELEASE_ZIP_NAME})"
+  printf '  %s%-16s%s %s\n' "$C_RED"    "--remove"      "$C_RESET" "Remove systemd unit, user, and install directory"
+  printf '  %s%-16s%s %s\n' "$C_BLUE"   "-v, --verbose" "$C_RESET" "Show full output of all commands (for debugging)"
+  printf '  %s%-16s%s %s\n' "$C_BLUE"   "-h, --help"    "$C_RESET" "Show this help and exit"
+  printf '  %s%-16s%s %s\n' "$C_BLUE"   "--version"     "$C_RESET" "Show installed version"
   printf '\n'
 
   printf '%sExamples:%s\n' "$C_BOLD" "$C_RESET"
-  printf '  %scurl -fsSL https://raw.githubusercontent.com/%s/main/install.sh | bash%s\n' \
-    "$C_DIM" "$GITHUB_REPO" "$C_RESET"
-  printf '  %s%s%s\n'           "$C_DIM" "$SCRIPT_NAME" "$C_RESET"
-  printf '  %s%s --update%s\n'  "$C_DIM" "$SCRIPT_NAME" "$C_RESET"
+  printf '  %s# install (latest)%s\n' "$C_DIM" "$C_RESET"
+  printf '  curl -fsSL https://raw.githubusercontent.com/%s/main/install.sh | bash\n' "$GITHUB_REPO"
+  printf '  %s# install / pin a tag%s\n' "$C_DIM" "$C_RESET"
+  printf '  %s --tag v1.2.3\n' "$SCRIPT_NAME"
+  printf '  %s# update / downgrade%s\n' "$C_DIM" "$C_RESET"
+  printf '  %s --update\n' "$SCRIPT_NAME"
+  printf '  %s --update --tag v1.2.3\n' "$SCRIPT_NAME"
+  printf '  %s# force reinstall same version%s\n' "$C_DIM" "$C_RESET"
+  printf '  %s --update --force\n' "$SCRIPT_NAME"
   printf '\n'
 }
 
@@ -233,10 +247,7 @@ get_prerelease_zip_url() {
     log_err "curl is required for --pre-release."
     exit 1
   fi
-  if ! command -v jq >/dev/null 2>&1; then
-    log_err "jq is required for --pre-release."
-    exit 1
-  fi
+  ensure_jq
   local api_url="https://api.github.com/repos/${GITHUB_REPO}/releases"
   local url
   url=$(curl -sSL -H 'Accept: application/vnd.github+json' "$api_url" \
@@ -273,9 +284,26 @@ parse_args() {
         UPDATE=1
         shift
         ;;
-      --verbose|-v)
+      --tag)
+        if [[ $# -lt 2 || -z "${2:-}" || "$2" == -* ]]; then
+          log_err "--tag requires a version argument (e.g. --tag v1.2.3)."
+          usage >&2
+          exit 1
+        fi
+        TARGET_VERSION="$2"
+        shift 2
+        ;;
+      --force)
+        FORCE=1
+        shift
+        ;;
+      -v|--verbose)
         VERBOSE=1
         shift
+        ;;
+      --version)
+        show_version
+        exit 0
         ;;
       *)
         log_err "Unknown option: $1"
@@ -284,12 +312,42 @@ parse_args() {
         ;;
     esac
   done
+
+  if [[ -n "$TARGET_VERSION" && "$PRE_RELEASE" -eq 1 ]]; then
+    log_err "--tag and --pre-release are mutually exclusive."
+    exit 1
+  fi
 }
 
+# Re-exec under sudo. Materializes the script when run via curl|bash (/dev/fd/…).
 require_root() {
-  if [[ ${EUID} -ne 0 ]]; then
-    exec sudo -E "$0" "$@"
+  if [[ ${EUID} -eq 0 ]]; then
+    return 0
   fi
+
+  if ! command -v sudo >/dev/null 2>&1; then
+    log_err "This script must run as root (sudo not found)."
+    exit 1
+  fi
+
+  local src="${BASH_SOURCE[0]:-$0}"
+  local tmp=""
+
+  # Regular on-disk script — sudo it directly.
+  if [[ -f "$src" && -r "$src" && "$src" != /dev/fd/* && "$src" != /proc/self/fd/* ]]; then
+    exec sudo -E bash "$src" "$@"
+  fi
+
+  # Piped / process-substitution: copy to a temp file first (fd is process-local).
+  if [[ -r "$src" ]]; then
+    tmp="$(mktemp /tmp/lampac-install.XXXXXX.sh)"
+    cat "$src" > "$tmp"
+    chmod 700 "$tmp"
+    exec sudo -E bash "$tmp" "$@"
+  fi
+
+  log_err "Cannot re-exec as root (script source unreadable). Download install.sh and run: sudo bash install.sh …"
+  exit 1
 }
 
 pick_libicu_package() {
@@ -304,44 +362,243 @@ pick_libicu_package() {
   exit 1
 }
 
-is_ubuntu() {
-  [[ -r /etc/os-release ]] || return 1
-  # shellcheck source=/dev/null
-  . /etc/os-release
-  [[ "${ID:-}" == "ubuntu" ]]
+# Install jq early when needed for --pre-release (before full package step).
+ensure_jq() {
+  if command -v jq >/dev/null 2>&1; then
+    return 0
+  fi
+  if [[ ${EUID} -ne 0 ]]; then
+    log_err "jq is required but not installed."
+    exit 1
+  fi
+  log_info "Installing jq..."
+  if ! DEBIAN_FRONTEND=noninteractive apt-get update -qq \
+    || ! DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends jq -qq; then
+    log_err "Failed to install jq (required for --pre-release)."
+    exit 1
+  fi
+  log_ok "jq installed"
 }
+
+# Extract "tag_name" from a GitHub release JSON blob without jq.
+json_extract_tag_name() {
+  local json="$1"
+  printf '%s' "$json" \
+    | grep -o '"tag_name"[[:space:]]*:[[:space:]]*"[^"]*"' \
+    | head -n1 \
+    | sed 's/.*"tag_name"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/'
+}
+
+# ─── Version ───────────────────────────────────────────────────────────
+
+# Убрать ведущий "v" для сравнения и записи в version.txt
+normalize_version() {
+  local v="$1"
+  v="${v#"${v%%[![:space:]]*}"}"
+  v="${v%"${v##*[![:space:]]}"}"
+  echo "${v#v}"
+}
+
+# Проверить, что asset релиза доступен по URL (без скачивания всего zip)
+release_asset_exists() {
+  local url="$1"
+  local code
+  code=$(curl -fsSIL -o /dev/null -w '%{http_code}' "$url" 2>/dev/null) || return 1
+  [[ "$code" == "200" ]]
+}
+
+# Разрешить PUBLISH_URL для конкретного тега (с fallback v / без v)
+resolve_tag_publish_url() {
+  local input="$1"
+  local -a candidates=()
+  local tag url
+
+  candidates+=("$input")
+  if [[ "$input" == v* ]]; then
+    candidates+=("${input#v}")
+  else
+    candidates+=("v${input}")
+  fi
+
+  for tag in "${candidates[@]}"; do
+    url="https://github.com/${GITHUB_REPO}/releases/download/${tag}/${RELEASE_ZIP_NAME}"
+    if release_asset_exists "$url"; then
+      PUBLISH_URL="$url"
+      return 0
+    fi
+  done
+
+  log_err "Release tag not found for ${GITHUB_REPO}: ${input} (asset ${RELEASE_ZIP_NAME})."
+  exit 1
+}
+
+# Выбрать PUBLISH_URL: --tag, --pre-release или latest
+resolve_publish_url() {
+  if [[ -n "$TARGET_VERSION" ]]; then
+    spinner_start "Resolving release tag ${TARGET_VERSION}..."
+    resolve_tag_publish_url "$TARGET_VERSION"
+    spinner_ok "Release URL resolved"
+  elif [[ "$PRE_RELEASE" -eq 1 ]]; then
+    spinner_start "Resolving latest pre-release asset..."
+    get_prerelease_zip_url
+    spinner_ok "Pre-release URL resolved"
+  else
+    PUBLISH_URL="https://github.com/${GITHUB_REPO}/releases/latest/download/${RELEASE_ZIP_NAME}"
+  fi
+}
+
+# Получить номер последнего [пре-]релиза Лампака с гитхаба
+get_release_version() {
+  if ! command -v curl >/dev/null 2>&1; then
+    log_err "curl is required to get release version."
+    exit 1
+  fi
+
+  local version json api_url
+
+  if [[ "$PRE_RELEASE" -eq 1 ]]; then
+    ensure_jq
+    api_url="https://api.github.com/repos/${GITHUB_REPO}/releases"
+    version=$(curl -sSL -H 'Accept: application/vnd.github+json' "$api_url" \
+      | jq -r '.[] | select(.prerelease == true) | .tag_name' | head -n1) || true
+  else
+    # Same source of truth as PUBLISH_URL (.../releases/latest/download/...)
+    api_url="https://api.github.com/repos/${GITHUB_REPO}/releases/latest"
+    json=$(curl -sSL -H 'Accept: application/vnd.github+json' "$api_url") || true
+    version="$(json_extract_tag_name "${json:-}")"
+  fi
+
+  version="$(normalize_version "${version:-}")"
+  if [[ -z "${version:-}" ]]; then
+    log_err "Could not determine release version from ${api_url}."
+    exit 1
+  fi
+  echo "$version"
+}
+
+# Получить номер установленной версии Лампака из файлика
+get_installed_version() {
+  local version_file="${INSTALL_ROOT}/${VERSION_FILE_NAME}"
+  if [[ -f "$version_file" ]]; then
+    normalize_version "$(cat "$version_file")"
+  else
+    echo "N/A"
+  fi
+}
+
+# Показать баннер и установленную версию Лампака для опции --version
+show_version() {
+  print_banner
+  if [[ -d "$INSTALL_ROOT" ]] && [[ -f "${INSTALL_ROOT}/Core.dll" ]]; then
+    printf '  %sInstalled Version:%s %s\n' "$C_BOLD" "$C_RESET" "$(get_installed_version)"
+  else
+    echo "Lampac is not installed."
+  fi
+  printf '\n'
+}
+
+# Сохранить версию в файлик, чтобы было что потом показывать
+save_installed_version() {
+  local version
+  version="$(normalize_version "$1")"
+  local version_file="${INSTALL_ROOT}/${VERSION_FILE_NAME}"
+  echo "$version" > "$version_file"
+}
+
+# Не продолжать, если желаемая версия уже установлена (если нет --force)
+confirm_same_version_or_exit() {
+  local desired
+  desired="$(normalize_version "$1")"
+  local installed
+  installed="$(get_installed_version)"
+
+  if [[ "$installed" == "N/A" || "$installed" != "$desired" ]]; then
+    return 0
+  fi
+
+  if [[ "$FORCE" -eq 1 ]]; then
+    log_warn "Version ${desired} is already installed — continuing due to --force."
+    return 0
+  fi
+
+  if [[ "$DRY_RUN" -eq 1 ]]; then
+    log_ok "Version ${desired} is already installed — nothing to do (dry-run)."
+    printf '  Use %s--force%s to preview a reinstall of the same version.\n\n' "$C_YELLOW" "$C_RESET"
+    exit 0
+  fi
+
+  printf '\n  %sVersion %s is already installed.%s\n' "$C_YELLOW" "$desired" "$C_RESET"
+  printf '  Continue anyway? [y/N]: '
+
+  if [[ ! -r /dev/tty ]]; then
+    printf '\n'
+    log_err "Cannot prompt for confirmation (no TTY). Use --force to reinstall the same version."
+    exit 1
+  fi
+
+  local answer
+  read -r answer </dev/tty || true
+  case "${answer:-}" in
+    y|Y|yes|YES)
+      log_warn "Reinstalling version ${desired}."
+      return 0
+      ;;
+    *)
+      log_ok "Skipped — already at version ${desired}."
+      printf '\n'
+      exit 0
+      ;;
+  esac
+}
+
 
 # ─── Install steps ───────────────────────────────────────────────────────────
 
-ensure_chromium_repo_ubuntu() {
-  run_quiet "Adding xtradeb/apps PPA (Chromium .deb)" \
-    env DEBIAN_FRONTEND=noninteractive add-apt-repository -y ppa:xtradeb/apps
+install_google_chrome() {
+  if command -v google-chrome-stable >/dev/null 2>&1; then
+    ln -sf /usr/bin/google-chrome-stable /usr/bin/chromium
+    log_skip "Google Chrome already installed — skipping"
+    return 0
+  fi
+
+  local chrome_url chrome_deb
+  case "$ARCH" in
+    arm64) chrome_url="https://dl.google.com/linux/direct/google-chrome-stable_current_arm64.deb" ;;
+    amd64) chrome_url="https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb" ;;
+    *)
+      log_err "Unsupported architecture for Google Chrome: $ARCH"
+      exit 1
+      ;;
+  esac
+
+  chrome_deb="/tmp/google-chrome-stable-$$.deb"
+  CLEANUP_PATHS+=("$chrome_deb")
+
+  run_quiet "Downloading Google Chrome ($ARCH)" \
+    curl -fSL -o "$chrome_deb" "$chrome_url"
+  run_quiet "Installing Google Chrome" \
+    env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "$chrome_deb"
+  ln -sf /usr/bin/google-chrome-stable /usr/bin/chromium
 }
 
 install_os_packages() {
   run_quiet "Updating package lists" \
     apt-get update
 
-  if is_ubuntu; then
-    run_quiet "Installing prerequisites for Chromium PPA (ca-certificates, software-properties-common)" \
-      env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-        ca-certificates software-properties-common
-    ensure_chromium_repo_ubuntu
-    run_quiet "Updating package lists (after PPA)" \
-      apt-get update
-  fi
-
   local icu_pkg
   icu_pkg="$(pick_libicu_package)"
 
-  run_quiet "Installing system packages (chromium, curl, fonts, GStreamer, ICU, ImageMagick, unzip)" \
+  run_quiet "Installing system packages (curl, jq, fonts, GStreamer, ICU, ImageMagick, unzip, rsync)" \
     env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-      ca-certificates curl chromium fontconfig \
+      ca-certificates curl jq fontconfig \
       gstreamer1.0-libav gstreamer1.0-plugins-bad gstreamer1.0-plugins-base \
       gstreamer1.0-plugins-base-apps gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly \
       gstreamer1.0-tools \
       imagemagick libgstreamer-plugins-base1.0-0 libgstreamer1.0-0 \
-      libjpeg-dev libnspr4 libpng-dev libwebp-dev unzip "$icu_pkg"
+      libjpeg-dev libnspr4 libpng-dev libwebp-dev unzip rsync "$icu_pkg"
+
+  install_google_chrome
+
   apt-get clean -qq 2>/dev/null || true
   rm -rf /var/lib/apt/lists/*
 }
@@ -395,12 +652,16 @@ ensure_service_user() {
     local holder
     holder="$(getent passwd "$prefer_uid" | cut -d: -f1)"
     log_warn "UID ${prefer_uid} taken by \"${holder}\" — using system-assigned UID"
-    useradd -r -g "$LAMPAC_USER" -d "$INSTALL_ROOT" -s /usr/sbin/nologin "$LAMPAC_USER" 2>/dev/null || true
-    return 0
+    useradd -r -g "$LAMPAC_USER" -d "$INSTALL_ROOT" -s /usr/sbin/nologin "$LAMPAC_USER"
+  else
+    useradd -r -u "$prefer_uid" -g "$LAMPAC_USER" -d "$INSTALL_ROOT" -s /usr/sbin/nologin "$LAMPAC_USER"
   fi
 
-  useradd -r -u "$prefer_uid" -g "$LAMPAC_USER" -d "$INSTALL_ROOT" -s /usr/sbin/nologin "$LAMPAC_USER" 2>/dev/null || true
-  log_ok "User ${LAMPAC_USER} created (uid ${prefer_uid}, home ${INSTALL_ROOT})"
+  if ! getent passwd "$LAMPAC_USER" &>/dev/null; then
+    log_err "Failed to create user ${LAMPAC_USER}."
+    exit 1
+  fi
+  log_ok "User ${LAMPAC_USER} created (home ${INSTALL_ROOT})"
 }
 
 set_install_ownership() {
@@ -442,7 +703,7 @@ build_rsync_excludes() {
     "torrserver/"
     "data/ts/"
 
-    # Домашняя директория пользователя lampac (chromium nssdb, сертификаты и т.д.)
+    # Домашняя директория пользователя lampac (Chrome nssdb, сертификаты и т.д.)
     ".local/"
     ".aspnet/"
     ".claude/"
@@ -455,11 +716,8 @@ build_rsync_excludes() {
     "current.conf"
     "database/"
 
-    # Пользовательские .js в корне wwwroot/ (темы, кнопки и т.д.)
+    # Пользовательские файлы и кеш в wwwroot/ (темы, кнопки, lampa-main и т.д.)
     "wwwroot/"
-
-    # Старая папка lampa-main (не входит в новый релиз, но может быть нужна)
-    "wwwroot/lampa-main/"
 
     # Пользовательские плагины и состояние
     "plugins/override/"
@@ -467,6 +725,9 @@ build_rsync_excludes() {
 
     # Файл с пользовательскими дополнительными исключениями
     "excludes.conf"
+
+    # Файл установленной версии (не удалять при обновлении)
+    "${VERSION_FILE_NAME}"
   )
 
   # Дополнительные исключения из excludes.conf (если файл существует)
@@ -523,37 +784,53 @@ download_and_extract_to_staging() {
 }
 
 install_app() {
-  local tmp_zip
-  tmp_zip="$(mktemp /tmp/lampac-nextgen.XXXXXX.zip)"
-  CLEANUP_PATHS+=("$tmp_zip")
+  local release_version="$1"
 
-  run_quiet "Downloading release archive" \
-    curl -fSL --retry 3 -o "$tmp_zip" "$PUBLISH_URL"
+  local staging_dir
+  staging_dir="$(mktemp -d /tmp/lampac-install-stage.XXXXXX)"
+  CLEANUP_PATHS+=("$staging_dir")
+
+  if ! download_and_extract_to_staging "$staging_dir"; then
+    log_err "Install aborted — download or extraction failed."
+    exit 1
+  fi
 
   mkdir -p "$INSTALL_ROOT"
 
-  run_quiet "Extracting to ${INSTALL_ROOT}" \
-    bash -c "unzip -oq '$tmp_zip' -d '$INSTALL_ROOT' </dev/null"
-  rm -f "$tmp_zip"
+  run_quiet "Installing application files to ${INSTALL_ROOT}" \
+    bash -c "shopt -s dotglob nullglob; cp -a '${staging_dir}'/* '${INSTALL_ROOT}'/"
 
   if [[ ! -f "${INSTALL_ROOT}/Core.dll" ]]; then
     log_err "Expected Core.dll not found in ${INSTALL_ROOT} — check release layout"
     exit 1
   fi
+
+  save_installed_version "$release_version"
 }
 
 # ─── Update ──────────────────────────────────────────────────────────────────
 
+# Best-effort restart if --update stopped the service and then failed.
+_update_restart_service_if_needed() {
+  if [[ "${_UPDATE_SERVICE_STOPPED}" -eq 1 ]]; then
+    log_warn "Update interrupted — attempting to restart ${SERVICE_NAME}..."
+    systemctl start "$SERVICE_NAME" 2>/dev/null || true
+    _UPDATE_SERVICE_STOPPED=0
+  fi
+}
+
 do_update() {
+  local new_version="$1"
+
   if [[ ! -d "$INSTALL_ROOT" ]] || [[ ! -f "${INSTALL_ROOT}/Core.dll" ]]; then
     log_err "Installation not found at ${INSTALL_ROOT} — run without --update first."
     exit 1
   fi
 
   if ! command -v rsync >/dev/null 2>&1; then
-    spinner_start "Installing rsync..."
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends rsync -qq 2>/dev/null
-    spinner_ok "rsync installed"
+    run_quiet "Updating package lists" apt-get update
+    run_quiet "Installing rsync" \
+      env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends rsync
   fi
 
   ensure_service_user
@@ -618,21 +895,33 @@ do_update() {
   fi
 
   # Реальное обновление
+  trap '_update_restart_service_if_needed; cleanup' EXIT
+
   spinner_start "Stopping ${SERVICE_NAME}..."
   systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+  _UPDATE_SERVICE_STOPPED=1
   spinner_ok "Service stopped"
 
-  run_quiet "Syncing release files (rsync --delete)" \
-    rsync -a --delete \
+  if ! rsync -a --delete \
       "${rsync_exclude_args[@]}" \
       "${staging_dir}/" \
-      "${INSTALL_ROOT}/"
+      "${INSTALL_ROOT}/"; then
+    log_err "Syncing release files (rsync --delete) — failed"
+    exit 1
+  fi
+  log_ok "Syncing release files (rsync --delete)"
 
   set_install_ownership
 
+  save_installed_version "$new_version"
+
   spinner_start "Starting ${SERVICE_NAME}..."
   systemctl start "$SERVICE_NAME"
+  _UPDATE_SERVICE_STOPPED=0
   spinner_ok "Service started"
+
+  # Restore the global cleanup-only trap from main.
+  trap cleanup EXIT
 }
 
 # ─── Systemd ─────────────────────────────────────────────────────────────────
@@ -654,8 +943,8 @@ Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$D
 Environment=DOTNET_RUNNING_IN_CONTAINER=false
 Environment=DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
-Environment=CHROMIUM_PATH=/usr/bin/chromium
-Environment=CHROMIUM_FLAGS=--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage
+Environment=CHROMIUM_PATH=/usr/bin/google-chrome-stable
+Environment="CHROMIUM_FLAGS=--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
 ExecStart=$DOTNET_INSTALL_DIR/dotnet $INSTALL_ROOT/Core.dll
 Restart=on-failure
 RestartSec=10
@@ -764,8 +1053,9 @@ print_post_update() {
 
 main() {
   trap cleanup EXIT
-  require_root "$@"
+  # Help/version must work without sudo (and before pipe re-exec).
   parse_args "$@"
+  require_root "$@"
 
   if [[ "$(uname -s)" != "Linux" ]]; then
     log_err "This script supports Linux only."
@@ -782,13 +1072,7 @@ main() {
 
   print_banner
 
-  if [[ "$PRE_RELEASE" -eq 1 ]]; then
-    spinner_start "Resolving latest pre-release asset..."
-    get_prerelease_zip_url
-    spinner_ok "Pre-release URL resolved"
-  else
-    PUBLISH_URL="https://github.com/${GITHUB_REPO}/releases/latest/download/${RELEASE_ZIP_NAME}"
-  fi
+  resolve_publish_url
 
   local mode_label="Install"
   [[ "$UPDATE" -eq 1 ]] && mode_label="Update"
@@ -798,6 +1082,26 @@ main() {
   printf '  %sArch:%s      %s\n'         "$C_BOLD" "$C_RESET" "$ARCH"
   printf '  %sDirectory:%s %s\n'         "$C_BOLD" "$C_RESET" "$INSTALL_ROOT"
   printf '  %sRelease:%s   %s\n'         "$C_BOLD" "$C_RESET" "$PUBLISH_URL"
+
+  # Узнаём и показываем версии под баннером
+  local release_version
+  if [[ -n "$TARGET_VERSION" ]]; then
+    release_version="$(normalize_version "$TARGET_VERSION")"
+  else
+    release_version="$(get_release_version)"
+  fi
+  if [[ "$UPDATE" -eq 1 ]] || [[ -d "$INSTALL_ROOT" && -f "${INSTALL_ROOT}/Core.dll" ]]; then
+    printf '  %sInstalled Version:%s   %s\n' "$C_BOLD" "$C_RESET" "$(get_installed_version)"
+  fi
+  printf '  %sRelease Version:%s     %s\n' "$C_GREEN" "$C_RESET" "$release_version"
+
+  confirm_same_version_or_exit "$release_version"
+
+  # Dry-run update: preview rsync only — skip apt / runtime install.
+  if [[ "$DRY_RUN" -eq 1 && "$UPDATE" -eq 1 ]]; then
+    do_update "$release_version"
+    exit 0
+  fi
 
   local total_steps=4
   [[ "$UPDATE" -eq 1 ]] && total_steps=3
@@ -810,7 +1114,7 @@ main() {
 
   if [[ "$UPDATE" -eq 1 ]]; then
     step 3 "$total_steps" "Update application"
-    do_update
+    do_update "$release_version"
     print_post_update
     exit 0
   fi
@@ -819,7 +1123,7 @@ main() {
   ensure_service_user
 
   step 4 "$total_steps" "Application"
-  install_app
+  install_app "$release_version"
   install_systemd_unit
   set_install_ownership
   start_service
