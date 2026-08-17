@@ -52,6 +52,7 @@ public class ModInit : IModuleLoaded, IModuleConfigure
             soundcloud_discovery_enabled = true,
             soundcloud_audio_enabled = true,
             soundcloud_auth_enabled = false,
+            applemusic_country = "us",
             soundcloud_client_id = "",
             soundcloud_client_secret = "",
             soundcloud_redirect_uri = "",

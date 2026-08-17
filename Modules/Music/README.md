@@ -103,6 +103,7 @@ curl -fsS 'http://127.0.0.1:9118/music/providers'
 ```jsonc
 {
   "Music": {
+    "applemusic_country": "ru",
     "soundcloud_country": "DE",
     "z3fm_enabled": true,
     "z3fm_audio_enabled": true
@@ -125,6 +126,7 @@ curl -fsS 'http://127.0.0.1:9118/music/providers'
 | `soundcloud_discovery_enabled` | `true` | полки/подборки SoundCloud |
 | `soundcloud_audio_enabled` | `true` | SoundCloud как audio-источник |
 | `soundcloud_auth_enabled` | `false` | вход в аккаунт SoundCloud (OAuth) |
+| `applemusic_country` | `us` | регион Apple Music Charts (ISO 3166-1 alpha-2) |
 | `soundcloud_client_id` | *(пусто)* | собственный client_id; без него скрапится публичный |
 | `soundcloud_client_secret` | *(пусто)* | для OAuth-потока |
 | `soundcloud_redirect_uri` | *(пусто)* | для OAuth-потока |

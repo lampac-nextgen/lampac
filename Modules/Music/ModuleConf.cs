@@ -36,6 +36,8 @@ public class ModuleConf
 
     public bool soundcloud_auth_enabled { get; set; }
 
+    public string applemusic_country { get; set; }
+
     public string soundcloud_client_id { get; set; }
 
     public string soundcloud_client_secret { get; set; }

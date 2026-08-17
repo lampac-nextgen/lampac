@@ -12,7 +12,7 @@ public class AppleMusicDiscoveryProvider : IMusicDiscoveryProvider
     static readonly TimeSpan cacheTtl = TimeSpan.FromHours(6);
 
     const string providerId = "applemusiccharts";
-    const string country = "us";
+    const string defaultCountry = "us";
     const string userAgent = "LampacNextgenMusic/0.1 (https://github.com/lampac-nextgen/lampac)";
 
     public string Id => providerId;
@@ -104,17 +104,19 @@ public class AppleMusicDiscoveryProvider : IMusicDiscoveryProvider
 
     async Task<List<MusicAlbum>> GetTopAlbumsAsync(CancellationToken cancellationToken)
     {
+        string country = GetCountry();
+
         return await MusicMetadataCacheService.GetOrCreateAsync(
             providerId,
             "browse",
             $"{country}:top-albums",
             cacheTtl,
-            () => LoadTopAlbumsAsync(cancellationToken),
+            () => LoadTopAlbumsAsync(country, cancellationToken),
             cancellationToken
         ) ?? new List<MusicAlbum>();
     }
 
-    async Task<List<MusicAlbum>> LoadTopAlbumsAsync(CancellationToken cancellationToken)
+    async Task<List<MusicAlbum>> LoadTopAlbumsAsync(string country, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, $"https://rss.marketingtools.apple.com/api/v2/{country}/music/most-played/100/albums.json");
         request.Headers.TryAddWithoutValidation("User-Agent", userAgent);
@@ -135,6 +137,16 @@ public class AppleMusicDiscoveryProvider : IMusicDiscoveryProvider
             .Select(node => ParseAlbum(node as JsonObject))
             .Where(i => i != null)
             .ToList();
+    }
+
+    static string GetCountry()
+    {
+        string country = ModInit.conf?.applemusic_country;
+        if (string.IsNullOrWhiteSpace(country))
+            return defaultCountry;
+
+        country = country.Trim().ToLowerInvariant();
+        return Regex.IsMatch(country, "^[a-z]{2}$") ? country : defaultCountry;
     }
 
     static MusicAlbum ParseAlbum(JsonObject item)
