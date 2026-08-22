@@ -670,14 +670,26 @@ public class ApiController : BaseController
 
             if (CoreInit.conf.accsdb.enable)
             {
-                string denyjs = FileCache.ReadAllText($"{ModInit.modpath}/plugins/deny.js", "deny.js");
-                if (denyjs.Contains("{country}"))
-                    StatiCacheDisabled = true;
+                string script;
+                var gate = ModInit.conf.telegramAuthGate;
+                if (gate != null && gate.enabled && !string.IsNullOrWhiteSpace(gate.botUsername))
+                {
+                    script = TelegramGateJs();
+                }
+                else
+                {
+                    if (gate != null && gate.enabled && string.IsNullOrWhiteSpace(gate.botUsername))
+                        Console.WriteLine("LampaWeb.telegramAuthGate: enabled=true, но botUsername пустой — откат на deny.js (гейт без имени бота неавторизуем).");
 
-                if (denyjs.Contains("{cubMesage}"))
-                    denyjs = denyjs.Replace("{cubMesage}", CoreInit.conf.accsdb.authMesage);
+                    script = FileCache.ReadAllText($"{ModInit.modpath}/plugins/deny.js", "deny.js");
+                    if (script.Contains("{country}"))
+                        StatiCacheDisabled = true;
 
-                sb = sb.Replace("{deny}", denyjs);
+                    if (script.Contains("{cubMesage}"))
+                        script = script.Replace("{cubMesage}", CoreInit.conf.accsdb.authMesage);
+                }
+
+                sb = sb.Replace("{deny}", script);
             }
 
             string initinvcjs = FileCache.ReadAllText($"{ModInit.modpath}/plugins/lampainit-invc.js", "lampainit-invc.js");
@@ -894,6 +906,22 @@ public class ApiController : BaseController
     }
     #endregion
 
+    private string TelegramGateJs()
+    {
+        var g = ModInit.conf.telegramAuthGate;
+        string raw = FileCache.ReadAllText($"{ModInit.modpath}/plugins/telegram_auth_gate.js", "telegram_auth_gate.js");
+        if (raw.Contains("{country}"))
+            StatiCacheDisabled = true; // defensive parity с deny.js; в файле гейта {country} нет
+
+        string bot = HttpUtility.JavaScriptStringEncode(g?.botUsername ?? string.Empty);
+        string svc = HttpUtility.JavaScriptStringEncode(g?.serviceName ?? string.Empty);
+
+        // {localhost}, {country}, {token} подставляются глобально (688-689, 738-748) или в маршруте
+        return raw
+            .Replace("{botUsername}", bot)
+            .Replace("{serviceName}", svc);
+    }
+
     #region telegram_auth_gate.js
     [HttpGet, AllowAnonymous, Staticache(manually: true)]
     [Route("telegram_auth_gate.js")]
@@ -901,9 +929,14 @@ public class ApiController : BaseController
     {
         SetHeadersNoCache();
 
-        string gate = FileCache.ReadAllText($"{ModInit.modpath}/plugins/telegram_auth_gate.js", "telegram_auth_gate.js")
-            .Replace("{country}", requestInfo.Country)
-            .Replace("{localhost}", host);
+        string token = string.IsNullOrEmpty(CoreInit.conf.accsdb.domainId_pattern)
+            ? string.Empty
+            : Regex.Match(HttpContext.Request.Host.Host, CoreInit.conf.accsdb.domainId_pattern).Groups[1].Value;
+
+        string gate = TelegramGateJs()
+            .Replace("{country}", requestInfo.Country ?? string.Empty)
+            .Replace("{localhost}", host)
+            .Replace("{token}", HttpUtility.UrlEncode(token));
 
         return ContentTo(gate, "application/javascript; charset=utf-8");
     }

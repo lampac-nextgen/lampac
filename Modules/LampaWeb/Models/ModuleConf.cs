@@ -25,6 +25,8 @@ public class ModuleConf : ModuleBaseConf
 
     public WidgetsConf widgets { get; set; } = new();
 
+    public TelegramAuthGateConf telegramAuthGate { get; set; } = new();
+
     public Dictionary<string, string> appReplace { get; set; }
 
     public Dictionary<string, string> cssReplace { get; set; }

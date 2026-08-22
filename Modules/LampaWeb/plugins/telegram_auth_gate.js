@@ -5,8 +5,8 @@
   window.telegram_auth_gate_loaded = true;
 
   var CONFIG = {
-    botUsername: 'YOUR_BOT_USERNAME',
-    serviceName: 'YOUR_SERVICE_NAME',
+    botUsername: '{botUsername}',
+    serviceName: '{serviceName}',
     lsUidKey: 'lampac_unic_id',
     lsUserKey: 'tg_auth_user',
     checkIntervalMs: 10000,
@@ -513,8 +513,7 @@
     if (email) url = Lampa.Utils.addUrlComponent(url, 'account_email=' + encodeURIComponent(email));
     var uid0 = Lampa.Storage.get(CONFIG.lsUidKey, '');
     if (uid0) url = Lampa.Utils.addUrlComponent(url, 'uid=' + encodeURIComponent(uid0));
-    var token = '{token}';
-    if (token) url = Lampa.Utils.addUrlComponent(url, 'token={token}');
+    url = Lampa.Utils.addUrlComponent(url, 'token={token}');
     return url;
   }
 

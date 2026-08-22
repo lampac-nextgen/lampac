@@ -20,6 +20,9 @@
     <None Update="plugins\deny.js">
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </None>
+    <None Update="plugins\telegram_auth_gate.js">
+      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
+    </None>
     <None Update="plugins\dorama.js">
       <CopyToPublishDirectory>Always</CopyToPublishDirectory>
     </None>
