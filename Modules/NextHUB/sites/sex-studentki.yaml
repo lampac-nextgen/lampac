@@ -3,7 +3,7 @@ displayindex: 109
 displayname: SEX Studentki
 rch_access: apk
 stream_access: apk
-host: https://sex-studentki.live
+host: https://sex-studentki.one
 priorityBrowser: http
 streamproxy: true
 headers:
@@ -51,7 +51,7 @@ view:
 #  waitLocationFile: true
   viewsource: true
   regexMatch:
-    pattern: '<video[^>]+id="player"[\s\S]*?<source[\t ]+src="([^\"]+/link_cs/[^\"]+)"'
+    pattern: '<video[^>]+id="player"[\s\S]*?<source[\t ]+src="([^\"]+)"'
   related: true
   relatedParse:
     nodes: //div[@class='video mini trailer']
