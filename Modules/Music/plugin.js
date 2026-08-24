@@ -1500,6 +1500,8 @@
             values.outplayer = 'Outplayer';
             values.nplayer = 'nPlayer';
             values.infuse = 'Infuse';
+        } else if (!Lampa.Platform.macOS()) {
+            values.ios = 'Music Player';
         }
 
         if (Lampa.Platform.macOS()) {
@@ -4953,8 +4955,7 @@
     // --- standalone <audio>: элемент, timeupdate, lock-kick ---
 
     function shouldUseStandaloneIosAudio() {
-        return Lampa.Platform.is('apple')
-            && currentExternalPlayer() === 'ios'
+        return currentExternalPlayer() === 'ios'
             && getPlaybackMode() === 'audio';
     }
 
@@ -9383,9 +9384,29 @@
 
     function pickPlaybackSource(sources) {
         if (!Array.isArray(sources) || !sources.length) return null;
-        if (!shouldUseStandaloneIosAudio()) return sources[0];
 
-        return sources.slice().sort(function (a, b) {
+        function isHls(s) {
+            var quality = String(s && s.quality || '').toLowerCase();
+            var protocol = String(s && s.protocol || '').toLowerCase();
+            var mime = String(s && s.mime_type || '').toLowerCase();
+            var url = String(s && s.url || '').toLowerCase();
+            return quality.indexOf('hls') !== -1
+                || protocol.indexOf('hls') !== -1
+                || mime.indexOf('mpegurl') !== -1
+                || url.indexOf('.m3u8') !== -1;
+        }
+
+        if (!shouldUseStandaloneIosAudio()) {
+            var nonHls = sources.filter(function (s) { return !isHls(s); });
+            return nonHls.length ? nonHls[0] : sources[0];
+        }
+
+        var candidates = Lampa.Platform.is('apple')
+            ? sources
+            : sources.filter(function (s) { return !isHls(s); });
+        if (!candidates.length) candidates = sources;
+
+        return candidates.slice().sort(function (a, b) {
             return iosSourceRank(a) - iosSourceRank(b);
         })[0];
     }
@@ -10529,7 +10550,7 @@
 
         if (!player) return true;
         if (player === 'inner' || player === 'lampa') return true;
-        if (Lampa.Platform.is('apple') && player === 'ios') return true;
+        if (player === 'ios') return true;
 
         return false;
     }
