@@ -7,7 +7,7 @@
 
 ## Возможности
 
-- **Главный экран** — недавно прослушанное, недавние альбомы/артисты/поиски, пользовательские плейлисты и discovery-полки (чарты Apple Music, VK Top, подборки SoundCloud).
+- **Главный экран** — недавно прослушанное, недавние альбомы/артисты/поиски, пользовательские плейлисты и discovery-полки (Apple Music, Spotify, VK Top, SoundCloud).
 - **Поиск** — артисты, альбомы, треки; каноническая база метаданных MusicBrainz, дополнительные секции из YouTube Music.
 - **Воспроизведение** — автоматический подбор playable-источника (YouTube, Sefon, SoundCloud, опционально Z3Fm) с ручным переопределением: выбранный вручную источник закрепляется (`pinned`) и переживает перезапуски.
 - **Пользовательские плейлисты** — создание, наполнение из любого экрана, перестановка треков, хранение на сервере с привязкой к профилю браузера.
@@ -16,7 +16,7 @@
 - **Радио** — «Радио от трека» из меню любого трека (волна от выбранной песни) и автоподборка в конец очереди; движок похожести — рекомендации SoundCloud (related/station) со слоистым пулом и жёстким дедупом.
 - **Статистика прослушиваний** — «Твой топ»: играбельный альбом из самых прослушиваемых треков, появляется после накопления данных; счётчики по дням в SQLite.
 - **Выбор плеера для музыки** — отдельная настройка в «Настройки → Плеер», независимая от глобального плеера Lampa (встроенный, iOS, VLC и другие внешние).
-- **Тексты песен** — синхронизированная (караоке) и обычная лирика через lrclib с фоллбеком на YouTube Music.
+- **Тексты песен** — синхронизированная (караоке) и обычная лирика через lrclib с фоллбеком на YouTube Music; ручная подгонка тайминга на телефоне и с пульта телевизора.
 - **iOS lock screen** — в standalone-режиме плеера: play/pause, next/prev, перемотка скраббером, корректные метаданные и обложка, автопереход треков, устойчивое возобновление на заблокированном экране.
 - **Стриминг через сервер** — клиент никогда не ходит на внешние CDN напрямую: единый relay `/music/stream` с поддержкой Range-запросов, тикетами и автоматическим повторным резолвом протухших ссылок.
 
@@ -27,7 +27,7 @@
 | Роль | Ответственность | Текущие источники |
 | --- | --- | --- |
 | **Metadata** | канонические артисты, альбомы, треки | MusicBrainz |
-| **Discovery** | полки, чарты, подборки, секции поиска | Apple Music, VK Top, SoundCloud, YouTube Music |
+| **Discovery** | полки, чарты, подборки, секции поиска | Apple Music, Spotify, VK Top, SoundCloud, YouTube Music |
 | **Audio** | playable match и stream sources | YouTube (основной), Sefon, SoundCloud, Z3Fm (опц.) |
 | **Auth** | внешние пользовательские аккаунты | SoundCloud (каркас, выключен по умолчанию) |
 | **Images** | обогащение картинок | Discogs (фото артистов) |
@@ -64,7 +64,7 @@ Models/             Contracts.cs — DTO контрактов API
 Providers/
   Abstractions/     интерфейсы провайдеров
   Metadata/         MusicBrainz
-  Discovery/        AppleMusic, VkTopChart, SoundCloud, YouTubeMusic
+  Discovery/        AppleMusic, Spotify, VkTopChart, SoundCloud, YouTubeMusic
   Audio/            YouTube, Sefon, Z3Fm
   SoundCloud/       общий site-support (partial: Catalog / Audio / Import / Auth)
   Spotify/          импорт публичных плейлистов/альбомов (анонимный embed-токен)
@@ -103,8 +103,13 @@ curl -fsS 'http://127.0.0.1:9118/music/providers'
 ```jsonc
 {
   "Music": {
+    "useproxy": false,
+    "useproxystream": false,
     "applemusic_country": "ru",
-    "soundcloud_country": "DE",
+    "applemusic_album_resolver": "auto",
+    "spotify_discovery_enabled": true,
+    "spotify_country": "ua",
+    "soundcloud_country": "UK",
     "z3fm_enabled": true,
     "z3fm_audio_enabled": true
   }
@@ -118,23 +123,35 @@ curl -fsS 'http://127.0.0.1:9118/music/providers'
 | `default_metadata_provider` | `musicbrainz` | metadata-база каталога |
 | `default_audio_provider` | `youtubeaudio` | основной audio-провайдер |
 | `default_auth_provider` | *(пусто)* | auth-провайдер по умолчанию |
+| `useproxy` | `false` | прокси для API, поиска и discovery; используется стандартный proxy Lampac |
+| `useproxystream` | `false` | прокси для получения manifest и передачи audio-stream |
+| `globalnameproxy` | *(пусто)* | имя proxy из глобального `globalproxy` Lampac |
+| `proxy` | *(пусто)* | локальная настройка proxy Music; имеет приоритет над глобальной |
 | `client_debug_enabled` | `false` | приём клиентских трейсов на `/music/clientlog` (только для отладки) |
 | `stats_clear_enabled` | `false` | показывать сервисную кнопку очистки статистики «Твоего топа» в фильтре |
 | `youtube_audio_enabled` | `true` | YouTube как audio-источник (через YoutubeExplode) |
+| `spotify_search_fallback_enabled` | `false` | дополнительные результаты поиска Spotify |
+| `spotify_discovery_enabled` | `true` | региональная полка плейлистов Spotify на главном экране |
+| `spotify_country` | `us` | профиль плейлистов Spotify: `UA`, `CA`, `US`, `RU`, `PL`, `FR`, `DE`; для остальных ISO-кодов используется явно подписанный Global-профиль |
 | `sefon_audio_enabled` | `true` | Sefon как дополнительный audio-источник |
 | `soundcloud_enabled` | `true` | SoundCloud целиком |
 | `soundcloud_discovery_enabled` | `true` | полки/подборки SoundCloud |
 | `soundcloud_audio_enabled` | `true` | SoundCloud как audio-источник |
 | `soundcloud_auth_enabled` | `false` | вход в аккаунт SoundCloud (OAuth) |
 | `applemusic_country` | `us` | регион Apple Music Charts (ISO 3166-1 alpha-2) |
+| `applemusic_album_resolver` | `auto` | открытие альбомов из Apple-полок: `auto`, `applemusic`, `spotify`, `soundcloud` или `musicbrainz` |
 | `soundcloud_client_id` | *(пусто)* | собственный client_id; без него скрапится публичный |
 | `soundcloud_client_secret` | *(пусто)* | для OAuth-потока |
 | `soundcloud_redirect_uri` | *(пусто)* | для OAuth-потока |
-| `soundcloud_country` | `US` | регион чартов/подборок |
+| `soundcloud_country` | `US` | регион SoundCloud Charts: `US` или `UK` (`GB` нормализуется в `UK`) |
 | `z3fm_enabled` | `false` | Z3Fm целиком (требует Playwright для антибота) |
 | `z3fm_audio_enabled` | `false` | Z3Fm как audio-источник |
 | `z3fm_proxy_enabled` / `z3fm_proxy_url` / `z3fm_proxy_username` / `z3fm_proxy_password` | `false` / *(пусто)* | прокси для Z3Fm |
 | `limit_map` | `^/music`: 15 req/s | WAF rate-limit для эндпоинтов модуля |
+
+Каждый профиль Spotify содержит одну полку с 15 плейлистами: пять основных региональных, пять дополнительных региональных тематических и пять глобальных тематических. Для `CA`, `US`, `PL`, `FR`, `DE` используются официальные подборки Spotify; профили `UA` и `RU` частично состоят из публичных локальных плейлистов. После смены `spotify_country` нужен перезапуск Lampac; недоступный плейлист пропускается, не блокируя остальные discovery-источники.
+
+`applemusic_album_resolver` задаёт приоритет открытия карточек Apple Music Charts. `auto` использует цепочку Apple ID → Spotify → SoundCloud → MusicBrainz; `applemusic` — Apple ID → MusicBrainz; `spotify` — Spotify → MusicBrainz; `soundcloud` — SoundCloud → MusicBrainz; `musicbrainz` сохраняет старое поведение. В SoundCloud учитываются только результаты из секции альбомов, пользовательские плейлисты исключены. Spotify участвует при включённом `spotify_search_fallback_enabled`, SoundCloud — при включённом `soundcloud_discovery_enabled`; неизвестное значение строго нормализуется в `auto`.
 
 ## HTTP API
 
@@ -237,6 +254,8 @@ curl -fsS 'http://127.0.0.1:9118/music/providers'
 
 `/music/lyrics` возвращает синхронизированный (LRC, построчный тайминг) или обычный текст. Основной источник — [lrclib.net](https://lrclib.net); при отсутствии synced-варианта пробуется fallback через YouTube Music. Кэширование дифференцированное: synced-результаты живут долго, plain-only и «не найдено» — коротко, сетевые сбои не кэшируются вовсе и помечаются `retry` для клиента.
 
+Для синхронизированного текста клиент позволяет подогнать тайминг в диапазоне от −10 до +10 секунд с шагом 0,5 секунды. `+` показывает текст позже, `−` — раньше; нажатие на значение сбрасывает сдвиг в ноль. В standalone iOS-плеере управление находится в окне «Текст», во встроенном плеере — над лирикой и отдельными кнопками `−` / `+` на панели для управления пультом. Сдвиг действует только на текущий трек, сбрасывается при его смене и не показывается для обычного текста без таймингов.
+
 ### Радио
 
 У радио два входа:
@@ -332,7 +351,7 @@ curl -fsS 'http://127.0.0.1:9118/music/providers'
 
 ## Известные ограничения
 
-- Импорт Spotify / Apple Music и авто-получение SoundCloud client_id опираются на недокументированные публичные механизмы этих сервисов; при изменениях на их стороне импорт может временно ломаться до обновления модуля (симптом для Spotify — `PersistedQueryNotFound` в логах).
+- Discovery/импорт Spotify, импорт Apple Music и авто-получение SoundCloud client_id опираются на недокументированные публичные механизмы этих сервисов; при изменениях на их стороне интеграция может временно ломаться до обновления модуля (симптом для Spotify — `PersistedQueryNotFound` в логах).
 - Перемотка скраббером на iOS lock screen поддерживается только в standalone-режиме плеера (`ios`), не во встроенном (`inner`).
 - Синхронизация импортированного плейлиста — недеструктивное слияние: порядок и ручные правки сохраняются, новинки добавляются в начало; но треки, удалённые в источнике, локально не удаляются (убрать можно только вручную).
 - Управление очередью (играть следующим, убрать, радио-догрузка) работает только для управляемой очереди модуля (`ios` / `inner`); внешние плееры получают разовый плейлист без возможности менять его после запуска.

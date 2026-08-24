@@ -224,6 +224,37 @@ public static class MusicCatalogService
         if (YouTubeMusicSearchSupport.IsPlaylistAlbum(provider, id))
             return YouTubeMusicSearchSupport.GetPlaylistAlbumAsync(id, cancellationToken);
 
+        if (AppleMusicSupport.IsCatalogAlbum(provider, id))
+            return MusicMetadataCacheService.GetOrCreateAsync(
+                AppleMusicSupport.ProviderId, "album", VersionedKey(id), albumCacheTtl,
+                () => AppleMusicSupport.GetCatalogAlbumAsync(id, cancellationToken), cancellationToken);
+
+        if (AppleMusicDiscoveryProvider.IsChartAlbum(provider, id))
+        {
+            var discovery = MusicProviderRegistry.DiscoveryProviders
+                .FirstOrDefault(i => string.Equals(i.Id, AppleMusicDiscoveryProvider.ProviderId, StringComparison.OrdinalIgnoreCase)) as AppleMusicDiscoveryProvider;
+
+            return discovery?.Enabled == true
+                ? MusicMetadataCacheService.GetOrCreateAsync(
+                    AppleMusicDiscoveryProvider.ProviderId,
+                    "album",
+                    VersionedKey($"{AppleMusicDiscoveryProvider.CurrentCountry}|{id}"),
+                    albumCacheTtl,
+                    () => discovery.GetAlbumAsync(id, cancellationToken),
+                    cancellationToken)
+                : Task.FromResult<MusicAlbum>(null);
+        }
+
+        if (SpotifyDiscoveryProvider.IsPlaylistAlbum(provider, id))
+        {
+            var discovery = MusicProviderRegistry.DiscoveryProviders
+                .FirstOrDefault(i => string.Equals(i.Id, provider, StringComparison.OrdinalIgnoreCase)) as SpotifyDiscoveryProvider;
+
+            return discovery?.Enabled == true
+                ? discovery.GetPlaylistAlbumAsync(id, cancellationToken)
+                : Task.FromResult<MusicAlbum>(null);
+        }
+
         if (SoundCloudSupport.IsUserTracksAlbum(provider, id))
             return SoundCloudSupport.GetUserTracksAlbumAsync(id, cancellationToken);
 
@@ -440,34 +471,22 @@ public static class MusicCatalogService
         if (artists.Count > 0)
             sections.Add(new MusicBrowseSection
             {
-                id = SpotifySupport.ArtistsSectionId,
-                title = "Исполнители",
-                type = "artists",
-                source_provider = SpotifySupport.ProviderId,
-                has_more = false,
-                artists = artists
+                id = SpotifySupport.ArtistsSectionId, title = "Исполнители", type = "artists",
+                source_provider = SpotifySupport.ProviderId, has_more = false, artists = artists
             });
 
         if (albums.Count > 0)
             sections.Add(new MusicBrowseSection
             {
-                id = SpotifySupport.AlbumsSectionId,
-                title = "Альбомы",
-                type = "albums",
-                source_provider = SpotifySupport.ProviderId,
-                has_more = false,
-                albums = albums
+                id = SpotifySupport.AlbumsSectionId, title = "Альбомы", type = "albums",
+                source_provider = SpotifySupport.ProviderId, has_more = false, albums = albums
             });
 
         if (tracks.Count > 0)
             sections.Add(new MusicBrowseSection
             {
-                id = SpotifySupport.TracksSectionId,
-                title = "Треки",
-                type = "tracks",
-                source_provider = SpotifySupport.ProviderId,
-                has_more = false,
-                tracks = tracks
+                id = SpotifySupport.TracksSectionId, title = "Треки", type = "tracks",
+                source_provider = SpotifySupport.ProviderId, has_more = false, tracks = tracks
             });
 
         return sections;

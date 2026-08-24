@@ -13,6 +13,7 @@ namespace Music;
 public static class SpotifySupport
 {
     public const string ProviderId = "spotify";
+    public const string DiscoveryProviderId = "spotifycharts";
     public const string PlaylistSourceType = "spotify_playlist";
     public const string AlbumSourceType = "spotify_album";
     public const string TracksSectionId = "search:spotify:tracks";
@@ -47,7 +48,7 @@ public static class SpotifySupport
     const string ArtistDiscographyOrder = "DATE_DESC";
     const string BrowserUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
 
-    static readonly HttpClient httpClient = FriendlyHttp.CreateHttpClient(useCookies: false);
+    static readonly HttpClient httpClient = MusicHttp.CreateClient("spotify");
     static readonly Regex entityUrlRegex = new(@"^https?://open\.spotify\.com/(?:intl-[a-z\-]+/)?(playlist|album)/([A-Za-z0-9]{22})", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     static readonly Regex entityUriRegex = new(@"^spotify:(playlist|album):([A-Za-z0-9]{22})$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     static readonly Regex accessTokenRegex = new("\"accessToken\"\\s*:\\s*\"([^\"]+)\"", RegexOptions.Compiled);
@@ -62,6 +63,68 @@ public static class SpotifySupport
     }
 
     public static bool CanHandleUrl(string url) => ParseEntity(url) != null;
+
+    public static async Task<MusicAlbum> GetPlaylistAlbumAsync(string playlistId, int limit, CancellationToken cancellationToken = default)
+    {
+        playlistId = playlistId?.Trim();
+        if (string.IsNullOrWhiteSpace(playlistId) || !Regex.IsMatch(playlistId, "^[A-Za-z0-9]{22}$"))
+            return null;
+
+        int take = Math.Clamp(limit, 1, PlaylistPageLimit);
+
+        try
+        {
+            var root = await QueryAsync("fetchPlaylist", FetchPlaylistHash, new
+            {
+                uri = $"spotify:playlist:{playlistId}",
+                offset = 0,
+                limit = take,
+                enableWatchFeedEntrypoint = false
+            }, "playlist", playlistId, cancellationToken);
+
+            var playlist = GetProperty(root, "data", "playlistV2");
+            if (playlist == null || playlist.Value.ValueKind != JsonValueKind.Object)
+                return null;
+
+            var content = GetProperty(playlist.Value, "content");
+            if (content == null || !content.Value.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                return null;
+
+            var tracks = DeduplicateTracks(items
+                .EnumerateArray()
+                .Select(MapPlaylistItem)
+                .Where(track => track != null)
+                .Take(take)
+                .ToList());
+
+            var owner = GetProperty(playlist.Value, "ownerV2", "data");
+            string title = GetString(playlist.Value, "name")?.Trim();
+            string ownerName = owner != null ? GetString(owner.Value, "name")?.Trim() : null;
+
+            return new MusicAlbum
+            {
+                id = $"spotify:playlist:{playlistId}",
+                title = string.IsNullOrWhiteSpace(title) ? "Spotify Playlist" : title,
+                artist_name = string.IsNullOrWhiteSpace(ownerName) ? "Spotify" : ownerName,
+                type = "Playlist",
+                description = GetString(playlist.Value, "description")?.Trim(),
+                images = MapPlaylistImages(GetProperty(playlist.Value, "images")),
+                provider_refs = new List<MusicProviderRef>
+                {
+                    new() { provider = DiscoveryProviderId, external_id = playlistId }
+                },
+                tracks = tracks
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     // Поиск треков для отдельной Spotify-вкладки в результатах поиска.
     // Spotify «по-человечески» понимает ввод («рианна», «маданна», опечатки),
@@ -1202,6 +1265,24 @@ public static class SpotifySupport
         }
 
         // крупные первыми — как отдаёт SoundCloud-маппер
+        return result.OrderByDescending(i => i.width ?? 0).ToList();
+    }
+
+    static List<MusicImage> MapPlaylistImages(JsonElement? images)
+    {
+        var result = new List<MusicImage>();
+        if (images == null || !images.Value.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+            return result;
+
+        foreach (var item in items.EnumerateArray())
+        {
+            foreach (var image in MapCoverArt(item))
+            {
+                if (!result.Any(i => string.Equals(i.url, image.url, StringComparison.OrdinalIgnoreCase)))
+                    result.Add(image);
+            }
+        }
+
         return result.OrderByDescending(i => i.width ?? 0).ToList();
     }
 

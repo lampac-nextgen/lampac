@@ -21,7 +21,8 @@ internal static class YouTubeMusicLyricsFallback
 
     static HttpClient CreateClient()
     {
-        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
+        var client = MusicHttp.CreateClient("youtubemusic");
+        client.Timeout = TimeSpan.FromSeconds(12);
         client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Safari/605.1.15");
         client.DefaultRequestHeaders.TryAddWithoutValidation("Origin", HomeUrl.TrimEnd('/'));
         client.DefaultRequestHeaders.TryAddWithoutValidation("Referer", HomeUrl);

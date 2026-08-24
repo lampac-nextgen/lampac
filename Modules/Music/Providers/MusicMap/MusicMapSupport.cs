@@ -20,7 +20,7 @@ public static class MusicMapSupport
     // если сайт/парсер временно отдал мусор (совет Кодекса)
     static readonly TimeSpan similarCacheTtl = TimeSpan.FromDays(14);
 
-    static readonly HttpClient httpClient = FriendlyHttp.CreateHttpClient(useCookies: false);
+    static readonly HttpClient httpClient = MusicHttp.CreateClient("musicmap");
     static readonly Regex mapBlockRegex = new(@"<div id=gnodMap>(.*?)</div>", RegexOptions.Singleline | RegexOptions.Compiled);
     static readonly Regex anchorRegex = new("<a href=\"[^\"]*\" class=S id=s(\\d+)>([^<]*)</a>", RegexOptions.Compiled);
 
@@ -227,43 +227,14 @@ public static class MusicMapSupport
 
     static readonly Dictionary<char, string> translit = new()
     {
-        ['а'] = "a",
-        ['б'] = "b",
-        ['в'] = "v",
-        ['г'] = "g",
-        ['д'] = "d",
-        ['е'] = "e",
-        ['ё'] = "e",
-        ['ж'] = "zh",
-        ['з'] = "z",
-        ['и'] = "i",
-        ['й'] = "i",
-        ['к'] = "k",
-        ['л'] = "l",
-        ['м'] = "m",
-        ['н'] = "n",
-        ['о'] = "o",
-        ['п'] = "p",
-        ['р'] = "r",
-        ['с'] = "s",
-        ['т'] = "t",
-        ['у'] = "u",
-        ['ф'] = "f",
-        ['х'] = "h",
-        ['ц'] = "c",
-        ['ч'] = "ch",
-        ['ш'] = "sh",
-        ['щ'] = "sch",
-        ['ъ'] = "",
-        ['ы'] = "y",
-        ['ь'] = "",
-        ['э'] = "e",
-        ['ю'] = "yu",
-        ['я'] = "ya",
-        ['і'] = "i",
-        ['ї'] = "i",
-        ['є'] = "e",
-        ['ґ'] = "g"
+        ['а'] = "a", ['б'] = "b", ['в'] = "v", ['г'] = "g", ['д'] = "d",
+        ['е'] = "e", ['ё'] = "e", ['ж'] = "zh", ['з'] = "z", ['и'] = "i",
+        ['й'] = "i", ['к'] = "k", ['л'] = "l", ['м'] = "m", ['н'] = "n",
+        ['о'] = "o", ['п'] = "p", ['р'] = "r", ['с'] = "s", ['т'] = "t",
+        ['у'] = "u", ['ф'] = "f", ['х'] = "h", ['ц'] = "c", ['ч'] = "ch",
+        ['ш'] = "sh", ['щ'] = "sch", ['ъ'] = "", ['ы'] = "y", ['ь'] = "",
+        ['э'] = "e", ['ю'] = "yu", ['я'] = "ya",
+        ['і'] = "i", ['ї'] = "i", ['є'] = "e", ['ґ'] = "g"
     };
 
     static int Levenshtein(string a, string b)

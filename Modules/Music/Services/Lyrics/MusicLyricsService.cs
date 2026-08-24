@@ -19,7 +19,8 @@ public static class MusicLyricsService
 
     static HttpClient CreateClient()
     {
-        var client = new HttpClient { Timeout = TimeSpan.FromSeconds(12) };
+        var client = MusicHttp.CreateClient("lyrics");
+        client.Timeout = TimeSpan.FromSeconds(12);
         client.DefaultRequestHeaders.TryAddWithoutValidation("User-Agent", "LampacNextgenMusic/0.1 (https://github.com/lampac-nextgen/lampac)");
         return client;
     }

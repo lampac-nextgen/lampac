@@ -36,6 +36,7 @@ public class MusicAlbum
     public string artist_id { get; set; }
     public string artist_name { get; set; }
     public string lookup_query { get; set; }
+    public string lookup_provider { get; set; }
     public int? year { get; set; }
     public string date { get; set; }
     public string type { get; set; }
@@ -117,6 +118,8 @@ public class MusicPlaybackSource
     public string proxy_username { get; set; }
     [JsonIgnore]
     public string proxy_password { get; set; }
+    [JsonIgnore]
+    public string proxy_scope { get; set; }
 }
 
 public class MusicAuthState

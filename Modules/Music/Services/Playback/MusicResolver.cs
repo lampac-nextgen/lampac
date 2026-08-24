@@ -137,12 +137,16 @@ public static class MusicResolver
         {
             var preferred = await provider.TryGetPreferredStreamAsync(match, playbackMode, profileId, cancellationToken);
             if (!string.IsNullOrWhiteSpace(preferred?.url))
-                return new List<MusicPlaybackSource> { preferred };
+            {
+                var preferredSources = new List<MusicPlaybackSource> { preferred };
+                MusicProxyService.ApplyStreamProxy(provider.Id, preferredSources);
+                return preferredSources;
+            }
         }
 
         bool cacheable = string.Equals(provider.Id, "youtubeaudio", StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(match.id);
-        string cacheKey = cacheable ? $"{provider.Id}|{match.id}|{playbackMode ?? string.Empty}" : null;
+        string cacheKey = cacheable ? $"{provider.Id}|{match.id}|{playbackMode ?? string.Empty}|proxy:{MusicProxyService.ConfigurationVersion}" : null;
 
         if (cacheable && !refreshSources
             && sourcesCache.TryGetValue(cacheKey, out var entry)
@@ -153,6 +157,8 @@ public static class MusicResolver
         var result = sources?
             .Where(source => !string.IsNullOrWhiteSpace(source?.url))
             .ToList() ?? new List<MusicPlaybackSource>();
+
+        MusicProxyService.ApplyStreamProxy(provider.Id, result);
 
         if (cacheable && result.Count > 0)
         {
@@ -181,7 +187,8 @@ public static class MusicResolver
             headers = source.headers != null ? new Dictionary<string, string>(source.headers) : new(),
             proxy_url = source.proxy_url,
             proxy_username = source.proxy_username,
-            proxy_password = source.proxy_password
+            proxy_password = source.proxy_password,
+            proxy_scope = source.proxy_scope
         }).ToList();
     }
 

@@ -513,16 +513,12 @@ public static partial class SoundCloudSupport
         if (selections.ValueKind != JsonValueKind.Array || selections.GetArrayLength() == 0)
             return null;
 
-        string country = Country.ToUpperInvariant();
-
-        if (country is "GB" or "UK")
+        string country = Country;
+        foreach (var selection in selections.EnumerateArray())
         {
-            foreach (var selection in selections.EnumerateArray())
-            {
-                string title = GetString(selection, "title");
-                if (!string.IsNullOrWhiteSpace(title) && title.Contains("UK", StringComparison.OrdinalIgnoreCase))
-                    return selection;
-            }
+            string title = GetString(selection, "title");
+            if (!string.IsNullOrWhiteSpace(title) && title.EndsWith($" {country}", StringComparison.OrdinalIgnoreCase))
+                return selection;
         }
 
         foreach (var selection in selections.EnumerateArray())

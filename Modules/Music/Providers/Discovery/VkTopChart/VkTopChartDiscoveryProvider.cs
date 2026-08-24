@@ -7,7 +7,7 @@ namespace Music;
 
 public class VkTopChartDiscoveryProvider : IMusicDiscoveryProvider
 {
-    static readonly HttpClient httpClient = FriendlyHttp.CreateHttpClient(useCookies: false);
+    static readonly HttpClient httpClient = MusicHttp.CreateClient("vktop200");
     static readonly TimeSpan cacheTtl = TimeSpan.FromHours(1);
 
     const string providerId = "vktop200";

@@ -39,6 +39,10 @@ public class ModInit : IModuleLoaded, IModuleConfigure
     {
         conf = ModuleInvoke.Init("Music", new ModuleConf()
         {
+            useproxy = false,
+            useproxystream = false,
+            globalnameproxy = null,
+            proxy = null,
             default_metadata_provider = "musicbrainz",
             default_audio_provider = "youtubeaudio",
             default_auth_provider = "",
@@ -47,12 +51,15 @@ public class ModInit : IModuleLoaded, IModuleConfigure
             daily_reset_enabled = false,
             youtube_audio_enabled = true,
             spotify_search_fallback_enabled = false,
+            spotify_discovery_enabled = true,
+            spotify_country = "us",
             sefon_audio_enabled = true,
             soundcloud_enabled = true,
             soundcloud_discovery_enabled = true,
             soundcloud_audio_enabled = true,
             soundcloud_auth_enabled = false,
             applemusic_country = "us",
+            applemusic_album_resolver = "auto",
             soundcloud_client_id = "",
             soundcloud_client_secret = "",
             soundcloud_redirect_uri = "",
@@ -68,5 +75,7 @@ public class ModInit : IModuleLoaded, IModuleConfigure
                 new("^/music", new WafLimitMap { limit = 15, second = 1 })
             }
         });
+
+        MusicProxyService.ConfigurationChanged();
     }
 }

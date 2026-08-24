@@ -53,7 +53,8 @@ public static class MusicStreamTicketService
             headers = source.headers?.ToDictionary(k => k.Key, v => v.Value) ?? new Dictionary<string, string>(),
             proxy_url = source.proxy_url,
             proxy_username = source.proxy_username,
-            proxy_password = source.proxy_password
+            proxy_password = source.proxy_password,
+            proxy_scope = source.proxy_scope
         };
     }
 }

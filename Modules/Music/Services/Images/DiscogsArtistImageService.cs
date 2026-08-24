@@ -7,7 +7,7 @@ namespace Music;
 
 public static class DiscogsArtistImageService
 {
-    static readonly HttpClient httpClient = FriendlyHttp.CreateHttpClient(useCookies: false);
+    static readonly HttpClient httpClient = MusicHttp.CreateClient("discogs");
     static readonly SemaphoreSlim requestGate = new(1, 1);
     static readonly ConcurrentDictionary<string, Task<List<MusicImage>>> pendingLookups = new();
     static DateTime nextRequestAt = DateTime.MinValue;

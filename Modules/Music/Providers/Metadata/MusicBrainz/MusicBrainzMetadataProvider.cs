@@ -6,7 +6,7 @@ namespace Music;
 
 public class MusicBrainzMetadataProvider : IMusicMetadataProvider
 {
-    static readonly HttpClient httpClient = FriendlyHttp.CreateHttpClient(useCookies: false);
+    static readonly HttpClient httpClient = MusicHttp.CreateClient("musicbrainz");
     static readonly SemaphoreSlim requestGate = new(1, 1);
     static DateTime nextRequestAt = DateTime.MinValue;
 

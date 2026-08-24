@@ -17,7 +17,8 @@ public class ApiController : BaseController
             .Replace("{localhost}", host)
             .Replace("{client_debug_enabled}", ModInit.conf?.client_debug_enabled == true ? "true" : "false")
             .Replace("{stats_clear_enabled}", ModInit.conf?.stats_clear_enabled == true ? "true" : "false")
-            .Replace("{daily_reset_enabled}", ModInit.conf?.daily_reset_enabled == true ? "true" : "false");
+            .Replace("{daily_reset_enabled}", ModInit.conf?.daily_reset_enabled == true ? "true" : "false")
+            .Replace("{spotify_search_fallback_enabled}", ModInit.conf?.spotify_search_fallback_enabled == true ? "true" : "false");
 
         return Content(plugin, "application/javascript; charset=utf-8");
     }

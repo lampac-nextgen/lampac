@@ -45,13 +45,24 @@ public static class MusicStreamRelayService
         {
             return new EmptyResult();
         }
-        catch when (failOnUpstreamError)
+        catch (Exception ex) when (failOnUpstreamError)
         {
+            ReportProxyFailure(source, ex);
             return null;
+        }
+        catch (Exception ex)
+        {
+            ReportProxyFailure(source, ex);
+            throw;
         }
 
         using (response)
         {
+            if (MusicHttp.IsProxyFailureStatus(response.StatusCode))
+                MusicProxyService.ReportFailure(source.proxy_scope);
+            else
+                MusicProxyService.ReportSuccess(source.proxy_scope);
+
             if (failOnUpstreamError && IsDeadUpstreamStatus(response.StatusCode))
                 return null;
 
@@ -92,6 +103,12 @@ public static class MusicStreamRelayService
 
     static bool IsDeadUpstreamStatus(HttpStatusCode statusCode)
         => statusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound or HttpStatusCode.Gone;
+
+    static void ReportProxyFailure(MusicPlaybackSource source, Exception exception)
+    {
+        if (MusicHttp.IsProxyFailure(exception))
+            MusicProxyService.ReportFailure(source?.proxy_scope);
+    }
 
     static HttpClient GetClient(MusicPlaybackSource source)
     {

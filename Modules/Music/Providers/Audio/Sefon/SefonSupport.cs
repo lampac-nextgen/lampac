@@ -19,7 +19,7 @@ internal static class SefonSupport
     public const string BaseUrl = "https://sefon.org";
     const int MaxSearchQueries = 3;
 
-    static readonly HttpClient httpClient = FriendlyHttp.CreateHttpClient(useCookies: false);
+    static readonly HttpClient httpClient = MusicHttp.CreateClient("sefon");
 
     static readonly string[] SoftPenaltyWords =
     {

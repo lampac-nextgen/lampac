@@ -21,9 +21,10 @@ public static class AppleMusicSupport
     const int MaxPages = 30;
     const string BrowserUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
 
-    static readonly HttpClient httpClient = FriendlyHttp.CreateHttpClient(useCookies: false);
+    static readonly HttpClient httpClient = MusicHttp.CreateClient("applemusic");
     // storefront (us/ru/ua/...), тип, id: pl.xxx / pl.u-xxx у плейлистов, цифры у альбомов
     static readonly Regex entityUrlRegex = new(@"^https?://music\.apple\.com/([a-z]{2})/(playlist|album)/(?:[^/]+/)?(pl\.[A-Za-z0-9\.\-]+|\d+)", RegexOptions.IgnoreCase | RegexOptions.Compiled);
+    static readonly Regex catalogAlbumIdRegex = new(@"^applemusic:album:([a-z]{2}):(\d+)$", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     static readonly Regex assetBundleRegex = new("src=\"(/assets/index~[^\"]+\\.js)\"", RegexOptions.IgnoreCase | RegexOptions.Compiled);
     static readonly Regex developerTokenRegex = new("\"(eyJ0[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+\\.[A-Za-z0-9_\\-]+)\"", RegexOptions.Compiled);
     static readonly SemaphoreSlim developerTokenLock = new(1, 1);
@@ -36,6 +37,34 @@ public static class AppleMusicSupport
     }
 
     public static bool CanHandleUrl(string url) => IsAppleMusicUrl(url);
+
+    public static bool IsCatalogAlbum(string provider, string id)
+        => string.Equals(provider, ProviderId, StringComparison.OrdinalIgnoreCase)
+           || catalogAlbumIdRegex.IsMatch(id ?? string.Empty);
+
+    public static Task<MusicAlbum> GetCatalogAlbumAsync(string id, CancellationToken cancellationToken = default)
+    {
+        var match = catalogAlbumIdRegex.Match(id ?? string.Empty);
+        return match.Success
+            ? GetCatalogAlbumAsync(match.Groups[1].Value, match.Groups[2].Value, cancellationToken)
+            : Task.FromResult<MusicAlbum>(null);
+    }
+
+    public static async Task<MusicAlbum> GetCatalogAlbumAsync(string storefront, string albumId, CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return (await LoadCatalogAlbumAsync(storefront, albumId, cancellationToken)).album;
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
+        catch
+        {
+            return null;
+        }
+    }
 
     public static async Task<MusicUserPlaylistImportResult> ImportPlaylistAsync(string inputUrl, CancellationToken cancellationToken = default)
     {
@@ -266,12 +295,42 @@ public static class AppleMusicSupport
 
     static async Task<MusicUserPlaylistImportResult> ImportAlbumAsync(string storefront, string albumId, CancellationToken cancellationToken)
     {
-        var meta = await ApiAsync($"/v1/catalog/{storefront}/albums/{Uri.EscapeDataString(albumId)}", cancellationToken);
-        var album = FirstDataElement(meta);
+        var loaded = await LoadCatalogAlbumAsync(storefront, albumId, cancellationToken);
+        var album = loaded.album;
         if (album == null)
-            return ImportUnavailable("Apple Music альбом не найден.");
+            return ImportUnavailable(loaded.error ?? "Apple Music альбом не найден.");
 
-        var attributes = GetProperty(album.Value, "attributes");
+        string playlistTitle = string.IsNullOrWhiteSpace(album.artist_name) ? album.title : $"{album.artist_name} — {album.title}";
+
+        return new MusicUserPlaylistImportResult
+        {
+            available = true,
+            title = playlistTitle,
+            track_count = album.tracks.Count,
+            tracks = album.tracks,
+            source = new MusicUserPlaylistSource
+            {
+                type = AlbumSourceType,
+                url = $"https://music.apple.com/{storefront}/album/_/{albumId}",
+                playlist_id = albumId,
+                title = playlistTitle
+            }
+        };
+    }
+
+    static async Task<(MusicAlbum album, string error)> LoadCatalogAlbumAsync(string storefront, string albumId, CancellationToken cancellationToken)
+    {
+        storefront = storefront?.Trim().ToLowerInvariant();
+        albumId = albumId?.Trim();
+        if (!Regex.IsMatch(storefront ?? string.Empty, "^[a-z]{2}$") || !Regex.IsMatch(albumId ?? string.Empty, "^[0-9]+$"))
+            return (null, "Некорректный Apple Music album ID.");
+
+        var meta = await ApiAsync($"/v1/catalog/{storefront}/albums/{Uri.EscapeDataString(albumId)}", cancellationToken);
+        var albumElement = FirstDataElement(meta);
+        if (albumElement == null)
+            return (null, "Apple Music альбом не найден.");
+
+        var attributes = GetProperty(albumElement.Value, "attributes");
         string title = attributes != null ? GetString(attributes.Value, "name") : null;
         string artistName = attributes != null ? GetString(attributes.Value, "artistName") : null;
         string date = attributes != null ? GetString(attributes.Value, "releaseDate") : null;
@@ -282,7 +341,7 @@ public static class AppleMusicSupport
 
         // первая порция треков приезжает в relationships, остальное — пагинацией;
         // offset считаем по сырому числу элементов (не по замапленным — часть фильтруется)
-        var relationshipTracks = GetProperty(album.Value, "relationships", "tracks");
+        var relationshipTracks = GetProperty(albumElement.Value, "relationships", "tracks");
         bool hasNext = false;
         if (relationshipTracks != null)
         {
@@ -294,7 +353,7 @@ public static class AppleMusicSupport
         {
             var root = await ApiAsync($"/v1/catalog/{storefront}/albums/{Uri.EscapeDataString(albumId)}/tracks?limit={PageLimit}&offset={fetched}", cancellationToken);
             if (root == null)
-                return ImportUnavailable("Apple Music не отдал альбом целиком, попробуй ещё раз.");
+                return (null, "Apple Music не отдал альбом целиком, попробуй ещё раз.");
 
             int pageItems = MapTrackPage(root.Value, tracks, albumImages, title, date);
             fetched += pageItems;
@@ -303,25 +362,30 @@ public static class AppleMusicSupport
 
         tracks = DeduplicateTracks(tracks);
         if (tracks.Count == 0)
-            return ImportUnavailable("В Apple Music альбоме не найдено треков.");
+            return (null, "В Apple Music альбоме не найдено треков.");
 
         title = string.IsNullOrWhiteSpace(title) ? "Apple Music Album" : title.Trim();
-        string playlistTitle = string.IsNullOrWhiteSpace(artistName) ? title : $"{artistName} — {title}";
+        string canonicalId = $"applemusic:album:{storefront}:{albumId}";
+        int? year = date?.Length >= 4 && int.TryParse(date[..4], out int parsedYear) ? parsedYear : null;
 
-        return new MusicUserPlaylistImportResult
+        foreach (var track in tracks)
+            track.album_id = canonicalId;
+
+        return (new MusicAlbum
         {
-            available = true,
-            title = playlistTitle,
-            track_count = tracks.Count,
+            title = title,
+            id = canonicalId,
+            artist_name = string.IsNullOrWhiteSpace(artistName) ? "Apple Music" : artistName.Trim(),
+            date = date,
+            year = year,
+            type = "Album",
+            images = albumImages ?? new List<MusicImage>(),
             tracks = tracks,
-            source = new MusicUserPlaylistSource
+            provider_refs = new List<MusicProviderRef>
             {
-                type = AlbumSourceType,
-                url = $"https://music.apple.com/{storefront}/album/_/{albumId}",
-                playlist_id = albumId,
-                title = playlistTitle
+                new() { provider = ProviderId, external_id = albumId }
             }
-        };
+        }, null);
     }
 
     // маппит data[] страницы (плейлист-треки или альбом-треки); возвращает СЫРОЕ
