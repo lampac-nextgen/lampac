@@ -382,7 +382,7 @@ public class ApiController : BaseController
             {
                 string config = IO.File.ReadAllText($"{publishDirectory}/config.xml");
 
- 
+
                 config = Regex.Replace(config, @"[ \t]*<tizen:service\b[\s\S]*?</tizen:service>\r?\n", string.Empty);
                 config = Regex.Replace(config, @"[ \t]*<tizen:metadata key=""http://samsung\.com/tv/metadata/use\.preview""[^>]*>\r?\n", string.Empty);
 
@@ -783,7 +783,7 @@ public class ApiController : BaseController
 
                     script = FileCache.ReadAllText($"{ModInit.modpath}/plugins/deny.js", "deny.js");
                     if (script.Contains("{country}"))
-                    StatiCacheDisabled = true;
+                        StatiCacheDisabled = true;
 
                     if (script.Contains("{cubMesage}"))
                         script = script.Replace("{cubMesage}", CoreInit.conf.accsdb.authMesage);
