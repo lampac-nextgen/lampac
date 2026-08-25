@@ -347,7 +347,7 @@ public class CoreInit
     {
         api_key = "4ef0d7355d9ffb5151e987764708ce96",
         scheme = "https",
-        domain = "cub.red",
+        domain = "cub.best",
         mirror = "cub.best"
     };
 

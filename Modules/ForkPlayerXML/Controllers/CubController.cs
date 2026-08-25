@@ -19,7 +19,7 @@ public class CubController : BaseController
 
         if (!memoryCache.TryGetValue(memkey, out TmdbList cache))
         {
-            var root = await Http.Get<TmdbList>("http://tmdb.cub.red/" + $"?query={HttpUtility.UrlEncode(search)}&cat={cat}&sort={sort}&without_genres={without_genres}&genre={genre}&page={page}&results=60");
+            var root = await Http.Get<TmdbList>("http://tmdb.cub.best/" + $"?query={HttpUtility.UrlEncode(search)}&cat={cat}&sort={sort}&without_genres={without_genres}&genre={genre}&page={page}&results=60");
             if (root?.results == null || root.results.Count == 0)
                 return BadRequest();
 
