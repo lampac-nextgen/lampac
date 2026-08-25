@@ -1,5 +1,5 @@
 {
-  "enable": false,
+  "enable": true,
   "dynamic": true,
   "tree": [
     "AdminPanelController.cs",
