@@ -788,7 +788,7 @@ cd publish && dotnet Core.dll
 | `GET` | `/gst.js` | GStreamer: плагин Lampa для серверного транскодинга |
 | `GET` | `/gst/add` | GStreamer: создать задачу транскодинга |
 | `GET` | `/gst/{id}/master.m3u8` | GStreamer: HLS-плейлист задачи |
-| `GET` | `/samsung.wgt` | LampaWeb: виджет Samsung Tizen |
+| `GET` | `/samsung.wgt` | LampaWeb: виджет Samsung Tizen (`?tizen=3` — сборка без фонового сервиса для Tizen 3.0 и ниже) |
 | `GET` | `/lg.ipk` | LampaWeb: виджет LG webOS |
 | `GET` | `/tg-notify.js` | Tg-notify.bot: плагин Telegram-подписок |
 | `GET` | `/api/tg/voices` | Tg-notify.bot: список озвучек (Mirage + Collaps) |

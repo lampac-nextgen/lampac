@@ -17,7 +17,7 @@
 | `/testaccsdb` | Проверка доступа accsdb (GET/POST); см. также **`EventListener.Accsdb`** в `ModInit`. |
 | `/app.min.js`, `/{type}/app.min.js` | Сборка минифицированного приложения. |
 | `/css/app.css` | Стили. |
-| `msx/start.json`, `samsung.wgt`, `lg.ipk` | Специфичные для ТВ пакеты (MSX, Samsung Tizen, LG webOS). |
+| `msx/start.json`, `samsung.wgt`, `lg.ipk` | Специфичные для ТВ пакеты (MSX, Samsung Tizen, LG webOS). Для `samsung.wgt` параметр `?tizen=3` убирает `tizen:service` — без этого виджет не ставится на Tizen 3.0 и ниже. |
 | `/lampainit.js` | Инициализация клиента (подстановки плагинов, **deny.js**, токены). |
 | `/on.js`, `/on/js/{token}`, `/on/h/{token}`, `/on/{token}` | Режим онлайн-плагина. |
 | `/dorama.js`, `/dorama/js/{token}` | Отдельный Lampa-плагин пункта **«Дорамы»** и источника `lampac_dorama`. |
