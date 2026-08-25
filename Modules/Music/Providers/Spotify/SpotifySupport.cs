@@ -19,6 +19,7 @@ public static class SpotifySupport
     public const string TracksSectionId = "search:spotify:tracks";
     public const string ArtistsSectionId = "search:spotify:artists";
     public const string AlbumsSectionId = "search:spotify:albums";
+    public const int PlaylistTrackLimit = 2000;
 
     public static bool IsSearchEnabled => ModInit.conf?.spotify_search_fallback_enabled == true;
 
@@ -44,7 +45,7 @@ public static class SpotifySupport
     const int PlaylistPageLimit = 100;
     const int AlbumPageLimit = 50;
     const int ArtistOverviewShelfLimit = 20;
-    const int MaxImportTracks = 2000;
+    const int MaxImportTracks = PlaylistTrackLimit;
     const string ArtistDiscographyOrder = "DATE_DESC";
     const string BrowserUserAgent = "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
 
@@ -70,36 +71,66 @@ public static class SpotifySupport
         if (string.IsNullOrWhiteSpace(playlistId) || !Regex.IsMatch(playlistId, "^[A-Za-z0-9]{22}$"))
             return null;
 
-        int take = Math.Clamp(limit, 1, PlaylistPageLimit);
+        int take = Math.Clamp(limit, 1, PlaylistTrackLimit);
 
         try
         {
-            var root = await QueryAsync("fetchPlaylist", FetchPlaylistHash, new
+            var tracks = new List<MusicTrack>();
+            string title = null;
+            string ownerName = null;
+            string description = null;
+            List<MusicImage> images = null;
+            int totalCount = -1;
+
+            for (int offset = 0; offset < take && (totalCount < 0 || offset < totalCount);)
             {
-                uri = $"spotify:playlist:{playlistId}",
-                offset = 0,
-                limit = take,
-                enableWatchFeedEntrypoint = false
-            }, "playlist", playlistId, cancellationToken);
+                int pageLimit = Math.Min(PlaylistPageLimit, take - offset);
+                var root = await QueryAsync("fetchPlaylist", FetchPlaylistHash, new
+                {
+                    uri = $"spotify:playlist:{playlistId}",
+                    offset,
+                    limit = pageLimit,
+                    enableWatchFeedEntrypoint = false
+                }, "playlist", playlistId, cancellationToken);
 
-            var playlist = GetProperty(root, "data", "playlistV2");
-            if (playlist == null || playlist.Value.ValueKind != JsonValueKind.Object)
-                return null;
+                var playlist = GetProperty(root, "data", "playlistV2");
+                if (playlist == null || playlist.Value.ValueKind != JsonValueKind.Object)
+                    return null;
 
-            var content = GetProperty(playlist.Value, "content");
-            if (content == null || !content.Value.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
-                return null;
+                var content = GetProperty(playlist.Value, "content");
+                if (content == null || !content.Value.TryGetProperty("items", out var items) || items.ValueKind != JsonValueKind.Array)
+                    return null;
 
-            var tracks = DeduplicateTracks(items
-                .EnumerateArray()
-                .Select(MapPlaylistItem)
-                .Where(track => track != null)
-                .Take(take)
-                .ToList());
+                if (totalCount < 0)
+                {
+                    totalCount = GetInt(content.Value, "totalCount") ?? items.GetArrayLength();
+                    var owner = GetProperty(playlist.Value, "ownerV2", "data");
+                    title = GetString(playlist.Value, "name")?.Trim();
+                    ownerName = owner != null ? GetString(owner.Value, "name")?.Trim() : null;
+                    description = GetString(playlist.Value, "description")?.Trim();
+                    images = MapPlaylistImages(GetProperty(playlist.Value, "images"));
+                }
 
-            var owner = GetProperty(playlist.Value, "ownerV2", "data");
-            string title = GetString(playlist.Value, "name")?.Trim();
-            string ownerName = owner != null ? GetString(owner.Value, "name")?.Trim() : null;
+                int itemCount = items.GetArrayLength();
+                if (itemCount == 0)
+                {
+                    if (offset < Math.Min(totalCount, take))
+                        return null;
+
+                    break;
+                }
+
+                foreach (var item in items.EnumerateArray())
+                {
+                    var track = MapPlaylistItem(item);
+                    if (track != null)
+                        tracks.Add(track);
+                }
+
+                offset += pageLimit;
+            }
+
+            tracks = DeduplicateTracks(tracks);
 
             return new MusicAlbum
             {
@@ -107,8 +138,8 @@ public static class SpotifySupport
                 title = string.IsNullOrWhiteSpace(title) ? "Spotify Playlist" : title,
                 artist_name = string.IsNullOrWhiteSpace(ownerName) ? "Spotify" : ownerName,
                 type = "Playlist",
-                description = GetString(playlist.Value, "description")?.Trim(),
-                images = MapPlaylistImages(GetProperty(playlist.Value, "images")),
+                description = description,
+                images = images ?? new List<MusicImage>(),
                 provider_refs = new List<MusicProviderRef>
                 {
                     new() { provider = DiscoveryProviderId, external_id = playlistId }

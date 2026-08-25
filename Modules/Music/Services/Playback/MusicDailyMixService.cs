@@ -57,7 +57,11 @@ public static class MusicDailyMixService
     // импорта плейлиста не должен ждать TTL, чтобы полка появилась)
     static readonly TimeSpan seedCacheTtl = TimeSpan.FromMinutes(12);
     static readonly TimeSpan seedCacheEmptyTtl = TimeSpan.FromSeconds(45);
+    const int seedArtistsCacheCapacity = 256;
     static readonly System.Collections.Concurrent.ConcurrentDictionary<string, (DateTime expiresAt, List<HistoryArtist> artists)> seedArtistsCache = new(StringComparer.Ordinal);
+    // кап жёсткий: чтение lock-free, trim + вставка под общим lock — иначе
+    // параллельные сборы одновременно пройдут проверку Count и вместе её пробьют
+    static readonly object seedArtistsCacheWriteLock = new();
     // v12: основной artist-cap снижен до 4 треков, чтобы якорь не доминировал
     // в 20-трековом миксе; v11: короткие миксы после artist-cap добираются дополнительными
     // Music-Map/genre артистами до ~20 треков без снятия лимитов на артиста;
@@ -230,15 +234,27 @@ public static class MusicDailyMixService
 
         var artists = await CollectSeedArtistsAsync(profileId, cancellationToken);
 
-        // редкая уборка протухших записей, чтобы словарь не рос бесконечно
-        if (seedArtistsCache.Count > 256)
-        {
-            foreach (var stale in seedArtistsCache.Where(i => i.Value.expiresAt <= DateTime.UtcNow).ToList())
-                seedArtistsCache.TryRemove(stale.Key, out _);
-        }
-
         var ttl = artists.Count >= minHistoryArtists ? seedCacheTtl : seedCacheEmptyTtl;
-        seedArtistsCache[key] = (DateTime.UtcNow.Add(ttl), new List<HistoryArtist>(artists));
+
+        lock (seedArtistsCacheWriteLock)
+        {
+            if (!seedArtistsCache.ContainsKey(key) && seedArtistsCache.Count >= seedArtistsCacheCapacity)
+            {
+                // сначала протухшие; если их нет — вытесняем с ближайшим истечением,
+                // иначе при равномерном трафике свежие профили переполнят кап
+                foreach (var stale in seedArtistsCache.Where(i => i.Value.expiresAt <= DateTime.UtcNow).ToList())
+                    seedArtistsCache.TryRemove(stale.Key, out _);
+
+                while (seedArtistsCache.Count >= seedArtistsCacheCapacity)
+                {
+                    var oldest = seedArtistsCache.OrderBy(i => i.Value.expiresAt).FirstOrDefault();
+                    if (oldest.Key == null || !seedArtistsCache.TryRemove(oldest.Key, out _))
+                        break;
+                }
+            }
+
+            seedArtistsCache[key] = (DateTime.UtcNow.Add(ttl), new List<HistoryArtist>(artists));
+        }
 
         return artists;
     }

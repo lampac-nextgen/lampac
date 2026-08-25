@@ -14,7 +14,11 @@ public static class MusicResolver
     // Инвалидация: refreshSources=true (пере-резолв из /music/stream после
     // смерти upstream-ссылки в relay) пропускает чтение и перезаписывает свежим.
     static readonly TimeSpan sourcesCacheTtl = TimeSpan.FromMinutes(30);
+    const int sourcesCacheCapacity = 512;
     static readonly ConcurrentDictionary<string, (DateTime at, List<MusicPlaybackSource> sources)> sourcesCache = new(StringComparer.Ordinal);
+    // кап жёсткий: чтение lock-free, но trim + вставка под общим lock, иначе
+    // параллельные запросы одновременно пройдут проверку Count и вместе её пробьют
+    static readonly object sourcesCacheWriteLock = new();
 
     public static async Task<MusicPlayResponse> ResolveTrackAsync(MusicTrack track, string provider = null, string playbackMode = null, string profileId = null, CancellationToken cancellationToken = default, bool refreshSources = false)
     {
@@ -146,7 +150,14 @@ public static class MusicResolver
 
         bool cacheable = string.Equals(provider.Id, "youtubeaudio", StringComparison.OrdinalIgnoreCase)
             && !string.IsNullOrWhiteSpace(match.id);
-        string cacheKey = cacheable ? $"{provider.Id}|{match.id}|{playbackMode ?? string.Empty}|proxy:{MusicProxyService.ConfigurationVersion}" : null;
+        string cacheKey = cacheable
+            ? BuildSourcesCacheKey(
+                provider.Id,
+                match.id,
+                playbackMode,
+                MusicProxyService.CurrentRouteKey(provider.Id, MusicProxyPurpose.Stream)
+            )
+            : null;
 
         if (cacheable && !refreshSources
             && sourcesCache.TryGetValue(cacheKey, out var entry)
@@ -162,17 +173,39 @@ public static class MusicResolver
 
         if (cacheable && result.Count > 0)
         {
-            if (sourcesCache.Count > 512)
-            {
-                foreach (var stale in sourcesCache.Where(i => DateTime.UtcNow - i.Value.at >= sourcesCacheTtl).Select(i => i.Key).ToList())
-                    sourcesCache.TryRemove(stale, out _);
-            }
+            string resultCacheKey = BuildSourcesCacheKey(
+                provider.Id,
+                match.id,
+                playbackMode,
+                MusicProxyService.SourceRouteKey(result[0])
+            );
 
-            sourcesCache[cacheKey] = (DateTime.UtcNow, CloneSources(result));
+            lock (sourcesCacheWriteLock)
+            {
+                if (!sourcesCache.ContainsKey(resultCacheKey) && sourcesCache.Count >= sourcesCacheCapacity)
+                {
+                    // сначала протухшие; если их нет — вытесняем старейшие,
+                    // иначе при равномерном трафике свежие записи переполнят кап
+                    foreach (var stale in sourcesCache.Where(i => DateTime.UtcNow - i.Value.at >= sourcesCacheTtl).Select(i => i.Key).ToList())
+                        sourcesCache.TryRemove(stale, out _);
+
+                    while (sourcesCache.Count >= sourcesCacheCapacity)
+                    {
+                        var oldest = sourcesCache.OrderBy(i => i.Value.at).FirstOrDefault();
+                        if (oldest.Key == null || !sourcesCache.TryRemove(oldest.Key, out _))
+                            break;
+                    }
+                }
+
+                sourcesCache[resultCacheKey] = (DateTime.UtcNow, CloneSources(result));
+            }
         }
 
         return result;
     }
+
+    static string BuildSourcesCacheKey(string providerId, string matchId, string playbackMode, string routeKey)
+        => $"{providerId}|{matchId}|{playbackMode ?? string.Empty}|route:{routeKey}|cfg:{MusicProxyService.ConfigurationVersion}";
 
     static List<MusicPlaybackSource> CloneSources(List<MusicPlaybackSource> sources)
     {

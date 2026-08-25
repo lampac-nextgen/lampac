@@ -8,6 +8,8 @@ namespace Music;
 
 public class ModInit : IModuleLoaded, IModuleConfigure
 {
+    static readonly object wafRulesLock = new();
+
     public static string modpath;
     public static ModuleConf conf;
 
@@ -23,9 +25,6 @@ public class ModInit : IModuleLoaded, IModuleConfigure
         updateConf();
         EventListener.UpdateInitFile += updateConf;
 
-        foreach (var m in conf.limit_map)
-            CoreInit.conf.WAF.limit_map.Insert(0, m);
-
         Directory.CreateDirectory("database/music");
         MusicContext.Initialization(initspace.app.ApplicationServices);
     }
@@ -37,6 +36,8 @@ public class ModInit : IModuleLoaded, IModuleConfigure
 
     void updateConf()
     {
+        var previousLimitMap = conf?.limit_map?.ToList() ?? new List<WafLimitRootMap>();
+
         conf = ModuleInvoke.Init("Music", new ModuleConf()
         {
             useproxy = false,
@@ -76,6 +77,49 @@ public class ModInit : IModuleLoaded, IModuleConfigure
             }
         });
 
+        ApplyWafRules(previousLimitMap, conf.limit_map);
         MusicProxyService.ConfigurationChanged();
+    }
+
+    static void ApplyWafRules(IReadOnlyCollection<WafLimitRootMap> previousRules, IReadOnlyCollection<WafLimitRootMap> currentRules)
+    {
+        var waf = CoreInit.conf?.WAF;
+        if (waf == null)
+            return;
+
+        lock (wafRulesLock)
+        {
+            var limitMap = waf.limit_map?.ToList() ?? new List<WafLimitRootMap>();
+
+            foreach (var rule in previousRules ?? Array.Empty<WafLimitRootMap>())
+                limitMap.RemoveAll(existing => SameWafRoot(existing, rule));
+
+            foreach (var rule in currentRules ?? Array.Empty<WafLimitRootMap>())
+            {
+                if (rule == null || (string.IsNullOrWhiteSpace(rule.path) && string.IsNullOrWhiteSpace(rule.pattern)))
+                    continue;
+
+                limitMap.RemoveAll(existing => SameWafRoot(existing, rule));
+                limitMap.Insert(0, rule);
+            }
+
+            // WAF может одновременно обслуживать запросы: публикуем новый снимок
+            // списка одной записью, не меняя коллекцию, которую он перечисляет.
+            waf.limit_map = limitMap;
+        }
+    }
+
+    static bool SameWafRoot(WafLimitRootMap left, WafLimitRootMap right)
+    {
+        if (left == null || right == null)
+            return false;
+
+        if (!string.IsNullOrWhiteSpace(right.path))
+            return !string.IsNullOrWhiteSpace(left.path)
+                && string.Equals(left.path, right.path, StringComparison.OrdinalIgnoreCase);
+
+        return !string.IsNullOrWhiteSpace(right.pattern)
+            && !string.IsNullOrWhiteSpace(left.pattern)
+            && string.Equals(left.pattern, right.pattern, StringComparison.OrdinalIgnoreCase);
     }
 }

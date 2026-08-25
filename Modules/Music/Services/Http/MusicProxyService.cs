@@ -26,6 +26,12 @@ public sealed class MusicProxyLease
     public WebProxy Proxy { get; }
     public (string ip, string username, string password) Data { get; }
     public bool Enabled => Proxy != null;
+    public string RouteKey => MusicProxyService.BuildRouteKey(
+        Scope,
+        Data.ip ?? Proxy?.Address?.ToString(),
+        Data.username,
+        Data.password
+    );
 
     public void Success() => manager?.Success();
     public void Failure() => manager?.Refresh();
@@ -95,6 +101,22 @@ public static class MusicProxyService
             lease ??= Acquire(providerId, MusicProxyPurpose.Stream);
             lease.ApplyTo(source);
         }
+    }
+
+    public static string CurrentRouteKey(string providerId, MusicProxyPurpose purpose)
+        => Acquire(providerId, purpose).RouteKey;
+
+    public static string SourceRouteKey(MusicPlaybackSource source)
+        => source == null
+            ? "direct"
+            : BuildRouteKey(source.proxy_scope, source.proxy_url, source.proxy_username, source.proxy_password);
+
+    internal static string BuildRouteKey(string scope, string proxyUrl, string username, string password)
+    {
+        if (string.IsNullOrWhiteSpace(proxyUrl))
+            return "direct";
+
+        return $"{scope ?? string.Empty}|{proxyUrl.Trim()}|{username ?? string.Empty}|{password ?? string.Empty}";
     }
 
     public static void ReportSuccess(string scope)

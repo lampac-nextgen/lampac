@@ -70,8 +70,10 @@ public class SoundCloudAudioProvider : IMusicAudioProvider
 
     public IReadOnlyList<string> GetFallbackProviderIds(MusicTrack track)
     {
-        return SoundCloudSupport.HasExactTrackId(track)
-            ? new[] { YouTubeMusicSearchSupport.ProviderId }
-            : Array.Empty<string>();
+        return new[]
+        {
+            SefonSupport.ProviderId,
+            YouTubeMusicSearchSupport.ProviderId
+        };
     }
 }

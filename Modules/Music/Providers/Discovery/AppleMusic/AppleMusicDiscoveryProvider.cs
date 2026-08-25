@@ -130,10 +130,30 @@ public class AppleMusicDiscoveryProvider : IMusicDiscoveryProvider
         ) ?? new List<MusicAlbum>();
 
         string resolver = GetAlbumResolver();
-        foreach (var album in albums)
-            album.lookup_provider = resolver;
+        return albums.Select(album => CopyAlbumForResponse(album, resolver)).ToList();
+    }
 
-        return albums;
+    static MusicAlbum CopyAlbumForResponse(MusicAlbum album, string resolver)
+    {
+        return new MusicAlbum
+        {
+            id = album.id,
+            title = album.title,
+            artist_id = album.artist_id,
+            artist_name = album.artist_name,
+            lookup_query = album.lookup_query,
+            lookup_provider = resolver,
+            year = album.year,
+            date = album.date,
+            type = album.type,
+            release_id = album.release_id,
+            description = album.description,
+            search_score = album.search_score,
+            secondary_types = album.secondary_types?.ToList() ?? new List<string>(),
+            images = album.images?.ToList() ?? new List<MusicImage>(),
+            provider_refs = album.provider_refs?.ToList() ?? new List<MusicProviderRef>(),
+            tracks = album.tracks?.ToList() ?? new List<MusicTrack>()
+        };
     }
 
     async Task<List<MusicAlbum>> LoadTopAlbumsAsync(string country, CancellationToken cancellationToken)

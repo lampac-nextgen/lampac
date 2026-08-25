@@ -195,7 +195,7 @@ public class SpotifyDiscoveryProvider : IMusicDiscoveryProvider
         if (playlist == null)
             return null;
 
-        var album = await LoadPlaylistAsync(playlist.playlistId, 100, cancellationToken);
+        var album = await LoadPlaylistAsync(playlist.playlistId, SpotifySupport.PlaylistTrackLimit, cancellationToken);
         return album == null ? null : CopyAlbum(album, playlist.title, includeTracks: true);
     }
 
@@ -266,11 +266,11 @@ public class SpotifyDiscoveryProvider : IMusicDiscoveryProvider
 
     static Task<MusicAlbum> LoadPlaylistAsync(string playlistId, int limit, CancellationToken cancellationToken)
     {
-        int take = Math.Clamp(limit, 1, 100);
+        int take = Math.Clamp(limit, 1, SpotifySupport.PlaylistTrackLimit);
         return MusicMetadataCacheService.GetOrCreateAsync(
             SpotifySupport.DiscoveryProviderId,
             "playlist",
-            $"{playlistId}:{take}",
+            $"{playlistId}:paged-v2:{take}",
             cacheTtl,
             () => SpotifySupport.GetPlaylistAlbumAsync(playlistId, take, cancellationToken),
             cancellationToken
