@@ -31,7 +31,7 @@ public class ErrorDocController : BaseController
                 <p class='card-text'>Добавьте в init.conf заменив email/unic_id на свои:</p>
                 <pre style='background: #e9ecef; padding: 1em;'><code>""accsdb"": {{
   ""accounts"": {{
-    ""{pw1}@mail.ru"": ""2040-10-17T00:00:00"", // email cub.red
+    ""{pw1}@mail.ru"": ""2040-10-17T00:00:00"", // email cub.best
     ""{pw2}"": ""2040-10-17T00:00:00"", // unic_id
   }}
 }}</code></pre>
