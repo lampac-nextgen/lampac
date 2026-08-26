@@ -1,27 +1,40 @@
-enable: false
+enable: true
 displayindex: 95
 displayname: HochuTV
-host: http://hochu.tv
-priorityBrowser: http
-geostreamproxy: ["ALL"]
+rch_access: apk,cors
+stream_access: apk,cors
+rchstreamproxy: web,apk,cors
+host: https://hochu.tv
 
+headers_stream:
+  User-Agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/146.0.0.0 Safari/537.36"
+  Referer: "{host}/"
+  Origin: "{host}"
+
+url_reserve: false
+hls: false
+#geostreamproxy: ["ALL"]
 list:
   uri: ""
   total_pages: 1
-
 contentParse:
   nodes: //td
   name:
     node: .//div[@class='titchan']
   href:
-    node: .//a 
+    node: .//a
     attribute: href
   img:
     node: .//img
     attribute: src
 
 view:
-  bindingToIP: true
-  patternFile: \.m3u
-  patternAbortEnd: \.(mp4|m3u|ts|mpd)
-  patternWhiteRequest: cdntvpotok.com
+  bindingToIP: false
+
+  patternFile: '(/[^/]+/[0-9]+/[0-9]+/index\.m3u8)|(^(?!.*playerjs\.php)(?!.*wmsAuthSign).*\.m3u8)'
+
+  waitLocationFile: false
+  waitForResponse: false
+  keepopen: true
+  fullCacheJS: true
+  abortMedia: false
