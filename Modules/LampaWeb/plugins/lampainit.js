@@ -82,19 +82,21 @@
     {deny}
 	
     if (lampainit_invc) lampainit_invc.appready();
-    if (Lampa.Storage.get('lampac_initiale', 'false')) return;
+    var first_initiale = !Lampa.Storage.get('lampac_initiale', 'false');
 
-    Lampa.Storage.set('lampac_initiale', 'true');
-    Lampa.Storage.set('source', 'cub');
-    Lampa.Storage.set('video_quality_default', '2160');
-    Lampa.Storage.set('full_btn_priority', '{full_btn_priority_hash}');
-    Lampa.Storage.set('proxy_tmdb', '{country}' == 'RU');
-    Lampa.Storage.set('poster_size', 'w300');
+    if (first_initiale) {
+      Lampa.Storage.set('lampac_initiale', 'true');
+      Lampa.Storage.set('source', 'cub');
+      Lampa.Storage.set('video_quality_default', '2160');
+      Lampa.Storage.set('full_btn_priority', '{full_btn_priority_hash}');
+      Lampa.Storage.set('proxy_tmdb', '{country}' == 'RU');
+      Lampa.Storage.set('poster_size', 'w300');
 
-    Lampa.Storage.set('parser_use', 'true');
-    Lampa.Storage.set('jackett_url', '{jachost}');
-    Lampa.Storage.set('jackett_key', '1');
-    Lampa.Storage.set('parser_torrent_type', 'jackett');
+      Lampa.Storage.set('parser_use', 'true');
+      Lampa.Storage.set('jackett_url', '{jachost}');
+      Lampa.Storage.set('jackett_key', '1');
+      Lampa.Storage.set('parser_torrent_type', 'jackett');
+    }
 
     var plugins = Lampa.Plugins.get();
 
@@ -115,7 +117,7 @@
 
     if (plugins_push.length) Lampa.Utils.putScript(plugins_push, function() {}, function() {}, function() {}, true);
 	
-    if (lampainit_invc)
+    if (lampainit_invc && first_initiale)
       lampainit_invc.first_initiale();
 
   }

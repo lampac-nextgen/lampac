@@ -918,16 +918,33 @@
     }
   }
 
-  Lampa.Listener.follow("app", function (e) {
-    if (e.type !== "ready" || window.WatchTogether_head_added) return;
-    if (!Lampa.Head || typeof Lampa.Head.addIcon !== "function") return;
-    window.WatchTogether_head_added = true;
+  var watchTogetherIcon =
+    '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="6"></circle><path d="M10.5 9.5 L10.5 14.5 L15 12 Z" fill="currentColor" stroke="none"></path><circle cx="4" cy="4" r="1.8" fill="currentColor" stroke="none"></circle><circle cx="20" cy="4" r="1.8" fill="currentColor" stroke="none"></circle><circle cx="4" cy="20" r="1.8" fill="currentColor" stroke="none"></circle><circle cx="20" cy="20" r="1.8" fill="currentColor" stroke="none"></circle></svg>';
 
-    var svg =
-      '<svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="6"></circle><path d="M10.5 9.5 L10.5 14.5 L15 12 Z" fill="currentColor" stroke="none"></path><circle cx="4" cy="4" r="1.8" fill="currentColor" stroke="none"></circle><circle cx="20" cy="4" r="1.8" fill="currentColor" stroke="none"></circle><circle cx="4" cy="20" r="1.8" fill="currentColor" stroke="none"></circle><circle cx="20" cy="20" r="1.8" fill="currentColor" stroke="none"></circle></svg>';
-    var btn = Lampa.Head.addIcon(svg, openRoomBrowser);
-    if (btn && btn.attr) btn.attr("title", T.menu_title);
+  function ensureWatchTogetherHeadButton() {
+    if (window.WatchTogether_head_added) return;
+    if (!Lampa.Head || typeof Lampa.Head.addIcon !== "function") return;
+
+    var head = typeof Lampa.Head.render === "function" && Lampa.Head.render();
+    if (!head || !head.length) return;
+
+    var btn = Lampa.Head.addIcon(watchTogetherIcon, openRoomBrowser);
+    if (!btn || !btn.length) return;
+
+    btn.addClass("watchtogether-head-button").attr("title", T.menu_title);
+    window.WatchTogether_head_added = true;
+  }
+
+  Lampa.Listener.follow("app", function (e) {
+    if (e.type === "ready") ensureWatchTogetherHeadButton();
   });
+
+  // A newly enabled server plugin can load after Lampa has already emitted
+  // app:ready. Retry against the initialized header so existing clients do not
+  // need to clear storage or reload twice before the icon appears.
+  setTimeout(ensureWatchTogetherHeadButton, 0);
+  setTimeout(ensureWatchTogetherHeadButton, 1000);
+  setTimeout(ensureWatchTogetherHeadButton, 3000);
 
   Lampa.Listener.follow("full", function (e) {
     if (e.type !== "complite") return;
@@ -1401,7 +1418,57 @@
     };
   }
 
+  var playerButtonActionAt = 0;
+
+  function ensureWatchTogetherPlayerButton() {
+    var panel = $(".player-panel__right.player-panel__tv-visible").first();
+    if (!panel.length) return;
+
+    var controls = panel.children(".player-panel__watchtogether-controls").first();
+    if (!controls.length) {
+      controls = $(
+        '<div class="player-panel__box-buttons player-panel__watchtogether-controls"></div>',
+      );
+
+      var quality = panel
+        .find(".player-panel__quality")
+        .first()
+        .closest(".player-panel__box-buttons");
+      if (quality.length) quality.after(controls);
+      else panel.prepend(controls);
+    }
+
+    var button = controls.find(".player-panel__watchtogether").first();
+    if (!button.length) {
+      button = $(
+        '<div class="player-panel__watchtogether button selector" data-controller="player_panel" aria-label="WatchTogether">' +
+          watchTogetherIcon +
+          '<div class="tooltip"></div></div>',
+      );
+      button.on("hover:enter click", function (event) {
+        event.preventDefault();
+        event.stopPropagation();
+
+        var now = Date.now();
+        if (now - playerButtonActionAt < 280) return;
+        playerButtonActionAt = now;
+
+        if (inRoom) copyWebLink();
+        else createRoomFromPlayer();
+      });
+      controls.append(button);
+    }
+
+    button.toggleClass("active", inRoom);
+    button
+      .find(".tooltip")
+      .text(inRoom ? T.copy_link : T.full_card_btn);
+  }
+
   setInterval(function () {
+    ensureWatchTogetherHeadButton();
+    ensureWatchTogetherPlayerButton();
+
     if (!inRoom) {
       $(".watchtogether-room-badge").remove();
       return;
