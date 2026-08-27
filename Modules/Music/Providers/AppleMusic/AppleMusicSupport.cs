@@ -436,6 +436,7 @@ public static class AppleMusicSupport
             artist_name = string.IsNullOrWhiteSpace(artistName) ? "Apple Music" : artistName,
             artists = string.IsNullOrWhiteSpace(artistName) ? new List<string>() : new List<string> { artistName },
             album_title = GetString(attributes.Value, "albumName")?.Trim() ?? albumTitleFallback,
+            isrc = MusicIsrc.Normalize(GetString(attributes.Value, "isrc")),
             duration_ms = GetInt(attributes.Value, "durationInMillis"),
             track_number = GetInt(attributes.Value, "trackNumber"),
             disc_number = GetInt(attributes.Value, "discNumber"),

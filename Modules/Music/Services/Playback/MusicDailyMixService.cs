@@ -445,6 +445,7 @@ public static class MusicDailyMixService
             artists = track.artists?.ToList() ?? new List<string>(),
             album_id = track.album_id,
             album_title = track.album_title,
+            isrc = track.isrc,
             duration_ms = track.duration_ms,
             track_number = track.track_number,
             disc_number = track.disc_number,

@@ -153,7 +153,10 @@ public static class MusicStreamRelayService
     }
 
     static bool IsDeadUpstreamStatus(HttpStatusCode statusCode)
-        => statusCode is HttpStatusCode.Forbidden or HttpStatusCode.NotFound or HttpStatusCode.Gone;
+        => statusCode is HttpStatusCode.Forbidden
+            or HttpStatusCode.NotFound
+            or HttpStatusCode.Gone
+            or HttpStatusCode.RequestedRangeNotSatisfiable;
 
     static void ReportProxyFailure(MusicPlaybackSource source, Exception exception)
     {

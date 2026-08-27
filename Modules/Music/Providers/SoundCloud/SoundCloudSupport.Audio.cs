@@ -301,6 +301,7 @@ public static partial class SoundCloudSupport
             id = !string.IsNullOrWhiteSpace(urn) ? urn : $"soundcloud:tracks:{trackId}",
             title = title,
             artists = artists,
+            isrc = GetTrackIsrc(track),
             duration_ms = payload.duration_ms,
             payload = MusicJson.Serialize(payload)
         };
@@ -317,10 +318,20 @@ public static partial class SoundCloudSupport
         var expectedArtists = BuildArtistFragments(new[] { expectedTrack.artist_name }.Concat(expectedTrack.artists ?? Enumerable.Empty<string>()));
         var candidateArtists = BuildArtistFragments(candidate.artists);
         string candidateArtist = candidateArtists.FirstOrDefault() ?? NormalizeSearchText(candidate.artists.FirstOrDefault());
+        string expectedIsrc = MusicIsrc.Normalize(expectedTrack.isrc);
+        string candidateIsrc = MusicIsrc.Normalize(candidate.isrc);
 
         int score = 0;
         bool artistMatched = false;
         bool durationMatched = false;
+
+        if (expectedIsrc != null && candidateIsrc != null)
+        {
+            if (!string.Equals(expectedIsrc, candidateIsrc, StringComparison.Ordinal))
+                return int.MinValue;
+
+            score += 120;
+        }
 
         if (!string.IsNullOrWhiteSpace(expectedTitle) && !string.IsNullOrWhiteSpace(candidateTitle))
         {

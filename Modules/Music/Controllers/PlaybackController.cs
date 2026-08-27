@@ -6,10 +6,10 @@ public class PlaybackController : BaseController
 {
     [HttpGet]
     [Route("music/matches")]
-    async public Task<ActionResult> Matches(string id, string provider, string audio_provider, string playback_mode, string title, string artist_name, string album_title, int? duration_ms, string date, string query)
+    async public Task<ActionResult> Matches(string id, string provider, string audio_provider, string playback_mode, string title, string artist_name, string album_title, int? duration_ms, string date, string isrc, string query)
     {
         string profileId = MusicProfileIdentity.Resolve(requestInfo, Request);
-        var track = await MusicPlaybackService.ResolveRequestTrackAsync(id, provider, title, artist_name, album_title, duration_ms, date);
+        var track = await MusicPlaybackService.ResolveRequestTrackAsync(id, provider, title, artist_name, album_title, duration_ms, date, isrc);
 
         var result = string.IsNullOrWhiteSpace(query)
             ? await MusicResolver.GetMatchesAsync(track, audio_provider, playback_mode, profileId)
@@ -20,10 +20,10 @@ public class PlaybackController : BaseController
 
     [HttpPost]
     [Route("music/match/select")]
-    async public Task<ActionResult> SelectMatch(string id, string provider, string audio_provider, string playback_mode, string match_id, string title, string artist_name, string album_title, int? duration_ms, string date, string query)
+    async public Task<ActionResult> SelectMatch(string id, string provider, string audio_provider, string playback_mode, string match_id, string title, string artist_name, string album_title, int? duration_ms, string date, string isrc, string query)
     {
         string profileId = MusicProfileIdentity.Resolve(requestInfo, Request);
-        var track = await MusicPlaybackService.ResolveRequestTrackAsync(id, provider, title, artist_name, album_title, duration_ms, date);
+        var track = await MusicPlaybackService.ResolveRequestTrackAsync(id, provider, title, artist_name, album_title, duration_ms, date, isrc);
         bool saved = await MusicResolver.SelectMatchAsync(track, audio_provider, match_id, playback_mode, profileId, query);
 
         return ContentTo(MusicJson.Serialize(new
@@ -37,9 +37,9 @@ public class PlaybackController : BaseController
 
     [HttpPost]
     [Route("music/match/reset")]
-    async public Task<ActionResult> ResetMatch(string id, string provider, string playback_mode, string title, string artist_name, string album_title, int? duration_ms, string date)
+    async public Task<ActionResult> ResetMatch(string id, string provider, string playback_mode, string title, string artist_name, string album_title, int? duration_ms, string date, string isrc)
     {
-        var track = await MusicPlaybackService.ResolveRequestTrackAsync(id, provider, title, artist_name, album_title, duration_ms, date);
+        var track = await MusicPlaybackService.ResolveRequestTrackAsync(id, provider, title, artist_name, album_title, duration_ms, date, isrc);
         bool reset = track != null && await MusicSourceMatchService.DeleteAsync(track.id, playback_mode);
 
         return ContentTo(MusicJson.Serialize(new
@@ -51,10 +51,10 @@ public class PlaybackController : BaseController
 
     [HttpGet]
     [Route("music/play")]
-    async public Task<ActionResult> Play(string id, string provider, string audio_provider, string stream_mode, string playback_mode, string title, string artist_name, string album_title, int? duration_ms, string date)
+    async public Task<ActionResult> Play(string id, string provider, string audio_provider, string stream_mode, string playback_mode, string title, string artist_name, string album_title, int? duration_ms, string date, string isrc)
     {
         string profileId = MusicProfileIdentity.Resolve(requestInfo, Request);
-        var track = await MusicPlaybackService.ResolveRequestTrackAsync(id, provider, title, artist_name, album_title, duration_ms, date);
+        var track = await MusicPlaybackService.ResolveRequestTrackAsync(id, provider, title, artist_name, album_title, duration_ms, date, isrc);
         var result = await MusicPlaybackService.ResolveTrackAsync(track, audio_provider, stream_mode, playback_mode, profileId, HttpContext.RequestAborted);
         MusicPlaybackService.PrepareStreamSources(host, track, provider, audio_provider, stream_mode, playback_mode, result);
         return ContentTo(MusicJson.Serialize(result));
@@ -62,11 +62,11 @@ public class PlaybackController : BaseController
 
     [HttpGet]
     [Route("music/stream")]
-    async public Task<ActionResult> Stream(string ticket, string id, string provider, string audio_provider, string quality, string stream_mode, string playback_mode, string title, string artist_name, string album_title, int? duration_ms, string date)
+    async public Task<ActionResult> Stream(string ticket, string id, string provider, string audio_provider, string quality, string stream_mode, string playback_mode, string title, string artist_name, string album_title, int? duration_ms, string date, string isrc)
     {
         if (MusicStreamTicketService.TryGet(ticket, out var ticketSource))
         {
-            // тикет жив, но upstream-ссылка внутри могла умереть (403/404/410 —
+            // тикет жив, но upstream-ссылка внутри могла умереть (403/404/410/416 —
             // googlevideo TTL/IP-привязка): не транслируем смерть клиенту, а
             // падаем в пере-резолв по fallback-параметрам ниже
             var relayed = await MusicStreamRelayService.RelayAsync(HttpContext, ticketSource, failOnUpstreamError: !string.IsNullOrWhiteSpace(id));
@@ -75,7 +75,7 @@ public class PlaybackController : BaseController
         }
 
         string profileId = MusicProfileIdentity.Resolve(requestInfo, Request);
-        var track = await MusicPlaybackService.ResolveRequestTrackAsync(id, provider, title, artist_name, album_title, duration_ms, date);
+        var track = await MusicPlaybackService.ResolveRequestTrackAsync(id, provider, title, artist_name, album_title, duration_ms, date, isrc);
         // upstream-ссылка умерла (403/410/416 в relay) — кэш sources для этого
         // трека может держать те же мёртвые URL: пере-резолв идёт с refreshSources
         var result = await MusicPlaybackService.ResolveTrackAsync(track, audio_provider, stream_mode, playback_mode, profileId, HttpContext.RequestAborted, refreshSources: true);
@@ -92,9 +92,9 @@ public class PlaybackController : BaseController
 
     [HttpPost]
     [Route("music/history/mark")]
-    async public Task<ActionResult> MarkHistory(string id, string provider, string title, string artist_name, string album_title, int? duration_ms, string date, bool count_play = false, long? played_ms = null)
+    async public Task<ActionResult> MarkHistory(string id, string provider, string title, string artist_name, string album_title, int? duration_ms, string date, string isrc, bool count_play = false, long? played_ms = null)
     {
-        var track = await MusicPlaybackService.ResolveRequestTrackAsync(id, provider, title, artist_name, album_title, duration_ms, date);
+        var track = await MusicPlaybackService.ResolveRequestTrackAsync(id, provider, title, artist_name, album_title, duration_ms, date, isrc);
         string profileId = MusicProfileIdentity.Resolve(requestInfo, Request);
 
         if (track != null)

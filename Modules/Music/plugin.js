@@ -86,6 +86,7 @@
      *   artist_id / artist_name {string}
      *   artists      {string[]}
      *   album_id / album_title  {string}
+     *   isrc         {?string}  ISO 3901, если его вернул каталог
      *   duration_ms  {?number}  может отсутствовать (напр. VK-чарт) —
      *                           тогда бэкфиллится из selected_match при резолве
      *   images       {Array}    [{url, ...}]; url уже проксирован сервером
@@ -309,6 +310,8 @@
      *                     см. docs/ios-embedded-lockscreen-seek.md)
      *   lastData          последний data от Lampa.Player start (метаданные трека)
      *   playWatchToken / switchToken  анти-гонки, как в MUSIC_IOS_AUDIO
+     *   navigationIndex   последняя выбранная позиция, даже если её источник
+     *                     ещё не разрешился или оказался недоступным
      */
     var MUSIC_EMBEDDED_IOS = {
         active: false,
@@ -317,7 +320,8 @@
         playWatchToken: 0,
         lastData: null,
         traceSeq: 0,
-        switchToken: 0
+        switchToken: 0,
+        navigationIndex: -1
     };
     var MUSIC_CLIENT_DEBUG_ERRORS_BOUND = false;
     var MUSIC_LAMPA_PLAYER_DEBUG_BOUND = false;
@@ -2054,6 +2058,7 @@
         if (track && track.title) parts.push('title=' + encodeURIComponent(track.title));
         if (track && track.artist_name) parts.push('artist_name=' + encodeURIComponent(track.artist_name));
         if (track && track.album_title) parts.push('album_title=' + encodeURIComponent(track.album_title));
+        if (track && track.isrc) parts.push('isrc=' + encodeURIComponent(track.isrc));
         if (track && (track.duration_ms || track.duration_ms === 0)) parts.push('duration_ms=' + encodeURIComponent(track.duration_ms));
         if (track && track.date) parts.push('date=' + encodeURIComponent(track.date));
 
@@ -4279,11 +4284,13 @@
     }
 
     function rememberQueue(tracks, startIndex) {
+        MUSIC_EMBEDDED_IOS.switchToken++;
         MUSIC_QUEUE.tracks = (tracks || []).slice();
         MUSIC_QUEUE.currentIndex = typeof startIndex === 'number' ? startIndex : 0;
         MUSIC_QUEUE.currentTrackId = MUSIC_QUEUE.tracks[MUSIC_QUEUE.currentIndex]
             ? MUSIC_QUEUE.tracks[MUSIC_QUEUE.currentIndex].id
             : null;
+        MUSIC_EMBEDDED_IOS.navigationIndex = MUSIC_QUEUE.currentIndex;
 
         MUSIC_QUEUE_RESTORE.available = false;
         scheduleQueueSnapshotSave(true);
@@ -4297,6 +4304,7 @@
         for (var i = 0; i < tracks.length; i++) {
             if (tracks[i] && tracks[i].id === trackId) {
                 MUSIC_QUEUE.currentIndex = i;
+                MUSIC_EMBEDDED_IOS.navigationIndex = i;
                 if (MUSIC_QUEUE_RESTORE.available && MUSIC_QUEUE_RESTORE.trackId !== trackId)
                     MUSIC_QUEUE_RESTORE.position = 0;
                 MUSIC_QUEUE_RESTORE.trackId = trackId;
@@ -4350,6 +4358,7 @@
             title: track.title || '',
             artist_name: track.artist_name || '',
             album_title: track.album_title || '',
+            isrc: track.isrc || '',
             duration_ms: track.duration_ms || 0,
             date: track.date || '',
             provider: track.provider || '',
@@ -8325,6 +8334,7 @@
         var data = {
             from_music_cluster: true,
             music_track_id: track.id || '',
+            music_isrc: track.isrc || '',
             title: track.title || 'Track',
             artist: track.artist_name || '',
             poster: trackImage(track),
@@ -8607,6 +8617,17 @@
 
         if (!track) return false;
 
+        MUSIC_EMBEDDED_IOS.navigationIndex = index;
+
+        // Lampa вычисляет позицию PlayerPlaylist по current URL. Отмечаем
+        // выбранный элемент до резолва, иначе после ошибки штатный next снова
+        // считает текущим предыдущий успешно запущенный трек.
+        try {
+            var activeItems = activePlaylist();
+            if (activeItems[index] && Lampa.PlayerPlaylist && typeof Lampa.PlayerPlaylist.url === 'function')
+                Lampa.PlayerPlaylist.url(activeItems[index].url);
+        } catch (e) {}
+
         traceEmbeddedIos('queue-inplace-request', 'index=' + index + ' origin=' + (origin || ''), true);
 
         requestPlay(track, function (json) {
@@ -8634,9 +8655,16 @@
             updateMediaSessionPositionState();
             traceEmbeddedIos('queue-inplace-started', 'index=' + index, true);
         }, function (json) {
+            if (switchToken !== MUSIC_EMBEDDED_IOS.switchToken) {
+                traceEmbeddedIos('queue-inplace-failed-stale', 'index=' + index, true);
+                return;
+            }
+
             traceEmbeddedIos('queue-inplace-failed', (json && json.message) || ('index=' + index), true);
 
             if (!maybeAutoSkipUnavailableTrack(json, function () {
+                if (switchToken !== MUSIC_EMBEDDED_IOS.switchToken) return;
+
                 var queued = queueTracks();
                 if (index + 1 >= queued.length) return;
 
@@ -8651,7 +8679,13 @@
 
     function playEmbeddedQueueOffset(offset) {
         var tracks = queueTracks();
-        var currentIndex = queueCurrentIndex();
+        var navigationIndex = Number(MUSIC_EMBEDDED_IOS.navigationIndex);
+        var currentIndex = isFinite(navigationIndex)
+            && navigationIndex === Math.floor(navigationIndex)
+            && navigationIndex >= 0
+            && navigationIndex < tracks.length
+            ? navigationIndex
+            : queueCurrentIndex();
         var nextIndex = currentIndex + offset;
 
         if (!tracks.length || currentIndex < 0) return false;
@@ -8801,7 +8835,9 @@
         MUSIC_EMBEDDED_IOS.active = false;
         MUSIC_EMBEDDED_IOS.lastData = null;
         MUSIC_EMBEDDED_IOS.playWatchToken++;
+        MUSIC_EMBEDDED_IOS.switchToken++;
         MUSIC_EMBEDDED_IOS.mediaSessionArmed = false;
+        MUSIC_EMBEDDED_IOS.navigationIndex = -1;
 
         if (!isStandaloneIosAudioActive())
             stopStandaloneIosKeepAlive('embedded-' + (origin || 'clear'));
@@ -9337,6 +9373,7 @@
             title: data.title || 'Track',
             artist_name: data.artist || '',
             album_title: data.music_album_title || '',
+            isrc: data.music_isrc || '',
             duration_ms: data.music_duration_ms || (data.music_duration ? Math.round(Number(data.music_duration || 0) * 1000) : 0),
             image: image,
             images: image ? [{ url: image }] : []
@@ -9437,6 +9474,7 @@
             music_playback_mode: getPlaybackMode(),
             music_youtube_id: extractResolvedYouTubeTrackId(track, json),
             music_album_title: track && track.album_title ? track.album_title : '',
+            music_isrc: track && track.isrc ? track.isrc : '',
             music_duration_ms: track && track.duration_ms ? track.duration_ms : 0,
             music_duration: track && track.duration_ms ? Math.max(0, Math.round(track.duration_ms / 1000)) : 0,
             timeline: buildTimeline(track),
@@ -9459,6 +9497,7 @@
             music_playback_mode: getPlaybackMode(),
             music_youtube_id: extractYouTubeTrackId(track),
             music_album_title: track && track.album_title ? track.album_title : '',
+            music_isrc: track && track.isrc ? track.isrc : '',
             music_duration_ms: track && track.duration_ms ? track.duration_ms : 0,
             music_duration: track && track.duration_ms ? Math.max(0, Math.round(track.duration_ms / 1000)) : 0,
             timeline: buildTimeline(track),
@@ -9503,8 +9542,9 @@
 
     // переход после мёртвого трека для путей, идущих через buildPlayback:
     // standalone iOS — сосед по очереди (shuffle/repeat учтены в neighborIndex),
-    // внутренний плеер — штатный next плейлиста Lampa (только если есть куда)
-    function advanceQueueAfterUnavailable(trackId) {
+    // внутренний плеер — точная следующая позиция. Штатный next здесь нельзя:
+    // до успешного резолва Lampa всё ещё считает текущим предыдущий URL.
+    function advanceQueueAfterUnavailable(trackId, failedPlayback) {
         if (isStandaloneIosAudioActive()) {
             var nextIndex = standaloneIosNeighborIndex(1);
             if (nextIndex >= 0 && nextIndex !== MUSIC_IOS_AUDIO.currentIndex)
@@ -9513,20 +9553,53 @@
         }
 
         var tracks = queueTracks();
+        var playlist = activePlaylist();
         var index = -1;
-        for (var i = 0; i < tracks.length; i++) {
-            if (tracks[i] && tracks[i].id === trackId) {
-                index = i;
+
+        // Ссылка на playback однозначна даже для плейлиста с повторяющимися
+        // track id. По id ищем только как fallback после пересборки ядром.
+        for (var p = 0; p < playlist.length; p++) {
+            if (playlist[p] === failedPlayback) {
+                index = p;
                 break;
+            }
+        }
+
+        var currentIndex = queueCurrentIndex();
+        if (index < 0) {
+            for (var i = Math.max(0, currentIndex + 1); i < tracks.length; i++) {
+                if (tracks[i] && tracks[i].id === trackId) {
+                    index = i;
+                    break;
+                }
+            }
+        }
+
+        if (index < 0) {
+            for (var j = 0; j < tracks.length; j++) {
+                if (tracks[j] && tracks[j].id === trackId) {
+                    index = j;
+                    break;
+                }
             }
         }
 
         if (index < 0 || index + 1 >= tracks.length) return;
 
-        try {
-            if (Lampa.PlayerPlaylist && typeof Lampa.PlayerPlaylist.next === 'function')
-                Lampa.PlayerPlaylist.next();
-        } catch (e) {}
+        MUSIC_EMBEDDED_IOS.navigationIndex = index;
+        var targetIndex = index + 1;
+
+        if (selectFromActiveQueue(targetIndex)) {
+            scheduleTrackPlayed(tracks[targetIndex]);
+            return;
+        }
+
+        if (activeMusicMediaElement()) {
+            playEmbeddedQueueIndexInPlace(targetIndex, 'auto-skip');
+            return;
+        }
+
+        playTrack(tracks[targetIndex], tracks, targetIndex, { forceFresh: true });
     }
 
     function buildPlayback(track) {
@@ -9537,6 +9610,7 @@
             music_playback_mode: getPlaybackMode(),
             music_youtube_id: extractYouTubeTrackId(track),
             music_album_title: track && track.album_title ? track.album_title : '',
+            music_isrc: track && track.isrc ? track.isrc : '',
             music_duration_ms: track && track.duration_ms ? track.duration_ms : 0,
             music_duration: track && track.duration_ms ? Math.max(0, Math.round(track.duration_ms / 1000)) : 0,
             timeline: buildTimeline(track),
@@ -9544,8 +9618,17 @@
             poster: image,
             img: image,
             artist: track.artist_name || '',
-            url: function (call) {
+            url: function resolvePlaybackUrl(call) {
+                var embeddedResolveToken = shouldUseStandaloneIosAudio()
+                    ? 0
+                    : ++MUSIC_EMBEDDED_IOS.switchToken;
+
                 requestPlay(track, function (json) {
+                    if (embeddedResolveToken && embeddedResolveToken !== MUSIC_EMBEDDED_IOS.switchToken) {
+                        traceEmbeddedIos('playlist-resolve-stale', track && track.id ? track.id : '', true);
+                        return;
+                    }
+
                     backfillTrackDurationFromMatch(track, json);
 
                     var source = pickPlaybackSource(json.sources) || json.sources[0];
@@ -9558,14 +9641,34 @@
                     playback.music_duration_ms = track.duration_ms || playback.music_duration_ms;
                     call();
                 }, function (json) {
+                    if (embeddedResolveToken && embeddedResolveToken !== MUSIC_EMBEDDED_IOS.switchToken) {
+                        traceEmbeddedIos('playlist-resolve-failed-stale', track && track.id ? track.id : '', true);
+                        return;
+                    }
+
+                    // Сохраняем выбранную lazy-позицию для штатных next/prev.
+                    // После call пустой URL заменится обратно resolver-функцией.
+                    try {
+                        if (Lampa.PlayerPlaylist && typeof Lampa.PlayerPlaylist.url === 'function')
+                            Lampa.PlayerPlaylist.url(resolvePlaybackUrl);
+                    } catch (e) {}
+
                     playback.url = '';
 
                     if (!maybeAutoSkipUnavailableTrack(json, function () {
-                        advanceQueueAfterUnavailable(track && track.id);
+                        if (embeddedResolveToken && embeddedResolveToken !== MUSIC_EMBEDDED_IOS.switchToken) return;
+                        advanceQueueAfterUnavailable(track && track.id, playback);
                     }))
                         Lampa.Noty.show(json && json.message ? json.message : 'Источник для трека пока не найден.');
 
                     call();
+
+                    // Неудачный ответ может быть временным. Пустой URL нужен
+                    // только текущему запуску, а ручная попытка должна снова
+                    // обратиться к провайдерам вместо вечного отказа.
+                    setTimeout(function () {
+                        if (playback.url === '') playback.url = resolvePlaybackUrl;
+                    }, 0);
                 });
             }
         };
@@ -10526,6 +10629,9 @@
     }
 
     Lampa.Player.listener.follow('start', function (data) {
+        if (data && data.from_music_cluster && typeof data.url === 'string' && data.url && !isStandaloneIosAudioActive())
+            MUSIC_EMBEDDED_IOS.switchToken++;
+
         traceEmbeddedIos('player-start-event', 'cluster=' + !!(data && data.from_music_cluster)
             + ' id=' + (data && data.music_track_id || '')
             + ' pending=' + (pendingInternalPlaylist ? pendingInternalPlaylist.trackId : ''), true);

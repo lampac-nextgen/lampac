@@ -41,7 +41,7 @@ public static partial class SoundCloudSupport
     static readonly SemaphoreSlim publicClientIdLock = new(1, 1);
     static string publicClientId;
     static DateTime publicClientIdExpiresAt;
-    const string chartsCacheVersion = "v8";
+    const string chartsCacheVersion = "v9";
 
     static SoundCloudSupport()
     {
@@ -639,6 +639,14 @@ public static partial class SoundCloudSupport
             return parsed;
 
         return null;
+    }
+
+    static string GetTrackIsrc(JsonElement track)
+    {
+        if (!track.TryGetProperty("publisher_metadata", out var publisher) || publisher.ValueKind != JsonValueKind.Object)
+            return null;
+
+        return MusicIsrc.Normalize(GetString(publisher, "isrc"));
     }
 
     static int GetArrayLength(JsonElement element, string propertyName)

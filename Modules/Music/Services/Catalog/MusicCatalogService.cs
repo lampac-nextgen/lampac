@@ -23,7 +23,8 @@ public static class MusicCatalogService
     // отдельными artistsection-запросами вместо короткого overview.
     // v35: уточнённые Spotify release labels для singles/EP/appears-on.
     // v36: Spotify singles/EP отдаются как track-section, не album-section.
-    const string metadataCacheVersion = "v36";
+    // v37: track metadata сохраняет ISRC для точного audio matching.
+    const string metadataCacheVersion = "v37";
     static readonly object homeWarmLock = new();
     static readonly Dictionary<string, Task<List<MusicBrowseSection>>> homeWarmTasks = new(StringComparer.OrdinalIgnoreCase);
 

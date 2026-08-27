@@ -58,6 +58,7 @@ public class MusicTrack
     public List<string> artists { get; set; } = new();
     public string album_id { get; set; }
     public string album_title { get; set; }
+    public string isrc { get; set; }
     public int? duration_ms { get; set; }
     public int? track_number { get; set; }
     public int? disc_number { get; set; }
@@ -77,6 +78,7 @@ public class MusicAudioMatch
     public string title { get; set; }
     public List<string> artists { get; set; } = new();
     public string album_title { get; set; }
+    public string isrc { get; set; }
     public int? duration_ms { get; set; }
     public string payload { get; set; }
 
