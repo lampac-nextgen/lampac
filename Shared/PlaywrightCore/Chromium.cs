@@ -96,6 +96,7 @@ public class Chromium : PlaywrightBase, IDisposable
                     {
                         case Architecture.X86:
                         case Architecture.X64:
+                        case Architecture.Arm64:
                             {
                                 executablePath = File.Exists(".playwright/chrome-linux/chrome")
                                     ? ".playwright/chrome-linux/chrome"
@@ -103,7 +104,7 @@ public class Chromium : PlaywrightBase, IDisposable
                                 break;
                             }
                         default:
-                            Console.WriteLine("PlaywChromiumright: Architecture unknown");
+                            Console.WriteLine("Chromium: Architecture unknown");
                             return;
                     }
                 }
