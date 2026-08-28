@@ -5,6 +5,7 @@
     "Controllers",
     "Models",
     "Services",
+    "LampaPluginBuilder.cs",
     "ModInit.cs"
   ]
 }
