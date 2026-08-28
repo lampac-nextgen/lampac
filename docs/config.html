@@ -629,7 +629,9 @@
   <span class="hl-key">"chromium"</span>: {
     <span class="hl-key">"enable"</span>:  <span class="hl-bool">false</span>,
     <span class="hl-key">"count"</span>:   <span class="hl-val">1</span>,      <span class="hl-comment">// количество экземпляров в пуле</span>
-    <span class="hl-key">"restart"</span>: <span class="hl-val">3600</span>   <span class="hl-comment">// перезапуск каждые N секунд</span>
+    <span class="hl-key">"restart"</span>: <span class="hl-val">3600</span>,  <span class="hl-comment">// перезапуск каждые N секунд</span>
+    <span class="hl-key">"executablePath"</span>: <span class="hl-string">"/usr/bin/chromium"</span>,  <span class="hl-comment">// путь к бинарнику, если автоопределение не подошло</span>
+    <span class="hl-key">"Args"</span>: [<span class="hl-string">"--no-sandbox"</span>]  <span class="hl-comment">// флаги командной строки браузера</span>
   },
   <span class="hl-key">"firefox"</span>: {
     <span class="hl-key">"enable"</span>: <span class="hl-bool">false</span>,
@@ -639,7 +641,9 @@
         </div>
         <div class="callout callout-warn"><span class="callout-icon">⚠️</span>
           <p>Playwright требует установленного Chromium/Firefox. В Docker-образе зависимости включены. Для нативной
-            установки — дополнительная команда <code>playwright install chromium</code>.</p>
+            установки — дополнительная команда <code>playwright install chromium</code>. Путь к бинарнику и флаги
+            запуска задаются только через <code>executablePath</code> и <code>Args</code>: переменные окружения код не
+            читает.</p>
         </div>
       </div>
 

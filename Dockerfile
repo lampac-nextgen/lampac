@@ -86,9 +86,7 @@ ENV DOTNET_ROOT=/usr/share/dotnet \
     PATH="${PATH}:/usr/share/dotnet" \
     DOTNET_RUNNING_IN_CONTAINER=true \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
-    DOTNET_CLI_TELEMETRY_OPTOUT=1 \
-    CHROMIUM_PATH=/usr/bin/google-chrome-stable \
-    CHROMIUM_FLAGS="--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
+    DOTNET_CLI_TELEMETRY_OPTOUT=1
 
 WORKDIR /lampac
 EXPOSE 9118

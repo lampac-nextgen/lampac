@@ -943,8 +943,6 @@ Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:$D
 Environment=DOTNET_RUNNING_IN_CONTAINER=false
 Environment=DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
 Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
-Environment=CHROMIUM_PATH=/usr/bin/google-chrome-stable
-Environment="CHROMIUM_FLAGS=--no-sandbox --disable-setuid-sandbox --disable-dev-shm-usage"
 ExecStart=$DOTNET_INSTALL_DIR/dotnet $INSTALL_ROOT/Core.dll
 Restart=on-failure
 RestartSec=10
