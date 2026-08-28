@@ -57,6 +57,9 @@ public class AccsConf
 
             foreach (AccsUser u in users)
             {
+                if (u == null)
+                    continue;
+
                 if (!string.IsNullOrEmpty(u.id))
                     _users[u.id.ToLowerAndTrim()] = u;
 
@@ -73,6 +76,35 @@ public class AccsConf
             _searchUsers = _users;
         }
         catch { }
+    }
+
+    public void MergeAccounts()
+    {
+        if (accounts == null || accounts.Count == 0)
+            return;
+
+        users ??= new ConcurrentBag<AccsUser>();
+
+        RefreshUsers();
+
+        foreach (var account in accounts)
+        {
+            if (findUser(account.Key) is AccsUser user)
+            {
+                if (account.Value > user.expires)
+                    user.expires = account.Value;
+            }
+            else
+            {
+                users.Add(new AccsUser()
+                {
+                    id = account.Key.ToLowerAndTrim(),
+                    expires = account.Value
+                });
+            }
+        }
+
+        RefreshUsers();
     }
 
     public AccsUser findUser(HttpContext httpContext, out string uid)
