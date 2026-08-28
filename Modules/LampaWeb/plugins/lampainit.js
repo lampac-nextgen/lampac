@@ -78,6 +78,72 @@
     }
   }, 200);
 
+  function pluginBaseName(url) {
+    if (!url) return null;
+    var tokenized = url.match(/\/([a-z0-9_-]+)\/js\//i);
+    if (tokenized) return tokenized[1].toLowerCase();
+    var nested = url.match(/\/([a-z0-9_-]+)\/([a-z0-9_-]+)\.js(\?|$)/i);
+    if (nested) return nested[2].toLowerCase();
+    var flat = url.match(/\/([a-z0-9_-]+)\.js(\?|$)/i);
+    if (flat) return flat[1].toLowerCase();
+    return null;
+  }
+
+  function hasPluginFamily(installed, baseName) {
+    return installed.some(function (p) {
+      return pluginBaseName(p.url) === baseName;
+    });
+  }
+
+  var syncOrchestratorChildren = { bookmark: true, timecode: true };
+
+  function shouldSkipPlugin(plugin, installed) {
+    if (installed.some(function (p) { return p.url == plugin.url; }))
+      return true;
+
+    var base = pluginBaseName(plugin.url);
+    if (!base) return false;
+
+    if (hasPluginFamily(installed, base))
+      return true;
+
+    if (syncOrchestratorChildren[base] && hasPluginFamily(installed, 'sync'))
+      return true;
+
+    return false;
+  }
+
+  function cleanupFamilyDuplicates(plugins) {
+    if (typeof Lampa.Plugins.remove !== 'function')
+      return plugins;
+
+    var byBase = {};
+    plugins.forEach(function (p) {
+      var base = pluginBaseName(p.url);
+      if (!base) return;
+      if (!byBase[base]) byBase[base] = [];
+      byBase[base].push(p);
+    });
+
+    var changed = false;
+    Object.keys(byBase).forEach(function (base) {
+      var group = byBase[base];
+      var hasTokenized = group.some(function (p) { return /\/js\//.test(p.url); });
+      if (!hasTokenized) return;
+      group.forEach(function (p) {
+        if (/\/js\//.test(p.url)) return;
+        if (!/\.js(\?|$)/.test(p.url)) return;
+        Lampa.Plugins.remove(p.url);
+        changed = true;
+      });
+    });
+
+    if (changed)
+      Lampa.Plugins.save();
+
+    return Lampa.Plugins.get();
+  }
+
   function start() {
     {deny}
 	
@@ -99,20 +165,21 @@
     }
 
     var plugins = Lampa.Plugins.get();
+    plugins = cleanupFamilyDuplicates(plugins);
 
     var plugins_add = {initiale};
 
     var plugins_push = [];
 
     plugins_add.forEach(function(plugin) {
-      if (!plugins.find(function(a) {
-          return a.url == plugin.url;
-        })) {
-        Lampa.Plugins.add(plugin);
-        Lampa.Plugins.save();
+      if (shouldSkipPlugin(plugin, plugins))
+        return;
 
-        plugins_push.push(plugin.url);
-      }
+      Lampa.Plugins.add(plugin);
+      Lampa.Plugins.save();
+
+      plugins_push.push(plugin.url);
+      plugins.push(plugin);
     });
 
     if (plugins_push.length) Lampa.Utils.putScript(plugins_push, function() {}, function() {}, function() {}, true);

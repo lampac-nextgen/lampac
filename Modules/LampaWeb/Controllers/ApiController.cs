@@ -697,64 +697,9 @@ public class ApiController : BaseController
             sb = sb.Append(lampainitjs);
 
             #region plugins
-            List<LampaPlugin> plugins = new(20);
-
-            if (ModInit.conf.initPlugins.dlna)
-                plugins.Add(new("{localhost}/dlna.js", 1, "DLNA", "lampac"));
-
-            if (ModInit.conf.initPlugins.tracks)
-                plugins.Add(new("{localhost}/tracks.js", 1, "Tracks.js", "lampac"));
-
-            if (ModInit.conf.initPlugins.transcoding)
-                plugins.Add(new("{localhost}/transcoding.js", 1, "Transcoding video", "lampac"));
-
-            if (ModInit.conf.initPlugins.tmdbProxy)
-                plugins.Add(new("{localhost}/tmdbproxy.js", 1, "TMDB Proxy", "lampac"));
-
-            if (ModInit.conf.initPlugins.cubProxy)
-                plugins.Add(new("{localhost}/cubproxy.js", 1, "CUB Proxy", "lampac"));
-
-            if (ModInit.conf.initPlugins.online)
-                plugins.Add(new("{localhost}/online.js", 1, "Онлайн", "lampac"));
-
-            if (ModInit.conf.initPlugins.watch_together)
-                plugins.Add(new("{localhost}/watchtogether.js", 1, "Watch Together", "lampac"));
-
-            if (ModInit.conf.initPlugins.catalog)
-                plugins.Add(new("{localhost}/catalog.js", 1, "Альтернативные источники каталога", "lampac"));
-
-            if (ModInit.conf.initPlugins.dorama)
-                plugins.Add(new("{localhost}/dorama.js", 1, "Дорамы", "lampac"));
-
-            if (ModInit.conf.initPlugins.sisi)
-            {
-                plugins.Add(new("{localhost}/sisi.js", 1, "Клубничка", "lampac"));
-                plugins.Add(new("{localhost}/startpage.js", 1, "Стартовая страница", "lampac"));
-            }
-
-            if (ModInit.conf.initPlugins.sync)
-                plugins.Add(new("{localhost}/sync.js", 1, "Синхронизация", "lampac"));
-
-            if (ModInit.conf.initPlugins.timecode)
-                plugins.Add(new("{localhost}/timecode.js", 1, "Синхронизация тайм-кодов", "lampac"));
-
-            if (ModInit.conf.initPlugins.bookmark)
-                plugins.Add(new("{localhost}/bookmark.js", 1, "Синхронизация закладок", "lampac"));
-
-            if (ModInit.conf.initPlugins.torrserver)
-                plugins.Add(new("{localhost}/ts.js", 1, "TorrServer", "lampac"));
-
-            if (ModInit.conf.initPlugins.backup)
-                plugins.Add(new("{localhost}/backup.js", 1, "Backup", "lampac"));
-
-            if (ModInit.conf.customPlugins != null)
-            {
-                foreach (var p in ModInit.conf.customPlugins)
-                {
-                    if (p.status == 1)
-                        plugins.Add(p);
-                }
-            }
+            var plugins = LampaPluginBuilder.BuildInitPlugins(
+                ModInit.conf.initPlugins,
+                ModInit.conf.customPlugins);
 
             sb = sb.Replace("{initiale}", JsonConvert.SerializeObject(plugins));
             #endregion
@@ -885,73 +830,11 @@ public class ApiController : BaseController
             if (adult && HttpContext.Request.Path.Value.StartsWith("/on/h/"))
                 adult = false;
 
-            var plugins = new List<string>(15);
-
-            void send(string name, bool worktoken)
-            {
-                if (worktoken && !string.IsNullOrEmpty(token))
-                {
-                    plugins.Add($"\"{{localhost}}/{name}/js/{HttpUtility.UrlEncode(token)}\"");
-                }
-                else
-                {
-                    plugins.Add($"\"{{localhost}}/{name}.js\"");
-                }
-            }
-
-            if (ModInit.conf.initPlugins.dlna)
-                send("dlna", true);
-
-            if (ModInit.conf.initPlugins.tracks)
-                send("tracks", true);
-
-            if (ModInit.conf.initPlugins.transcoding)
-                send("transcoding", true);
-
-            if (ModInit.conf.initPlugins.tmdbProxy)
-                send("tmdbproxy", true);
-
-            if (ModInit.conf.initPlugins.cubProxy)
-                send("cubproxy", true);
-
-            if (ModInit.conf.initPlugins.dorama)
-                send("dorama", true);
-
-            if (ModInit.conf.initPlugins.online)
-                send("online", true);
-
-            if (ModInit.conf.initPlugins.watch_together)
-                send("watchtogether", false);
-
-            if (adult && ModInit.conf.initPlugins.sisi)
-            {
-                send("sisi", true);
-                send("startpage", false);
-            }
-
-            if (ModInit.conf.initPlugins.sync)
-                send("sync", true);
-
-            if (ModInit.conf.initPlugins.timecode)
-                send("timecode", true);
-
-            if (ModInit.conf.initPlugins.bookmark)
-                send("bookmark", true);
-
-            if (ModInit.conf.initPlugins.torrserver)
-                send("ts", true);
-
-            if (ModInit.conf.initPlugins.backup)
-                send("backup", true);
-
-            if (ModInit.conf.customPlugins != null)
-            {
-                foreach (var p in ModInit.conf.customPlugins)
-                {
-                    if (p.status == 1)
-                        plugins.Add($"\"{p.url}\"");
-                }
-            }
+            var plugins = LampaPluginBuilder.BuildOnPluginUrls(
+                ModInit.conf.initPlugins,
+                ModInit.conf.customPlugins,
+                token,
+                adult);
             #endregion
 
             string onjs = FileCache.ReadAllText($"{ModInit.modpath}/plugins/on.js", "on.js");
