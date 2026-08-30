@@ -23,7 +23,7 @@ public class VibixController : BaseOnlineController
 
     [HttpGet, Staticache(manually: true)]
     [Route("lite/vibix")]
-    async public Task<ActionResult> Index(string imdb_id, long kinopoisk_id, string title, string original_title, short s = -1, bool rjson = false)
+    async public Task<ActionResult> Index(string imdb_id, long kinopoisk_id, string title, string original_title, short s = -1, bool rjson = false, string voice = null)
     {
         if (await IsRequestBlocked(rch: false))
             return badInitMsg;
@@ -71,13 +71,13 @@ public class VibixController : BaseOnlineController
 
                         foreach (Match voiceMatch in Regex.Matches(items, @"\{(?<voice>[^}]+)\}(?<file>https?://[^,\t\[\;{ ]+)", RegexOptions.Singleline))
                         {
-                            string voice = voiceMatch.Groups["voice"].Value;
+                            string movieVoice = voiceMatch.Groups["voice"].Value;
                             string file = voiceMatch.Groups["file"].Value;
 
-                            if (!movie.voices.TryGetValue(voice, out var streams))
+                            if (!movie.voices.TryGetValue(movieVoice, out var streams))
                             {
                                 streams = new List<StreamQualityDto>();
-                                movie.voices[voice] = streams;
+                                movie.voices[movieVoice] = streams;
                             }
 
                             streams.Insert(0, new StreamQualityDto(
@@ -113,6 +113,8 @@ public class VibixController : BaseOnlineController
             #region Сериал
             string enc_title = HttpUtility.UrlEncode(title);
             string enc_original_title = HttpUtility.UrlEncode(original_title);
+            string enc_imdb_id = HttpUtility.UrlEncode(imdb_id);
+            string serialQuery = $"rjson={rjson}&kinopoisk_id={kinopoisk_id}&imdb_id={enc_imdb_id}&title={enc_title}&original_title={enc_original_title}";
 
             if (s == -1)
             {
@@ -124,7 +126,7 @@ public class VibixController : BaseOnlineController
                     {
                         tpl.Append(
                             $"{_s} сезон",
-                            $"{host}/lite/vibix?rjson={rjson}&kinopoisk_id={kinopoisk_id}&imdb_id={imdb_id}&title={enc_title}&original_title={enc_original_title}&s={_s}",
+                            $"{host}/lite/vibix?{serialQuery}&s={_s}",
                             _s
                         );
                     }
@@ -134,51 +136,89 @@ public class VibixController : BaseOnlineController
             }
             else
             {
-                var etpl = new EpisodeTpl();
+                var season = cache.Value.FirstOrDefault(i => i.title?.EndsWith($" {s}") == true);
+                var episodes = season?.folder?
+                    .Where(i => i != null)
+                    .OrderBy(i => SortNumber(i.title))
+                    .ThenBy(i => i.title, StringComparer.OrdinalIgnoreCase)
+                    .ToList();
 
-                foreach (var season in cache.Value)
+                if (episodes == null || episodes.Count == 0)
+                    return ContentTpl(new EpisodeTpl());
+
+                foreach (var episode in episodes)
+                    PrepareEpisode(episode);
+
+                var voices = new List<string>();
+                var seenVoices = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+                foreach (var episode in episodes)
                 {
-                    if (!season.title.EndsWith($" {s}"))
+                    if (episode.voices == null)
                         continue;
 
-                    foreach (var episode in season.folder)
+                    foreach (string voiceName in episode.voices.Keys)
                     {
-                        string name = episode.title;
-                        string file = episode.folder?.First().file ?? episode.file;
+                        if (!string.IsNullOrWhiteSpace(voiceName) && seenVoices.Add(voiceName))
+                            voices.Add(voiceName);
+                    }
+                }
 
-                        if (string.IsNullOrEmpty(name) || string.IsNullOrEmpty(file))
+                string selectedVoice = voice;
+                string activeVoice = selectedVoice;
+
+                if (string.IsNullOrEmpty(activeVoice))
+                    activeVoice = GetEpisodeDefaultVoice(episodes.FirstOrDefault());
+
+                if (!string.IsNullOrEmpty(activeVoice) && !seenVoices.Contains(activeVoice))
+                    activeVoice = null;
+
+                VoiceTpl vtpl = null;
+                string seasonLink = $"{host}/lite/vibix?{serialQuery}&s={s}";
+
+                if (voices.Count > 0)
+                {
+                    vtpl = new VoiceTpl(voices.Count);
+
+                    foreach (string voiceName in voices)
+                    {
+                        vtpl.Append(
+                            voiceName,
+                            string.Equals(activeVoice, voiceName, StringComparison.OrdinalIgnoreCase),
+                            $"{seasonLink}&voice={HttpUtility.UrlEncode(voiceName)}"
+                        );
+                    }
+                }
+
+                var etpl = new EpisodeTpl(vtpl, episodes.Count);
+
+                foreach (var episode in episodes)
+                {
+                    List<StreamQualityDto> streams = episode.streams;
+
+                    if (!string.IsNullOrEmpty(selectedVoice))
+                    {
+                        if (episode.voices == null ||
+                            !episode.voices.TryGetValue(selectedVoice, out streams) ||
+                            streams == null ||
+                            streams.Count == 0)
+                        {
                             continue;
-
-                        if (episode.streams == null)
-                        {
-                            episode.streams = new List<StreamQualityDto>(3);
-
-                            foreach (string q in new string[] { "1080", "720", "480" })
-                            {
-                                var g = new Regex($"{q}p?\\](\\{{[^\\}}]+\\}})?(?<file>https?://[^,\t\\[\\;\\{{ ]+)").Match(file).Groups;
-                                if (!string.IsNullOrEmpty(g["file"].Value))
-                                {
-                                    episode.streams.Add(new StreamQualityDto(
-                                        $"{host}/lite/vibix/video.m3u8?id={EncryptQuery(g["file"].Value)}",
-                                        $"{q}p"
-                                    ));
-                                }
-                            }
-                        }
-
-                        if (episode.streams.Count > 0)
-                        {
-                            etpl.Append(
-                                name,
-                                title ?? original_title,
-                                s,
-                                Regex.Match(name, "([0-9]+)").Groups[1].Value,
-                                accsArgs(episode.streams[0].link),
-                                streamquality: new StreamQualityTpl(episode.streams, linkPredicate: accsArgs),
-                                vast: init.vast
-                            );
                         }
                     }
+
+                    if (string.IsNullOrEmpty(episode.title) || streams == null || streams.Count == 0)
+                        continue;
+
+                    etpl.Append(
+                        episode.title,
+                        title ?? original_title,
+                        s,
+                        Regex.Match(episode.title, "([0-9]+)").Groups[1].Value,
+                        accsArgs(streams[0].link),
+                        streamquality: new StreamQualityTpl(streams, linkPredicate: accsArgs),
+                        vast: init.vast
+                    );
                 }
 
                 return ContentTpl(etpl);
@@ -239,6 +279,187 @@ public class VibixController : BaseOnlineController
         return Content(m3u8, "application/vnd.apple.mpegurl");
     }
     #endregion
+
+    #region EpisodeVoices
+    void PrepareEpisode(Item episode)
+    {
+        if (episode == null || (episode.streams != null && episode.voices != null))
+            return;
+
+        episode.voices = new Dictionary<string, List<StreamQualityDto>>(StringComparer.OrdinalIgnoreCase);
+
+        var sources = episode.folder?
+            .Where(i => i != null && !string.IsNullOrWhiteSpace(i.file))
+            .ToList();
+
+        if (sources?.Count > 0)
+        {
+            Item nativeSource = sources[0];
+
+            foreach (var source in sources)
+            {
+                var inlineVoices = ExtractVoices(source.file);
+
+                if (inlineVoices.Count > 0)
+                {
+                    foreach (string voiceName in inlineVoices)
+                        AddVoice(episode.voices, voiceName, BuildStreams(source.file, voiceName));
+                }
+                else if (!string.IsNullOrWhiteSpace(source.title))
+                {
+                    AddVoice(episode.voices, source.title.Trim(), BuildStreams(source.file));
+                }
+            }
+
+            string taggedDefault = GetDefaultVoice(nativeSource.file);
+            episode.streams = BuildStreams(nativeSource.file, taggedDefault);
+        }
+        else
+        {
+            var inlineVoices = ExtractVoices(episode.file);
+
+            foreach (string voiceName in inlineVoices)
+                AddVoice(episode.voices, voiceName, BuildStreams(episode.file, voiceName));
+
+            string taggedDefault = GetDefaultVoice(episode.file);
+            episode.streams = BuildStreams(episode.file, taggedDefault);
+        }
+    }
+
+    static string GetEpisodeDefaultVoice(Item episode)
+    {
+        if (episode == null)
+            return null;
+
+        var nativeSource = episode.folder?
+            .FirstOrDefault(i => i != null && !string.IsNullOrWhiteSpace(i.file));
+
+        if (nativeSource != null)
+        {
+            string taggedDefault = GetDefaultVoice(nativeSource.file);
+            return !string.IsNullOrEmpty(taggedDefault)
+                ? taggedDefault
+                : nativeSource.title?.Trim();
+        }
+
+        return GetDefaultVoice(episode.file);
+    }
+
+    List<StreamQualityDto> BuildStreams(string file, string voice = null)
+    {
+        var streams = new List<StreamQualityDto>(3);
+
+        if (string.IsNullOrWhiteSpace(file))
+            return streams;
+
+        foreach (string q in new string[] { "1080", "720", "480" })
+        {
+            Match qualityMatch = Regex.Match(
+                file,
+                $@"\[{q}p?\](?<items>.*?)(?=,\[(?:480|720|1080)p?\]|$)",
+                RegexOptions.Singleline
+            );
+
+            if (!qualityMatch.Success)
+                continue;
+
+            string items = qualityMatch.Groups["items"].Value;
+            Match selected;
+
+            if (!string.IsNullOrEmpty(voice))
+            {
+                selected = Regex.Match(
+                    items,
+                    @"\{" + Regex.Escape(voice) + @"\}(?<file>https?://[^,\t\[\;{ ]+)",
+                    RegexOptions.IgnoreCase | RegexOptions.Singleline
+                );
+            }
+            else
+            {
+                selected = Regex.Match(
+                    items,
+                    @"(?:\{[^}]+\})?(?<file>https?://[^,\t\[\;{ ]+)",
+                    RegexOptions.Singleline
+                );
+            }
+
+            if (!selected.Success)
+                continue;
+
+            streams.Add(new StreamQualityDto(
+                $"{host}/lite/vibix/video.m3u8?id={EncryptQuery(selected.Groups["file"].Value)}",
+                $"{q}p"
+            ));
+        }
+
+        return streams;
+    }
+
+    static List<string> ExtractVoices(string file)
+    {
+        var voices = new List<string>();
+        var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+
+        if (string.IsNullOrWhiteSpace(file))
+            return voices;
+
+        foreach (Match qualityMatch in Regex.Matches(
+            file,
+            @"\[(?:480|720|1080)p?\](?<items>.*?)(?=,\[(?:480|720|1080)p?\]|$)",
+            RegexOptions.Singleline))
+        {
+            foreach (Match voiceMatch in Regex.Matches(
+                qualityMatch.Groups["items"].Value,
+                @"\{(?<voice>[^}]+)\}(?<file>https?://[^,\t\[\;{ ]+)",
+                RegexOptions.Singleline))
+            {
+                string voiceName = voiceMatch.Groups["voice"].Value.Trim();
+
+                if (!string.IsNullOrEmpty(voiceName) && seen.Add(voiceName))
+                    voices.Add(voiceName);
+            }
+        }
+
+        return voices;
+    }
+
+    static string GetDefaultVoice(string file)
+    {
+        if (string.IsNullOrWhiteSpace(file))
+            return null;
+
+        Match qualityMatch = Regex.Match(
+            file,
+            @"\[(?:480|720|1080)p?\](?<items>.*?)(?=,\[(?:480|720|1080)p?\]|$)",
+            RegexOptions.Singleline
+        );
+
+        if (!qualityMatch.Success)
+            return null;
+
+        Match firstStream = Regex.Match(
+            qualityMatch.Groups["items"].Value,
+            @"(?:\{(?<voice>[^}]+)\})?(?<file>https?://[^,\t\[\;{ ]+)",
+            RegexOptions.Singleline
+        );
+
+        if (!firstStream.Success)
+            return null;
+
+        string voiceName = firstStream.Groups["voice"].Value.Trim();
+        return string.IsNullOrEmpty(voiceName) ? null : voiceName;
+    }
+
+    static void AddVoice(Dictionary<string, List<StreamQualityDto>> voices, string voiceName, List<StreamQualityDto> streams)
+    {
+        if (string.IsNullOrWhiteSpace(voiceName) || streams == null || streams.Count == 0)
+            return;
+
+        if (!voices.ContainsKey(voiceName))
+            voices[voiceName] = streams;
+    }
+    #endregion
+
 
     #region black_magic
     async Task<string> black_magic(string imdb_id, long kinopoisk_id)
@@ -321,6 +542,17 @@ public class VibixController : BaseOnlineController
     }
     #endregion
 
+
+    static int SortNumber(string value)
+    {
+        if (int.TryParse(value, out int number))
+            return number;
+
+        var match = Regex.Match(value ?? string.Empty, "[0-9]+");
+        return match.Success && int.TryParse(match.Value, out number)
+            ? number
+            : int.MaxValue;
+    }
 
     static string PadBase64(string value)
     {
