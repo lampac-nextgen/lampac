@@ -46,7 +46,7 @@ public class ModInit : IModuleLoaded, IModuleOnline
 
     private void UpdateConf()
     {
-        conf = ModuleInvoke.Init("Vidsrc", new OnlinesSettings("Vidsrc", "https://vidsrc.cc")
+        conf = ModuleInvoke.Init("Vidsrc", new OnlinesSettings("Vidsrc", "https://vidsrc.pm")
         {
             displayindex = 1005,
             streamproxy = true
