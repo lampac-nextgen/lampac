@@ -180,7 +180,7 @@ jobs:
           provenance: ${{ inputs.provenance }}
 
       - if: ${{ inputs.generate_syft_sbom && inputs.push }}
-        uses: anchore/sbom-action@v0.24.0
+        uses: anchore/sbom-action@v0.24.2
         with:
           image: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
           format: ${{ inputs.syft_format }}
