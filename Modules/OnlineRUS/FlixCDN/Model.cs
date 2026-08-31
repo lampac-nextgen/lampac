@@ -14,7 +14,7 @@ public class PlayerPayload
 
     public string translateTitle { get; set; }
 
-    public short season { get; set; }
+    public short? season { get; set; }
 
     public int[] episodes { get; set; }
 

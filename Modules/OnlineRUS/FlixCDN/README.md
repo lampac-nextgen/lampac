@@ -1,6 +1,6 @@
 # FlixCDN
 
-Онлайн-источник **FlixCDN**: два базовых URL в **`OnlinesSettings`** — плеер **`https://player0.flixcdn.space`**, API **`https://api0.flixcdn.biz/api`**, **`streamproxy: true`**. По умолчанию в шаблоне **`enable = false`**.
+Онлайн-источник **FlixCDN**: прямой плеер **`https://tarantino.factorios.live`**, **`streamproxy: true`**. По умолчанию источник включён: **`enable = true`**.
 
 ## Интерфейс
 

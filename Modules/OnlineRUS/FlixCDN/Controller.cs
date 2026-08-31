@@ -235,7 +235,7 @@ public class FlixCDNController : BaseOnlineController
         }
 
         if (seasons.Count == 0 && player?.season > 0 && player.episodes?.Length > 0)
-            seasons[player.season] = player.episodes.Where(e => e > 0).ToArray();
+            seasons[player.season.Value] = player.episodes.Where(e => e > 0).ToArray();
 
         return seasons;
     }
