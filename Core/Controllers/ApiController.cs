@@ -28,7 +28,7 @@ public class ApiController : BaseController
             if (type == "name")
                 return Content("Helikopter", "text/plain; charset=utf-8");
 
-            return Redirect("https://youtu.be/a0DbzUe-r4Q");
+            return Redirect("https://youtu.be/Kv-tbdVOuOA");
         }
 
         return StatusCode(404);
