@@ -13,6 +13,8 @@ public class Data
 {
     public string iframe { get; set; }
 
+    public int total_videos { get; set; }
+
     public Dictionary<string, Season> seasons { get; set; }
 
     public Dictionary<string, Translation> translation_iframe { get; set; }
@@ -20,6 +22,8 @@ public class Data
 
 public class Season
 {
+    public int total_videos { get; set; }
+
     public Dictionary<string, Episode> videos { get; set; }
 
     public Dictionary<string, Translation> translation_iframe { get; set; }

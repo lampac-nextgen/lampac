@@ -7,6 +7,7 @@ using Shared.Models.Templates;
 using Shared.PlaywrightCore;
 using Shared.Services.Utilities;
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -35,7 +36,7 @@ public class VideoseedController : BaseOnlineController
         {
             var data =
                 await goSearch(serial, kinopoisk_id > 0, $"&kp={kinopoisk_id}") ??
-                await goSearch(serial, !string.IsNullOrEmpty(imdb_id), $"&tmdb={imdb_id}") ??
+                await goSearch(serial, !string.IsNullOrEmpty(imdb_id), $"&imdb={HttpUtility.UrlEncode(imdb_id)}") ??
                 await goSearch(serial, !string.IsNullOrEmpty(original_title), $"&q={HttpUtility.UrlEncode(original_title)}&release_year_from={year - 1}&release_year_to={year + 1}");
 
             if (data == null)
@@ -81,7 +82,7 @@ public class VideoseedController : BaseOnlineController
                         .Value;
 
                     var videos = season?.videos;
-                    if (videos == null)
+                    if (videos == null || videos.Count == 0)
                         return default;
 
                     string seasonLink = $"{host}/lite/videoseed?{serialQuery}&s={s}";
@@ -136,18 +137,15 @@ public class VideoseedController : BaseOnlineController
                         .OrderBy(i => SortNumber(i.Key))
                         .ThenBy(i => i.Key, StringComparer.OrdinalIgnoreCase))
                     {
+                        if (video.Value == null || string.IsNullOrEmpty(video.Value.iframe))
+                            continue;
+
                         string selectedIframe = video.Value.iframe;
                         string fallbackVoice = selectedVoice;
 
                         if (!string.IsNullOrEmpty(selectedVoice) && video.Value.translation_iframe?.Count > 0)
                         {
-                            var translation = video.Value.translation_iframe
-                                .FirstOrDefault(i => string.Equals(
-                                    i.Value?.short_name ?? i.Value?.name ?? i.Key,
-                                    selectedVoice,
-                                    StringComparison.OrdinalIgnoreCase
-                                ))
-                                .Value;
+                            var translation = FindTranslation(video.Value.translation_iframe, selectedVoice);
 
                             if (!string.IsNullOrEmpty(translation?.iframe))
                             {
@@ -158,10 +156,10 @@ public class VideoseedController : BaseOnlineController
 
                         string link = accsArgs($"{host}/lite/videoseed/video/{AesTo.Encrypt(selectedIframe)}");
 
-                        // Older/incomplete API responses may not contain episode-level translation_iframe.
-                        // Keep the strict PlayerJS voice lookup only as a compatibility fallback.
                         if (!string.IsNullOrEmpty(fallbackVoice))
                             link += $"&voice={HttpUtility.UrlEncode(fallbackVoice)}";
+
+                        string streamlink = link + (link.Contains('?') ? "&play=true" : "?play=true");
 
                         etpl.Append(
                             $"{video.Key} серия",
@@ -170,6 +168,7 @@ public class VideoseedController : BaseOnlineController
                             video.Key,
                             link + "#.m3u8",
                             "call",
+                            streamlink: streamlink,
                             vast: init.vast
                         );
                     }
@@ -216,7 +215,7 @@ public class VideoseedController : BaseOnlineController
     #region Video
     [HttpGet]
     [Route("lite/videoseed/video/{*iframe}")]
-    async public Task<ActionResult> Video(string iframe, string voice)
+    async public Task<ActionResult> Video(string iframe, string voice, bool play = false)
     {
         if (await IsRequestBlocked(rch: false))
             return badInitMsg;
@@ -236,8 +235,6 @@ public class VideoseedController : BaseOnlineController
                     var page = await browser.NewPageAsync(init.plugin, proxy: proxy_data, headers: headers?.ToDictionary()).ConfigureAwait(false);
                     if (page == null)
                         return e.Fail("page");
-
-                    //await page.AddInitScriptAsync("localStorage.setItem('pljsquality', '1080p');").ConfigureAwait(false);
 
                     await page.RouteAsync("**/*", async route =>
                     {
@@ -264,22 +261,6 @@ public class VideoseedController : BaseOnlineController
                             }
                             else
                             {
-                                //if (browser.IsCompleted || route.Request.Url.Contains(".xml") || route.Request.Url.Contains(".php"))
-                                //{
-                                //    await route.AbortAsync();
-                                //    return;
-                                //}
-
-                                //if (route.Request.Url.Contains("/hls.m3u8"))
-                                //{
-                                //    browser.SetPageResult(route.Request.Url);
-                                //    await route.AbortAsync();
-                                //    return;
-                                //}
-
-                                //if (await PlaywrightBase.AbortOrCache(page, route, abortMedia: true, fullCacheJS: true))
-                                //    return;
-
                                 await route.ContinueAsync();
                             }
                         }
@@ -342,10 +323,14 @@ public class VideoseedController : BaseOnlineController
 
         string referer = Regex.Match(iframe, "(^https?://[^/]+)").Groups[1].Value;
         var headers_stream = httpHeaders(init.host, HeadersModel.JoinReadOnly(HeadersModel.Init("referer", referer), init.headers_stream));
+        string stream = HostStreamProxy(location, headers: headers_stream);
+
+        if (play)
+            return RedirectToPlay(stream);
 
         return ContentTo(VideoTpl.ToJson(
             "play",
-            HostStreamProxy(location, headers: headers_stream),
+            stream,
             "auto",
             vast: init.vast,
             httpContext: HttpContext
@@ -361,13 +346,196 @@ public class VideoseedController : BaseOnlineController
 
         var root = await httpHydra.Get<Root>($"{init.apihost}/apiv2.php?item={(serial == 1 ? "serial" : "movie")}&token={init.token}" + arg, safety: true);
 
-        if (root?.data == null || root.status == "error")
+        if (root?.data == null || root.data.Count == 0 || root.status == "error")
         {
             proxyManager?.Refresh();
             return null;
         }
 
+        bool exactId = arg.StartsWith("&kp=", StringComparison.OrdinalIgnoreCase)
+            || arg.StartsWith("&imdb=", StringComparison.OrdinalIgnoreCase)
+            || arg.StartsWith("&tmdb=", StringComparison.OrdinalIgnoreCase);
+
+        if (serial == 1 && exactId && root.data.Count > 1)
+            return MergeSerialData(root.data);
+
         return root.data.FirstOrDefault();
+    }
+    #endregion
+
+    #region SerialData
+    static Data MergeSerialData(List<Data> items)
+    {
+        if (items == null || items.Count == 0)
+            return null;
+
+        if (items.Count == 1)
+            return items[0];
+
+        var merged = new Data
+        {
+            seasons = new Dictionary<string, Season>(StringComparer.OrdinalIgnoreCase),
+            translation_iframe = new Dictionary<string, Translation>(StringComparer.OrdinalIgnoreCase)
+        };
+
+        foreach (var item in items)
+        {
+            if (item == null)
+                continue;
+
+            if (string.IsNullOrEmpty(merged.iframe) && !string.IsNullOrEmpty(item.iframe))
+                merged.iframe = item.iframe;
+
+            if (item.total_videos > merged.total_videos)
+                merged.total_videos = item.total_videos;
+
+            MergeTranslations(merged.translation_iframe, item.translation_iframe);
+
+            if (item.seasons == null)
+                continue;
+
+            foreach (var seasonPair in item.seasons)
+            {
+                if (seasonPair.Value == null)
+                    continue;
+
+                if (!merged.seasons.TryGetValue(seasonPair.Key, out var targetSeason))
+                {
+                    targetSeason = new Season
+                    {
+                        total_videos = seasonPair.Value.total_videos,
+                        videos = new Dictionary<string, Episode>(StringComparer.OrdinalIgnoreCase),
+                        translation_iframe = new Dictionary<string, Translation>(StringComparer.OrdinalIgnoreCase)
+                    };
+
+                    merged.seasons[seasonPair.Key] = targetSeason;
+                }
+                else if (seasonPair.Value.total_videos > targetSeason.total_videos)
+                {
+                    targetSeason.total_videos = seasonPair.Value.total_videos;
+                }
+
+                MergeTranslations(targetSeason.translation_iframe, seasonPair.Value.translation_iframe);
+
+                if (seasonPair.Value.videos == null)
+                    continue;
+
+                foreach (var videoPair in seasonPair.Value.videos)
+                {
+                    if (videoPair.Value == null)
+                        continue;
+
+                    if (!targetSeason.videos.TryGetValue(videoPair.Key, out var targetEpisode) || targetEpisode == null)
+                    {
+                        targetSeason.videos[videoPair.Key] = videoPair.Value;
+                        continue;
+                    }
+
+                    MergeEpisode(targetEpisode, videoPair.Value);
+                }
+            }
+        }
+
+        if (merged.seasons.Count == 0)
+            merged.seasons = null;
+
+        if (merged.translation_iframe.Count == 0)
+            merged.translation_iframe = null;
+
+        return merged;
+    }
+
+    static void MergeEpisode(Episode target, Episode source)
+    {
+        if (target == null || source == null)
+            return;
+
+        AddEpisodeTranslation(target, target);
+        AddEpisodeTranslation(target, source);
+
+        if (string.IsNullOrEmpty(target.iframe) && !string.IsNullOrEmpty(source.iframe))
+            target.iframe = source.iframe;
+
+        if (string.IsNullOrEmpty(target.translations_id) && !string.IsNullOrEmpty(source.translations_id))
+            target.translations_id = source.translations_id;
+
+        if (string.IsNullOrEmpty(target.short_translation) && !string.IsNullOrEmpty(source.short_translation))
+            target.short_translation = source.short_translation;
+
+        if (source.translation_iframe?.Count > 0)
+        {
+            target.translation_iframe ??= new Dictionary<string, Translation>(StringComparer.OrdinalIgnoreCase);
+            MergeTranslations(target.translation_iframe, source.translation_iframe);
+        }
+    }
+
+    static void AddEpisodeTranslation(Episode target, Episode source)
+    {
+        if (target == null || source == null || string.IsNullOrEmpty(source.iframe))
+            return;
+
+        string voiceName = source.short_translation;
+        if (string.IsNullOrWhiteSpace(voiceName))
+            return;
+
+        target.translation_iframe ??= new Dictionary<string, Translation>(StringComparer.OrdinalIgnoreCase);
+
+        if (!target.translation_iframe.ContainsKey(voiceName))
+        {
+            target.translation_iframe[voiceName] = new Translation
+            {
+                name = voiceName,
+                short_name = voiceName,
+                iframe = source.iframe
+            };
+        }
+    }
+
+    static void MergeTranslations(Dictionary<string, Translation> target, Dictionary<string, Translation> source)
+    {
+        if (target == null || source == null)
+            return;
+
+        foreach (var pair in source)
+        {
+            if (pair.Value == null)
+                continue;
+
+            if (!target.TryGetValue(pair.Key, out var current) || current == null)
+            {
+                target[pair.Key] = pair.Value;
+                continue;
+            }
+
+            if (string.IsNullOrEmpty(current.name) && !string.IsNullOrEmpty(pair.Value.name))
+                current.name = pair.Value.name;
+
+            if (string.IsNullOrEmpty(current.short_name) && !string.IsNullOrEmpty(pair.Value.short_name))
+                current.short_name = pair.Value.short_name;
+
+            if (string.IsNullOrEmpty(current.iframe) || pair.Value.count > current.count)
+            {
+                if (!string.IsNullOrEmpty(pair.Value.iframe))
+                    current.iframe = pair.Value.iframe;
+            }
+
+            if (pair.Value.count > current.count)
+                current.count = pair.Value.count;
+        }
+    }
+
+    static Translation FindTranslation(Dictionary<string, Translation> translations, string voice)
+    {
+        if (translations == null || string.IsNullOrEmpty(voice))
+            return null;
+
+        return translations
+            .FirstOrDefault(i => string.Equals(
+                i.Value?.short_name ?? i.Value?.name ?? i.Key,
+                voice,
+                StringComparison.OrdinalIgnoreCase
+            ))
+            .Value;
     }
     #endregion
 
