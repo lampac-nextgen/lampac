@@ -1,0 +1,96 @@
+---
+title: "Пользовательские модули Lampac: Roslyn-компиляция"
+sidebarTitle: "Свои модули"
+description: "Создавайте собственные модули в каталоге mods/. Roslyn компилирует .cs-файлы при старте; dynamic:true включает горячую пересборку."
+---
+
+Lampac NextGen позволяет расширять функциональность через пользовательские модули. Достаточно создать каталог в `mods/`, добавить `manifest.json` и файлы `.cs` — Roslyn скомпилирует код при запуске сервера. С включённым флагом `dynamic: true` пересборка происходит автоматически при изменении исходников, без перезапуска.
+
+<Steps>
+  <Step title="Создайте каталог модуля">
+    Создайте папку внутри `mods/` с произвольным именем, например `mods/MyModule/`.
+  </Step>
+  <Step title="Напишите manifest.json">
+    Манифест описывает метаданные модуля и управляет его загрузкой.
+
+    ```json
+    {
+      "name": "MyModule",
+      "description": "Описание модуля",
+      "version": "1.0",
+      "enable": true,
+      "dynamic": true
+    }
+    ```
+
+    | Поле | Тип | Описание |
+    | --- | --- | --- |
+    | `name` | string | Имя модуля |
+    | `description` | string | Описание |
+    | `version` | string | Версия |
+    | `enable` | boolean | Включён ли модуль |
+    | `dynamic` | boolean | Горячая пересборка при изменении `.cs` |
+  </Step>
+  <Step title="Напишите .cs-файлы">
+    Добавьте в `mods/MyModule/` один или несколько `.cs`-файлов с логикой модуля. Используйте интерфейсы `IModuleLoaded` и `IModuleConfigure` для интеграции с жизненным циклом приложения.
+
+    ```csharp
+    using Microsoft.AspNetCore.Builder;
+    using Microsoft.Extensions.DependencyInjection;
+    using Shared.Moduls;
+    
+    namespace MyModule
+    {
+        public class Module : IModuleLoaded, IModuleConfigure
+        {
+            public void Loaded(IServiceProvider serviceProvider)
+            {
+                // Вызывается после старта приложения
+            }
+    
+            public void Configure(IApplicationBuilder app)
+            {
+                // Регистрация middleware или другой конфигурации
+            }
+        }
+    }
+    ```
+  </Step>
+  <Step title="Перезапустите сервер">
+    При первой загрузке Roslyn скомпилирует ваш модуль. Если `dynamic` включён, последующие изменения `.cs`-файлов будут пересобираться автоматически.
+  </Step>
+</Steps>
+
+## Фильтрация модулей через LoadModules
+
+Состав загружаемых модулей можно ограничить с помощью `BaseModule.LoadModules` в `init.conf`. Поддерживаются имя модуля, группа (например, `OnlineUKR`) или маска по регулярному выражению.
+
+| Паттерн | Пример | Описание |
+| --- | --- | --- |
+| Имя модуля | `MyModule` | Загружает конкретный модуль |
+| Группа | `OnlineUKR` | Загружает все модули группы |
+| Маска | `LME.*` | Загружает модули по регулярному выражению |
+
+```json
+{
+  "BaseModule": {
+    "LoadModules": [".*"]
+  }
+}
+```
+
+## Монтирование в Docker
+
+При запуске в Docker примонтируйте каталог с пользовательским модулем как том:
+
+```yaml
+services:
+  lampac:
+    image: ghcr.io/lampac-nextgen/lampac
+    volumes:
+      - ./lampac-docker/mods/MyModule:/lampac/mods/MyModule
+```
+
+<Tip title="Горячая пересборка без перезапуска">
+  Установите `"dynamic": true` в `manifest.json`. Roslyn отслеживает изменения `.cs`-файлов в каталоге модуля и пересобирает сборку на лету. Это удобно для разработки и отладки.
+</Tip>

@@ -1,0 +1,118 @@
+---
+title: "Быстрый старт: запустите Lampac за 5 минут"
+sidebarTitle: "Быстрый старт"
+description: "Установите и запустите Lampac NextGen с помощью Docker Compose за несколько минут. Готовый сервер на порту 9118."
+---
+
+Самый быстрый способ запустить Lampac NextGen — использовать Docker Compose. За несколько минут вы получите полностью работающий сервер с плагинами для Lampa, готовый к подключению с любого устройства в вашей сети.
+
+<Steps>
+  <Step title="Клонируйте репозиторий и создайте директории">
+    Склонируйте репозиторий и подготовьте директории для конфигурации и плагинов.
+
+    ```bash
+    git clone https://github.com/lampac-nextgen/lampac.git
+    cd lampac
+    mkdir -p lampac-docker/config lampac-docker/plugins
+    ```
+  </Step>
+  <Step title="Скопируйте конфигурацию">
+    Скопируйте пример конфигурации и отредактируйте при необходимости.
+
+    ```bash
+    cp config/example.init.conf lampac-docker/config/init.conf
+    ```
+  </Step>
+  <Step title="Создайте файл с паролем root">
+    Файл `passwd` требуется для доступа к служебным функциям, включая WebLog.
+
+    ```bash
+    printf '%s' 'ваш_пароль_root' > lampac-docker/config/passwd
+    ```
+  </Step>
+  <Step title="Раскомментируйте тома и запустите">
+    Откройте `docker-compose.yaml`, раскомментируйте блок `volumes`, затем выполните:
+
+    ```bash
+    docker compose up -d
+    ```
+  </Step>
+  <Step title="Проверьте работу сервера">
+    Убедитесь, что сервер отвечает на порту 9118.
+
+    ```bash
+    curl http://localhost:9118/version
+    ```
+  </Step>
+  <Step title="Подключите плагин в Lampa">
+    В приложении Lampa добавьте плагин с адресом:
+
+    ```text
+    http://YOUR_IP:9118/online.js
+    ```
+  </Step>
+</Steps>
+
+<CodeGroup>
+
+```bash Команды
+git clone https://github.com/lampac-nextgen/lampac.git
+cd lampac
+mkdir -p lampac-docker/config lampac-docker/plugins
+cp config/example.init.conf lampac-docker/config/init.conf
+printf '%s' 'ваш_пароль_root' > lampac-docker/config/passwd
+docker compose up -d
+curl http://localhost:9118/version
+```
+
+```json Пример init.conf
+{
+  "listen": {
+    "version": true,
+    "ip": "0.0.0.0",
+    "port": 9118,
+    "scheme": "http",
+    "localhost": "127.0.0.1"
+  },
+  "BaseModule": {
+    "SkipModules": [
+      "Catalog",
+      "DLNA",
+      "JacRed",
+      "Sync",
+      "TimeCode",
+      "TorrServer",
+      "Tracks",
+      "Transcoding",
+      "WebLog"
+    ]
+  },
+  "online": {
+    "name": "Lampac NextGen",
+    "version": true,
+    "btn_priority_forced": true
+  }
+}
+```
+
+</CodeGroup>
+
+<Tip>
+  По адресу `http://YOUR_IP:9118/` доступен встроенный интерфейс **LampaWeb** — полноценная веб-версия Lampa с автообновлением. Это удобная альтернатива нативному приложению.
+</Tip>
+
+## Что дальше
+
+<CardGroup cols={3}>
+  <Card title="Полная установка" icon="server" href="/docs/installation">
+    Docker, Linux, Windows и ручная сборка из исходников
+  </Card>
+
+  <Card title="Конфигурация" icon="gear" href="/docs/configuration/overview">
+    Настройте модули, провайдеры и безопасность
+  </Card>
+
+  <Card title="Модули" icon="puzzle" href="/docs/modules/online">
+    Включите TorrServer, Sync, GStreamer и другие модули
+  </Card>
+</CardGroup>

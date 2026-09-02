@@ -1,0 +1,208 @@
+---
+title: "Установка Lampac NextGen: Docker, Linux, Windows"
+sidebarTitle: "Установка"
+description: "Четыре способа установки Lampac NextGen: Docker Compose, нативный Linux-скрипт, Windows с NSSM и ручная сборка из исходников."
+---
+
+Lampac NextGen поддерживает несколько способов установки: от готового Docker-образа до ручной сборки из исходников. Выберите подходящий вариант в зависимости от вашей операционной системы и уровня опыта.
+
+<Tabs>
+  <Tab title="Docker Compose">
+    Рекомендуемый способ для большинства пользователей. Образ поддерживает архитектуры `linux/amd64` и `linux/arm64`.
+
+    ### Тома
+
+    | Путь на хосте | Путь в контейнере | Назначение |
+    | --- | --- | --- |
+    | `./lampac-docker/config/passwd` | `/lampac/passwd` | Пароль root |
+    | `./lampac-docker/config/init.conf` | `/lampac/init.conf` | Конфигурация |
+    | `./lampac-docker/plugins/lampainit.js` | `/lampac/plugins/override/lampainit.js` | Переопределение клиентского плагина |
+    | `./lampac-docker/cache` | `/lampac/cache` | Кеш |
+    | `./lampac-docker/database` | `/lampac/database` | БД (Sync, TimeCode, SISI) |
+    | `./lampac-docker/mods/<Name>` | `/lampac/mods/<Name>` | Пользовательские модули |
+
+    ### Сетевые режимы
+
+    По умолчанию используется bridge-сеть с IP `10.10.10.10`. Для `host`-режима раскомментируйте `network_mode: host` в compose-файле и уберите или скорректируйте блоки `ports` и `networks`.
+
+    ### Минимальный сервис
+
+    ```yaml
+    services:
+      lampac:
+        image: ghcr.io/lampac-nextgen/lampac
+        ports:
+          - "9118:9118"
+        shm_size: 1024mb
+        restart: unless-stopped
+        volumes:
+          - ./lampac-docker/config/passwd:/lampac/passwd
+          - ./lampac-docker/config/init.conf:/lampac/init.conf
+          - ./lampac-docker/plugins/lampainit.js:/lampac/plugins/override/lampainit.js
+    ```
+  </Tab>
+  <Tab title="Linux">
+    Поддерживаются Debian/Ubuntu на amd64 и arm64. Скрипт автоматически устанавливает .NET 10 runtime, создает системного пользователя `lampac` и регистрирует systemd-сервис.
+
+    ### Флаги install.sh
+
+    | Флаг | Описание |
+    | --- | --- |
+    | `--update` | Обновить до последней версии |
+    | `--tag v1.2.3` | Установить или обновить на конкретный тег |
+    | `--force` | Переустановить ту же версию без подтверждения |
+    | `--dry-run` | Показать изменения без применения |
+    | `--pre-release` | Использовать последний pre-release |
+    | `--remove` | Удалить systemd-сервис, пользователя и директорию |
+    | `--verbose` | Подробный лог для диагностики |
+
+    ### Переменные окружения
+
+    | Переменная | По умолчанию | Описание |
+    | --- | --- | --- |
+    | `LAMPAC_INSTALL_ROOT` | `/opt/lampac` | Директория установки |
+    | `LAMPAC_USER` | `lampac` | Системный пользователь |
+    | `LAMPAC_UID` | `1000` | UID |
+    | `LAMPAC_GID` | `1000` | GID |
+    | `LAMPAC_PORT` | `9118` | Порт |
+    | `LAMPAC_GITHUB_REPO` | `lampac-nextgen/lampac` | Репозиторий релизов |
+    | `LAMPAC_DOTNET_ROOT` | `/usr/share/dotnet` | Путь .NET |
+    | `LAMPAC_DOTNET_CHANNEL` | `10.0` | Версия .NET runtime |
+
+    ### Команды
+
+    ```bash
+    # Установка
+    curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash
+    
+    # Обновление
+    curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update
+    
+    # Удаление
+    curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --remove
+    
+    # Управление сервисом
+    systemctl status lampac
+    systemctl restart lampac
+    journalctl -u lampac -f
+    ```
+  </Tab>
+  <Tab title="Windows">
+    Установка на Windows требует .NET 10 Runtime и запуска через `dotnet Core.dll` или NSSM для фоновой работы.
+
+    <Steps>
+      <Step title="Установите .NET 10 Runtime">
+        Скачайте и установите **ASP.NET Core Runtime** с [официального сайта](https://dotnet.microsoft.com/download/dotnet/10.0).
+      </Step>
+      <Step title="Скачайте релиз">
+        Перейдите на [страницу релизов](https://github.com/lampac-nextgen/lampac/releases) и скачайте архив `lampac-nextgen.zip`. Распакуйте, например, в `C:\lampacNG`.
+      </Step>
+      <Step title="Настройте конфигурацию">
+        Переименуйте `example.init.conf` в `init.conf` и отредактируйте под свои нужды.
+      </Step>
+      <Step title="Запустите сервер">
+        Откройте командную строку в распакованной папке и выполните:
+
+        ```cmd
+        dotnet Core.dll
+        ```
+
+        Сервер запустится на порту 9118. Для остановки нажмите `Ctrl+C`.
+      </Step>
+      <Step title="Создайте сервис через NSSM (опционально)">
+        Для фонового запуска скачайте [NSSM](https://nssm.cc/download) и выполните от имени администратора:
+
+        ```cmd
+        "C:\nssm\win64\nssm.exe" install Lampac "C:\Program Files\dotnet\dotnet.exe" "C:\lampacNG\Core.dll"
+        "C:\nssm\win64\nssm.exe" set Lampac AppDirectory "C:\lampacNG"
+        "C:\nssm\win64\nssm.exe" set Lampac Start SERVICE_AUTO_START
+        "C:\nssm\win64\nssm.exe" start Lampac
+        ```
+      </Step>
+    </Steps>
+
+    ### Удаление сервиса NSSM
+
+    ```cmd
+    "C:\nssm\win64\nssm.exe" stop Lampac
+    "C:\nssm\win64\nssm.exe" remove Lampac
+    ```
+  </Tab>
+  <Tab title="Ручная сборка">
+    Требуется .NET SDK 10.0+. Подходит для разработчиков и тех, кто хочет собрать сервер с кастомными изменениями.
+
+    ### Сборка через build.sh
+
+    | Флаг | Описание |
+    | --- | --- |
+    | `--clean` | Удалить `bin/` и `obj/` из всех проектов |
+    | `--format` | Форматирование кода (`dotnet format`) |
+    | `-o /path` | Кастомная директория вывода |
+    | `-c Debug` | Debug-конфигурация |
+
+    ```bash
+    ./build.sh                          # сборка в publish/
+    RUNTIME_ID=linux-arm64 ./build.sh   # кросс-компиляция
+    ```
+
+    ### Сборка напрямую через dotnet
+
+    ```bash
+    dotnet publish Core/Core.csproj -c Release -o publish
+    dotnet build NextGen.slnx           # проверка компиляции всего solution
+    cd publish && dotnet Core.dll
+    ```
+  </Tab>
+</Tabs>
+
+## Ручная сборка из исходников
+
+Для сборки требуется .NET SDK 10.0+.
+
+```bash
+# Сборка в publish/ (рекомендуется)
+./build.sh
+
+# Кросс-компиляция для arm64
+RUNTIME_ID=linux-arm64 ./build.sh
+
+# Напрямую через dotnet
+dotnet publish Core/Core.csproj -c Release -o publish
+
+# Проверка компиляции всего solution
+dotnet build NextGen.slnx
+
+# Запуск
+cd publish && dotnet Core.dll
+```
+
+### Опции build.sh
+
+| Флаг | Описание |
+| --- | --- |
+| `--clean` | Удалить bin/ и obj/ из всех проектов |
+| `--format` | Форматирование кода (`dotnet format`) |
+| `-o /path` | Кастомная директория вывода |
+| `-c Debug` | Debug-конфигурация |
+
+### Dev-режим Docker (порт 29118)
+
+В репозитории есть отдельный `docker-compose.dev.yaml` для разработки на порту **29118** с включёнными томами по умолчанию:
+
+```bash
+mkdir -p lampac-docker/config lampac-docker/plugins
+cp config/example.init.conf lampac-docker/config/development.init.conf
+# В development.init.conf установите: "listen"."port": 29118
+
+printf '%s' 'ваш_пароль' > lampac-docker/config/passwd
+
+docker compose -f docker-compose.dev.yaml up -d
+```
+
+<Warning>
+  `docker-compose.dev.yaml` и основной `docker-compose.yaml` используют одинаковый `container_name: lampac`. Одновременный запуск обоих без изменения имён контейнера невозможен.
+</Warning>
+
+<Note>
+  По умолчанию сервер слушает порт **9118**. Если порт занят, измените `listen.port` в `init.conf` до первого запуска.
+</Note>

@@ -1,0 +1,57 @@
+---
+title: "Установка Lampac на Windows с NSSM-сервисом"
+sidebarTitle: "Windows"
+description: "Установите Lampac NextGen на Windows: .NET 10 Runtime, распаковка архива и запуск как Windows-сервис через NSSM."
+---
+
+На Windows Lampac NextGen работает как самостоятельное .NET-приложение. Вам потребуется установить .NET 10 Runtime, скачать релизный архив и запустить сервер вручную или оформить его как фоновый Windows-сервис через NSSM.
+
+<Steps>
+  <Step title="Установите .NET 10 Runtime">
+    Скачайте и установите **.NET 10.0 Runtime** с [официального сайта Microsoft](https://dotnet.microsoft.com/download/dotnet/10.0). Выберите вариант **ASP.NET Core Runtime** для Windows.
+  </Step>
+  <Step title="Скачайте и распакуйте релиз">
+    Перейдите на [страницу релизов](https://github.com/lampac-nextgen/lampac/releases) и скачайте архив `lampac-nextgen.zip`. Распакуйте его в удобное место, например `C:\lampacNG`.
+  </Step>
+  <Step title="Настройте конфигурацию">
+    Переименуйте файл `example.init.conf` в `init.conf` в распакованной папке и отредактируйте его под свои нужды.
+  </Step>
+  <Step title="Запустите сервер">
+    Откройте командную строку (cmd или PowerShell) в папке с `Core.dll` и выполните:
+
+    ```cmd
+    dotnet Core.dll
+    ```
+
+    Сервер запустится на порту **9118** (или другом, указанном в `init.conf`). Для остановки нажмите `Ctrl+C`.
+  </Step>
+  <Step title="(Опционально) Оформите как сервис через NSSM">
+    Если нужен фоновый запуск при старте Windows, используйте NSSM. См. раздел ниже.
+  </Step>
+</Steps>
+
+## Установка NSSM-сервиса
+
+[NSSM](https://nssm.cc/download) — утилита для запуска произвольных программ как Windows-сервисов. Скачайте архив NSSM и распакуйте, например, в `C:\nssm`.
+
+### Создание сервиса
+
+Все команды выполняйте в **CMD от имени администратора**:
+
+```cmd
+"C:\nssm\win64\nssm.exe" install Lampac "C:\Program Files\dotnet\dotnet.exe" "C:\lampacNG\Core.dll"
+"C:\nssm\win64\nssm.exe" set Lampac AppDirectory "C:\lampacNG"
+"C:\nssm\win64\nssm.exe" set Lampac Start SERVICE_AUTO_START
+"C:\nssm\win64\nssm.exe" start Lampac
+```
+
+### Удаление сервиса
+
+```cmd
+"C:\nssm\win64\nssm.exe" stop Lampac
+"C:\nssm\win64\nssm.exe" remove Lampac
+```
+
+<Warning>
+  Перед обновлением обязательно остановите сервис. Замените файлы в папке `C:\lampacNG` на новые из архива релиза, а затем снова запустите сервис. Обновление "на лету" может привести к ошибкам загрузки сборок.
+</Warning>

@@ -1,0 +1,60 @@
+---
+title: "JacRed: агрегатор торрент-индексаторов"
+sidebarTitle: "JacRed"
+description: "JacRed объединяет Rutor, Kinozal, RuTracker, NNMClub, Toloka и другие торрент-индексаторы в единый API, совместимый с Jackett."
+---
+
+**JacRed** — встроенный агрегатор торрент-индексаторов для Lampac NextGen. Предоставляет единый API (Jackett-совместимый) поверх нескольких русскоязычных торрент-трекеров. Интегрируется в Lampa через плагин `{localhost}/jacred.js`.
+
+<Note>
+  JacRed по умолчанию отключён в `BaseModule.SkipModules`. Для включения удалите `"JacRed"` из `SkipModules` в `init.conf`.
+</Note>
+
+## Поддерживаемые индексаторы
+
+- Rutor
+- Kinozal
+- RuTracker
+- NNMClub
+- Toloka
+- Bitru
+- И другие русскоязычные трекеры
+
+## Включение
+
+<Steps>
+  <Step title="Уберите JacRed из SkipModules">
+    В `init.conf` убедитесь, что `"JacRed"` отсутствует в `BaseModule.SkipModules`.
+  </Step>
+  <Step title="Включите плагин в LampaWeb">
+    Установите `LampaWeb.initPlugins.jacred: true`.
+  </Step>
+  <Step title="Перезапустите сервер">
+    Перезапустите Lampac и проверьте, что `/jacred` доступен.
+  </Step>
+</Steps>
+
+```json
+{
+  "BaseModule": {
+    "SkipModules": [] // удалить "JacRed"
+  },
+  "LampaWeb": {
+    "initPlugins": {
+      "jacred": true
+    }
+  }
+}
+```
+
+## Совместимость с Jackett
+
+API JacRed совместим с форматом Jackett. Клиенты, поддерживающие Jackett, могут указать адрес Lampac вместо сервера Jackett — JacRed ответит на те же маршруты.
+
+## Интеграция с Lampa
+
+JacRed инициализируется через `LampaWeb.initPlugins.jacred`. Плагин `{localhost}/jacred.js` добавляется в `lampainit.js` и `/on.js` автоматически, когда модуль включён.
+
+<Tip>
+  Для проверки работы перейдите по адресу `http://HOST:9118/jacred/api/v2.0/indexers/all/results?ApiKey=...`. Поисковый запрос с параметром `Query=Название` должен вернуть результаты.
+</Tip>

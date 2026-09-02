@@ -1,0 +1,95 @@
+---
+title: "Core API Lampac: версия, GeoIP и статистика"
+sidebarTitle: "Core"
+description: "Базовые эндпоинты Lampac NextGen: версия сервера, GeoIP, IP клиента, Playwright ping, RCH-реле и статистика."
+---
+
+Lampac NextGen предоставляет набор базовых HTTP- и WebSocket-эндпоинтов для проверки состояния сервера, геолокации, диагностики Playwright, ретрансляции данных через RCH и мониторинга внутренних метрик. Все эндпоинты описаны в разделе **Core** API.
+
+## Таблица эндпоинтов
+
+| Метод | Путь | Описание | Auth |
+| --- | --- | --- | --- |
+| `GET` | `/version` | Версия сервера | Нет |
+| `GET` | `/api/headers` | Заголовки текущего запроса | Нет |
+| `GET` | `/api/geo[?ip=]` | GeoIP-локация IP-адреса | Нет |
+| `GET` | `/api/myip` | IP-адрес клиента | Нет |
+| `GET` | `/api/chromium/ping` | Пинг Playwright (`pong`) | Нет |
+| `POST` | `/rch/result?id=` | RCH-реле: запись результата (макс. 10 МБ) | Нет |
+| `POST` | `/rch/gzresult?id=` | RCH-реле: запись gzip-результата (макс. 10 МБ) | Нет |
+| `WS` | `/ws` | NativeWebSocket для RCH push | Нет |
+| `GET` | `/stats/gc` | Память: heap, WorkingSet, PrivateMemory | Нет |
+| `GET` | `/stats/request` | Счётчики запросов, активные соединения, топ медленных путей | Нет |
+| `GET` | `/stats/tempdb` | Кеши и пулы буферов | Нет |
+| `GET` | `/stats/threadpool` | Диагностика ThreadPool | Нет |
+| `GET` | `/stats/browser/context` | Состояние Playwright (контексты, счётчики) | Нет |
+
+## Примеры запросов
+
+### Получить версию сервера
+
+<CodeGroup>
+
+```bash cURL
+curl -s http://localhost:9118/version
+```
+
+</CodeGroup>
+
+Типичный ответ:
+
+```json
+{
+  "version": "1.2.3"
+}
+```
+
+### GeoIP-локация
+
+<CodeGroup>
+
+```bash cURL
+curl -s "http://localhost:9118/api/geo?ip=8.8.8.8"
+```
+
+</CodeGroup>
+
+Эндпоинт возвращает геолокационные данные для переданного IP. Если параметр `ip` не указан, используется адрес текущего клиента.
+
+<Note>
+  Базы GeoLite2 включены в поставку и находятся в `Core/data/`. Для работы GeoIP не требуется внешний API-ключ.
+</Note>
+
+## Статистика и мониторинг
+
+Эндпоинты `/stats/*` предоставляют информацию о работе сервера в реальном времени:
+
+- `/stats/gc` — метрики памяти: размер кучи, WorkingSet, PrivateMemory
+- `/stats/request` — счётчики HTTP-запросов, число активных соединений, топ самых медленных маршрутов
+- `/stats/tempdb` — состояние внутренних кешей и пулов буферов
+- `/stats/threadpool` — диагностика пула потоков .NET
+- `/stats/browser/context` — состояние Playwright: активные контексты, счётчики страниц
+
+<Note>
+  Эндпоинты `/stats/*` (кроме `/stats/gc`) доступны только при включённой настройке `openstat.enable: true` в `init.conf`.
+</Note>
+
+## RCH-реле (Remote Client Hub)
+
+Модуль RCH позволяет клиентам за NAT обмениваться данными через WebSocket-реле на сервере.
+
+<Steps>
+  <Step title="Включите RCH">
+    Установите `"rch": { "enable": true, "requiredConnected": 1 }` в `init.conf`.
+  </Step>
+  <Step title="Отправьте результат">
+    Используйте `POST /rch/result?id=<id>` для записи результата до 10 МБ или `POST /rch/gzresult?id=<id>` для сжатых данных.
+  </Step>
+  <Step title="Подпишитесь на push">
+    Откройте WebSocket-соединение на `ws://<host>:9118/ws` для получения событий RCH.
+  </Step>
+</Steps>
+
+## Playwright ping
+
+Эндпоинт `GET /api/chromium/ping` возвращает строку `pong`, если Playwright-инфраструктура инициализирована. Используйте его для проверки доступности автоматизации браузера перед выполнением скриптов, требующих Chromium или Firefox.

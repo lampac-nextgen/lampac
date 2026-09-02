@@ -1,0 +1,65 @@
+---
+title: "API Lampac NextGen: базовый URL и концепции"
+sidebarTitle: "Обзор"
+description: "Справочник API Lampac NextGen: базовый URL, порт 9118, аутентификация по токену, WAF-лимиты и форматы ответов."
+---
+
+Lampac NextGen предоставляет REST JSON API на порту **9118** по умолчанию. Через этот API клиент Lampa получает плагины, списки источников контента, управляет закладками и историей, а также взаимодействует со вспомогательными модулями: транскодингом, синхронизацией, TorrServer и другими.
+
+## Базовый URL
+
+Все запросы выполняются относительно базового адреса:
+
+```text
+http://HOST:9118
+```
+
+Замените `HOST` на IP-адрес или домен вашего сервера. Если вы изменили порт в `init.conf`, используйте указанное значение.
+
+## Аутентификация
+
+Большинство публичных эндпоинтов, включая `/online.js`, `/lite/{provider}` и `/sisi.js`, работают без аутентификации. Для защиты доступа используется система **accsdb** с токенами:
+
+- Включите `accsdb.enable: true` в `init.conf`
+- Задайте список аккаунтов через `accsdb.accounts` или `accsdb.users`
+- Плагины с авторизацией доступны по пути `/online/js/{token}` и `/sisi/js/{token}`
+
+Подробнее о настройке accsdb смотрите в разделе конфигурации.
+
+## WAF и лимиты запросов
+
+Встроенный WAF (Web Application Firewall) защищает сервер от перегрузки и злоупотреблений. Ключевые лимиты по умолчанию:
+
+| Маршрут | Лимит |
+| --- | --- |
+| `/lite/` | 10 запросов/с |
+| `/externalids` | 10 запросов/с |
+| `/nexthub` | 5 запросов/с |
+| Платформы SISI | 5 запросов/с |
+
+Лимиты настраиваются в секции `WAF.limit_map` файла `init.conf`.
+
+## Форматы ответов
+
+Lampac NextGen возвращает данные в двух основных форматах:
+
+- **JSON** — для API-эндпоинтов (`/version`, `/lite/{provider}`, `/api/geo`, `/stats/*` и других)
+- **JavaScript** — для плагинов Lampa (`/online.js`, `/sisi.js`, `/gst.js`, `/tg-notify.js`)
+
+## Статистика сервера
+
+Эндпоинты `/stats/*` доступны только при включённой опции `openstat.enable: true` в `init.conf`. Они возвращают данные о памяти, запросах, кешах, ThreadPool и состоянии Playwright.
+
+<CardGroup cols={3}>
+  <Card title="Core" icon="server" href="/docs/api/core">
+    Версия сервера, GeoIP, IP клиента, Playwright ping, RCH-реле и статистика
+  </Card>
+
+  <Card title="Online & SISI" icon="play" href="/docs/api/online">
+    Плагины VOD и 18+, маршруты /lite/{provider}, закладки и история
+  </Card>
+
+  <Card title="Модули" icon="puzzle" href="/docs/api/modules">
+    GStreamer, Sync, TorrServer, Tg-notify, NextHUB, LampaWeb и другие
+  </Card>
+</CardGroup>

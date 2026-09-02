@@ -1,0 +1,269 @@
+---
+title: "Конфигурация Lampac: init.conf и init.yaml"
+sidebarTitle: "Обзор"
+description: "Полный справочник параметров init.conf и init.yaml для Lampac NextGen: сеть, модули, кеш, Playwright, RCH, логирование и GC."
+---
+
+Вся настройка Lampac NextGen хранится в файлах `init.conf` (JSON) или `init.yaml` (YAML), которые должны лежать рядом с `Core.dll`. Watcher проверяет конфигурацию каждую секунду и применяет изменения на лету без перезапуска сервера. Резервные копии автоматически сохраняются в `database/backup/init/`. Дефолтные значения подгружаются из `config/base.conf`, а ваши переопределения живут в `init.conf` или `init.yaml`.
+
+## Основные разделы конфигурации
+
+<CardGroup cols={3}>
+  <Card title="listen" icon="network">
+    IP, порт, протокол и таймауты сетевого слоя
+  </Card>
+
+  <Card title="BaseModule" icon="puzzle">
+    Загрузка и фильтрация модулей: SkipModules, LoadModules
+  </Card>
+
+  <Card title="cache" icon="hard-drive">
+    Продление TTL кеша при обращении
+  </Card>
+
+  <Card title="Playwright" icon="globe">
+    Автоматизация Chromium и Firefox для обхода JS-защит
+  </Card>
+
+  <Card title="RCH" icon="arrow-left-right">
+    WebSocket-реле для клиентов за NAT
+  </Card>
+
+  <Card title="GC" icon="cpu">
+    Управление сборщиком мусора .NET
+  </Card>
+
+  <Card title="serilog" icon="file-text">
+    Структурное логирование в файл
+  </Card>
+
+  <Card title="kit" icon="lock">
+    Шифрование потоков через CryptoKit
+  </Card>
+</CardGroup>
+
+## Полный пример базовой конфигурации
+
+Ниже приведён аннотированный пример `init.conf` с ключевыми параметрами, которые понадобятся при первой настройке сервера.
+
+```jsonc
+{
+  // Режим низкой памяти: экономия ~140 МБ RSS
+  "lowMemoryMode": false,
+
+  // Сетевые настройки
+  "listen": {
+    "ip": "0.0.0.0",
+    "port": 9118,
+    "scheme": "http",
+    "version": true,
+    "ResponseCancelAfter": 15
+  },
+
+  // Управление модулями
+  "BaseModule": {
+    "SkipModules": ["Catalog", "DLNA", "JacRed", "Sync", "TimeCode", "TorrServer", "Tracks", "Transcoding", "WebLog"],
+    "LoadModules": [".*"],
+    "ValidateRequest": true,
+    "BlockedBots": true
+  },
+
+  // Кеш: продление TTL при обращении
+  "cache": {
+    "extend": 180
+  },
+
+  // Playwright: автоматизация браузера
+  "chromium": {
+    "enable": true,
+    "executablePath": "/usr/bin/chromium"
+  },
+  "firefox": {
+    "enable": false,
+    "count": 1
+  },
+
+  // Remote Client Hub: WebSocket-реле
+  "rch": {
+    "enable": false,
+    "requiredConnected": 1
+  },
+
+  // Логирование в файл (logs/, ротация 14 дней)
+  "serilog": false,
+
+  // Управление памятью GC
+  "GC": {
+    "Concurrent": true,
+    "ConserveMemory": 0,
+    "HighMemoryPercent": 90,
+    "RetainVM": false
+  },
+
+  // Шифрование потоков
+  "kit": {
+    "aesgcmkeyName": ""
+  }
+}
+```
+
+## Настройка сети (listen)
+
+Раздел `listen` управляет сетевым слоем ASP.NET Core. Все параметры применяются сразу при горячей перезагрузке.
+
+| Параметр | Тип | По умолчанию | Описание |
+| --- | --- | --- | --- |
+| `ip` | string | `"0.0.0.0"` | IP-интерфейс для прослушивания |
+| `port` | int | `9118` | TCP-порт сервера |
+| `scheme` | string | `"http"` | Протокол: `http` или `https` |
+| `version` | bool | `true` | Добавлять заголовок с версией сервера |
+| `ResponseCancelAfter` | int | `10` | Таймаут ответа в секундах |
+
+```json
+{
+  "listen": {
+    "ip": "0.0.0.0",
+    "port": 9118,
+    "scheme": "http",
+    "version": true,
+    "ResponseCancelAfter": 10
+  }
+}
+```
+
+## Управление модулями (BaseModule)
+
+`BaseModule` определяет, какие модули загружаются при старте сервера. Есть два механизма фильтрации:
+
+- `SkipModules`: имена модулей, которые не загружаются даже если код присутствует в образе
+- `LoadModules`: белый список по имени, группе (например, `OnlineUKR`) или регулярному выражению (например, `LME.*`)
+
+```json
+{
+  "BaseModule": {
+    "SkipModules": ["Catalog", "DLNA", "JacRed", "Sync", "TimeCode", "TorrServer", "Tracks", "Transcoding", "WebLog"],
+    "LoadModules": [".*"],
+    "ValidateRequest": true,
+    "BlockedBots": true
+  }
+}
+```
+
+<Note>
+  По умолчанию в `example.init.conf` (шаблон из репозитория) в `SkipModules` указаны: Catalog, DLNA, JacRed, Sync, TimeCode, TorrServer, Tracks, Transcoding, WebLog. Также в `base.conf` отключены: CacheMedia, ForkPlayerXML, MsxNative, TelegramAuth, TelegramAuthBot. WAF и accsdb отключены через `"enable": false` в `base.conf`.
+</Note>
+
+## Кеш (cache)
+
+Раздел `cache` управляет поведением файлового кеша. Параметр `extend` задаёт количество минут, на которое продлевается TTL записи при каждом обращении.
+
+```json
+{
+  "cache": {
+    "extend": 180
+  }
+}
+```
+
+## Playwright (chromium и firefox)
+
+Playwright используется для автоматизации браузера при обходе JS-защит на стороне провайдеров. В Docker-образе зависимости уже включены. Для нативной установки потребуется дополнительная команда `playwright install chromium`.
+
+```json
+{
+  "chromium": {
+    "enable": false,
+    "count": 1,
+    "restart": 3600,
+    "executablePath": "/usr/bin/chromium",
+    "Args": ["--no-sandbox"]
+  },
+  "firefox": {
+    "enable": false,
+    "count": 1
+  }
+}
+```
+
+| Параметр | Описание |
+| --- | --- |
+| `enable` | Включить пул браузеров |
+| `count` | Количество экземпляров в пуле |
+| `restart` | Интервал полного перезапуска экземпляра, секунды |
+| `executablePath` | Путь к бинарнику, если автоопределение не подошло |
+| `Args` | Дополнительные флаги командной строки браузера |
+
+## RCH (Remote Client Hub)
+
+RCH — WebSocket-реле для клиентов, находящихся за NAT. Позволяет устройствам подключаться к серверу без проброса портов.
+
+```json
+{
+  "rch": {
+    "enable": false,
+    "requiredConnected": 1
+  }
+}
+```
+
+Эндпоинт WebSocket: `ws://<host>:9118/ws`. Пост-запросы результатов принимаются на `/rch/result` и `/rch/gzresult`.
+
+## Настройка провайдеров
+
+Каждый провайдер контента настраивается в собственном разделе `init.conf`. Набор параметров зависит от конкретного источника.
+
+```jsonc
+{
+  "Rezka": {
+    "enable": true,
+    "host": "https://rezka.ag",
+    "priority": 1
+  },
+  "Filmix": {
+    "enable": true,
+    "host": "https://filmix.biz",
+    "token": "TOKEN",
+    "priority": 2
+  },
+  "KinoPub": {
+    "enable": true,
+    "token": "TOKEN"
+  },
+  "Kodik": {
+    "enable": true,
+    "token": "TOKEN"
+  }
+}
+```
+
+| Параметр | Описание |
+| --- | --- |
+| `enable` | Включить или выключить провайдер |
+| `host` | URL хоста для провайдеров с настраиваемым зеркалом |
+| `token` | API-токен или ключ партнёра |
+| `priority` | Порядок в списке источников: меньше значение — выше в списке |
+
+## Горячая перезагрузка без рестарта
+
+<Note>
+  Watcher проверяет `init.conf` и `init.yaml` каждую секунду. При изменении конфиг применяется сразу, без перезапуска сервера. Резервные копии сохраняются автоматически в `database/backup/init/`.
+</Note>
+
+## Минимальный example.init.conf
+
+Ниже приведён точный `example.init.conf`, который поставляется с проектом. Это минимальная конфигурация для первого запуска.
+
+```json
+{
+  "listen": { "version": true, "ip": "0.0.0.0", "port": 9118, "scheme": "http", "localhost": "127.0.0.1" },
+  "BaseModule": { "SkipModules": ["Catalog","DLNA","JacRed","Sync","TimeCode","TorrServer","Tracks","Transcoding","WebLog"] },
+  "chromium": { "enable": true, "executablePath": "/usr/bin/chromium" },
+  "openstat": { "enable": true },
+  "online": { "name": "Lampac NextGen", "spiderName": "Lampac NextGen", "version": true, "btn_priority_forced": true },
+  "sisi": { "lgbt": false, "spider": false, "NextHUB": true, "history": { "enable": false } }
+}
+```
+
+<Tip>
+  Файл `config/base.conf` содержит дефолтные значения для всех параметров. Если параметр не указан в вашем `init.conf`, используется значение из `base.conf`. Это позволяет держать ваш конфиг минимальным и переопределять только то, что нужно.
+</Tip>

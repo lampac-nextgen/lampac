@@ -1,0 +1,101 @@
+---
+title: "API Online и SISI: плагины и провайдеры VOD"
+sidebarTitle: "Online & SISI"
+description: "HTTP API модулей Online и SISI в Lampac NextGen: плагины /online.js и /sisi.js, маршруты /lite/{provider} и эндпоинты управления закладками."
+---
+
+Модули **Online** и **SISI** формируют основу контентной части Lampac NextGen. Online отвечает за VOD-плагин для Lampa и агрегацию источников, а SISI предоставляет 18+-контент с закладками и историей просмотров. Оба модуля отдают плагины в формате, совместимом с Lampa 3.0.
+
+## Online (VOD)
+
+Модуль Online агрегирует ссылки с 70+ источников и отдаёт их через единый API. Провайдеры распределены по группам: `OnlineRUS`, `OnlinePaid`, `OnlineAnime`, `OnlineENG`, `OnlineUKR`, `OnlineGEO`.
+
+### Эндпоинты Online
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| `GET` | `/online.js` | Lampa VOD-плагин (Lampa 3.0) |
+| `GET` | `/online/js/{token}` | Плагин с авторизацией по токену |
+| `GET` | `/lite/{provider}` | Список источников от провайдера |
+| `GET` | `/externalids` | Маппинг ID (TMDB ↔ KinoPoisk и т.д.) |
+| `GET` | `/lifeevents` | SSE-поток событий здоровья провайдеров |
+| `GET` | `/lite/withsearch` | Поиск по всем провайдерам |
+| `GET` | `/lite/spider` | Паук-обход для сбора метаданных |
+| `GET` | `/lite/pidtor` | Источник PidTor (стриминг через торрент) |
+
+### Пример запроса к провайдеру
+
+<CodeGroup>
+
+```bash cURL
+curl -s "http://localhost:9118/lite/rezka?title=Интерстеллар&year=2014&kp=258687&imdb=0816692"
+```
+
+</CodeGroup>
+
+Типичные параметры для `/lite/{provider}`:
+
+| Параметр | Описание |
+| --- | --- |
+| `title` | Название фильма или сериала |
+| `year` | Год выпуска |
+| `kp` | ID КиноПоиск |
+| `imdb` | ID IMDb |
+| `tmdb` | ID TMDB |
+| `s` | Номер сезона (для сериалов) |
+| `e` | Номер серии |
+
+<Note>
+  Параметры `token` и `account_email` используются для авторизации в платных провайдерах (Filmix, RezkaPremium, KinoPub и др.). Укажите их в URL или в конфигурации `init.conf`.
+</Note>
+
+<Note>
+  Эндпоинт `/lifeevents` возвращает **SSE-поток** (Server-Sent Events) с событиями доступности провайдеров. Подключайтесь через `EventSource` для мониторинга состояния источников в реальном времени.
+</Note>
+
+## SISI (18+)
+
+Модуль SISI предоставляет контент для взрослой аудитории через 15+ платформ. Поддерживаются закладки, история просмотров и SQLite-хранилище.
+
+### Эндпоинты SISI
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| `GET` | `/sisi.js` | Lampa SISI-плагин (Lampa 3.0) |
+| `GET` | `/sisi/js/{token}` | Плагин с авторизацией по токену |
+| `GET` | `/{provider}` | Контент платформы (напр. `/phub`, `/xnx`) |
+| `GET` | `/sisi/bookmark` | Управление закладками |
+| `GET` | `/sisi/history` | История просмотров |
+
+### Платформы SISI
+
+| Платформа | Маршрут |
+| --- | --- |
+| BongaCams | `/bgs` |
+| Chaturbate | `/chu` |
+| Ebalovo | `/elo` |
+| Eporner | `/epr` |
+| HQporner | `/hqr` |
+| PornHub | `/phub`, `/phubgay`, `/phubsml` |
+| PornHubPremium | `/phubprem` |
+| Porntrex | `/ptx` |
+| Runetki | `/runetki` |
+| Spankbang | `/sbg` |
+| Tizam | `/tizam` |
+| Xhamster | `/xmr`, `/xmrgay`, `/xmrsml` |
+| Xnxx | `/xnx` |
+| Xvideos | `/xds`, `/xdsgay`, `/xdssml` |
+| XvideosRED | `/xdsred` |
+
+<Note>
+  Параметр `token` в `/online/js/{token}` и `/sisi/js/{token}` используется для авторизации. Варианты токена задаются в конфигурации `accsdb` или `users` в `init.conf`.
+</Note>
+
+## Управление закладками и историей
+
+SISI хранит закладки и историю в SQLite. Для работы с ними используйте эндпоинты:
+
+- `GET /sisi/bookmark` — получение и управление закладками
+- `GET /sisi/history` — получение истории просмотров
+
+Для включения истории установите `"sisi": { "history": { "enable": true } }` в `init.conf`.

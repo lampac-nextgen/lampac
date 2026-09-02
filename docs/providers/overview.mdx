@@ -1,0 +1,107 @@
+---
+title: "Провайдеры контента Lampac NextGen: 70+ источников"
+sidebarTitle: "Обзор"
+description: "Lampac NextGen агрегирует контент из 70+ источников: VOD, аниме, англоязычный и украинский контент, SISI 18+ платформы."
+---
+
+Lampac NextGen собирает ссылки на публично доступный контент из более чем 70 источников и отдает их в приложение Lampa в виде плагинов. Провайдеры организованы в группы по языку и типу контента, что позволяет гибко включать или отключать целые категории одним параметром.
+
+<CardGroup cols={2}>
+  <Card title="VOD" icon="play" href="/docs/providers/vod">
+    21 российский CDN и 9 платных источников, включая Rezka, Filmix, KinoPub и другие
+  </Card>
+
+  <Card title="Аниме" icon="sparkles" href="/docs/providers/anime">
+    12 аниме-источников: AniLibria, Kodik, AnimeGo, AnimeLib и другие
+  </Card>
+
+  <Card title="Англоязычный" icon="globe" href="/docs/providers/english">
+    10 западных источников: VidSrc, SmashyStream, VidLink и другие
+  </Card>
+
+  <Card title="Украинский" icon="map-pin">
+    8 украинских CDN: Ashdi, BamBoo, Eneyida, UaKino и другие
+  </Card>
+
+  <Card title="SISI 18+" icon="flame" href="/docs/modules/sisi">
+    15 платформ для взрослого контента с собственными маршрутами
+  </Card>
+</CardGroup>
+
+## Группы провайдеров
+
+Провайдеры распределены по следующим группам в каталоге `Modules/`:
+
+| Группа | Количество | Описание |
+| --- | --- | --- |
+| **OnlineRUS** | 21 | Российские бесплатные CDN: Collaps, Mirage, HDVB, Kinogo и другие |
+| **OnlinePaid** | 9 | Платные источники с токенами: Rezka, Filmix, KinoPub, Alloha и другие |
+| **OnlineAnime** | 12 | Аниме-платформы: AniLibria, Kodik, AnimeGo и другие |
+| **OnlineENG** | 10 | Англоязычные источники для зарубежного контента |
+| **OnlineUKR** | 8 | Украинские CDN для локального контента |
+| **OnlineGEO** | 3 | Грузинские источники: Kinoflix, AsiaGe, Geosaitebi |
+| **Adult** | 15 | Платформы 18+ для модуля SISI |
+
+## Как настроить провайдера
+
+Каждый провайдер настраивается в собственном разделе `init.conf`. Основные параметры:
+
+| Параметр | Описание |
+| --- | --- |
+| `enable` | Включить или отключить провайдер |
+| `host` | Базовый URL сервиса (если изменился домен) |
+| `token` | API-ключ или токен доступа для платных источников |
+| `priority` | Приоритет отображения в списке источников Lampa |
+
+Пример конфигурации для платных провайдеров:
+
+```json
+{
+  "Rezka": {
+    "enable": true,
+    "host": "https://rezka.ag",
+    "priority": 1
+  },
+  "Filmix": {
+    "enable": true,
+    "host": "https://filmix.biz",
+    "token": "ВАШ_ТОКЕН",
+    "priority": 2
+  },
+  "KinoPub": {
+    "enable": true,
+    "token": "ВАШ_ТОКЕН"
+  }
+}
+```
+
+## Как отключить провайдера или группу
+
+Существует два способа отключения:
+
+1. **Отключить отдельного провайдера** — установите `"enable": false` в его секции `init.conf`.
+2. **Отключить целую группу** — добавьте имя группы в `LoadModules` с исключающей маской или используйте `SkipModules` для конкретных модулей.
+
+Пример отключения группы аниме через `LoadModules`:
+
+```json
+{
+  "BaseModule": {
+    "LoadModules": ["^(?!OnlineAnime).*"]
+  }
+}
+```
+
+Или добавьте конкретные модули в `SkipModules`:
+
+```json
+{
+  "BaseModule": {
+    "SkipModules": ["OnlineAnime"]
+  }
+}
+```
+
+<Note>
+  Группа `OnlineRUS` включена по умолчанию и не требует дополнительной настройки. Платные провайдеры (`OnlinePaid`) нуждаются в токенах для полноценной работы.
+</Note>

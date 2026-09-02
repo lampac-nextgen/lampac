@@ -1,0 +1,82 @@
+---
+title: "Lampac NextGen: самохостируемый бекенд для Lampa"
+sidebarTitle: "Введение"
+description: "Lampac NextGen — самохостируемый backend на ASP.NET Core (.NET 10) для Lampa. Агрегирует ссылки с 70+ источников контента."
+---
+
+Lampac NextGen — это самохостируемый backend-сервер для медиаприложения [Lampa](https://github.com/yumata/lampa). Он собирает ссылки на публично доступный контент с более чем 70 источников и отдает их в виде плагинов. Построен на ASP.NET Core (.NET 10) и предоставляет расширенный функционал: TorrServer, DLNA, транскодинг, синхронизацию закладок и многое другое.
+
+<CardGroup cols={2}>
+  <Card title="Быстрый старт" icon="rocket" href="/docs/quickstart">
+    Запустите Lampac за 5 минут с помощью Docker Compose
+  </Card>
+
+  <Card title="Конфигурация" icon="gear" href="/docs/configuration/overview">
+    Настройте сервер под свои нужды: WAF, модули, провайдеры
+  </Card>
+
+  <Card title="Модули" icon="puzzle" href="/docs/modules/online">
+    Исследуйте VOD, SISI, TorrServer, Sync и другие модули
+  </Card>
+
+  <Card title="API" icon="code" href="/docs/api/overview">
+    Интегрируйтесь через REST API и WebSocket
+  </Card>
+</CardGroup>
+
+## Начало работы
+
+<Steps>
+  <Step title="Установите сервер">
+    Выберите удобный способ: Docker Compose, нативный Linux-скрипт, Windows или Kubernetes. Подробности в разделе [Установка](/docs/installation).
+  </Step>
+  <Step title="Настройте конфигурацию">
+    Отредактируйте `init.conf`: включите нужные модули, провайдеры и защиту. Конфиг применяется без перезапуска.
+  </Step>
+  <Step title="Подключите Lampa">
+    В приложении Lampa добавьте плагин `http://YOUR_IP:9118/online.js` для VOD или `http://YOUR_IP:9118/sisi.js` для контента 18+.
+  </Step>
+  <Step title="Наслаждайтесь контентом">
+    Просматривайте фильмы, сериалы, аниме и торренты через единый интерфейс Lampa.
+  </Step>
+</Steps>
+
+<Note>
+  По умолчанию сервер слушает порт **9118**. Убедитесь, что порт открыт в firewall, если планируете удаленный доступ.
+</Note>
+
+## Возможности
+
+<CardGroup cols={3}>
+  <Card title="VOD (70+ источников)">
+    Российские, украинские, аниме и западные провайдеры в одном плагине
+  </Card>
+
+  <Card title="TorrServer">
+    Встроенный торрент-сервер для потокового воспроизведения
+  </Card>
+
+  <Card title="DLNA/UPnP">
+    Медиасервер для локальных файлов в домашней сети
+  </Card>
+
+  <Card title="Sync">
+    Кросс-девайсная синхронизация закладок и истории
+  </Card>
+
+  <Card title="GStreamer">
+    Серверный HLS/fMP4 транскодинг для совместимости устройств
+  </Card>
+
+  <Card title="SISI (18+)">
+    Платформы для взрослого контента с закладками и историей
+  </Card>
+
+  <Card title="JacRed">
+    Агрегатор торрент-индексаторов, совместимый с Jackett
+  </Card>
+
+  <Card title="Telegram бот">
+    Уведомления о новых сериях и озвучках прямо в мессенджер
+  </Card>
+</CardGroup>

@@ -1,0 +1,138 @@
+---
+title: "Обновление Lampac NextGen: сохранение данных"
+sidebarTitle: "Обновления"
+description: "Как обновить Lampac NextGen на Linux, Docker и Windows, какие файлы сохраняются при обновлении и как откатиться на конкретную версию."
+---
+
+Обновление Lampac NextGen не должно приводить к потере конфигурации, пользовательских модулей или баз данных. В этой статье описаны команды обновления для Linux, Docker и Windows, а также полный перечень путей, которые защищены от перезаписи.
+
+<Tabs>
+  <Tab title="Linux">
+    Для нативной установки используйте тот же `install.sh`, что и при первоначальной установке.
+
+    <Steps>
+      <Step title="Обновление до последней версии">
+        ```bash
+        curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update
+        ```
+      </Step>
+      <Step title="Обновление на конкретный тег">
+        ```bash
+        curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update --tag v1.2.3
+        ```
+      </Step>
+      <Step title="Проверка без изменений">
+        ```bash
+        curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update --dry-run
+        ```
+      </Step>
+      <Step title="Повторная установка той же версии">
+        ```bash
+        curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update --force
+        ```
+      </Step>
+    </Steps>
+
+    После обновления проверьте статус сервиса:
+
+    ```bash
+    systemctl status lampac
+    journalctl -u lampac -f
+    ```
+  </Tab>
+  <Tab title="Docker">
+    В Docker обновление выполняется через замену образа и пересоздание контейнера.
+
+    <Steps>
+      <Step title="Скачайте новый образ">
+        ```bash
+        docker compose pull
+        ```
+      </Step>
+      <Step title="Пересоздайте контейнер">
+        ```bash
+        docker compose up -d
+        ```
+      </Step>
+    </Steps>
+
+    Ваши данные сохраняются в примонтированных томах: `init.conf`, `passwd`, `cache/`, `database/`, `mods/` и другие. Убедитесь, что в `docker-compose.yaml` раскомментированы нужные `volumes`.
+  </Tab>
+  <Tab title="Windows">
+    На Windows обновление выполняется вручную через замену файлов.
+
+    <Steps>
+      <Step title="Остановите сервер">
+        Нажмите `Ctrl+C` в окне командной строки или остановите сервис NSSM:
+
+        ```cmd
+        "C:\nssm\win64\nssm.exe" stop Lampac
+        ```
+      </Step>
+      <Step title="Сохраните конфигурацию">
+        Скопируйте `init.conf`, `passwd` и другие важные файлы в отдельную папку.
+      </Step>
+      <Step title="Замените файлы">
+        Распакуйте новый архив `lampac-nextgen.zip` в папку установки (например, `C:\lampacNG`), перезаписав существующие файлы.
+      </Step>
+      <Step title="Восстановите конфигурацию">
+        Верните сохранённые `init.conf`, `passwd` и другие пользовательские файлы на место.
+      </Step>
+      <Step title="Запустите сервер">
+        ```cmd
+        dotnet Core.dll
+        ```
+
+        Или через NSSM:
+
+        ```cmd
+        "C:\nssm\win64\nssm.exe" start Lampac
+        ```
+      </Step>
+    </Steps>
+  </Tab>
+</Tabs>
+
+## Защищённые файлы и папки
+
+Скрипт обновления Linux использует `rsync --delete`, который удаляет файлы, отсутствующие в новом релизе. Однако следующие пути защищены и не будут затронуты:
+
+| Путь | Описание |
+| --- | --- |
+| `install.sh` | Сам скрипт установки |
+| `init.conf`, `init.yaml` | Основная конфигурация |
+| `mods/` | Пользовательские модули |
+| `data/kinoukr.json`, `data/PizdatoeDb.json` | Локальные базы данных |
+| `*.db`, `*.db-shm`, `*.db-wal` | SQLite базы (Sync, SISI, TimeCode) |
+| `logs/`, `cache/` | Логи и кеш |
+| `TorrServer`, `torrserver/`, `data/ts/` | TorrServer и его данные |
+| `.local/`, `.aspnet/`, `.claude/`, `.config/`, `.playwright/` | Домашние директории пользователя |
+| `users.json`, `passwd`, `current.conf`, `database/` | Пользовательские данные |
+| `wwwroot/` | Пользовательская статика и кеш Lampa UI |
+| `plugins/override/` | Переопределения плагинов |
+| `notifications_date.txt` | Состояние уведомлений |
+| `excludes.conf` | Файл дополнительных исключений |
+| `version.txt` | Файл хранения установленной версии |
+
+## Пользовательские исключения через excludes.conf
+
+Если у вас есть собственные файлы или папки, которые нужно сохранить при обновлении, создайте файл `excludes.conf` рядом с `Core.dll` (по умолчанию в `/opt/lampac/`).
+
+```bash
+# /opt/lampac/excludes.conf — одно исключение на строку, # — комментарий
+my_custom_folder/
+config/local.conf
+*.custom
+```
+
+<Tip title="Проверьте перед обновлением">
+  Используйте флаг `--dry-run` при обновлении через `install.sh`, чтобы увидеть, какие файлы будут изменены, удалены или сохранены, без фактических изменений:
+
+  ```bash
+  curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update --dry-run
+  ```
+</Tip>
+
+<Note>
+  Флаг `--delete` в `rsync` удаляет файлы в целевой директории, которых нет в источнике. Исключения (`--exclude-from=excludes.conf`) работают на этапе сравнения: защищённые файлы не удаляются и не перезаписываются, даже если в релизе присутствуют файлы с такими же именами.
+</Note>

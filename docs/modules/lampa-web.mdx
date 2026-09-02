@@ -1,0 +1,226 @@
+---
+title: "Модуль LampaWeb: хостинг Lampa UI и плагины"
+sidebarTitle: "LampaWeb"
+description: "LampaWeb хостит веб-клиент Lampa, собирает lampainit.js, отдаёт виджеты Samsung/LG, автообновляется с GitHub и поддерживает Telegram Auth Gate."
+---
+
+LampaWeb раздаёт веб-клиент Lampa из каталога `wwwroot/`, собирает `lampainit.js`, формирует список расширений, интегрируется с accsdb, обновляет исходники с GitHub через фоновый крон `LampaCron` и генерирует виджеты Smart TV.
+
+## Назначение
+
+- Корень сайта `/` подставляет `<base>` для каталога из `conf.index` (например `lampa-main/index.html`), иначе делает редирект на статический файл.
+- Конфиг модуля задаёт репозиторий Git (`git`, `tree`) для автоподтягивания исходников и интервал `intervalupdate` (в минутах), а также флаг `autoupdate`.
+
+## Ключевые маршруты
+
+| Маршрут | Назначение |
+| --- | --- |
+| `/` | Главная страница Lampa |
+| `/reqinfo` | JSON с информацией о текущем запросе |
+| `/extensions` | Кэшируемый `extensions.json` с подстановкой `{localhost}` |
+| `/testaccsdb` | Проверка доступа accsdb (GET/POST) |
+| `/app.min.js`, `/{type}/app.min.js` | Минифицированное приложение |
+| `/css/app.css` | Стили |
+| `/samsung.wgt` | Виджет Samsung Tizen. Параметр `?tizen=3` убирает `tizen:service` для Tizen 3.0 и ниже |
+| `/lg.ipk` | Виджет LG webOS |
+| `/msx/start.json` | MSX JSON |
+| `/lampainit.js` | Инициализация клиента: подстановка плагинов, deny.js, токены |
+| `/on.js`, `/on/js/{token}`, `/on/h/{token}`, `/on/{token}` | Режим онлайн-плагина без registry |
+| `/dorama.js`, `/dorama/js/{token}` | Плагин «Дорамы»: пункт меню после «Сериалы» |
+| `/privateinit.js` | Дополнительная инициализация |
+| `/telegram_auth_gate.js` | Плагин сценария Telegram-авторизации |
+
+<Note>
+  Событие `accsdb` в `ModInit`: для пути `/testaccsdb` при совпадении UID с `shared_passwd` выставляется `IsAnonymousRequest` (обход для общего пароля).
+</Note>
+
+## Конфигурация
+
+Секция в `init.conf`: `LampaWeb`.
+
+```json
+"LampaWeb": {
+  "enable": true,
+  "autoupdate": true,
+  "intervalupdate": 90,
+  "basetag": true,
+  "index": "lampa-main/index.html",
+  "git": "yumata/lampa",
+  "tree": "0b342626e73af4f89843431016c3a25619fa0f4c",
+  "initPlugins": {
+    "dlna": false,
+    "tracks": false,
+    "transcoding": false,
+    "tmdbProxy": false,
+    "cubProxy": false,
+    "online": true,
+    "watch_together": false,
+    "catalog": false,
+    "dorama": false,
+    "sisi": false,
+    "torrserver": false,
+    "backup": false,
+    "sync": false,
+    "bookmark": true,
+    "timecode": true,
+    "jacred": false,
+    "pirate_store": false
+  },
+  "customPlugins": [],
+  "widgets": {
+    "samsung": true,
+    "lg": true
+  },
+  "telegramAuthGate": {
+    "enabled": false,
+    "botUsername": "",
+    "serviceName": "lampa"
+  },
+  "appReplace": {},
+  "cssReplace": {},
+  "limit_map": [
+    {
+      "path": "^/(extensions|testaccsdb|msx/)",
+      "limit": 10,
+      "second": 1
+    }
+  ]
+}
+```
+
+### Поля конфигурации
+
+| Поле | По умолчанию | Назначение |
+| --- | --- | --- |
+| `index` | `lampa-main/index.html` | Путь под `wwwroot` до HTML входа |
+| `basetag` | `true` | Вставка `<base>` для SPA |
+| `git` | `yumata/lampa` | Репозиторий GitHub для обновлений |
+| `tree` | `0b342626e73af4f89843431016c3a25619fa0f4c` | Коммит-дерево для обновлений |
+| `intervalupdate` | `90` | Период cron в минутах |
+| `autoupdate` | `true` | Автоматическое обновление из Git |
+| `limit_map` | `^/(extensions\|testaccsdb\|msx/)` | WAF-лимит: 10 запросов в секунду |
+
+## initPlugins и dedup плагинов
+
+Lampac отдаёт плагины двумя путями:
+
+| Entry point | Назначение |
+| --- | --- |
+| `/lampainit.js` | Регистрация в `Lampa.Plugins` + первичные настройки клиента (`{initiale}`) |
+| `/on.js`, `/on/js/{token}` | Прямая загрузка скриптов без registry |
+
+Список плагинов для обоих маршрутов собирает `LampaPluginBuilder` по флагам `LampaWeb.initPlugins` и `customPlugins`.
+
+### Default URL (flat)
+
+В `{initiale}` всегда подставляются flat-URL вида `{localhost}/online.js`, `{localhost}/sync.js` и т.д. Сервер **не** подменяет их на `*/js/{token}` автоматически.
+
+### Token URL (ручная установка)
+
+Пользователь может добавить token-вариант вручную, например `{localhost}/sync/js/myuser` или `{localhost}/online/js/myuser`. На клиенте `plugins/lampainit.js` при каждом старте:
+
+- сравнивает server list с уже установленными плагинами
+- **не добавляет** flat-URL, если в registry уже есть любой URL того же семейства (`name.js` и `name/js/{token}` считаются одним плагином)
+- при наличии token-варианта может удалить flat-дубликат (если в runtime Lampa доступен `Plugins.remove`)
+
+### Sync orchestrator
+
+Если включён `initPlugins.sync`, модуль `sync.js` сам загружает bookmark и timecode. Builder **не** добавляет отдельные `bookmark.js` / `timecode.js` в `{initiale}` и `/on.js`, даже если их флаги в конфиге `true`.
+
+<Tip>
+  При `sync: true` явно ставьте `bookmark: false` и `timecode: false`, чтобы избежать дублирования.
+</Tip>
+
+### customPlugins
+
+Записи из `LampaWeb.customPlugins` со `status: 1` добавляются as-is. Family dedup на клиенте применяется и к ним: например, custom `{localhost}/music/js/token` блокирует добавление flat `{localhost}/music.js` из другого источника.
+
+### Плагины без token-маршрута
+
+`watchtogether.js` и `startpage.js` участвуют в dedup только по exact URL.
+
+## Плагин «Дорамы» (dorama.js)
+
+Плагин `dorama.js` добавляет пункт «Дорамы» в основное меню Lampa сразу после «Сериалы» и регистрирует отдельный источник `lampac_dorama`. Он не зависит от SISI и подключается только через `LampaWeb.initPlugins.dorama: true`.
+
+Источник строит секции через TMDB Discover TV для корейских драм:
+
+- `with_original_language=ko`
+- `with_genres=18`
+- `include_adult=false`
+
+Запросы идут через штатный Lampac TMDB proxy `/tmdb/api/3/...`, когда `{localhost}` подставлен. Иначе используется нативный TMDB URL-builder клиента. Плагин также перехватывает Dorama `category_full` ссылки, чтобы кнопка «Ещё» не уходила в активный CUB/TMDB source.
+
+### Проверка после изменений
+
+<Steps>
+  <Step title="Включите плагин">
+    Установите `LampaWeb.initPlugins.dorama: true`.
+  </Step>
+  <Step title="Проверьте lampainit.js">
+    Откройте Lampa через `/lampainit.js` и убедитесь, что «Дорамы» стоят сразу после «Сериалы».
+  </Step>
+  <Step title="Проверьте on.js">
+    Откройте Lampa через `/on.js` и убедитесь, что пункт «Дорамы» появляется без зависимости от SISI.
+  </Step>
+  <Step title="Проверьте загрузку секций">
+    Откройте «Дорамы» и проверьте, что экран секций загружает строки.
+  </Step>
+  <Step title="Проверьте пагинацию">
+    Откройте «Ещё» в любой секции и проверьте, что страница 2 грузится из `lampac_dorama`, а не из CUB.
+  </Step>
+  <Step title="Проверьте отсутствие дублей">
+    Перезагрузите приложение и убедитесь, что в меню остаётся один пункт «Дорамы».
+  </Step>
+</Steps>
+
+## Telegram Auth Gate
+
+Если accsdb включён, по умолчанию клиент видит `deny.js` с модалкой пароля/CUB. Можно заменить на гейт Telegram:
+
+```json
+"LampaWeb": {
+  "telegramAuthGate": {
+    "enabled": true,
+    "botUsername": "lampac_community_bot",
+    "serviceName": "lampa"
+  }
+}
+```
+
+Гейт активируется при одновременном выполнении трёх условий:
+
+1. `accsdb.enable: true`
+2. `telegramAuthGate.enabled: true`
+3. Непустой `botUsername`
+
+Если хотя бы одно условие не выполнено, происходит тихий откат на стандартный `deny.js`.
+
+### Как работает гейт
+
+`telegram_auth_gate.js` показывает fullscreen overlay с UID устройства, кнопкой «Открыть Telegram» и QR-кодом. Опрашивает `GET /tg/auth/status` каждые `checkIntervalMs` (по умолчанию 10 секунд). После успешной авторизации экран закрывается автоматически и приложение перезагружается.
+
+<CardGroup cols={2}>
+  <Card title="Для ТВ" icon="tv">
+    Крупный QR-код и большой UID для удобного сканирования с телефона.
+  </Card>
+
+  <Card title="Для мобильных" icon="smartphone">
+    Кнопка «Открыть Telegram» открывает чат с ботом, UID подставляется в стартовое сообщение.
+  </Card>
+</CardGroup>
+
+## Зависимости
+
+- Каталог `wwwroot/` в корне приложения с `lampa-main/` и статикой.
+- Плагины модуля в `plugins/` (extensions, deny и т.д.).
+- `LampaCron` для автообновления из Git по конфигу.
+
+## Компоненты модуля
+
+| Компонент | Роль |
+| --- | --- |
+| `LampaCron` | Фоновое обновление исходников Lampa из GitHub по конфигу |
+| `LampaPluginBuilder` | Сборка списка плагинов для `/lampainit.js` и `/on.js` |
+| `ApiController` | Основные маршруты: `/`, `/lampainit.js`, `/on.js`, виджеты и т.д. |
+| `ErrorDocController` | Дополнительные маршруты ошибок (`/e/acb`) |

@@ -1,0 +1,84 @@
+---
+title: "Англоязычные и украинские провайдеры Lampac"
+sidebarTitle: "English & UKR"
+description: "Lampac NextGen поддерживает 10 англоязычных и 8 украинских источников: AutoEmbed, VidSrc, Kinoukr и другие."
+---
+
+Lampac NextGen собирает ссылки на публично доступный контент из десятков источников по всему миру. В этом разделе описаны англоязычные и украинские провайдеры: какие сервисы поддерживаются, как включить группы и особенности офлайн-баз данных.
+
+## Англоязычные источники (OnlineENG)
+
+Группа **OnlineENG** включает 10 провайдеров западного контента. Каждый из них доступен через маршрут `/lite/{provider}`.
+
+| Провайдер | Сервис |
+| --- | --- |
+| `AutoEmbed` | AutoEmbed |
+| `HydraFlix` | HydraFlix |
+| `MovPI` | MovPI |
+| `PlayEmbed` | PlayEmbed |
+| `RgShows` | RgShows |
+| `SmashyStream` | SmashyStream |
+| `TwoEmbed` | TwoEmbed |
+| `VidLink` | VidLink |
+| `VidSrc` | VidSrc |
+| `Videasy` | Videasy |
+
+## Украинские источники (OnlineUKR)
+
+Группа **OnlineUKR** объединяет 8 украинских CDN и каталогов.
+
+| Провайдер | Сервис |
+| --- | --- |
+| `Ashdi` | Ashdi |
+| `BamBoo` | BamBoo |
+| `Eneyida` | Eneyida |
+| `HdvbUA` | HDVB (UA) |
+| `Kinoukr` | KinoUkr |
+| `Tortuga` | Tortuga |
+| `UAFilm` | UAFilm |
+| `UaKino` | UaKino |
+
+<Note>
+  **Kinoukr** использует офлайн-базу данных `data/kinoukr.json`, которая содержит примерно 130 000 записей. Этот файл поставляется в составе релиза и обновляется независимо от онлайн-запросов.
+</Note>
+
+## Включение и отключение групп
+
+Состав загружаемых модулей и провайдеров управляется через `BaseModule.LoadModules` и `BaseModule.SkipModules` в `init.conf`.
+
+Чтобы загрузить только англоязычные и украинские провайдеры:
+
+```json
+{
+  "BaseModule": {
+    "LoadModules": ["OnlineENG", "OnlineUKR"]
+  }
+}
+```
+
+Чтобы исключить конкретную группу:
+
+```json
+{
+  "BaseModule": {
+    "SkipModules": ["OnlineUKR"]
+  }
+}
+```
+
+Можно также комбинировать группы, имена отдельных провайдеров и регулярные выражения:
+
+```json
+{
+  "BaseModule": {
+    "LoadModules": ["OnlineENG", "OnlineUKR", "LME.*"]
+  }
+}
+```
+
+| Параметр | Описание |
+| --- | --- |
+| `LoadModules` | Белый список: загружаются только модули, совпадающие с указанными именами, группами или масками |
+| `SkipModules` | Чёрный список: модули с этими именами не загружаются даже при наличии кода |
+
+По умолчанию `LoadModules` содержит `[".*"]`, что загружает все доступные модули, кроме явно исключённых через `SkipModules`.

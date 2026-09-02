@@ -1,0 +1,91 @@
+---
+title: "Community: Telegram-авторизация в Lampac"
+sidebarTitle: "Community"
+description: "Модули TelegramAuth и TelegramAuthBot обеспечивают вход в Lampac через Telegram вместо пароля: привязка UID, accsdb и полный экран с QR-кодом."
+---
+
+Модуль **Community** (папка `Modules/Community/`) содержит два подмодуля: **TelegramAuth** (хранилище пользователей, HTTP API `/tg/auth/...`, синхронизация с accsdb) и **TelegramAuthBot** (бот для привязки UID). Вместе они заменяют стандартную модалку пароля/CUB на полноэкранный Telegram-гейт.
+
+<Note>
+  Оба модуля по умолчанию находятся в `BaseModule.SkipModules` и имеют `"enable": false` в `manifest.json`. Для включения нужно выполнить все шаги ниже.
+</Note>
+
+## Состав
+
+| Модуль | Роль |
+| --- | --- |
+| TelegramAuth | Хранилище пользователей и устройств, HTTP API `/tg/auth/...`, синхронизация UID в accsdb |
+| TelegramAuthBot | Telegram-бот (long polling): привязка UID и устройства, админ-команды |
+
+## Поток авторизации
+
+1. Клиент Lampa получает UID устройства
+2. Пользователь открывает бота (автоматически через `/start link_{uid}` или вручную отправляет UID)
+3. Бот вызывает `POST /tg/auth/bind/complete`
+4. Клиент опрашивает `GET /tg/auth/status?uid=...`
+5. После успеха: Lampac видит UID в `users.json`, accsdb разблокирован
+
+## Быстрый старт
+
+<Steps>
+  <Step title="Задайте секции в init.conf">
+    Скопируйте структуру из `Modules/Community/TelegramAuth/init.merge.example.json` и `TelegramAuthBot/init.merge.example.json` в ваш `init.conf`.
+  </Step>
+  <Step title="Одинаковый secrets_api_secret">
+    `mutations_api_secret` должен совпадать в обоих модулях и быть ненулевым в проде (защита `bind/complete` и бот-админки).
+  </Step>
+  <Step title="Включите в manifest.json">
+    В `manifest.json` каждого из модулей установите `"enable": true`.
+  </Step>
+  <Step title="Уберите из SkipModules">
+    Удалите `TelegramAuth` и `TelegramAuthBot` из `BaseModule.SkipModules` в `init.conf`.
+  </Step>
+  <Step title="Включите TelegramAuth.enable">
+    Установите `TelegramAuth.enable: true` — это поднимает `accsdb.enable` и синхронизирует привязанные UID в `users.json`.
+  </Step>
+  <Step title="Телеграм-гейт вместо deny.js (опционально)">
+    Добавьте блок `telegramAuthGate` в секцию `LampaWeb` для замены стандартного экрана пароля на Telegram-гейт.
+  </Step>
+</Steps>
+
+## Telegram Auth Gate
+
+По умолчанию при включённом accsdb клиент видит `deny.js` с модалкой пароля и CUB. Чтобы заменить её на Telegram-гейт, добавьте в `init.conf`:
+
+```json
+{
+  "LampaWeb": {
+    "telegramAuthGate": {
+      "enabled": true,
+      "botUsername": "ваш_бот_без_@",
+      "serviceName": "lampa"
+    }
+  }
+}
+```
+
+Гейт активируется только при одновременном выполнении всех трёх условий:
+
+1. `accsdb.enable: true`
+2. `telegramAuthGate.enabled: true`
+3. Непустой `botUsername` (code проверяет `IsNullOrWhiteSpace`)
+
+Иначе — тихий откат на стандартный `deny.js` с warning в логе.
+
+### Что делает telegram_auth_gate.js
+
+- Показывает fullscreen overlay: UID устройства, кнопку «Открыть Telegram» и QR-код (на крупных экранах)
+- Опрашивает `GET /tg/auth/status?uid=...` каждые `checkIntervalMs`
+- После успеха: сохраняет `tg_auth_user` в `Lampa.Storage`, отправляет `POST /tg/auth/device/name`, затем перезагружает страницу
+
+<Warning>
+  Если `telegram_auth_gate.js` подключён и через `customPlugins`, и через флаг `telegramAuthGate`, возникнет двойной опрос `/testaccsdb`. Используйте только один из двух путей подключения.
+</Warning>
+
+## HTTP API (TelegramAuth)
+
+| Маршрут | Назначение |
+| --- | --- |
+| `POST /tg/auth/bind/complete` | Бот завершает привязку UID |
+| `GET /tg/auth/status?uid=` | Поление гейта до успеха авторизации |
+| `POST /tg/auth/device/name` | Сохраняет название устройства после входа |

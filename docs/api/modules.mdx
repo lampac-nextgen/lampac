@@ -1,0 +1,113 @@
+---
+title: "API модулей Lampac: транскодинг, синхронизация и боты"
+sidebarTitle: "Модули"
+description: "API всех дополнительных модулей Lampac NextGen: GStreamer, Sync, TimeCode, TmdbProxy, TorrServer, Tg-notify, NextHUB и LampaWeb."
+---
+
+Lampac NextGen содержит десятки функциональных модулей, каждый из которых предоставляет собственное API. На этой странице собраны эндпоинты модулей, доступные для внешних клиентов: транскодинг, синхронизация, прокси, Telegram-уведомления, витрины и служебные маршруты.
+
+## GStreamer
+
+Модуль **GStreamer** заменяет legacy-транскодинг FFmpeg и предоставляет серверный HLS/fMP4 транскодинг. Для работы необходимо включить `"gst": { "enable": true }` в `init.conf`.
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| `GET` | `/gst.js` | Плагин Lampa для серверного транскодинга |
+| `GET` | `/gst/add` | Создать задачу транскодинга |
+| `GET` | `/gst/{id}/master.m3u8` | HLS-плейлист задачи |
+
+Кеш транскодинга хранится в `cache/gstranscoding/`. Подробнее — [Modules/GStreamer/README.md](https://github.com/lampac-nextgen/lampac/blob/main/Modules/GStreamer/README.md).
+
+## Sync и TimeCode
+
+Модули **Sync**, **SyncEvents**, **Storage** и **TimeCode** обеспечивают кросс-девайсную синхронизацию закладок, истории и позиций воспроизведения. Данные хранятся в SQLite.
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| `GET` | `/storage/…` | Хранилище данных Sync |
+| `GET` | `/bookmark/…` | Закладки Sync |
+| `GET` | `/timecode/…` | Позиции воспроизведения |
+
+<Note>
+  Для отключения Sync добавьте `"Sync"` в `BaseModule.SkipModules` в `init.conf`. Модули Storage и SyncEvents отключаются аналогично.
+</Note>
+
+## TmdbProxy
+
+Модуль **TmdbProxy** предоставляет локальный кеш TMDB API, уменьшая задержки и снижая нагрузку на внешний сервис.
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| `GET` | `/tmdb/…` | Прокси и кеш TMDB API |
+
+Кеш сохраняется в `cache/tmdb/`.
+
+## TorrServer
+
+Модуль **TorrServer** управляет встроенным торрент-сервером как подпроцессом и проксирует запросы через `/ts/`.
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| `GET` | `/ts/…` | Прокси TorrServer |
+
+Пароль генерируется случайно на каждую сессию.
+
+## LampaWeb
+
+Модуль **LampaWeb** хостит интерфейс Lampa UI и предоставляет виджеты для Smart TV.
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| `GET` | `/lampainit.js` | Инициализационный скрипт Lampa |
+| `GET` | `/on.js` | Online-плагин для Lampa |
+| `GET` | `/samsung.wgt` | Виджет Samsung Tizen |
+| `GET` | `/lg.ipk` | Виджет LG webOS |
+| `GET` | `/extensions` | Список доступных расширений |
+
+<Note>
+  Для Tizen 3.0 и ниже используйте `/samsung.wgt?tizen=3` — сборка без фонового сервиса, совместимая со старыми версиями платформы.
+</Note>
+
+## Tg-notify.bot
+
+Модуль **Tg-notify.bot** отправляет Telegram-уведомления о новых сериях и озвучках. Требует настройки `TelegramBot` в `init.conf` и подключения плагина через `LampaWeb.customPlugins`.
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| `GET` | `/tg-notify.js` | Плагин Telegram-подписок для Lampa |
+| `GET` | `/api/tg/voices` | Список озвучек (Mirage + Collaps) |
+| `POST` | `/api/tg/subscribe` | Подписка на сериал/озвучку |
+| `POST` | `/api/tg/unsubscribe` | Отписка |
+| `GET` | `/api/tg/status` | Статус подписки |
+| `GET` | `/api/tg/link` | Deep-link привязки Telegram |
+| `GET` | `/api/tg/subscriptions` | Список подписок пользователя |
+
+## NextHUB
+
+Модуль **NextHUB** — витрина 18+ сайтов, описанных в YAML-файлах из `Modules/NextHUB/sites/`.
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| `GET` | `/nexthub` | Браузер 18+ по YAML (`plugin`, `search`, `sort`, `cat`, `model`, `pg`) |
+| `GET` | `/nexthub/vidosik` | Просмотр элемента (`uri`, `related`) |
+
+<Warning>
+  На `/nexthub` действует WAF-лимит 5 запросов в секунду.
+</Warning>
+
+## Прочие модули
+
+| Метод | Путь | Описание |
+| --- | --- | --- |
+| `GET` | `/ffprobe` | Метаданные дорожек через FFprobe |
+| `GET` | `/catalog/…` | Браузер каталогов из YAML (`Catalog` модуль) |
+| `GET` | `/dlna/…` | DLNA/UPnP медиасервер |
+| `GET` | `/weblog` | Отладка HTTP и Playwright в реальном времени |
+
+<Warning>
+  **WebLog** (`/weblog`) требует пароль root, указанный в файле `passwd`. Не включайте этот модуль на публично доступном сервере без ограничения доступа через firewall или reverse proxy.
+</Warning>
+
+<Warning>
+  **AdminPanel** (`/adminpanel/`) поставляется с `"enable": false` в `manifest.json`. Чтобы активировать модуль, скопируйте его каталог, измените `manifest.json` на `"enable": true` и смонтируйте в `/lampac/module/AdminPanel/` или `/lampac/mods/AdminPanel/`.
+</Warning>

@@ -1,0 +1,86 @@
+---
+title: "Lampac NextGen в Kubernetes: Helm Chart"
+sidebarTitle: "Kubernetes"
+description: "Разверните Lampac NextGen в Kubernetes с помощью Helm-чарта. Настройте hostPath для конфига, PVC для кеша и базы данных."
+---
+
+Helm-чарт Lampac NextGen упакован в каталоге `charts/lampac`. Он разворачивает контейнер `ghcr.io/lampac-nextgen/lampac` в Kubernetes с поддержкой монтирования конфигурации с узла, PVC для постоянных данных и пробами готовности.
+
+## Быстрая установка
+
+Для локального кластера (например, OrbStack, minikube, kind) выполните:
+
+```bash
+helm upgrade --install lampac ./charts/lampac \
+  -n demo --create-namespace \
+  -f ./helm/lampac-values.yaml
+```
+
+## Конфигурация с узла через hostPath
+
+Lampac читает `/lampac/init.conf` и опционально `/lampac/passwd` (так же, как в Docker). Чтобы использовать директорию с конфигом, расположенную на узле кластера, задайте `config.fromHost`:
+
+```yaml
+config:
+  fromHost:
+    enabled: true
+    hostPath: /path/on/node/containing/init.conf
+  mountPasswd: true
+```
+
+Файл `passwd` должен лежать рядом с `init.conf` на том же узле. Чарт монтирует их через `subPath` в контейнер.
+
+## Основные параметры values
+
+| Параметр | Назначение |
+| --- | --- |
+| `service.port` / `service.targetPort` | Порт сервиса кластера и порт прослушивания в контейнере. При переопределении `listen.port` в `init.conf` убедитесь, что `targetPort` совпадает. |
+| `config.fromHost` | Монтирование `init.conf` (и опционально `passwd`) из директории узла через `subPath`. |
+| `config.mountPasswd` | Также смонтировать `passwd` рядом с `init.conf` на узле. |
+| `persistence.cache` | PVC для `/lampac/cache` — файловый кеш. |
+| `persistence.database` | PVC для `/lampac/database` — базы данных Sync, TimeCode, SISI. |
+| `readinessProbe` / `startupProbe` | По умолчанию используется **TCP** на HTTP-порту, чтобы Ready и `helm --wait` не зависели от маршрута `/version` при долгом старте. Можно заменить на `httpGet`. |
+| `httpRoute` | Gateway API HTTPRoute (см. пример `helm/lampac-values.yaml` в репозитории). |
+
+<Note>
+  По умолчанию readiness-проба использует TCP-соединение вместо HTTP-запроса. Это гарантирует, что под будет помечен Ready сразу после открытия порта, даже если Lampac еще инициализирует модули и компилирует пользовательские сборки.
+</Note>
+
+## Пример values.yaml
+
+```yaml
+image:
+  repository: ghcr.io/lampac-nextgen/lampac
+  tag: latest
+
+service:
+  port: 9118
+  targetPort: 9118
+
+config:
+  fromHost:
+    enabled: true
+    hostPath: /opt/lampac-config
+  mountPasswd: true
+
+persistence:
+  cache:
+    enabled: true
+    size: 5Gi
+  database:
+    enabled: true
+    size: 1Gi
+
+readinessProbe:
+  tcpSocket:
+    port: 9118
+  initialDelaySeconds: 5
+  periodSeconds: 10
+
+startupProbe:
+  tcpSocket:
+    port: 9118
+  initialDelaySeconds: 10
+  periodSeconds: 5
+  failureThreshold: 30
+```

@@ -1,0 +1,155 @@
+---
+title: "Система модулей Lampac: загрузка и Roslyn"
+sidebarTitle: "Модули"
+description: "Как Lampac загружает модули через Roslyn-компиляцию, SkipModules/LoadModules, manifest.json и горячую пересборку dynamic-модулей."
+---
+
+Lampac NextGen использует **Roslyn** (CSharpEval) для динамической компиляции C#-модулей при запуске. Все `.cs`-файлы из каталогов `module/` и `mods/` компилируются в памяти и подключаются как полноценные сборки ASP.NET Core. Готовые `.dll` из `references/` подключаются напрямую без компиляции.
+
+## Порядок загрузки
+
+<Steps>
+  <Step title="mods/ — пользовательские модули">
+    Сначала обрабатывается каталог `mods/`. Здесь размещаются сторонние модули, добавленные вручную.
+  </Step>
+  <Step title="module/ — встроенные модули">
+    Затем обрабатывается `module/` со встроенными модулями, скопированными из репозитория при сборке.
+  </Step>
+  <Step title="references/ — готовые DLL">
+    Из подкаталогов `references/` подгружаются готовые `.dll` как части MVC-приложения без компиляции.
+  </Step>
+  <Step title="manifest.json — Roslyn-компиляция">
+    Папки с `manifest.json` на любой вложенности при необходимости компилируются Roslyn. Фильтрация по `SkipModules`, `LoadModules` и флагу `enable` в манифесте.
+  </Step>
+  <Step title="IModuleConfigure.Configure">
+    После компиляции для каждого модуля вызывается `Configure` — регистрация контроллеров, сервисов и middleware в DI.
+  </Step>
+  <Step title="IModuleLoaded.Loaded">
+    После старта приложения вызывается `Loaded` — инициализация фоновых задач, подписка на события.
+  </Step>
+  <Step title="dynamic: true — горячая пересборка">
+    Модули с `"dynamic": true` в манифесте автоматически пересобираются при изменении `.cs`-файлов (`WatchersDynamicModule`).
+  </Step>
+</Steps>
+
+## Полный список модулей
+
+<Note>
+  В `config/example.init.conf` (шаблон из репозитория) по умолчанию в `SkipModules` перечислены: Catalog, DLNA, JacRed, Sync, TimeCode, TorrServer, Tracks, Transcoding, WebLog. Эти модули присутствуют в образе, но не загружаются, пока вы не уберёте их из списка.
+</Note>
+
+### Включены по умолчанию (✅)
+
+| Модуль | Маршруты / роль |
+| --- | --- |
+| Online | VOD-плагин `/online.js`, агрегатор `/lite/*` |
+| SISI | 18+ `/sisi.js`, SQLite-история и закладки |
+| LampaWeb | Хостинг Lampa UI, виджеты Samsung/LG, `/lampainit.js` |
+| NextHUB | 18+ витрина YAML `/nexthub` |
+| TmdbProxy | Кеширующий прокси TMDB API |
+| CubProxy | HTTP/HTTPS прокси |
+| Kit | Шифрование потоков CryptoKit |
+| PidTor | Торрент-стриминг `/lite/pidtor` |
+| GStreamer | HLS/fMP4 транскодинг `/gst/*` (требует `gst.enable: true`) |
+| SyncEvents | WebSocket-трансляция событий |
+| Storage | Хранилище данных Sync |
+| LampacApk | Генерация Android APK под адрес сервера |
+| Music | Музыкальный источник |
+| Potok | Источник контента |
+| WatchTogether | Синхронный просмотр |
+| Telemetry | Телеметрия и статистика |
+
+### Отключены по умолчанию через SkipModules (⛔)
+
+Присутствуют в образе, требуют явного включения через удаление из `SkipModules`:
+
+| Модуль | Маршруты / роль |
+| --- | --- |
+| Catalog | Браузер каталогов YAML `/catalog/` |
+| DLNA | DLNA/UPnP медиасервер |
+| JacRed | Агрегатор торрент-индексаторов `/jacred` |
+| Sync | Закладки и история `/storage/`, `/bookmark/`, `/timecode/` |
+| TimeCode | SQLite-позиция воспроизведения |
+| TorrServer | Внешний TorrServer, прокси `/ts/` |
+| Tracks | Субтитры и дорожки `/ffprobe` |
+| Transcoding | Legacy FFmpeg транскодинг `/transcoding/` |
+| WebLog | Отладка HTTP `/weblog` |
+| CacheMedia | Кеш SISI-потоков |
+| ProxyLimiter | Лимиты параллельных запросов |
+| ForkPlayerXML | ForkPlayer XML `/fxml` |
+| MsxNative | MSX-плеер |
+| TelegramAuth | HTTP API Telegram-авторизации `/tg/auth/...` |
+| TelegramAuthBot | Telegram-бот для привязки UID |
+| DatabaseEditor | Веб-редактор базы данных |
+| LogUserRequest-Lite | Логирование запросов пользователей |
+
+### Отключены через manifest.json (⛔)
+
+Требуют `"enable": true` в `manifest.json` модуля:
+
+| Модуль | Маршруты / роль |
+| --- | --- |
+| AdminPanel | Веб-административная панель `/adminpanel/` |
+| ExternalBind | Привязка внешних URL |
+| Tg-notify.bot | Telegram-уведомления `/api/tg/*` |
+
+## manifest.json
+
+Каждый Roslyn-модуль содержит `manifest.json` в своей папке:
+
+```json
+{
+  "name": "MyModule",
+  "description": "Описание модуля",
+  "version": "1.0",
+  "enable": true,
+  "dynamic": false
+}
+```
+
+| Поле | Назначение |
+| --- | --- |
+| `name` | Имя модуля для `SkipModules` / `LoadModules` |
+| `description` | Описание (информационно) |
+| `version` | Версия (информационно) |
+| `enable` | `false` — модуль не загружается даже при отсутствии в `SkipModules` |
+| `dynamic` | `true` — включить горячую пересборку при изменении `.cs`-файлов |
+
+## LoadModules и SkipModules
+
+Оба параметра принимают одинаковые паттерны:
+
+| Паттерн | Пример | Поведение |
+| --- | --- | --- |
+| Точное имя | `"MyModule"` | Конкретный модуль |
+| Имя группы/папки | `"OnlineUKR"` | Все модули группы |
+| Regex | `"LME.*"` | Маска по имени |
+| Все | `".*"` | Загрузить/пропустить всё |
+
+```json
+{
+  "BaseModule": {
+    "SkipModules": ["Catalog", "DLNA", "WebLog"],
+    "LoadModules": ["OnlineRUS", "OnlinePaid", ".*"]
+  }
+}
+```
+
+<Note>
+  `LoadModules` применяется после `SkipModules`. Если модуль указан в `SkipModules` и одновременно подпадает под `LoadModules` — он **не загружается**.
+</Note>
+
+## Соглашения для пользовательских модулей
+
+Подробный гайд по написанию собственных модулей — в разделе [Кастомные модули](/docs/maintenance/custom-modules).
+
+Минимальные требования:
+
+- Публичный класс `ModInit` с реализацией `IModuleLoaded`
+- `manifest.json` с `"enable": true` в папке модуля
+- Конфиг через `ModuleInvoke.Init("ИмяМодуля", …)` + подписка на `EventListener.UpdateInitFile`
+- Контроллеры Online/SISI наследуют от `BaseOnlineController` / `BaseSisiController`
+
+<Warning>
+  Модули Catalog, DLNA, Tracks, Transcoding, GStreamer и NextHUB не экранируют входящие запросы от сети. Включайте их только в доверенных окружениях или за WAF/firewall.
+</Warning>

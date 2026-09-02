@@ -1,0 +1,97 @@
+---
+title: "Деплой Lampac в Docker: compose и конфигурация"
+sidebarTitle: "Docker"
+description: "Запустите Lampac NextGen в Docker с помощью docker-compose.yaml. Настройте тома, сеть, пароль root и конфигурацию init.conf."
+---
+
+Lampac NextGen распространяется как готовый Docker-образ `ghcr.io/lampac-nextgen/lampac`. С помощью `docker-compose.yaml` вы развернете сервер за несколько минут, сохранив конфигурацию, кеш и базы данных на хосте. Эта страница описывает полный путь от клонирования репозитория до запуска контейнера в production.
+
+<Steps>
+  <Step title="Клонируйте репозиторий">
+    ```bash
+    git clone https://github.com/lampac-nextgen/lampac.git
+    cd lampac
+    ```
+  </Step>
+  <Step title="Создайте директории для данных">
+    ```bash
+    mkdir -p lampac-docker/config lampac-docker/plugins
+    ```
+  </Step>
+  <Step title="Скопируйте пример конфигурации">
+    ```bash
+    cp config/example.init.conf lampac-docker/config/init.conf
+    ```
+
+    Отредактируйте `init.conf` под свои нужды. Рабочая директория внутри контейнера — `/lampac`, поэтому файлы читаются из ее корня, а не из подкаталога `config/`.
+  </Step>
+  <Step title="Создайте файл пароля root">
+    ```bash
+    printf '%s' 'ваш_пароль_root' > lampac-docker/config/passwd
+    ```
+
+    Пароль root требуется для служебных функций и доступа к WebLog.
+  </Step>
+  <Step title="Раскомментируйте тома в compose-файле">
+    Откройте `docker-compose.yaml` и уберите символ `#` у блока `volumes`. По умолчанию все тома закомментированы, и контейнер стартует с `init.conf` и `passwd` из образа.
+  </Step>
+  <Step title="Запустите контейнер">
+    ```bash
+    docker compose up -d
+    ```
+
+    Сервер станет доступен на порту **9118**.
+  </Step>
+</Steps>
+
+## Тома
+
+Ниже перечислены все шесть томов, которые можно смонтировать между хостом и контейнером. Первые два обязательны для сохранения конфигурации и пароля между перезапусками.
+
+| Путь на хосте | Путь в контейнере | Назначение |
+| --- | --- | --- |
+| `./lampac-docker/config/passwd` | `/lampac/passwd` | Пароль root (WebLog, служебные функции) |
+| `./lampac-docker/config/init.conf` | `/lampac/init.conf` | Конфигурация сервера |
+| `./lampac-docker/plugins/lampainit.js` | `/lampac/plugins/override/lampainit.js` | Переопределение клиентского плагина |
+| `./lampac-docker/cache` | `/lampac/cache` | Файловый кеш |
+| `./lampac-docker/database` | `/lampac/database` | Базы данных (Sync, TimeCode, SISI) |
+| `./lampac-docker/mods/<Name>` | `/lampac/mods/<Name>` | Пользовательские модули |
+
+<Note>
+  По умолчанию все тома в `docker-compose.yaml` закомментированы. Контейнер запустится, но изменения конфигурации и пароля не сохранятся после пересоздания контейнера. Раскомментируйте нужные строки перед первым запуском в production.
+</Note>
+
+## Сеть
+
+По умолчанию compose-файл использует bridge-сеть с фиксированным IP-адресом контейнера `10.10.10.10`. Если вам нужен `host`-режим (например, для DLNA или UPnP), раскомментируйте строку `network_mode: host` и убедитесь, что блоки `ports` и `networks` не конфликтуют друг с другом.
+
+## Минимальный пример сервиса
+
+Если вы хотите собрать собственный `docker-compose.yaml` с нуля, достаточно следующего блока:
+
+```yaml
+services:
+  lampac:
+    image: ghcr.io/lampac-nextgen/lampac
+    ports:
+      - "9118:9118"
+    shm_size: 1024mb
+    restart: unless-stopped
+    volumes:
+      - ./lampac-docker/config/passwd:/lampac/passwd
+      - ./lampac-docker/config/init.conf:/lampac/init.conf
+      - ./lampac-docker/plugins/lampainit.js:/lampac/plugins/override/lampainit.js
+```
+
+<Tip>
+  Укажите `shm_size: 1024mb` или больше, если планируете использовать Playwright (Chromium/Firefox). Браузеры активно используют shared memory, и стандартного 64 МБ может не хватить.
+</Tip>
+
+## Управление модулями в Docker
+
+Состав загружаемых модулей определяется двумя механизмами:
+
+1. **`BaseModule.SkipModules`** в `init.conf` — список имен модулей, которые не загружаются даже при наличии кода в образе.
+2. **`manifest.json`** в каталоге модуля — ключ `"enable": true|false`. Часть модулей, например AdminPanel и ExternalBind, поставляются с `"enable": false`.
+
+Чтобы включить выключенный модуль без пересборки образа, скопируйте его каталог, отредактируйте `manifest.json` и смонтируйте в `/lampac/module/<Name>/` (штатный путь) или `/lampac/mods/<Name>/` (пользовательский). При следующем старте контейнера Roslyn скомпилирует модуль автоматически.

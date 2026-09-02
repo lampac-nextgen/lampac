@@ -1,0 +1,128 @@
+---
+title: "Установка Lampac на Linux: systemd и автообновление"
+sidebarTitle: "Linux"
+description: "Установите Lampac NextGen на Debian/Ubuntu через install.sh. Systemd-сервис, .NET 10 runtime и поддержка amd64/arm64."
+---
+
+На Linux Lampac NextGen устанавливается одним скриптом `install.sh`. Скрипт загружает .NET 10 runtime, создает системного пользователя `lampac`, распаковывает последний релиз и регистрирует systemd-сервис. Поддерживаются Debian и Ubuntu на архитектурах amd64 и arm64.
+
+## Команды install.sh
+
+<CodeGroup>
+
+```bash Установка
+# Установка последней стабильной версии
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash
+```
+
+```bash Конкретный тег
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --tag v1.2.3
+```
+
+```bash Обновление
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update
+```
+
+```bash Обновление на конкретный тег
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update --tag v1.2.3
+```
+
+```bash Повторная установка той же версии
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update --force
+```
+
+```bash Проверка обновления без изменений
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update --dry-run
+```
+
+```bash Пред-релиз
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --pre-release
+```
+
+```bash Удаление
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --remove
+```
+
+```bash Подробный лог при установке
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --verbose
+```
+
+```bash Подробный лог при обновлении
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --update --verbose
+```
+
+```bash Текущая версия
+curl -fsSL https://raw.githubusercontent.com/lampac-nextgen/lampac/main/install.sh | sudo bash -s -- --version
+```
+
+</CodeGroup>
+
+### Флаги install.sh
+
+| Флаг | Описание |
+| --- | --- |
+| `--tag <версия>` | Установить или обновить на конкретный тег |
+| `--update` | Обновить существующую установку через rsync |
+| `--force` | Повторно установить текущую версию без подтверждения |
+| `--dry-run` | Показать, что изменится, но не применять |
+| `--pre-release` | Установить последний pre-release вместо stable |
+| `--remove` | Полностью удалить Lampac, пользователя и сервис |
+| `--verbose` | Вывести подробный лог для диагностики |
+| `--version` | Показать установленную версию |
+
+## Переменные окружения
+
+Вы можете переопределить поведение скрипта через переменные окружения. Указывайте их перед `sudo bash` или экспортируйте заранее.
+
+| Переменная | По умолчанию | Описание |
+| --- | --- | --- |
+| `LAMPAC_INSTALL_ROOT` | `/opt/lampac` | Директория установки |
+| `LAMPAC_USER` | `lampac` | Системный пользователь |
+| `LAMPAC_UID` | `1000` | UID (если занят, выбирается свободный) |
+| `LAMPAC_GID` | `1000` | GID (если занят, выбирается свободный) |
+| `LAMPAC_PORT` | `9118` | Порт (для подсказки после установки) |
+| `LAMPAC_GITHUB_REPO` | `lampac-nextgen/lampac` | GitHub-репозиторий релизов |
+| `LAMPAC_DOTNET_ROOT` | `/usr/share/dotnet` | Путь установки .NET |
+| `LAMPAC_DOTNET_CHANNEL` | `10.0` | Версия .NET runtime |
+
+## Управление сервисом
+
+После установки Lampac работает как systemd-сервис `lampac`. Используйте стандартные команды:
+
+```bash
+systemctl status lampac
+systemctl restart lampac
+journalctl -u lampac -f
+```
+
+## Что сохраняется при обновлении
+
+Команда `--update` использует `rsync --delete`, которая удаляет файлы, отсутствующие в новом релизе. Следующие пути защищены от удаления и перезаписи:
+
+| Путь | Описание |
+| --- | --- |
+| `install.sh` | Сам скрипт установки |
+| `init.conf`, `init.yaml` | Конфигурация сервера |
+| `mods/` | Пользовательские модули |
+| `data/kinoukr.json`, `data/PizdatoeDb.json` | Локальные базы данных |
+| `*.db`, `*.db-shm`, `*.db-wal` | SQLite (Sync, SISI, TimeCode) |
+| `logs/`, `cache/` | Логи и файловый кеш |
+| `TorrServer`, `torrserver/`, `data/ts/` | TorrServer и его данные |
+| `.local/`, `.aspnet/`, `.claude/`, `.config/`, `.playwright/` | Домашние директории пользователя |
+| `users.json`, `passwd`, `current.conf`, `database/` | Пользовательские данные |
+| `wwwroot/` | Пользовательская статика и кеш Lampa UI |
+| `plugins/override/` | Переопределения плагинов |
+| `notifications_date.txt` | Состояние уведомлений |
+| `excludes.conf` | Файл дополнительных исключений |
+| `version.txt` | Файл хранения установленной версии |
+
+### Дополнительные исключения через excludes.conf
+
+Чтобы защитить свои собственные файлы и папки, создайте `excludes.conf` рядом с `Core.dll` (обычно `/opt/lampac/excludes.conf`). Каждая строка — одно исключение, `#` для комментария. Пути относительны `LAMPAC_INSTALL_ROOT`, для папок используйте trailing slash, поддерживаются glob-паттерны.
+
+```bash
+# /opt/lampac/excludes.conf — одно исключение на строку, # — комментарий
+my_custom_folder/
+config/local.conf
+*.custom
+```
