@@ -8,6 +8,10 @@ keywords: ["Mintlify", "Mintlify MCP", "mint validate", "docs.json", "Lampac doc
 Эта страница предназначена для сопровождающих документацию. Mintlify-корень — каталог `docs/`: здесь лежат `docs.json`, `.mintignore` и все MDX. Постоянные инструкции агента — в `docs/AGENTS.md` и `.cursor/rules/mintlify-docs.mdc`. Skills Mintlify лежат в `.agents/skills/`; MCP — в `.cursor/mcp.json`. Для работы с документацией вызывайте субагента `mintlify-docsops` (`.cursor/agents/mintlify-docsops.md`).
 
 <Note>
+  Если вы открыли каталог `docs/` на GitHub, начните с [`README.md`](https://github.com/lampac-nextgen/lampac/blob/main/docs/README.md). Эта страница — рабочий цикл сопровождающего.
+</Note>
+
+<Note>
   В Mintlify dashboard укажите content path `/docs`. Workflow `.github/workflows/pages.yml` собирает Astro-проект в `site/` и публикует `site/dist`; это маркетинговый хаб lampac.dev, а не замена Mintlify.
 </Note>
 
@@ -91,6 +95,8 @@ npm run dev
 ```
 
 Продакшен-сборка: `npm run build` (выход в `site/dist`). Не коммитьте `dist/`, `node_modules/` и `.astro/`. Пользовательские гайды остаются на этом Mintlify-сайте; лендинг на них только ссылается.
+
+Dependabot раз в неделю открывает PR на npm-зависимости в `site/` (экосистема `npm`, каталог `/site` в `.github/dependabot.yml`).
 
 ## DeepWiki
 
