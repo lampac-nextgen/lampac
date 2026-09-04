@@ -24,7 +24,9 @@ public static class MusicCatalogService
     // v35: уточнённые Spotify release labels для singles/EP/appears-on.
     // v36: Spotify singles/EP отдаются как track-section, не album-section.
     // v37: track metadata сохраняет ISRC для точного audio matching.
-    const string metadataCacheVersion = "v37";
+    // v38: Spotify tracks сохраняют album_id для быстрого нативного
+    // разрешения длительности без ошибочного fallback в MusicBrainz.
+    const string metadataCacheVersion = "v38";
     static readonly object homeWarmLock = new();
     static readonly Dictionary<string, Task<List<MusicBrowseSection>>> homeWarmTasks = new(StringComparer.OrdinalIgnoreCase);
 
@@ -190,15 +192,22 @@ public static class MusicCatalogService
                 () => SpotifySupport.GetArtistAsync(id, cancellationToken), cancellationToken);
 
         var metadata = MusicProviderRegistry.GetMetadataProvider(provider);
+        bool isMusicBrainz = metadata is MusicBrainzMetadataProvider;
         return metadata == null
             ? Task.FromResult<MusicArtist>(null)
             : MusicMetadataCacheService.GetOrCreateAsync(
                 metadata.Id,
                 "artist",
-                VersionedKey(id),
+                // Bypass old week-long empty discographies without invalidating other caches.
+                VersionedKey(isMusicBrainz ? $"artist-discography:v2:{id}" : id),
                 artistCacheTtl,
                 () => metadata.GetArtistAsync(id, cancellationToken),
-                cancellationToken
+                cancellationToken,
+                ttlSelector: artist => isMusicBrainz
+                    && (artist.albums?.Count ?? 0) == 0
+                    && (artist.sections?.Count ?? 0) == 0
+                        ? TimeSpan.FromMinutes(20)
+                        : artistCacheTtl
             );
     }
 
@@ -472,34 +481,22 @@ public static class MusicCatalogService
         if (artists.Count > 0)
             sections.Add(new MusicBrowseSection
             {
-                id = SpotifySupport.ArtistsSectionId,
-                title = "Исполнители",
-                type = "artists",
-                source_provider = SpotifySupport.ProviderId,
-                has_more = false,
-                artists = artists
+                id = SpotifySupport.ArtistsSectionId, title = "Исполнители", type = "artists",
+                source_provider = SpotifySupport.ProviderId, has_more = false, artists = artists
             });
 
         if (albums.Count > 0)
             sections.Add(new MusicBrowseSection
             {
-                id = SpotifySupport.AlbumsSectionId,
-                title = "Альбомы",
-                type = "albums",
-                source_provider = SpotifySupport.ProviderId,
-                has_more = false,
-                albums = albums
+                id = SpotifySupport.AlbumsSectionId, title = "Альбомы", type = "albums",
+                source_provider = SpotifySupport.ProviderId, has_more = false, albums = albums
             });
 
         if (tracks.Count > 0)
             sections.Add(new MusicBrowseSection
             {
-                id = SpotifySupport.TracksSectionId,
-                title = "Треки",
-                type = "tracks",
-                source_provider = SpotifySupport.ProviderId,
-                has_more = false,
-                tracks = tracks
+                id = SpotifySupport.TracksSectionId, title = "Треки", type = "tracks",
+                source_provider = SpotifySupport.ProviderId, has_more = false, tracks = tracks
             });
 
         return sections;
@@ -507,7 +504,11 @@ public static class MusicCatalogService
 
     static bool ShouldSkipMetadataTrackLookup(string id, string provider)
     {
-        if (StartsWithAny(id, "inline:", "youtube:", "sefon:", "soundcloud:"))
+        // Spotify здесь является каталогом/источником discovery, но не
+        // IMusicMetadataProvider. Без этого gate GetMetadataProvider("spotify")
+        // откатывается на дефолтный MusicBrainz и до его сетевого таймаута
+        // пытается найти там spotify:track:* перед каждым первым запуском.
+        if (StartsWithAny(id, "inline:", "youtube:", "sefon:", "soundcloud:", "spotify:"))
             return true;
 
         return !string.IsNullOrWhiteSpace(provider)

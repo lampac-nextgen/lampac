@@ -7,6 +7,7 @@ namespace Music;
 public class MusicBrainzMetadataProvider : IMusicMetadataProvider
 {
     static readonly HttpClient httpClient = MusicHttp.CreateClient("musicbrainz");
+    static readonly TimeSpan requestTimeout = TimeSpan.FromSeconds(20);
     static readonly SemaphoreSlim requestGate = new(1, 1);
     static DateTime nextRequestAt = DateTime.MinValue;
 
@@ -19,7 +20,7 @@ public class MusicBrainzMetadataProvider : IMusicMetadataProvider
 
     static MusicBrainzMetadataProvider()
     {
-        httpClient.Timeout = TimeSpan.FromSeconds(20);
+        httpClient.Timeout = requestTimeout;
     }
 
     public async Task<MusicSearchResult> SearchAsync(string query, bool expanded = false, CancellationToken cancellationToken = default)
@@ -192,20 +193,46 @@ public class MusicBrainzMetadataProvider : IMusicMetadataProvider
         if (string.IsNullOrWhiteSpace(path))
             return null;
 
-        await RespectRateLimitAsync(cancellationToken);
+        using var timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        timeoutCts.CancelAfter(requestTimeout);
+        var token = timeoutCts.Token;
+        long started = System.Diagnostics.Stopwatch.GetTimestamp();
 
         try
         {
-            using var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/{path}");
-            request.Headers.TryAddWithoutValidation("User-Agent", userAgent);
-            request.Headers.TryAddWithoutValidation("Accept", "application/json");
+            for (int attempt = 0; attempt < 2; attempt++)
+            {
+                await RespectRateLimitAsync(token);
 
-            using var response = await httpClient.SendAsync(request, cancellationToken);
-            if (!response.IsSuccessStatusCode)
-                return null;
+                TimeSpan delay;
+                using (var request = new HttpRequestMessage(HttpMethod.Get, $"{baseUrl}/{path}"))
+                {
+                    request.Headers.TryAddWithoutValidation("User-Agent", userAgent);
+                    request.Headers.TryAddWithoutValidation("Accept", "application/json");
 
-            var json = await response.Content.ReadAsStringAsync(cancellationToken);
-            return JsonNode.Parse(json) as JsonObject;
+                    using var response = await httpClient.SendAsync(request, token);
+                    if (response.IsSuccessStatusCode)
+                    {
+                        var json = await response.Content.ReadAsStringAsync(token);
+                        return JsonNode.Parse(json) as JsonObject;
+                    }
+
+                    if (attempt != 0 || (int)response.StatusCode is not (429 or 502 or 503 or 504))
+                        return null;
+
+                    var retryAfter = response.Headers.RetryAfter;
+                    delay = retryAfter?.Delta
+                        ?? (retryAfter?.Date is DateTimeOffset retryAt ? retryAt - DateTimeOffset.UtcNow : TimeSpan.Zero);
+                    if (delay < TimeSpan.Zero) delay = TimeSpan.Zero;
+                }
+
+                // Never shorten Retry-After or give the retry a fresh timeout budget.
+                var remaining = requestTimeout - System.Diagnostics.Stopwatch.GetElapsedTime(started);
+                if (delay >= remaining) return null;
+                if (delay > TimeSpan.Zero) await Task.Delay(delay, token);
+            }
+
+            return null;
         }
         catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
         {

@@ -826,9 +826,8 @@ public static partial class SoundCloudSupport
         if (string.IsNullOrWhiteSpace(title))
             return null;
 
-        string artistName = titleParts.artist;
-        if (track.TryGetProperty("user", out var user) && user.ValueKind == JsonValueKind.Object)
-            artistName ??= GetString(user, "username")?.Trim();
+        var artists = ExtractCandidateArtists(track);
+        string artistName = artists.FirstOrDefault();
 
         string artwork = UpgradeArtwork(GetString(track, "artwork_url")) ?? fallbackArtwork;
         string permalinkUrl = GetString(track, "permalink_url");
@@ -1348,9 +1347,8 @@ public static partial class SoundCloudSupport
         if (string.IsNullOrWhiteSpace(title))
             return null;
 
-        string artistName = titleParts.artist;
-        if (track.TryGetProperty("user", out var user) && user.ValueKind == JsonValueKind.Object)
-            artistName ??= GetString(user, "username")?.Trim();
+        var artists = ExtractCandidateArtists(track);
+        string artistName = artists.FirstOrDefault();
 
         string artwork = UpgradeArtwork(GetString(track, "artwork_url"));
         string permalinkUrl = GetString(track, "permalink_url");

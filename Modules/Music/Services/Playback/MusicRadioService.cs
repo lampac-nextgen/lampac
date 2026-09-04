@@ -11,7 +11,7 @@ public static class MusicRadioService
     const int maxSeedArtists = 5;
     const int providerQueryLimit = 12;
     const int maxPoolPerArtist = 24;
-    const string cacheVersion = "radio-v2";
+    const string cacheVersion = "radio-v3-metadata";
 
     public static async Task<MusicRadioResponse> GetAsync(string profileId, MusicRadioRequest request, int limit = 20, CancellationToken cancellationToken = default)
     {
@@ -192,7 +192,11 @@ public static class MusicRadioService
 
     static string BuildArtistBucketKey(MusicTrack track)
     {
-        string artist = CleanupArtistName(track?.artist_name);
+        // Структурированный список хранит primary artist первым. Иначе
+        // "Artist, Guest" и "Artist" попадают в разные bucket'ы и обходят artist-cap.
+        string artist = CleanupArtistName(track?.artists?.FirstOrDefault());
+        if (string.IsNullOrWhiteSpace(artist))
+            artist = CleanupArtistName(track?.artist_name);
         return string.IsNullOrWhiteSpace(artist)
             ? string.Empty
             : MusicMapSupport.NormalizeName(artist);
@@ -301,23 +305,34 @@ public static class MusicRadioService
             cacheLimit: maxPoolPerArtist);
     }
 
-    internal static async Task<List<MusicTrack>> LoadArtistPoolAsync(string artist, CancellationToken cancellationToken)
+    internal static async Task<List<MusicTrack>> LoadArtistPoolAsync(
+        string artist,
+        CancellationToken cancellationToken,
+        bool requireConfirmedArtist = false)
     {
         var tasks = new List<Task<List<MusicTrack>>>();
+        string cacheType = requireConfirmedArtist ? "radio_tracks_confirmed" : "radio_tracks";
 
         if (YouTubeMusicSearchSupport.IsSearchEnabled)
             tasks.Add(LoadCachedTracksAsync(
                 YouTubeMusicSearchSupport.ProviderId,
                 artist,
-                token => YouTubeMusicSearchSupport.SearchTracksByQueryAsync(artist, providerQueryLimit, token),
-                cancellationToken));
+                token => YouTubeMusicSearchSupport.SearchTracksByQueryAsync(
+                    artist,
+                    providerQueryLimit,
+                    token,
+                    artist,
+                    requireConfirmedArtist),
+                cancellationToken,
+                cacheType));
 
         if (SoundCloudSupport.IsDiscoveryEnabled)
             tasks.Add(LoadCachedTracksAsync(
                 SoundCloudSupport.DiscoveryProviderId,
                 artist,
                 token => SoundCloudSupport.SearchTracksByQueryAsync(artist, providerQueryLimit, token),
-                cancellationToken));
+                cancellationToken,
+                cacheType));
 
         if (tasks.Count == 0)
             return new List<MusicTrack>();
@@ -330,16 +345,30 @@ public static class MusicRadioService
         {
         }
 
-        return tasks
+        var candidates = tasks
             .Where(i => i.IsCompletedSuccessfully)
             .SelectMany(i => i.Result ?? new List<MusicTrack>())
-            .Select(track => NormalizeArtistPoolCandidate(track, artist))
+            .Select(track => NormalizeArtistPoolCandidate(track, artist, !requireConfirmedArtist))
             .Where(i => i != null)
             .Take(maxPoolPerArtist)
             .ToList();
+
+        if (requireConfirmedArtist && !candidates.Any(IsConfirmedExternalArtistEvidence))
+            return new List<MusicTrack>();
+
+        return candidates;
     }
 
-    static MusicTrack NormalizeArtistPoolCandidate(MusicTrack track, string requestedArtist)
+    static bool IsConfirmedExternalArtistEvidence(MusicTrack track)
+    {
+        if ((track?.id ?? string.Empty).StartsWith("youtube:", StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        return (track?.id ?? string.Empty).StartsWith("soundcloud:", StringComparison.OrdinalIgnoreCase)
+            && MusicIsrc.Normalize(track.isrc) != null;
+    }
+
+    static MusicTrack NormalizeArtistPoolCandidate(MusicTrack track, string requestedArtist, bool allowTitlePrefix)
     {
         track = NormalizeCandidateMetadata(track);
         string artist = CleanupArtistName(requestedArtist);
@@ -371,7 +400,9 @@ public static class MusicRadioService
             return track;
         }
 
-        if (!string.IsNullOrWhiteSpace(title) && title.StartsWith(requested + " ", StringComparison.OrdinalIgnoreCase))
+        if (allowTitlePrefix
+            && !string.IsNullOrWhiteSpace(title)
+            && title.StartsWith(requested + " ", StringComparison.OrdinalIgnoreCase))
         {
             track.artist_name = artist;
             track.artists = new List<string> { artist };
@@ -484,16 +515,35 @@ public static class MusicRadioService
 
     internal static MusicTrack NormalizeCandidateMetadata(MusicTrack track)
     {
-        if (track == null || string.IsNullOrWhiteSpace(track.title))
+        if (track == null)
             return track;
 
-        if (!TrySplitArtistTitle(track.title, out var artist, out var title))
-            return track;
+        // Provider/cache objects can be reused by radio and weekly mixes. Never
+        // rewrite those shared instances while preparing one response.
+        var result = CloneTrack(track);
+        result.title = CleanupCandidateTitle(result.title);
 
-        track.artist_name = artist;
-        track.artists = new List<string> { artist };
-        track.title = title;
-        return track;
+        if (string.IsNullOrWhiteSpace(result.title)
+            || !TrySplitArtistTitle(result.title, out var artist, out var title))
+        {
+            return result;
+        }
+
+        string currentArtist = CleanupArtistName(result.artist_name);
+        if (!string.IsNullOrWhiteSpace(currentArtist)
+            && !IsGenericUploaderName(currentArtist)
+            && !ArtistNamesMatch(currentArtist, artist))
+        {
+            // Structured provider metadata is more trustworthy than an
+            // unverified multi-dash title. Keeping it intact also preserves an
+            // exact provider id for playback instead of inventing a new pair.
+            return result;
+        }
+
+        result.artist_name = artist;
+        result.artists = new List<string> { artist };
+        result.title = CleanupCandidateTitle(title);
+        return result;
     }
 
     static bool TrySplitArtistTitle(string rawTitle, out string artist, out string title)
@@ -501,16 +551,14 @@ public static class MusicRadioService
         artist = null;
         title = null;
 
-        var parts = Regex.Split(rawTitle ?? string.Empty, @"\s+[-–—]\s+")
-            .Select(i => i.Trim())
-            .Where(i => !string.IsNullOrWhiteSpace(i))
-            .ToList();
-
-        if (parts.Count < 2)
+        var match = Regex.Match(
+            rawTitle ?? string.Empty,
+            @"^\s*(?<artist>.{2,80}?)\s+[-–—]\s+(?<title>.{2,180})\s*$");
+        if (!match.Success)
             return false;
 
-        string artistPart = parts[^2];
-        string titlePart = parts[^1];
+        string artistPart = match.Groups["artist"].Value;
+        string titlePart = match.Groups["title"].Value;
 
         artistPart = Regex.Replace(artistPart, @"^\s*[\d#._-]+\s*", "").Trim();
         titlePart = Regex.Replace(titlePart, @"^\s*[\d#._-]+\s*", "").Trim();
@@ -527,6 +575,63 @@ public static class MusicRadioService
         artist = artistPart;
         title = titlePart;
         return true;
+    }
+
+    static bool ArtistNamesMatch(string left, string right)
+    {
+        string a = NormalizeText(CleanupArtistName(left));
+        string b = NormalizeText(CleanupArtistName(right));
+
+        return !string.IsNullOrWhiteSpace(a)
+            && !string.IsNullOrWhiteSpace(b)
+            && (a == b
+                || (a.Length >= 4 && b.Contains(a, StringComparison.Ordinal))
+                || (b.Length >= 4 && a.Contains(b, StringComparison.Ordinal)));
+    }
+
+    static bool IsGenericUploaderName(string value)
+    {
+        string normalized = NormalizeText(value);
+        return normalized is "soundcloud" or "youtube" or "unknown" or "various artists";
+    }
+
+    static string CleanupCandidateTitle(string value)
+    {
+        value = Regex.Replace(value ?? string.Empty, @"\s+", " ").Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return value;
+
+        bool filename = Regex.IsMatch(value, @"\.(aac|flac|m4a|mp3|ogg|opus|wav|webm)\s*$", RegexOptions.IgnoreCase);
+        if (!filename)
+            return value;
+
+        value = Regex.Replace(value, @"\.(aac|flac|m4a|mp3|ogg|opus|wav|webm)\s*$", string.Empty, RegexOptions.IgnoreCase);
+        value = Regex.Replace(value, @"_+", " ");
+        value = Regex.Replace(value, @"^\s*[-–—.]+\s*|\s*[-–—.]+\s*$", string.Empty);
+        return Regex.Replace(value, @"\s+", " ").Trim();
+    }
+
+    static MusicTrack CloneTrack(MusicTrack track)
+    {
+        return new MusicTrack
+        {
+            id = track.id,
+            title = track.title,
+            artist_id = track.artist_id,
+            artist_name = track.artist_name,
+            artists = track.artists?.ToList() ?? new List<string>(),
+            album_id = track.album_id,
+            album_title = track.album_title,
+            isrc = track.isrc,
+            duration_ms = track.duration_ms,
+            track_number = track.track_number,
+            disc_number = track.disc_number,
+            date = track.date,
+            search_score = track.search_score,
+            images = track.images?.ToList() ?? new List<MusicImage>(),
+            provider_refs = track.provider_refs?.ToList() ?? new List<MusicProviderRef>(),
+            auto_radio = track.auto_radio
+        };
     }
 
     static bool LooksLikeStandaloneSong(MusicTrack track, string titleKey, HashSet<string> seedNoisyWords, bool requireCyrillic)

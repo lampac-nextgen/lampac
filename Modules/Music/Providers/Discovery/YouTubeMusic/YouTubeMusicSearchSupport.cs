@@ -25,7 +25,12 @@ internal static class YouTubeMusicSearchSupport
 
     public static bool IsSearchEnabled => ModInit.conf?.youtube_audio_enabled == true;
 
-    public static async Task<List<MusicTrack>> SearchTracksByQueryAsync(string query, int limit = 10, CancellationToken cancellationToken = default)
+    public static async Task<List<MusicTrack>> SearchTracksByQueryAsync(
+        string query,
+        int limit = 10,
+        CancellationToken cancellationToken = default,
+        string expectedArtist = null,
+        bool requireAuthorMatch = false)
     {
         if (string.IsNullOrWhiteSpace(query))
             return new List<MusicTrack>();
@@ -56,7 +61,9 @@ internal static class YouTubeMusicSearchSupport
             }
 
             return videos
-                .Select(MapTrack)
+                .Where(video => !requireAuthorMatch
+                    || SameArtist(CleanArtist(video.Author.ChannelTitle), expectedArtist))
+                .Select(video => MapTrack(video, expectedArtist))
                 .Where(i => i != null)
                 .Take(Math.Max(1, limit))
                 .ToList();
@@ -261,7 +268,7 @@ internal static class YouTubeMusicSearchSupport
         yield return query;
     }
 
-    static MusicTrack MapTrack(VideoSearchResult video)
+    static MusicTrack MapTrack(VideoSearchResult video, string expectedArtist = null)
     {
         string videoId = video?.Id.Value;
         string rawTitle = video?.Title?.Trim();
@@ -273,6 +280,24 @@ internal static class YouTubeMusicSearchSupport
         string title = CleanTitle(rawTitle, artist, out var titleArtist);
         if (string.IsNullOrWhiteSpace(artist))
             artist = titleArtist;
+
+        // Artist-pool search knows which artist it requested. This resolves
+        // both common upload formats (Artist - Title and Title - Artist)
+        // without guessing in the generic recommendation normalizer.
+        if (!string.IsNullOrWhiteSpace(expectedArtist)
+            && TrySplitTitleSides(rawTitle, out var left, out var right))
+        {
+            if (SameArtist(left, expectedArtist))
+            {
+                artist = expectedArtist.Trim();
+                title = StripTitleNoise(right);
+            }
+            else if (SameArtist(right, expectedArtist))
+            {
+                artist = expectedArtist.Trim();
+                title = StripTitleNoise(left);
+            }
+        }
 
         return new MusicTrack
         {
@@ -287,6 +312,28 @@ internal static class YouTubeMusicSearchSupport
                 new() { provider = ProviderId, external_id = videoId }
             }
         };
+    }
+
+    static bool TrySplitTitleSides(string rawTitle, out string left, out string right)
+    {
+        left = null;
+        right = null;
+
+        if (string.IsNullOrWhiteSpace(rawTitle))
+            return false;
+
+        foreach (var separator in titleSeparators)
+        {
+            var parts = rawTitle.Split(separator, 2, StringSplitOptions.TrimEntries);
+            if (parts.Length != 2 || string.IsNullOrWhiteSpace(parts[0]) || string.IsNullOrWhiteSpace(parts[1]))
+                continue;
+
+            left = parts[0];
+            right = parts[1];
+            return true;
+        }
+
+        return false;
     }
 
     static MusicAlbum MapPlaylist(PlaylistSearchResult playlist)

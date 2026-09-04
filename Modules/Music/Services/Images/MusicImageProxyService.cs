@@ -125,6 +125,13 @@ public static class MusicImageProxyService
             return album;
 
         ProxyImages(controller, album.images);
+
+        if (album.tracks != null)
+        {
+            foreach (var track in album.tracks)
+                Apply(controller, track);
+        }
+
         return album;
     }
 
@@ -172,6 +179,10 @@ public static class MusicImageProxyService
         {
             if (image == null || string.IsNullOrWhiteSpace(image.url))
                 continue;
+
+            // Normalize even when image proxying is disabled (e.g. file:// TV clients).
+            if (image.url.StartsWith("//", StringComparison.Ordinal))
+                image.url = "https:" + image.url;
 
             // кэши секций/сущностей шарят инстансы между запросами, а Apply
             // мутирует url на месте — хост ПЕРВОГО запросившего запекался в

@@ -12,6 +12,14 @@ namespace Music;
 // аудио резолвится обычным конвейером (YouTube-матчер), как у VK-чарта.
 public static class SpotifySupport
 {
+    public sealed class ArtistDiscoveryResult
+    {
+        public string artist_id { get; set; }
+        public string artist_name { get; set; }
+        public List<MusicTrack> top_tracks { get; set; } = new();
+        public List<MusicArtist> related_artists { get; set; } = new();
+    }
+
     public const string ProviderId = "spotify";
     public const string DiscoveryProviderId = "spotifycharts";
     public const string PlaylistSourceType = "spotify_playlist";
@@ -190,9 +198,10 @@ public static class SpotifySupport
 
                 var album = GetProperty(data.Value, "albumOfTrack");
                 string albumTitle = album != null ? GetString(album.Value, "name") : null;
+                string albumId = album != null ? GetString(album.Value, "uri") : null;
                 var images = album != null ? MapCoverArt(GetProperty(album.Value, "coverArt")) : null;
 
-                var mapped = MapTrackElement(data.Value, albumTitle, images, date: null, durationProperty: "duration");
+                var mapped = MapTrackElement(data.Value, albumTitle, images, date: null, durationProperty: "duration", albumId: albumId);
                 if (mapped != null)
                     tracks.Add(mapped);
 
@@ -413,6 +422,62 @@ public static class SpotifySupport
         catch { return new List<MusicArtist>(); }
     }
 
+    // Лёгкий discovery-ответ для персональных миксов: один queryArtist
+    // без загрузки всей дискографии, которую делает GetArtistAsync.
+    public static async Task<ArtistDiscoveryResult> GetArtistDiscoveryByNameAsync(
+        string query,
+        int topTrackLimit = 12,
+        int relatedArtistLimit = 12,
+        CancellationToken cancellationToken = default)
+    {
+        var candidates = await SearchArtistsAsync(query, 5, cancellationToken);
+        var artist = candidates.FirstOrDefault(candidate => MusicMapSupport.IsAliasOf(candidate?.name, query));
+        if (artist == null)
+            return null;
+
+        return await GetArtistDiscoveryAsync(artist.id, topTrackLimit, relatedArtistLimit, cancellationToken);
+    }
+
+    public static async Task<ArtistDiscoveryResult> GetArtistDiscoveryAsync(
+        string artistId,
+        int topTrackLimit = 12,
+        int relatedArtistLimit = 12,
+        CancellationToken cancellationToken = default)
+    {
+        if (string.IsNullOrWhiteSpace(artistId)
+            || !artistId.StartsWith("spotify:artist:", StringComparison.OrdinalIgnoreCase))
+            return null;
+
+        try
+        {
+            var root = await QueryV2Async("queryArtist", QueryArtistHash, new { uri = artistId }, cancellationToken);
+            var artist = GetProperty(root, "data", "artistUnion");
+            if (artist == null || artist.Value.ValueKind != JsonValueKind.Object)
+                return null;
+
+            string name = GetString(GetProperty(artist.Value, "profile") ?? default, "name")?.Trim();
+            if (string.IsNullOrWhiteSpace(name))
+                return null;
+
+            var discography = GetProperty(artist.Value, "discography");
+            var related = GetProperty(artist.Value, "relatedContent");
+
+            return new ArtistDiscoveryResult
+            {
+                artist_id = artistId,
+                artist_name = name,
+                top_tracks = discography == null
+                    ? new List<MusicTrack>()
+                    : MapTopTracks(GetProperty(discography.Value, "topTracks"), Math.Clamp(topTrackLimit, 1, 30)),
+                related_artists = related == null
+                    ? new List<MusicArtist>()
+                    : MapRelatedArtists(GetProperty(related.Value, "relatedArtists"), Math.Clamp(relatedArtistLimit, 1, 30))
+            };
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested) { throw; }
+        catch { return null; }
+    }
+
     // Альбомы для Spotify-вкладки поиска (findTopResults -> searchV2.albumsV2).
     public static async Task<List<MusicAlbum>> SearchAlbumsAsync(string query, int limit, CancellationToken cancellationToken = default)
     {
@@ -586,6 +651,7 @@ public static class SpotifySupport
                     var mapped = MapTrackElement(track.Value, title, images, date, durationProperty: "duration");
                     if (mapped != null)
                     {
+                        mapped.album_id = id;
                         mapped.album_title = title;
                         album.tracks.Add(mapped);
                     }
@@ -753,9 +819,10 @@ public static class SpotifySupport
 
             var album = GetProperty(track.Value, "albumOfTrack");
             string albumTitle = album != null ? GetString(album.Value, "name") : null;
+            string albumId = album != null ? GetString(album.Value, "uri") : null;
             var images = album != null ? MapCoverArt(GetProperty(album.Value, "coverArt")) : null;
 
-            var mapped = MapTrackElement(track.Value, albumTitle, images, date: null, durationProperty: "duration");
+            var mapped = MapTrackElement(track.Value, albumTitle, images, date: null, durationProperty: "duration", albumId: albumId);
             if (mapped != null)
                 result.Add(mapped);
 
@@ -1185,7 +1252,13 @@ public static class SpotifySupport
                 if (track == null)
                     continue;
 
-                var mapped = MapTrackElement(track.Value, title, albumImages, date, durationProperty: "duration");
+                var mapped = MapTrackElement(
+                    track.Value,
+                    title,
+                    albumImages,
+                    date,
+                    durationProperty: "duration",
+                    albumId: $"spotify:album:{albumId}");
                 if (mapped != null)
                     tracks.Add(mapped);
             }
@@ -1225,12 +1298,13 @@ public static class SpotifySupport
 
         var album = GetProperty(data.Value, "albumOfTrack");
         string albumTitle = album != null ? GetString(album.Value, "name") : null;
+        string albumId = album != null ? GetString(album.Value, "uri") : null;
         var images = album != null ? MapCoverArt(GetProperty(album.Value, "coverArt")) : null;
 
-        return MapTrackElement(data.Value, albumTitle, images, date: null, durationProperty: "trackDuration");
+        return MapTrackElement(data.Value, albumTitle, images, date: null, durationProperty: "trackDuration", albumId: albumId);
     }
 
-    static MusicTrack MapTrackElement(JsonElement track, string albumTitle, List<MusicImage> images, string date, string durationProperty)
+    static MusicTrack MapTrackElement(JsonElement track, string albumTitle, List<MusicImage> images, string date, string durationProperty, string albumId = null)
     {
         string title = GetString(track, "name")?.Trim();
         string uri = GetString(track, "uri");
@@ -1246,6 +1320,7 @@ public static class SpotifySupport
             title = title,
             artist_name = artists.Count > 0 ? string.Join(", ", artists) : "Spotify",
             artists = artists,
+            album_id = string.IsNullOrWhiteSpace(albumId) ? null : albumId.Trim(),
             album_title = string.IsNullOrWhiteSpace(albumTitle) ? null : albumTitle.Trim(),
             duration_ms = duration != null ? GetInt(duration.Value, "totalMilliseconds") : null,
             track_number = GetInt(track, "trackNumber"),

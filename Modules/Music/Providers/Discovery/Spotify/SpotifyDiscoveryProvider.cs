@@ -167,7 +167,7 @@ public class SpotifyDiscoveryProvider : IMusicDiscoveryProvider
 
     public async Task<List<MusicBrowseSection>> GetHomeSectionsAsync(int limit, CancellationToken cancellationToken = default)
     {
-        var section = await BuildSectionAsync(cancellationToken);
+        var section = await BuildSectionAsync(limit, cancellationToken);
         return section == null ? new List<MusicBrowseSection>() : new List<MusicBrowseSection> { section };
     }
 
@@ -177,7 +177,7 @@ public class SpotifyDiscoveryProvider : IMusicDiscoveryProvider
         if (!string.Equals(sectionId, BuildSectionId(profile.country), StringComparison.OrdinalIgnoreCase))
             return null;
 
-        return await BuildSectionAsync(cancellationToken);
+        return await BuildSectionAsync(limit, cancellationToken);
     }
 
     public static bool IsPlaylistAlbum(string provider, string id)
@@ -199,17 +199,19 @@ public class SpotifyDiscoveryProvider : IMusicDiscoveryProvider
         return album == null ? null : CopyAlbum(album, playlist.title, includeTracks: true);
     }
 
-    async Task<MusicBrowseSection> BuildSectionAsync(CancellationToken cancellationToken)
+    async Task<MusicBrowseSection> BuildSectionAsync(int limit, CancellationToken cancellationToken)
     {
         var profile = GetProfile();
-        var tasks = profile.playlists.Select(item => LoadPlaylistAsync(item.playlistId, 1, cancellationToken)).ToList();
+        int take = Math.Clamp(limit, 1, profile.playlists.Count);
+        var playlists = profile.playlists.Take(take).ToList();
+        var tasks = playlists.Select(item => LoadPlaylistAsync(item.playlistId, 1, cancellationToken)).ToList();
         var results = await Task.WhenAll(tasks);
         var albums = new List<MusicAlbum>();
 
-        for (int i = 0; i < profile.playlists.Count; i++)
+        for (int i = 0; i < playlists.Count; i++)
         {
             if (results[i] != null)
-                albums.Add(CopyAlbum(results[i], profile.playlists[i].title, includeTracks: false));
+                albums.Add(CopyAlbum(results[i], playlists[i].title, includeTracks: false));
         }
 
         if (albums.Count == 0)
@@ -221,7 +223,7 @@ public class SpotifyDiscoveryProvider : IMusicDiscoveryProvider
             title = profile.title,
             type = "album",
             source_provider = SpotifySupport.DiscoveryProviderId,
-            has_more = false,
+            has_more = profile.playlists.Count > take,
             albums = albums
         };
     }

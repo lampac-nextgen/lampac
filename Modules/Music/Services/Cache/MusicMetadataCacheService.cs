@@ -10,7 +10,14 @@ public static class MusicMetadataCacheService
     // полный TTL превращал его в залипшее «ничего не найдено»
     static readonly TimeSpan emptyTtl = TimeSpan.FromMinutes(20);
 
-    public static async Task<T> GetOrCreateAsync<T>(string providerId, string entityType, string cacheKey, TimeSpan ttl, Func<Task<T>> factory, CancellationToken cancellationToken = default) where T : class
+    public static async Task<T> GetOrCreateAsync<T>(
+        string providerId,
+        string entityType,
+        string cacheKey,
+        TimeSpan ttl,
+        Func<Task<T>> factory,
+        CancellationToken cancellationToken = default,
+        Func<T, TimeSpan> ttlSelector = null) where T : class
     {
         var cached = await GetAsync<T>(providerId, entityType, cacheKey, cancellationToken);
         if (cached != null)
@@ -18,7 +25,13 @@ public static class MusicMetadataCacheService
 
         var created = await factory();
         if (created != null)
-            await SaveAsync(providerId, entityType, cacheKey, created, IsEmptyPayload(created) ? emptyTtl : ttl, cancellationToken);
+        {
+            TimeSpan selectedTtl = IsEmptyPayload(created)
+                ? emptyTtl
+                : ttlSelector?.Invoke(created) ?? ttl;
+
+            await SaveAsync(providerId, entityType, cacheKey, created, selectedTtl, cancellationToken);
+        }
 
         return created;
     }
