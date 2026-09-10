@@ -39,6 +39,13 @@ public static class MusicHttp
             or HttpStatusCode.ServiceUnavailable
             or HttpStatusCode.GatewayTimeout;
 
+    public static bool IsTransientFailureStatus(HttpStatusCode statusCode)
+        => statusCode is HttpStatusCode.Unauthorized
+            or HttpStatusCode.Forbidden
+            or HttpStatusCode.RequestTimeout
+            or HttpStatusCode.TooManyRequests
+            || (int)statusCode >= 500;
+
     public static bool IsProxyFailure(Exception exception)
     {
         for (var current = exception; current != null; current = current.InnerException)

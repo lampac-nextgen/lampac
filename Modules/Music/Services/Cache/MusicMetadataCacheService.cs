@@ -1,4 +1,5 @@
 using Shared.Services.Hybrid;
+using System.Collections.Concurrent;
 
 namespace Music;
 
@@ -10,6 +11,17 @@ public static class MusicMetadataCacheService
     // полный TTL превращал его в залипшее «ничего не найдено»
     static readonly TimeSpan emptyTtl = TimeSpan.FromMinutes(20);
 
+    sealed class PendingFill<T> where T : class
+    {
+        public CancellationToken OwnerCancellation { get; init; }
+        public Lazy<Task<T>> Work { get; init; }
+    }
+
+    static class PendingFills<T> where T : class
+    {
+        public static readonly ConcurrentDictionary<string, PendingFill<T>> Items = new();
+    }
+
     public static async Task<T> GetOrCreateAsync<T>(
         string providerId,
         string entityType,
@@ -19,11 +31,61 @@ public static class MusicMetadataCacheService
         CancellationToken cancellationToken = default,
         Func<T, TimeSpan> ttlSelector = null) where T : class
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var cached = await GetAsync<T>(providerId, entityType, cacheKey, cancellationToken);
         if (cached != null)
             return cached;
 
+        if (string.IsNullOrWhiteSpace(providerId) || string.IsNullOrWhiteSpace(entityType) || string.IsNullOrWhiteSpace(cacheKey))
+            return await CreateAndSaveAsync(providerId, entityType, cacheKey, ttl, factory, cancellationToken, ttlSelector);
+
+        string key = BuildCacheKey(providerId, entityType, cacheKey);
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            PendingFill<T> candidate = null;
+            candidate = new PendingFill<T>
+            {
+                OwnerCancellation = cancellationToken,
+                Work = new Lazy<Task<T>>(async () =>
+                {
+                    try
+                    {
+                        // A previous fill may have finished between the miss and registration.
+                        var existing = await GetAsync<T>(providerId, entityType, cacheKey, cancellationToken);
+                        if (existing != null)
+                            return existing;
+
+                        return await CreateAndSaveAsync(providerId, entityType, cacheKey, ttl, factory, cancellationToken, ttlSelector);
+                    }
+                    finally
+                    {
+                        PendingFills<T>.Items.TryRemove(new KeyValuePair<string, PendingFill<T>>(key, candidate));
+                    }
+                }, LazyThreadSafetyMode.ExecutionAndPublication)
+            };
+
+            var pending = PendingFills<T>.Items.GetOrAdd(key, candidate);
+            try
+            {
+                return await pending.Work.Value.WaitAsync(cancellationToken);
+            }
+            catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested && pending.OwnerCancellation.IsCancellationRequested)
+            {
+                // Factories capture their caller's token. Retry with our own factory
+                // after an abandoned owner's fill, without cancelling other waiters.
+            }
+        }
+    }
+
+    static async Task<T> CreateAndSaveAsync<T>(
+        string providerId, string entityType, string cacheKey, TimeSpan ttl,
+        Func<Task<T>> factory, CancellationToken cancellationToken,
+        Func<T, TimeSpan> ttlSelector) where T : class
+    {
+        cancellationToken.ThrowIfCancellationRequested();
         var created = await factory();
+        cancellationToken.ThrowIfCancellationRequested();
         if (created != null)
         {
             TimeSpan selectedTtl = IsEmptyPayload(created)

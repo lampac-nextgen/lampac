@@ -17,9 +17,13 @@ public class SoundCloudAudioProvider : IMusicAudioProvider
         {
             return await SoundCloudSupport.SearchAudioAsync(track, cancellationToken);
         }
-        catch
+        catch (OperationCanceledException)
         {
-            return Array.Empty<MusicAudioMatch>();
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new MusicAudioTransientException(Id, "match", ex);
         }
     }
 
@@ -32,9 +36,13 @@ public class SoundCloudAudioProvider : IMusicAudioProvider
         {
             return await SoundCloudSupport.BuildAudioSourcesAsync(match, cancellationToken);
         }
-        catch
+        catch (OperationCanceledException)
         {
-            return Array.Empty<MusicPlaybackSource>();
+            throw;
+        }
+        catch (Exception ex)
+        {
+            throw new MusicAudioTransientException(Id, "stream", ex);
         }
     }
 

@@ -126,12 +126,19 @@ public class YouTubeAudioProvider : IMusicAudioProvider
             ordered.AddRange(ranked.Where(i => !string.Equals(i.id, directMatch.id, StringComparison.Ordinal)));
             return ordered;
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             if (MusicHttp.IsProxyFailure(ex))
                 MusicProxyService.ReportFailure($"Music:{Id}:api");
 
-            return directMatch != null ? new[] { directMatch } : Array.Empty<MusicAudioMatch>();
+            if (directMatch != null)
+                return new[] { directMatch };
+
+            throw new MusicAudioTransientException(Id, "match", ex);
         }
     }
 
@@ -159,12 +166,16 @@ public class YouTubeAudioProvider : IMusicAudioProvider
             proxyLease.Success();
             return YouTubeAudioSupport.ConvertSearchResults(results);
         }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             if (MusicHttp.IsProxyFailure(ex))
                 MusicProxyService.ReportFailure($"Music:{Id}:api");
 
-            return Array.Empty<MusicAudioMatch>();
+            throw new MusicAudioTransientException(Id, "search", ex);
         }
     }
 
@@ -194,6 +205,10 @@ public class YouTubeAudioProvider : IMusicAudioProvider
                     resolved.ProxyLease.ApplyTo(source, overwrite: true);
                 return audioSources;
             }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
             catch (Exception ex)
             {
                 if (attempt == 0 && ShouldRetryManifestFailure(ex))
@@ -203,7 +218,10 @@ public class YouTubeAudioProvider : IMusicAudioProvider
                 }
 
                 Console.WriteLine($"[Music] youtube stream manifest failed for {match.id}: {ex.GetType().Name}: {ex.Message}");
-                return Array.Empty<MusicPlaybackSource>();
+                if (IsPermanentManifestFailure(ex))
+                    return Array.Empty<MusicPlaybackSource>();
+
+                throw new MusicAudioTransientException(Id, "stream", ex);
             }
         }
 
@@ -328,5 +346,16 @@ public class YouTubeAudioProvider : IMusicAudioProvider
         return ex != null
             && ex.GetType().Name == "YoutubeExplodeException"
             && (ex.Message?.IndexOf("cipher manifest", StringComparison.OrdinalIgnoreCase) ?? -1) >= 0;
+    }
+
+    static bool IsPermanentManifestFailure(Exception ex)
+    {
+        for (var current = ex; current != null; current = current.InnerException)
+        {
+            if (current.GetType().Name is "VideoUnavailableException" or "VideoUnplayableException")
+                return true;
+        }
+
+        return false;
     }
 }

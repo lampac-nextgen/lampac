@@ -1,5 +1,16 @@
 namespace Music;
 
+public sealed class MusicAudioTransientException : Exception
+{
+    public string ProviderId { get; }
+
+    public MusicAudioTransientException(string providerId, string operation, Exception innerException)
+        : base($"{providerId} {operation} temporarily failed.", innerException)
+    {
+        ProviderId = providerId;
+    }
+}
+
 public interface IMusicMetadataProvider
 {
     string Id { get; }

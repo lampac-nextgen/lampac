@@ -10,228 +10,293 @@ public static class MusicImageProxyService
         plugin = "Music"
     };
 
-    // Cached DTOs (including nested images) can be shared by concurrent requests.
-    // Rewrite only a response-owned copy, never the provider/cache object graph.
+    // Create a shallow copy without listing every DTO property. The delegate is
+    // bound once; new metadata fields are preserved automatically.
+    static readonly Func<object, object> shallowCopy = typeof(object)
+        .GetMethod("MemberwiseClone", System.Reflection.BindingFlags.Instance | System.Reflection.BindingFlags.NonPublic)
+        .CreateDelegate<Func<object, object>>();
+
+    static T Copy<T>(T value) where T : class => (T)shallowCopy(value);
+
+    // Only rewritten image branches are copied. Reused branches stay read-only:
+    // controllers serialize this result without modifying its DTOs or lists.
     public static T Apply<T>(BaseController controller, T response)
     {
         if (controller == null || response == null)
             return response;
 
-        var copy = MusicJson.Deserialize<T>(MusicJson.Serialize(response));
-        ApplyImages(controller, (object)copy);
+        return (T)Rewrite(controller, response);
+    }
+
+    static object Rewrite(BaseController controller, object value)
+    {
+        return value switch
+        {
+            MusicSearchResponse response => RewriteSearch(controller, response),
+            MusicHomeResponse response => RewriteHome(controller, response),
+            MusicStatsTopResult response => RewriteStats(controller, response),
+            MusicArtist artist => RewriteArtist(controller, artist),
+            MusicAlbum album => RewriteAlbum(controller, album),
+            MusicTrack track => RewriteTrack(controller, track),
+            MusicBrowseSection section => RewriteSection(controller, section),
+            MusicUserPlaylistSummary playlist => RewritePlaylist(controller, playlist),
+            MusicUserPlaylistImportResult response => RewriteImport(controller, response),
+            MusicDailyMixResponse response => RewriteDaily(controller, response),
+            MusicRadioResponse response => RewriteRadio(controller, response),
+            MusicRecentlyPlayedItem item => RewriteHistory(controller, item),
+            MusicStatsTopTrack item => RewriteStatsTrack(controller, item),
+            MusicImage image => RewriteImage(controller, image),
+            List<MusicTrack> tracks => RewriteList(controller, tracks),
+            List<MusicUserPlaylistSummary> playlists => RewriteList(controller, playlists),
+            MusicTrack[] tracks => RewriteArray(controller, tracks),
+            MusicUserPlaylistSummary[] playlists => RewriteArray(controller, playlists),
+            _ => value
+        };
+    }
+
+    static List<T> RewriteList<T>(BaseController controller, List<T> items) where T : class
+    {
+        if (items == null)
+            return null;
+
+        List<T> copy = null;
+        for (int i = 0; i < items.Count; i++)
+        {
+            var item = (T)Rewrite(controller, items[i]);
+            if (ReferenceEquals(item, items[i]))
+                continue;
+
+            copy ??= new List<T>(items);
+            copy[i] = item;
+        }
+
+        return copy ?? items;
+    }
+
+    static T[] RewriteArray<T>(BaseController controller, T[] items) where T : class
+    {
+        T[] copy = null;
+        for (int i = 0; i < items.Length; i++)
+        {
+            var item = (T)Rewrite(controller, items[i]);
+            if (ReferenceEquals(item, items[i]))
+                continue;
+
+            copy ??= (T[])items.Clone();
+            copy[i] = item;
+        }
+
+        return copy ?? items;
+    }
+
+    static MusicSearchResponse RewriteSearch(BaseController controller, MusicSearchResponse value)
+    {
+        var artists = RewriteList(controller, value.artists);
+        var albums = RewriteList(controller, value.albums);
+        var tracks = RewriteList(controller, value.tracks);
+        var search_sections = RewriteList(controller, value.search_sections);
+
+        if (ReferenceEquals(artists, value.artists)
+            && ReferenceEquals(albums, value.albums)
+            && ReferenceEquals(tracks, value.tracks)
+            && ReferenceEquals(search_sections, value.search_sections))
+            return value;
+
+        var copy = Copy(value);
+        copy.artists = artists;
+        copy.albums = albums;
+        copy.tracks = tracks;
+        copy.search_sections = search_sections;
         return copy;
     }
 
-    static void ApplyImages(BaseController controller, object response)
+    static MusicHomeResponse RewriteHome(BaseController controller, MusicHomeResponse value)
     {
-        switch (response)
-        {
-            case MusicSearchResponse search: ApplyImages(controller, search); break;
-            case MusicHomeResponse home: ApplyImages(controller, home); break;
-            case MusicStatsTopResult stats: ApplyImages(controller, stats); break;
-            case MusicArtist artist: ApplyImages(controller, artist); break;
-            case MusicAlbum album: ApplyImages(controller, album); break;
-            case MusicTrack track: ApplyImages(controller, track); break;
-            case MusicBrowseSection section: ApplyImages(controller, section); break;
-            case MusicUserPlaylistSummary playlist: ApplyImages(controller, playlist); break;
-            case MusicUserPlaylistImportResult import: ApplyImages(controller, import.tracks); break;
-            case MusicDailyMixResponse daily: ApplyImages(controller, daily.tracks); break;
-            case MusicRadioResponse radio: ApplyImages(controller, radio.tracks); break;
-            case IEnumerable<MusicTrack> tracks:
-                foreach (var item in tracks) ApplyImages(controller, item);
-                break;
-            case IEnumerable<MusicUserPlaylistSummary> playlists:
-                foreach (var item in playlists) ApplyImages(controller, item);
-                break;
-        }
+        var browse_sections = RewriteList(controller, value.browse_sections);
+        var recently_played = RewriteList(controller, value.recently_played);
+        var user_playlists = RewriteList(controller, value.user_playlists);
+
+        if (ReferenceEquals(browse_sections, value.browse_sections)
+            && ReferenceEquals(recently_played, value.recently_played)
+            && ReferenceEquals(user_playlists, value.user_playlists))
+            return value;
+
+        var copy = Copy(value);
+        copy.browse_sections = browse_sections;
+        copy.recently_played = recently_played;
+        copy.user_playlists = user_playlists;
+        return copy;
     }
 
-    static MusicSearchResponse ApplyImages(BaseController controller, MusicSearchResponse response)
+    static MusicStatsTopResult RewriteStats(BaseController controller, MusicStatsTopResult value)
     {
-        if (controller == null || response == null)
-            return response;
+        var tracks = RewriteList(controller, value.tracks);
 
-        if (response.artists != null)
-        {
-            foreach (var artist in response.artists)
-                ApplyImages(controller, artist);
-        }
+        if (ReferenceEquals(tracks, value.tracks))
+            return value;
 
-        if (response.albums != null)
-        {
-            foreach (var album in response.albums)
-                ApplyImages(controller, album);
-        }
-
-        if (response.tracks != null)
-        {
-            foreach (var track in response.tracks)
-                ApplyImages(controller, track);
-        }
-
-        if (response.search_sections != null)
-        {
-            foreach (var section in response.search_sections)
-                ApplyImages(controller, section);
-        }
-
-        return response;
+        var copy = Copy(value);
+        copy.tracks = tracks;
+        return copy;
     }
 
-    static MusicHomeResponse ApplyImages(BaseController controller, MusicHomeResponse response)
+    static MusicArtist RewriteArtist(BaseController controller, MusicArtist value)
     {
-        if (controller == null || response == null)
-            return response;
+        var images = RewriteList(controller, value.images);
+        var albums = RewriteList(controller, value.albums);
+        var sections = RewriteList(controller, value.sections);
 
-        if (response.browse_sections != null)
-        {
-            foreach (var section in response.browse_sections)
-                ApplyImages(controller, section);
-        }
+        if (ReferenceEquals(images, value.images)
+            && ReferenceEquals(albums, value.albums)
+            && ReferenceEquals(sections, value.sections))
+            return value;
 
-        if (response.recently_played != null)
-        {
-            foreach (var item in response.recently_played)
-            {
-                if (item?.track != null)
-                    ApplyImages(controller, item.track);
-            }
-        }
-
-        if (response.user_playlists != null)
-        {
-            foreach (var playlist in response.user_playlists)
-                ApplyImages(controller, playlist);
-        }
-
-        return response;
+        var copy = Copy(value);
+        copy.images = images;
+        copy.albums = albums;
+        copy.sections = sections;
+        return copy;
     }
 
-    static MusicUserPlaylistSummary ApplyImages(BaseController controller, MusicUserPlaylistSummary playlist)
+    static MusicAlbum RewriteAlbum(BaseController controller, MusicAlbum value)
     {
-        if (controller == null || playlist == null)
-            return playlist;
+        var images = RewriteList(controller, value.images);
+        var tracks = RewriteList(controller, value.tracks);
 
-        ProxyImages(controller, playlist.images);
-        return playlist;
+        if (ReferenceEquals(images, value.images)
+            && ReferenceEquals(tracks, value.tracks))
+            return value;
+
+        var copy = Copy(value);
+        copy.images = images;
+        copy.tracks = tracks;
+        return copy;
     }
 
-    static MusicStatsTopResult ApplyImages(BaseController controller, MusicStatsTopResult response)
+    static MusicTrack RewriteTrack(BaseController controller, MusicTrack value)
     {
-        if (controller == null || response == null)
-            return response;
+        var images = RewriteList(controller, value.images);
 
-        if (response.tracks != null)
-        {
-            foreach (var item in response.tracks)
-            {
-                if (item?.track != null)
-                    ApplyImages(controller, item.track);
-            }
-        }
+        if (ReferenceEquals(images, value.images))
+            return value;
 
-        return response;
+        var copy = Copy(value);
+        copy.images = images;
+        return copy;
     }
 
-    static MusicArtist ApplyImages(BaseController controller, MusicArtist artist)
+    static MusicBrowseSection RewriteSection(BaseController controller, MusicBrowseSection value)
     {
-        if (controller == null || artist == null)
-            return artist;
+        var albums = RewriteList(controller, value.albums);
+        var artists = RewriteList(controller, value.artists);
+        var tracks = RewriteList(controller, value.tracks);
 
-        ProxyImages(controller, artist.images);
+        if (ReferenceEquals(albums, value.albums)
+            && ReferenceEquals(artists, value.artists)
+            && ReferenceEquals(tracks, value.tracks))
+            return value;
 
-        if (artist.albums != null)
-        {
-            foreach (var album in artist.albums)
-                ApplyImages(controller, album);
-        }
-
-        if (artist.sections != null)
-        {
-            foreach (var section in artist.sections)
-                ApplyImages(controller, section);
-        }
-
-        return artist;
+        var copy = Copy(value);
+        copy.albums = albums;
+        copy.artists = artists;
+        copy.tracks = tracks;
+        return copy;
     }
 
-    static MusicAlbum ApplyImages(BaseController controller, MusicAlbum album)
+    static MusicUserPlaylistSummary RewritePlaylist(BaseController controller, MusicUserPlaylistSummary value)
     {
-        if (controller == null || album == null)
-            return album;
+        var images = RewriteList(controller, value.images);
 
-        ProxyImages(controller, album.images);
+        if (ReferenceEquals(images, value.images))
+            return value;
 
-        if (album.tracks != null)
-        {
-            foreach (var track in album.tracks)
-                ApplyImages(controller, track);
-        }
-
-        return album;
+        var copy = Copy(value);
+        copy.images = images;
+        return copy;
     }
 
-    static MusicTrack ApplyImages(BaseController controller, MusicTrack track)
+    static MusicUserPlaylistImportResult RewriteImport(BaseController controller, MusicUserPlaylistImportResult value)
     {
-        if (controller == null || track == null)
-            return track;
+        var tracks = RewriteList(controller, value.tracks);
 
-        ProxyImages(controller, track.images);
-        return track;
+        if (ReferenceEquals(tracks, value.tracks))
+            return value;
+
+        var copy = Copy(value);
+        copy.tracks = tracks;
+        return copy;
     }
 
-    static MusicBrowseSection ApplyImages(BaseController controller, MusicBrowseSection section)
+    static MusicDailyMixResponse RewriteDaily(BaseController controller, MusicDailyMixResponse value)
     {
-        if (controller == null || section == null)
-            return section;
+        var tracks = RewriteList(controller, value.tracks);
 
-        if (section.albums != null)
-        {
-            foreach (var album in section.albums)
-                ApplyImages(controller, album);
-        }
+        if (ReferenceEquals(tracks, value.tracks))
+            return value;
 
-        if (section.artists != null)
-        {
-            foreach (var artist in section.artists)
-                ApplyImages(controller, artist);
-        }
-
-        if (section.tracks != null)
-        {
-            foreach (var track in section.tracks)
-                ApplyImages(controller, track);
-        }
-
-        return section;
+        var copy = Copy(value);
+        copy.tracks = tracks;
+        return copy;
     }
 
-    static void ProxyImages(BaseController controller, List<MusicImage> images)
+    static MusicRadioResponse RewriteRadio(BaseController controller, MusicRadioResponse value)
     {
-        if (images == null || images.Count == 0)
-            return;
+        var tracks = RewriteList(controller, value.tracks);
 
-        foreach (var image in images)
-        {
-            if (image == null || string.IsNullOrWhiteSpace(image.url))
-                continue;
+        if (ReferenceEquals(tracks, value.tracks))
+            return value;
 
-            // Normalize even when image proxying is disabled (e.g. file:// TV clients).
-            if (image.url.StartsWith("//", StringComparison.Ordinal))
-                image.url = "https:" + image.url;
+        var copy = Copy(value);
+        copy.tracks = tracks;
+        return copy;
+    }
 
-            // Also repair legacy cached URLs created before response isolation.
-            if (TryRewriteProxyHost(image.url, controller.host, out string rewritten))
-            {
-                image.url = rewritten;
-                continue;
-            }
+    static MusicRecentlyPlayedItem RewriteHistory(BaseController controller, MusicRecentlyPlayedItem value)
+    {
+        var track = (MusicTrack)Rewrite(controller, value.track);
 
-            if (!NeedProxy(image.url, controller.host))
-                continue;
+        if (ReferenceEquals(track, value.track))
+            return value;
 
-            image.url = controller.HostImgProxy(init, image.url);
-        }
+        var copy = Copy(value);
+        copy.track = track;
+        return copy;
+    }
+
+    static MusicStatsTopTrack RewriteStatsTrack(BaseController controller, MusicStatsTopTrack value)
+    {
+        var track = (MusicTrack)Rewrite(controller, value.track);
+
+        if (ReferenceEquals(track, value.track))
+            return value;
+
+        var copy = Copy(value);
+        copy.track = track;
+        return copy;
+    }
+
+    static MusicImage RewriteImage(BaseController controller, MusicImage image)
+    {
+        string url = image.url;
+        if (string.IsNullOrWhiteSpace(url))
+            return image;
+
+        // Normalize even when proxying is disabled (e.g. file:// TV clients).
+        if (url.StartsWith("//", StringComparison.Ordinal))
+            url = "https:" + url;
+
+        // Repair legacy cached proxy URLs without modifying the cached image.
+        if (TryRewriteProxyHost(url, controller.host, out string rewritten))
+            url = rewritten;
+        else if (NeedProxy(url, controller.host))
+            url = controller.HostImgProxy(init, url);
+
+        if (string.Equals(url, image.url, StringComparison.Ordinal))
+            return image;
+
+        var copy = Copy(image);
+        copy.url = url;
+        return copy;
     }
 
     static bool TryRewriteProxyHost(string url, string host, out string rewritten)

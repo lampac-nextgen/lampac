@@ -32,6 +32,7 @@ public static class MusicPlaybackService
 
         if (track != null)
         {
+            track = CopyTrack(track);
             track.isrc = MusicIsrc.Normalize(track.isrc) ?? normalizedIsrc;
             return track;
         }
@@ -49,6 +50,29 @@ public static class MusicPlaybackService
             isrc = normalizedIsrc,
             duration_ms = durationMs,
             date = date
+        };
+    }
+
+    static MusicTrack CopyTrack(MusicTrack track)
+    {
+        return new MusicTrack
+        {
+            id = track.id,
+            title = track.title,
+            artist_id = track.artist_id,
+            artist_name = track.artist_name,
+            artists = track.artists?.ToList() ?? new List<string>(),
+            album_id = track.album_id,
+            album_title = track.album_title,
+            isrc = track.isrc,
+            duration_ms = track.duration_ms,
+            track_number = track.track_number,
+            disc_number = track.disc_number,
+            date = track.date,
+            search_score = track.search_score,
+            images = track.images?.ToList() ?? new List<MusicImage>(),
+            provider_refs = track.provider_refs?.ToList() ?? new List<MusicProviderRef>(),
+            auto_radio = track.auto_radio
         };
     }
 

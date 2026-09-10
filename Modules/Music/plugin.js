@@ -9902,9 +9902,10 @@
     // --- авто-скип мёртвого трека очереди ---
     // Раньше провал резолва был тупиком: Noty + стоящая очередь, дальше только
     // руками. Скипаем ТОЛЬКО честный отказ сервера (available=false — все
-    // провайдеры не нашли источник); сетевой сбой (json=null/битый ответ) НЕ
-    // скипаем — iOS душит сеть скрытой страницы, и авто-скип прощёлкал бы
-    // живые треки под локскрином. Кап подряд идущих скипов ограничивает
+    // провайдеры не нашли источник); сбой клиент↔Lampac (json=null/битый ответ)
+    // и сервер↔audio-provider (reason=transient) НЕ скипаем — iOS душит сеть
+    // скрытой страницы, и авто-скип прощёлкал бы живые треки под локскрином.
+    // Кап подряд идущих скипов ограничивает
     // каскад по мёртвой полосе плейлиста; счётчик сбрасывается только на
     // реальном старте звука (playing с настоящим src), не на выборе трека.
     var MUSIC_AUTO_SKIP_LIMIT = 3;
@@ -9916,6 +9917,7 @@
 
     function maybeAutoSkipUnavailableTrack(json, advance) {
         if (!json || json.available !== false) return false;
+        if (json.reason === 'transient') return false;
         if (getStandaloneIosRepeatMode() === 'one') return false;
 
         if (MUSIC_AUTO_SKIP_COUNT >= MUSIC_AUTO_SKIP_LIMIT) {
@@ -10211,11 +10213,17 @@
 
         if (media && isFinite(media.currentTime)) {
             var current = Number(media.currentTime);
+            var wallDelta = pending.lastWallAt ? Math.max(0, now - pending.lastWallAt) : 0;
 
             if (typeof pending.lastMediaTime === 'number' && isFinite(pending.lastMediaTime)) {
                 var mediaDelta = current - pending.lastMediaTime;
-                if (mediaDelta > 0 && mediaDelta < 30)
-                    pending.playedMs += Math.round(mediaDelta * 1000);
+                if (media.paused !== true && media.seeking !== true && mediaDelta > 0 && mediaDelta < 30) {
+                    // A seek can move currentTime by many seconds between two
+                    // adjacent events. Credit no more than real elapsed time,
+                    // so changing position cannot forge listening.
+                    var creditedMs = Math.min(mediaDelta * 1000, wallDelta);
+                    pending.playedMs += Math.max(0, Math.round(creditedMs));
+                }
             }
 
             pending.lastMediaTime = current;
@@ -10392,11 +10400,16 @@
 
     // ===== LAMPA PLAYER BRIDGE =====
 
-    function attachInternalPlaylistDeferred(trackId, list) {
+    function attachInternalPlaylistDeferred(trackId, list, isStale) {
         if (!trackId || !list || !list.length) return;
 
         [80, 300].forEach(function (delay) {
             setTimeout(function () {
+                if (isStale && isStale()) {
+                    traceEmbeddedIos('playlist-attach-stale', 'delay=' + delay, true);
+                    return;
+                }
+
                 var work = activePlayerData();
                 if (!work || !work.from_music_cluster || work.music_track_id !== trackId) {
                     traceEmbeddedIos('playlist-attach-bail', 'delay=' + delay + ' work=' + !!work
@@ -11495,8 +11508,9 @@
                     if (!(tracks.length > 1 && usesInternalPlaybackFlow())) {
                         Lampa.Player.playlist(list);
                     } else {
-                        attachInternalPlaylistDeferred(tracks[index].id, list);
+                        attachInternalPlaylistDeferred(tracks[index].id, list, launchStale);
                         setTimeout(function () {
+                            if (launchStale()) return;
                             var work = activePlayerData();
                             if (work && work.from_music_cluster && work.music_track_id) {
                                 flushPendingInternalPlaylist(work.music_track_id);

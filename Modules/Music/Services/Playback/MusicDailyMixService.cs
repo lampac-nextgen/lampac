@@ -556,6 +556,10 @@ public static class MusicDailyMixService
         {
             await Task.WhenAll(artistPoolTasks.Concat(relatedTasks));
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch
         {
         }
@@ -720,29 +724,36 @@ public static class MusicDailyMixService
 
         if (desiredDiscoveryLimit > discoveryOutput.Count)
         {
-            await RefillShortMixAsync(
-                musicMapTasks,
-                genrePoolsTask,
-                seeds,
-                historyArtists,
-                mixArtists,
-                similars.Select(i => i.name),
-                externalArtists,
-                sampleSeed,
-                strictNoisyWords,
-                requireCyrillic,
-                discoveryOutput,
-                desiredDiscoveryLimit,
-                output.Count,
-                discoveryArtistCounts,
-                excludedIds,
-                excludedKeys,
-                excludedTitles,
-                outputIds,
-                outputKeys,
-                outputTitles,
-                genrePools,
-                timeoutCts.Token);
+            try
+            {
+                await RefillShortMixAsync(
+                    musicMapTasks,
+                    genrePoolsTask,
+                    seeds,
+                    historyArtists,
+                    mixArtists,
+                    similars.Select(i => i.name),
+                    externalArtists,
+                    sampleSeed,
+                    strictNoisyWords,
+                    requireCyrillic,
+                    discoveryOutput,
+                    desiredDiscoveryLimit,
+                    output.Count,
+                    discoveryArtistCounts,
+                    excludedIds,
+                    excludedKeys,
+                    excludedTitles,
+                    outputIds,
+                    outputKeys,
+                    outputTitles,
+                    genrePools,
+                    timeoutCts.Token);
+            }
+            catch (OperationCanceledException) when (timeoutCts.IsCancellationRequested && !cancellationToken.IsCancellationRequested)
+            {
+                // The discovery budget expired; keep the tracks already collected.
+            }
         }
 
         if (ModInit.conf?.spotify_discovery_enabled == true
@@ -751,8 +762,6 @@ public static class MusicDailyMixService
         {
             await FillSpotifyFallbackAsync(
                 spotifyDiscoveryTask,
-                seeds,
-                mixArtists,
                 sampleSeed,
                 seedNoisyWords,
                 strictNoisyWords,
@@ -768,8 +777,11 @@ public static class MusicDailyMixService
                 outputIds,
                 outputKeys,
                 outputTitles,
+                timeoutCts.Token,
                 cancellationToken);
         }
+
+        cancellationToken.ThrowIfCancellationRequested();
 
         // открытия вплетаются равномерно, а не хвостом:
         // при 19+5 — позиции 4, 9, 14, 19, 24
@@ -935,8 +947,6 @@ public static class MusicDailyMixService
 
     static async Task FillSpotifyFallbackAsync(
         Task<SpotifyDiscoveryPlan> spotifyDiscoveryTask,
-        List<HistoryArtist> seeds,
-        List<string> mixArtists,
         uint sampleSeed,
         HashSet<string> seedNoisyWords,
         HashSet<string> strictNoisyWords,
@@ -952,6 +962,7 @@ public static class MusicDailyMixService
         HashSet<string> outputIds,
         HashSet<string> outputKeys,
         HashSet<string> outputTitles,
+        CancellationToken budgetToken,
         CancellationToken cancellationToken)
     {
         int missing = spotifyFallbackTarget - mainTrackCount - discoveryOutput.Count;
@@ -962,21 +973,15 @@ public static class MusicDailyMixService
 
         try
         {
-            SpotifyDiscoveryPlan plan = null;
-            try
-            {
-                plan = await spotifyDiscoveryTask;
-            }
-            catch
-            {
-            }
-
+            cancellationToken.ThrowIfCancellationRequested();
+            // A completed plan is still useful after expiry, but no new discovery
+            // request or extra timeout is allowed for the fallback.
+            var plan = spotifyDiscoveryTask.IsCompletedSuccessfully
+                ? spotifyDiscoveryTask.Result
+                : await spotifyDiscoveryTask.WaitAsync(budgetToken);
+            cancellationToken.ThrowIfCancellationRequested();
             if (plan == null)
-            {
-                using var retryCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-                retryCts.CancelAfter(TimeSpan.FromSeconds(6));
-                plan = await LoadSpotifyDiscoveryPlanAsync(seeds, mixArtists, sampleSeed, retryCts.Token);
-            }
+                return;
 
             var seedDiscoveries = plan.SeedDiscoveries;
 

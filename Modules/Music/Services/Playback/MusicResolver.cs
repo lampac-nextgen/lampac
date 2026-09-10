@@ -57,6 +57,7 @@ public static class MusicResolver
         }
 
         MusicAudioMatch firstMatch = null;
+        bool hadTransientFailure = false;
 
         foreach (var sourceProvider in providers)
         {
@@ -64,18 +65,36 @@ public static class MusicResolver
                 ? track
                 : BuildFallbackSearchTrack(track);
 
-            if (sourceProvider.CacheMissingMatches && await MusicSourceMatchService.IsMarkedMissingAsync(track.id, sourceProvider.Id, playbackMode, cancellationToken))
-                continue;
-
             var selectedMatch = await MusicSourceMatchService.GetAsync(track.id, sourceProvider.Id, playbackMode, cancellationToken);
             selectedMatch = NormalizeSelectedMatch(providerTrack, sourceProvider, selectedMatch);
+
+            // A durable manual choice is authoritative even when an older
+            // negative lookup for this provider is still cached.
+            if (selectedMatch?.pinned != true
+                && sourceProvider.CacheMissingMatches
+                && await MusicSourceMatchService.IsMarkedMissingAsync(track.id, sourceProvider.Id, playbackMode, cancellationToken))
+                continue;
+
+            bool providerHadTransientFailure = false;
 
             if (selectedMatch != null)
             {
                 if (firstMatch == null)
                     firstMatch = selectedMatch;
 
-                var selectedSources = await ResolveSourcesAsync(sourceProvider, selectedMatch, preferSingleSource, playbackMode, profileId, refreshSources, cancellationToken);
+                List<MusicPlaybackSource> selectedSources;
+                try
+                {
+                    selectedSources = await ResolveSourcesAsync(sourceProvider, selectedMatch, preferSingleSource, playbackMode, profileId, refreshSources, cancellationToken);
+                }
+                catch (MusicAudioTransientException ex)
+                {
+                    providerHadTransientFailure = true;
+                    hadTransientFailure = true;
+                    Console.WriteLine($"[Music] {ex.Message}");
+                    selectedSources = new List<MusicPlaybackSource>();
+                }
+
                 if (selectedSources.Count > 0)
                 {
                     return new MusicPlayResponse
@@ -89,7 +108,18 @@ public static class MusicResolver
                 }
             }
 
-            var matches = await GetOrderedMatchesAsync(providerTrack, sourceProvider, selectedMatch, playbackMode, profileId, cancellationToken);
+            IReadOnlyList<MusicAudioMatch> matches;
+            try
+            {
+                matches = await GetOrderedMatchesAsync(providerTrack, sourceProvider, selectedMatch, playbackMode, profileId, cancellationToken);
+            }
+            catch (MusicAudioTransientException ex)
+            {
+                providerHadTransientFailure = true;
+                hadTransientFailure = true;
+                Console.WriteLine($"[Music] {ex.Message}");
+                matches = Array.Empty<MusicAudioMatch>();
+            }
 
             foreach (var match in matches)
             {
@@ -99,7 +129,19 @@ public static class MusicResolver
                 if (firstMatch == null)
                     firstMatch = match;
 
-                var sources = await ResolveSourcesAsync(sourceProvider, match, preferSingleSource, playbackMode, profileId, refreshSources, cancellationToken);
+                List<MusicPlaybackSource> sources;
+                try
+                {
+                    sources = await ResolveSourcesAsync(sourceProvider, match, preferSingleSource, playbackMode, profileId, refreshSources, cancellationToken);
+                }
+                catch (MusicAudioTransientException ex)
+                {
+                    providerHadTransientFailure = true;
+                    hadTransientFailure = true;
+                    Console.WriteLine($"[Music] {ex.Message}");
+                    continue;
+                }
+
                 if (sources.Count == 0)
                     continue;
 
@@ -118,14 +160,15 @@ public static class MusicResolver
                 };
             }
 
-            if (sourceProvider.CacheMissingMatches)
+            if (sourceProvider.CacheMissingMatches && !providerHadTransientFailure)
                 await MusicSourceMatchService.MarkMissingAsync(track.id, sourceProvider.Id, playbackMode, cancellationToken);
         }
 
         return new MusicPlayResponse
         {
             available = false,
-            message = "No audio source resolved yet.",
+            reason = hadTransientFailure ? "transient" : "not_found",
+            message = hadTransientFailure ? "Audio source is temporarily unavailable." : "No audio source resolved yet.",
             track_id = track.id,
             selected_match = firstMatch,
             sources = new List<MusicPlaybackSource>()

@@ -209,17 +209,34 @@ public static class MusicSourceMatchService
         return entry.succes && entry.value;
     }
 
-    public static Task MarkMissingAsync(string trackId, string providerId, string playbackMode = null, CancellationToken cancellationToken = default)
+    public static async Task MarkMissingAsync(string trackId, string providerId, string playbackMode = null, CancellationToken cancellationToken = default)
     {
         if (string.IsNullOrWhiteSpace(trackId) || string.IsNullOrWhiteSpace(providerId))
-            return Task.CompletedTask;
+            return;
 
-        _ = cancellationToken;
-        string scopedProviderId = ScopeProviderId(providerId, playbackMode);
-        string missingKey = BuildMissingCacheKey(trackId, scopedProviderId);
-        missingCache.Set(missingKey, true, MissingTtl);
-        HybridCache.Get().Set(missingKey, true, MissingTtl, textJson: true);
-        return Task.CompletedTask;
+        var stateLock = StateLock(trackId, playbackMode);
+        await stateLock.WaitAsync(cancellationToken);
+        try
+        {
+            string scopedProviderId = ScopeProviderId(providerId, playbackMode);
+            string missingKey = BuildMissingCacheKey(trackId, scopedProviderId);
+
+            // A lookup may have started before the user pinned a source and
+            // finished afterwards. Never let that stale miss hide durable state.
+            if (await ReadDbMatchAsync(trackId, scopedProviderId, cancellationToken) != null)
+            {
+                missingCache.Remove(missingKey);
+                HybridCache.Get().Set(missingKey, false, MissingTtl, textJson: true);
+                return;
+            }
+
+            missingCache.Set(missingKey, true, MissingTtl);
+            HybridCache.Get().Set(missingKey, true, MissingTtl, textJson: true);
+        }
+        finally
+        {
+            stateLock.Release();
+        }
     }
 
     static string BuildCacheKey(string trackId, string scopedProviderId)

@@ -261,6 +261,7 @@ public class MusicHomeResponse
 public class MusicPlayResponse
 {
     public bool available { get; set; }
+    public string reason { get; set; }
     public string message { get; set; }
     public string track_id { get; set; }
     public MusicAudioMatch selected_match { get; set; }
