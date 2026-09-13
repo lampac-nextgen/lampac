@@ -144,8 +144,49 @@
     return Timecode;
   }();
 
+  /**
+   * Переезд со случайной идентичности на розданную сервером.
+   *
+   * До того как сервер начал раздавать uid, браузер придумывал его сам, и накопленное лежит в
+   * области, про которую больше никто не спросит. Сервер не знает, какой случайный uid чей, —
+   * знает только сам браузер, поэтому переливает он.
+   *
+   * Один раз: после успеха старый ключ заменяется новым, и условие ниже больше не выполняется.
+   */
+  function migrateLegacyIdentity() {
+    if (!server_uid) return;
+
+    var legacy = Lampa.Storage.get('lampac_unic_id', '');
+    if (!legacy || legacy === server_uid) return;
+
+    var token = '{token}';
+    var auth = token !== '' ? '&token=' + token : '';
+    var base = '{localhost}/timecode/';
+
+    new Lampa.Reguest().silent(base + 'dump?uid=' + encodeURIComponent(legacy) + auth, function(result) {
+      var rows = result && result.rows;
+
+      if (!rows || !rows.length) {
+        Lampa.Storage.set('lampac_unic_id', server_uid);
+        return;
+      }
+
+      $.ajax({
+        url: base + 'set?uid=' + encodeURIComponent(server_uid) + auth,
+        type: 'POST',
+        contentType: 'application/json',
+        data: JSON.stringify({ rows: rows }),
+        success: function() {
+          Lampa.Storage.set('lampac_unic_id', server_uid);
+          console.log('Lampac TimeCode', 'migrated ' + rows.length + ' row(s) from ' + legacy);
+        }
+      });
+    }, function() {});
+  }
+
   function startPlugin() {
     window.lampac_timecode_plugin = true;
+    migrateLegacyIdentity();
     if (Lampa.Timeline.listener) {
       var code = new Timecode();
       code.init();
