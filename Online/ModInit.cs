@@ -31,11 +31,14 @@ public class ModInit : IModuleLoaded, IModuleConfigure
 
         foreach (var m in conf.limit_map)
             CoreInit.conf.WAF.limit_map.Insert(0, m);
+
+        ModuleCapabilities.Set("online", 1);
     }
 
     public void Dispose()
     {
         EventListener.UpdateInitFile -= updateConf;
+        ModuleCapabilities.Remove("online");
     }
 
 

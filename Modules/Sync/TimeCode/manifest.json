@@ -1,6 +1,9 @@
 {
   "enable": true,
   "dynamic": true,
+  "syntaxPaths": [
+    "../SyncEvents/NwsEvents.cs"
+  ],
   "tree": [
     "Controller.cs",
     "ModInit.cs",

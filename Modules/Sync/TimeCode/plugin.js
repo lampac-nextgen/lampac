@@ -1,10 +1,18 @@
 (function() {
   'use strict';
 
-  var unic_id = Lampa.Storage.get('lampac_unic_id', '');
+  // Идентичность раздаёт сервер: тогда браузер на телефоне и нативный клиент на приставке
+  // попадают в ОДНУ область данных. Пустая строка — сервер её не раздаёт (accsdb уже выдал
+  // каждому свою), и тогда работает прежний случайный идентификатор.
+  var server_uid = '{uid}';
+  var unic_id = server_uid;
+
   if (!unic_id) {
-    unic_id = Lampa.Utils.uid(8).toLowerCase();
-    Lampa.Storage.set('lampac_unic_id', unic_id);
+    unic_id = Lampa.Storage.get('lampac_unic_id', '');
+    if (!unic_id) {
+      unic_id = Lampa.Utils.uid(8).toLowerCase();
+      Lampa.Storage.set('lampac_unic_id', unic_id);
+    }
   }
 	
   function _classCallCheck(instance, Constructor) {
@@ -49,6 +57,11 @@
 		Lampa.Listener.follow('lampac', function(e) {
           if (e.type == 'timecode_pullFromServer') _this.update();
         });
+        // Шина синхронизации: сервер рассылает 'timecode' всем, кроме автора записи,
+        // поэтому своё же эхо здесь не приходит и цикла записи нет.
+        document.addEventListener('lwsEvent', function(e) {
+          if (e.detail && e.detail.name == 'timecode') _this.update();
+        });
       }
     }, {
       key: "url",
@@ -60,13 +73,15 @@
           id: 0
         };
         var card_id = (card.id || 0) + '_' + (card.name ? 'tv' : 'movie');
-        var uid = Lampa.Storage.get('lampac_unic_id', '');
+        var uid = unic_id;
         var token = '{token}';
 		
         if (token != ''){
           if (url.indexOf('token=') == -1) url = Lampa.Utils.addUrlComponent(url, 'token=' + token);
         }
-		if (account.email){
+		// account_email стоит в getuid раньше uid, поэтому при розданной сервером идентичности
+		// его слать нельзя: вход в куб уводил бы в другую область, а выход возвращал обратно.
+		if (account.email && !server_uid){
 		  if (url.indexOf('account_email=') == -1) url = Lampa.Utils.addUrlComponent(url, 'account_email=' + encodeURIComponent(account.email));
 		}
 		if (uid){
@@ -77,6 +92,11 @@
         if (profile_id != '') url = Lampa.Utils.addUrlComponent(url, 'profile_id='+profile_id);
 		
         url = Lampa.Utils.addUrlComponent(url, 'card_id=' + encodeURIComponent(card_id));
+
+        // Своё соединение — чтобы сервер не прислал нам обратно нашу же запись.
+        var connectionId = window.lwsEvent && window.lwsEvent.connectionId;
+        if (connectionId) url = Lampa.Utils.addUrlComponent(url, 'connectionId=' + encodeURIComponent(connectionId));
+
         return url;
       }
     }, {

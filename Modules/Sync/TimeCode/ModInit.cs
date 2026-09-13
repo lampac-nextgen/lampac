@@ -4,6 +4,7 @@ using Shared.Models.AppConf;
 using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
+using SyncEvents;
 using System.Collections.Generic;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -30,11 +31,21 @@ public class ModInit : IModuleLoaded, IModuleConfigure
             CoreInit.conf.WAF.limit_map.Insert(0, m);
 
         SqlContext.Initialization(baseconf.app.ApplicationServices);
+
+        // Без шины запись, сделанная на одном устройстве, доезжает до остальных только при
+        // следующем открытии карточки. Отправителя NwsEvents из рассылки исключает сам.
+        NwsEvents.Start(onlyreg: true);
+
+        // 2 = типизированные колонки, identity, надгробия, курсор updated_at.
+        // 1 был блобом road под хешем и нативным клиентом не поддерживается.
+        ModuleCapabilities.Set("timecode", 2);
     }
 
     public void Dispose()
     {
         EventListener.UpdateInitFile -= updateConf;
+        ModuleCapabilities.Remove("timecode");
+        NwsEvents.Stop();
     }
 
     void updateConf()

@@ -7,6 +7,7 @@ using System.Linq;
 using Shared.Services.Utilities;
 using Shared.Services;
 using Shared.Attributes;
+using Shared.Models.Module;
 
 namespace Core.Controllers;
 
@@ -76,6 +77,33 @@ public class ApiController : BaseController
     [AllowAnonymous]
     [Route("/api/myip")]
     public ActionResult MyIP() => Content(requestInfo.IP);
+    #endregion
+
+    #region Capabilities
+    /// <summary>
+    /// Что этот сервер умеет для нативного клиента. Возможности заявляют сами модули
+    /// (<see cref="ModuleCapabilities"/>), поэтому выключенный модуль тут не появится.
+    /// </summary>
+    [HttpGet]
+    [AllowAnonymous]
+    [Route("/api/capabilities")]
+    public ActionResult Capabilities()
+    {
+        SetHeadersNoCache();
+
+        return Json(new
+        {
+            lampac = true,
+            version = versionHash,
+            // Область данных, в которую попадёт этот клиент. null = сервер не принял
+            // идентичность, и включать синхронизацию нельзя: писать будет некуда.
+            uid = requestInfo.user_uid,
+            // Идентичность для клиента, у которого своей нет: так телефон и приставка попадают
+            // в одну область. null там, где accsdb уже раздал каждому свою.
+            assignedUid = InstanceIdentity.Assigned,
+            features = ModuleCapabilities.All
+        });
+    }
     #endregion
 
     #region Chromium

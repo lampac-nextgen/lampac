@@ -214,7 +214,38 @@ static class DatabaseStore
         public string table;
         public string semaphore;
         public bool timecode;
+
+        /// <summary>Колонка, по которой сортируем и берём MAX.</summary>
+        public string updatedColumn = "updated";
+
+        /// <summary>Как показать её строкой: у TimeCode это мс, а не ISO-текст.</summary>
+        public Func<string, string> updatedText = expression => expression;
     }
+
+    /// <summary>
+    /// TimeCode хранит таймкод типизированными колонками, а редактор правит road-объект Lampa —
+    /// тот же контракт, что у легаси `/timecode/all`. Собираем его на стороне SQLite.
+    /// </summary>
+    const string TimeCodeRoad = "json_object('duration', duration, 'time', position, 'percent', percent, 'profile', profile, 'updated', watched_at)";
+
+    static string TimeCodeStamp(string expression) => $"strftime('%Y-%m-%dT%H:%M:%SZ', {expression} / 1000, 'unixepoch')";
+
+    /// <summary>Обратная операция к <see cref="TimeCodeRoad"/>: road из редактора → колонки.</summary>
+    const string TimeCodeColumns = "position, duration, percent, profile, watched_at";
+
+    const string TimeCodeValues =
+        "COALESCE(json_extract(@data, '$.time'), 0), " +
+        "COALESCE(json_extract(@data, '$.duration'), 0), " +
+        "COALESCE(json_extract(@data, '$.percent'), 0), " +
+        "COALESCE(json_extract(@data, '$.profile'), 0), " +
+        "COALESCE(json_extract(@data, '$.updated'), 0)";
+
+    const string TimeCodeAssignments =
+        "position = COALESCE(json_extract(@data, '$.time'), 0), " +
+        "duration = COALESCE(json_extract(@data, '$.duration'), 0), " +
+        "percent = COALESCE(json_extract(@data, '$.percent'), 0), " +
+        "profile = COALESCE(json_extract(@data, '$.profile'), 0), " +
+        "watched_at = COALESCE(json_extract(@data, '$.updated'), 0)";
 
     sealed class MediaMetadata
     {
@@ -243,7 +274,9 @@ static class DatabaseStore
         path = Path.Combine("database", "TimeCode.sql"),
         table = "timecodes",
         semaphore = "TimeCode",
-        timecode = true
+        timecode = true,
+        updatedColumn = "updated_at",
+        updatedText = TimeCodeStamp
     };
 
     public static async Task<List<DatabaseSummary>> GetSummaryAsync()
@@ -305,8 +338,8 @@ static class DatabaseStore
         await using (var command = connection.CreateCommand())
         {
             command.CommandText = spec.timecode
-                ? $"SELECT Id, user, card, item, length(data), data, updated FROM {spec.table}{where} ORDER BY updated DESC, Id DESC LIMIT @limit OFFSET @offset;"
-                : $"SELECT Id, user, length(data), substr(data, 1, 420), updated FROM {spec.table}{where} ORDER BY updated DESC, Id DESC LIMIT @limit OFFSET @offset;";
+                ? $"SELECT Id, user, card, item, length({TimeCodeRoad}), {TimeCodeRoad}, {spec.updatedText(spec.updatedColumn)} FROM {spec.table}{where} ORDER BY {spec.updatedColumn} DESC, Id DESC LIMIT @limit OFFSET @offset;"
+                : $"SELECT Id, user, length(data), substr(data, 1, 420), {spec.updatedText(spec.updatedColumn)} FROM {spec.table}{where} ORDER BY {spec.updatedColumn} DESC, Id DESC LIMIT @limit OFFSET @offset;";
             AddFilters(command, searchValue, selectedUser);
             command.Parameters.AddWithValue("@limit", pageSize);
             command.Parameters.AddWithValue("@offset", offset);
@@ -361,8 +394,8 @@ static class DatabaseStore
         await using var connection = await OpenAsync(spec);
         await using var command = connection.CreateCommand();
         command.CommandText = spec.timecode
-            ? $"SELECT Id, user, card, item, data, updated FROM {spec.table} WHERE Id = @id LIMIT 1;"
-            : $"SELECT Id, user, data, updated FROM {spec.table} WHERE Id = @id LIMIT 1;";
+            ? $"SELECT Id, user, card, item, {TimeCodeRoad}, {spec.updatedText(spec.updatedColumn)} FROM {spec.table} WHERE Id = @id LIMIT 1;"
+            : $"SELECT Id, user, data, {spec.updatedText(spec.updatedColumn)} FROM {spec.table} WHERE Id = @id LIMIT 1;";
         command.Parameters.AddWithValue("@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow);
@@ -515,18 +548,22 @@ static class DatabaseStore
             using var transaction = connection.BeginTransaction();
             string updated = DateTime.UtcNow.ToString("O");
 
+            // Правка из админки обязана поднять курсор выше всех строк пользователя, иначе
+            // клиенты её не увидят: дельты они спрашивают по `updated_at > since`.
+            string stamp = $"MAX(strftime('%s', 'now') * 1000, (SELECT COALESCE(MAX(updated_at), 0) + 1 FROM {spec.table} WHERE user = @user))";
+
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             if (id == 0)
             {
                 command.CommandText = spec.timecode
-                    ? $"INSERT INTO {spec.table} (user, card, item, data, updated) VALUES (@user, @card, @item, @data, @updated); SELECT last_insert_rowid();"
+                    ? $"INSERT INTO {spec.table} (user, card, item, {TimeCodeColumns}, updated_at) VALUES (@user, @card, @item, {TimeCodeValues}, {stamp}); SELECT last_insert_rowid();"
                     : $"INSERT INTO {spec.table} (user, data, updated) VALUES (@user, @data, @updated); SELECT last_insert_rowid();";
             }
             else
             {
                 command.CommandText = spec.timecode
-                    ? $"UPDATE {spec.table} SET user = @user, card = @card, item = @item, data = @data, updated = @updated WHERE Id = @id;"
+                    ? $"UPDATE {spec.table} SET user = @user, card = @card, item = @item, {TimeCodeAssignments}, updated_at = {stamp} WHERE Id = @id;"
                     : $"UPDATE {spec.table} SET user = @user, data = @data, updated = @updated WHERE Id = @id;";
                 command.Parameters.AddWithValue("@id", id);
             }
@@ -538,7 +575,8 @@ static class DatabaseStore
                 command.Parameters.AddWithValue("@item", item);
             }
             command.Parameters.AddWithValue("@data", data);
-            command.Parameters.AddWithValue("@updated", updated);
+            if (!spec.timecode)
+                command.Parameters.AddWithValue("@updated", updated);
 
             if (id == 0)
                 id = Convert.ToInt64(await command.ExecuteScalarAsync());
@@ -1362,7 +1400,7 @@ static class DatabaseStore
 
         await using var connection = await OpenAsync(spec);
         await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT COUNT(*), MAX(updated) FROM {spec.table};";
+        command.CommandText = $"SELECT COUNT(*), {spec.updatedText($"MAX({spec.updatedColumn})")} FROM {spec.table};";
         await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow);
         if (await reader.ReadAsync())
         {
@@ -1411,7 +1449,7 @@ static class DatabaseStore
         {
             searchValue = "%" + query.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
             clauses.Add(spec.timecode
-                ? "(CAST(Id AS TEXT) LIKE @search ESCAPE '\\' OR user LIKE @search ESCAPE '\\' COLLATE NOCASE OR card LIKE @search ESCAPE '\\' COLLATE NOCASE OR item LIKE @search ESCAPE '\\' COLLATE NOCASE OR data LIKE @search ESCAPE '\\' COLLATE NOCASE)"
+                ? "(CAST(Id AS TEXT) LIKE @search ESCAPE '\\' OR user LIKE @search ESCAPE '\\' COLLATE NOCASE OR identity LIKE @search ESCAPE '\\' COLLATE NOCASE OR card LIKE @search ESCAPE '\\' COLLATE NOCASE OR item LIKE @search ESCAPE '\\' COLLATE NOCASE)"
                 : "(CAST(Id AS TEXT) LIKE @search ESCAPE '\\' OR user LIKE @search ESCAPE '\\' COLLATE NOCASE OR data LIKE @search ESCAPE '\\' COLLATE NOCASE)");
         }
 
