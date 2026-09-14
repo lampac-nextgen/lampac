@@ -1,4 +1,4 @@
-using Microsoft.Data.Sqlite;
+﻿using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using System;
@@ -93,6 +93,10 @@ public class SqlContext : DbContext
         if (!HasColumn("timecodes", "data"))
             return;
 
+        // Одной транзакцией: на середине замены падение оставило бы базу без исходной таблицы.
+        // DDL в SQLite транзакционен, поэтому откатывается и создание таблиц.
+        using var transaction = db.Database.BeginTransaction();
+
         // Форма должна совпадать с SqlModel — EF создаёт её сам только на чистой установке.
         db.Database.ExecuteSqlRaw("DROP TABLE IF EXISTS timecodes_migrated;");
 
@@ -131,10 +135,10 @@ public class SqlContext : DbContext
                 0,
                 COALESCE(json_extract(data, '$.updated'), 0),
                 CAST((julianday(updated) - 2440587.5) * 86400000 AS INTEGER),
-                NULLIF(json_remove(data, '$.time', '$.duration', '$.percent', '$.profile', '$.updated', '$.hash'), '{}')
+                NULLIF(json_remove(data, '$.time', '$.duration', '$.percent', '$.profile', '$.updated', '$.hash'), {0})
             FROM timecodes
             WHERE json_valid(data);
-            """);
+            """, "{}");
 
         db.Database.ExecuteSqlRaw("DROP TABLE timecodes;");
         db.Database.ExecuteSqlRaw("ALTER TABLE timecodes_migrated RENAME TO timecodes;");
@@ -146,6 +150,8 @@ public class SqlContext : DbContext
             CREATE UNIQUE INDEX IF NOT EXISTS IX_timecodes_user_identity ON timecodes (user, identity) WHERE identity IS NOT NULL;
             CREATE INDEX IF NOT EXISTS IX_timecodes_user_updated_at ON timecodes (user, updated_at);
             """);
+
+        transaction.Commit();
 
         Serilog.Log.Information("{Module} legacy blob migrated to typed columns", "TimeCode");
     }
