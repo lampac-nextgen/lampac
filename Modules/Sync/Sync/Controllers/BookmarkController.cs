@@ -319,6 +319,219 @@ public class BookmarkController : BaseController
     #endregion
 
 
+    #region /bookmark/dump
+    /// <summary>
+    /// Все закладки пользователя построчно. Для нативного клиента: ему не нужен объект Lampa
+    /// целиком, ему нужны карточки и курсор, с которого дальше идут дельты.
+    /// </summary>
+    [HttpGet]
+    [Route("/bookmark/dump")]
+    async public Task<ActionResult> Dump()
+    {
+        if (string.IsNullOrEmpty(requestInfo.user_uid))
+            return JsonFailure();
+
+        string userUid = getUserid(requestInfo, HttpContext);
+
+        using (var sqlDb = SqlContext.Create())
+        {
+            var rows = await sqlDb.bookmarks.AsNoTracking()
+                .Where(i => i.user == userUid)
+                .OrderBy(i => i.updated_at)
+                .ToListAsync();
+
+            // Собираем Newtonsoft'ом и отдаём текстом: карточка и категории — это готовый JSON,
+            // а сериализатор ответа разбирает JObject как перечисление токенов и роняет значения.
+            return ContentTo(new JObject
+            {
+                ["version"] = rows.Count == 0 ? 0 : rows[^1].updated_at,
+                ["rows"] = new JArray(rows.Select(WireRow))
+            }.ToString(Formatting.None));
+        }
+    }
+    #endregion
+
+    #region /bookmark/changelog
+    /// <summary>
+    /// Дельты: <c>updated_at &gt; since</c>. Строго «больше» корректно потому, что курсор монотонен
+    /// внутри пользователя.
+    /// </summary>
+    [HttpGet]
+    [Route("/bookmark/changelog")]
+    async public Task<ActionResult> Changelog(long since, int limit = 5000)
+    {
+        if (string.IsNullOrEmpty(requestInfo.user_uid))
+            return JsonFailure();
+
+        string userUid = getUserid(requestInfo, HttpContext);
+        limit = Math.Clamp(limit, 1, 20000);
+
+        using (var sqlDb = SqlContext.Create())
+        {
+            var rows = await sqlDb.bookmarks.AsNoTracking()
+                .Where(i => i.user == userUid && i.updated_at > since)
+                .OrderBy(i => i.updated_at)
+                .Take(limit)
+                .ToListAsync();
+
+            return ContentTo(new JObject
+            {
+                // Курсор двигается только по отданному, иначе усечённый по limit хвост потеряется.
+                ["version"] = rows.Count == 0 ? since : rows[^1].updated_at,
+                ["truncated"] = rows.Count == limit,
+                ["rows"] = new JArray(rows.Select(WireRow))
+            }.ToString(Formatting.None));
+        }
+    }
+    #endregion
+
+    #region /bookmark/sync
+    /// <summary>
+    /// Запись для нативных клиентов: строка описывает желаемое состояние одной карточки целиком.
+    /// Пустые категории — удаление, отдельного эндпоинта нет. Имя не <c>set</c>, потому что тот
+    /// занят другим смыслом: он заменяет категорию списком, а не карточку описанием.
+    /// </summary>
+    [HttpPost]
+    [Route("/bookmark/sync")]
+    async public Task<ActionResult> SyncRows(string connectionId)
+    {
+        if (string.IsNullOrEmpty(requestInfo.user_uid))
+            return JsonFailure();
+
+        string body;
+        using (var reader = new StreamReader(Request.Body, Encoding.UTF8, false, PoolInvk.bufferSizeStreamReader, leaveOpen: true))
+            body = await reader.ReadToEndAsync();
+
+        if (string.IsNullOrWhiteSpace(body))
+            return JsonFailure("body");
+
+        JToken token;
+        try { token = JsonConvert.DeserializeObject<JToken>(body); }
+        catch { return JsonFailure("body"); }
+
+        var incoming = new List<JObject>();
+        if (token is JArray array)
+            incoming.AddRange(array.Children<JObject>());
+        else if (token is JObject single)
+        {
+            if (single["rows"] is JArray nested)
+                incoming.AddRange(nested.Children<JObject>());
+            else
+                incoming.Add(single);
+        }
+
+        if (incoming.Count == 0)
+            return JsonFailure("rows");
+
+        string userUid = getUserid(requestInfo, HttpContext);
+        var semaphore = new SemaphorManager(SqlContext.SemaphoreKeyFor(userUid), TimeSpan.FromSeconds(30));
+
+        long version = 0;
+        int accepted = 0, skipped = 0;
+
+        try
+        {
+            if (!await semaphore.WaitAsync())
+                return JsonFailure("semaphore");
+
+            using (var sqlDb = SqlContext.Create())
+            {
+                long stamp = NextStamp(sqlDb, userUid);
+                // Курсор на момент входа: его же возвращаем, когда не приняли ничего, чтобы
+                // клиент не откатил свой `since` в ноль.
+                version = stamp - 1;
+
+                var rows = sqlDb.bookmarks.Where(i => i.user == userUid).ToList();
+                var byId = rows.ToDictionary(i => i.card_id, StringComparer.Ordinal);
+
+                foreach (var item in incoming)
+                {
+                    string cardId = item.Value<string>("id")?.Trim();
+                    if (string.IsNullOrEmpty(cardId))
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    string categories = (item["categories"] as JObject)?.ToString(Formatting.None) ?? "{}";
+                    string card = (item["card"] as JObject)?.ToString(Formatting.None);
+                    long changedAt = item.Value<long?>("changed_at") ?? 0;
+
+                    byId.TryGetValue(cardId, out var row);
+
+                    // Оба штампа ненулевые и входящий старше — это догнавшая нас старая правда.
+                    if (row != null && changedAt > 0 && row.changed_at > 0 && changedAt < row.changed_at)
+                    {
+                        skipped++;
+                        continue;
+                    }
+
+                    if (row == null)
+                    {
+                        sqlDb.bookmarks.Add(new SyncUserBookmarkSqlModel
+                        {
+                            user = userUid,
+                            card_id = cardId,
+                            card = card,
+                            categories = categories,
+                            changed_at = changedAt > 0 ? changedAt : stamp,
+                            updated_at = stamp
+                        });
+                    }
+                    else
+                    {
+                        row.categories = categories;
+                        if (card != null)
+                            row.card = card;
+                        row.changed_at = changedAt > 0 ? changedAt : stamp;
+                        row.updated_at = stamp;
+                        sqlDb.bookmarks.Update(row);
+                    }
+
+                    accepted++;
+                }
+
+                if (accepted > 0)
+                {
+                    sqlDb.SaveChanges();
+                    version = stamp;
+                }
+            }
+        }
+        catch
+        {
+            return JsonFailure();
+        }
+        finally
+        {
+            semaphore.Release();
+        }
+
+        if (accepted > 0)
+        {
+            // Отправителя шина исключает сама, поэтому своё же эхо сюда не возвращается.
+            _ = NwsEvents.SendAsync(connectionId, requestInfo.user_uid, "bookmark", JsonConvertPool.SerializeObject(new
+            {
+                type = "sync",
+                profile_id = getProfileid(requestInfo, HttpContext),
+                version
+            })).ConfigureAwait(false);
+        }
+
+        return Json(new { success = accepted > 0 || skipped > 0, version, accepted, skipped });
+    }
+
+    static JObject WireRow(SyncUserBookmarkSqlModel i)
+        => new()
+        {
+            ["id"] = i.card_id,
+            ["card"] = string.IsNullOrEmpty(i.card) ? null : JToken.Parse(i.card),
+            ["categories"] = ParseObject(i.categories),
+            ["changed_at"] = i.changed_at,
+            ["updated_at"] = i.updated_at
+        };
+    #endregion
+
     #region Utilities
     static string getUserid(RequestModel requestInfo, HttpContext httpContext)
     {

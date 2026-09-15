@@ -37,8 +37,9 @@ public class ModInit : IModuleLoaded, IModuleConfigure
 
         SqlContext.Initialization(baseconf.app.ApplicationServices);
 
-        // 1 = закладки одним JSON-блобом на пользователя, без ревизий и надгробий.
-        ModuleCapabilities.Set("bookmarks", 1);
+        // 2 = строка на карточку, надгробия, курсор updated_at, dump/changelog/sync.
+        // 1 был одним JSON-блобом на пользователя и нативным клиентом не поддерживается.
+        ModuleCapabilities.Set("bookmarks", 2);
     }
 
     public void Dispose()
