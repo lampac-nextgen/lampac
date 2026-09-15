@@ -75,6 +75,25 @@
         });
       }
     }, {
+      /**
+       * Имя области данных на сервере. Основной профиль куба не шлёт ничего: его область — общая,
+       * она уже накоплена, и двигать её нельзя. Остальные шлют номер профиля куба — нативный
+       * клиент называет профиль так же, поэтому два клиента сходятся без договорённости.
+       */
+      key: "profileId",
+      value: function profileId() {
+        var manual = Lampa.Storage.get('lampac_profile_id', '');
+        if (manual !== '' && manual !== 0) return String(manual);
+
+        try {
+          var permit = Lampa.Account.Permit;
+          if (!permit.sync) return '';
+          var profile = permit.account.profile;
+          if (!profile || !profile.id || profile.main) return '';
+          return String(profile.id);
+        } catch (e) { return ''; }
+      }
+    }, {
       key: "url",
       value: function url(method) {
         var url = this.localhost + 'timecode/' + method;
@@ -99,7 +118,7 @@
 		  if (url.indexOf('uid=') == -1) url = Lampa.Utils.addUrlComponent(url, 'uid=' + encodeURIComponent(uid));
 		}
 		
-		var profile_id = Lampa.Storage.get('lampac_profile_id', '');
+		var profile_id = this.profileId();
         if (profile_id != '') url = Lampa.Utils.addUrlComponent(url, 'profile_id='+profile_id);
 		
         url = Lampa.Utils.addUrlComponent(url, 'card_id=' + encodeURIComponent(card_id));
@@ -171,7 +190,7 @@
         else if (account.email && !server_uid) url = Lampa.Utils.addUrlComponent(url, 'account_email=' + encodeURIComponent(account.email));
         else url = Lampa.Utils.addUrlComponent(url, 'uid=' + encodeURIComponent(unic_id));
 
-        var profile_id = Lampa.Storage.get('lampac_profile_id', '');
+        var profile_id = this.profileId();
         if (profile_id != '') url = Lampa.Utils.addUrlComponent(url, 'profile_id=' + profile_id);
 
         var connectionId = window.lwsEvent && window.lwsEvent.connectionId;
