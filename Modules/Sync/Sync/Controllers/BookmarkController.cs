@@ -118,7 +118,7 @@ public class BookmarkController : BaseController
 
                     IsDbInitialization = sqlDb.bookmarks.AsNoTracking().FirstOrDefault(i => i.user == userUid) != null;
 
-                    var (entity, data) = LoadBookmarks(sqlDb, userUid, createIfMissing: true);
+                    var data = LoadBookmarks(sqlDb, userUid);
 
                     foreach (var job in jobs)
                     {
@@ -140,7 +140,7 @@ public class BookmarkController : BaseController
 
                     EnsureDefaultArrays(data);
 
-                    Save(sqlDb, entity, data);
+                    Save(sqlDb, userUid, data);
                 }
             }
             catch
@@ -193,7 +193,8 @@ public class BookmarkController : BaseController
 
             using (var sqlDb = SqlContext.Create())
             {
-                var (entity, data) = LoadBookmarks(sqlDb, getUserid(requestInfo, HttpContext), createIfMissing: true);
+                string userUid = getUserid(requestInfo, HttpContext);
+                var data = LoadBookmarks(sqlDb, userUid);
                 bool changed = false;
 
                 foreach (var payload in readBody.payloads)
@@ -213,7 +214,7 @@ public class BookmarkController : BaseController
 
                 if (changed)
                 {
-                    Save(sqlDb, entity, data);
+                    Save(sqlDb, userUid, data);
 
                     if (readBody.token != null)
                     {
@@ -265,9 +266,8 @@ public class BookmarkController : BaseController
 
             using (var sqlDb = SqlContext.Create())
             {
-                var (entity, data) = LoadBookmarks(sqlDb, getUserid(requestInfo, HttpContext), createIfMissing: false);
-                if (entity == null)
-                    return JsonSuccess();
+                string userUid = getUserid(requestInfo, HttpContext);
+                var data = LoadBookmarks(sqlDb, userUid);
 
                 bool changed = false;
 
@@ -289,7 +289,7 @@ public class BookmarkController : BaseController
 
                 if (changed)
                 {
-                    Save(sqlDb, entity, data);
+                    Save(sqlDb, userUid, data);
 
                     if (readBody.token != null)
                     {
@@ -344,49 +344,80 @@ public class BookmarkController : BaseController
         if (string.IsNullOrEmpty(requestInfo.user_uid))
             return CreateDefaultBookmarks();
 
-        string user_id = getUserid(requestInfo, HttpContext);
-        var entity = sqlDb.bookmarks.AsNoTracking().FirstOrDefault(i => i.user == user_id);
-        var data = entity != null ? DeserializeBookmarks(entity.data) : CreateDefaultBookmarks();
+        return LoadBookmarks(sqlDb, getUserid(requestInfo, HttpContext));
+    }
+
+    /// <summary>
+    /// Строки → прежний объект Lampa. Контракт веба не изменился, изменилось только хранилище:
+    /// порядок внутри категории восстанавливается по метке времени, чем свежее — тем ближе к началу.
+    /// </summary>
+    static JObject LoadBookmarks(SqlContext sqlDb, string userUid)
+    {
+        var data = CreateDefaultBookmarks();
+        if (string.IsNullOrEmpty(userUid))
+            return data;
+
+        var rows = sqlDb.bookmarks.AsNoTracking().Where(i => i.user == userUid).ToList();
+        var order = new Dictionary<string, List<(string id, long at)>>(StringComparer.Ordinal);
+        var cards = new List<(JObject card, long at)>(rows.Count);
+
+        foreach (var row in rows)
+        {
+            var owned = ParseObject(row.categories);
+
+            // Пустой объект категорий — надгробие: карточку убрали отовсюду, показывать её нечему.
+            if (!owned.HasValues)
+                continue;
+
+            long newest = 0;
+
+            foreach (var pair in owned)
+            {
+                long at = pair.Value?.Value<long>() ?? 0;
+                if (at > newest)
+                    newest = at;
+
+                if (!order.TryGetValue(pair.Key, out var list))
+                    order[pair.Key] = list = new List<(string, long)>();
+
+                list.Add((row.card_id, at));
+            }
+
+            if (!string.IsNullOrEmpty(row.card))
+            {
+                var card = ParseObject(row.card);
+                if (card.HasValues)
+                    cards.Add((card, newest));
+            }
+        }
+
+        var cardArray = GetCardArray(data);
+        foreach (var card in cards.OrderByDescending(i => i.at))
+            cardArray.Add(card.card);
+
+        foreach (var pair in order)
+        {
+            var array = GetCategoryArray(data, pair.Key);
+            foreach (var item in pair.Value.OrderByDescending(i => i.at))
+                array.Add(AsId(item.id));
+        }
+
         EnsureDefaultArrays(data);
         return data;
     }
 
-    static (SyncUserBookmarkSqlModel entity, JObject data) LoadBookmarks(SqlContext sqlDb, string userUid, bool createIfMissing)
-    {
-        JObject data = CreateDefaultBookmarks();
-        SyncUserBookmarkSqlModel entity = null;
-
-        if (!string.IsNullOrEmpty(userUid))
-        {
-            entity = sqlDb.bookmarks.FirstOrDefault(i => i.user == userUid);
-            if (entity != null && !string.IsNullOrEmpty(entity.data))
-                data = DeserializeBookmarks(entity.data);
-        }
-
-        EnsureDefaultArrays(data);
-
-        if (entity == null && createIfMissing && !string.IsNullOrEmpty(userUid))
-            entity = new SyncUserBookmarkSqlModel { user = userUid };
-
-        return (entity, data);
-    }
-
-    static JObject DeserializeBookmarks(string json)
+    static JObject ParseObject(string json)
     {
         if (string.IsNullOrWhiteSpace(json))
-            return CreateDefaultBookmarks();
+            return new JObject();
 
-        try
-        {
-            var job = JsonConvert.DeserializeObject<JObject>(json) ?? new JObject();
-            EnsureDefaultArrays(job);
-            return job;
-        }
-        catch
-        {
-            return CreateDefaultBookmarks();
-        }
+        try { return JObject.Parse(json) ?? new JObject(); }
+        catch { return new JObject(); }
     }
+
+    /// <summary>Lampa хранит идентификаторы числами, когда они числовые, — сохраняем это.</summary>
+    static JToken AsId(string id)
+        => long.TryParse(id, out long numeric) && numeric > 0 ? new JValue(numeric) : new JValue(id);
 
     static JObject CreateDefaultBookmarks()
     {
@@ -579,20 +610,146 @@ public class BookmarkController : BaseController
         return false;
     }
 
-    static void Save(SqlContext sqlDb, SyncUserBookmarkSqlModel entity, JObject data)
+    /// <summary>
+    /// Объект Lampa → строки. Пишутся только изменившиеся: курсор дельт должен двигаться ровно
+    /// там, где что-то поменялось, иначе одна правка выглядит для клиентов как «поменялось всё».
+    ///
+    /// Метка времени у членства сохраняется, пока карточка стоит в категории не первой. Новая
+    /// выдаётся вновь добавленным и тем, кто переехал в начало, — а это единственная перестановка,
+    /// которую Lampa делает (<c>MoveIdToFrontInAllCategories</c>).
+    /// </summary>
+    static void Save(SqlContext sqlDb, string userUid, JObject data)
     {
-        if (entity == null)
+        if (string.IsNullOrEmpty(userUid))
             return;
 
-        entity.data = data.ToString(Formatting.None);
-        entity.updated = DateTime.UtcNow;
+        var rows = sqlDb.bookmarks.Where(i => i.user == userUid).ToList();
+        var byId = rows.ToDictionary(i => i.card_id, StringComparer.Ordinal);
+        long stamp = NextStamp(sqlDb, userUid);
 
-        if (entity.Id == 0)
-            sqlDb.bookmarks.Add(entity);
-        else
-            sqlDb.bookmarks.Update(entity);
+        #region желаемое состояние
+        var cards = new Dictionary<string, string>(StringComparer.Ordinal);
+        foreach (var card in GetCardArray(data).Children<JObject>())
+        {
+            string id = card["id"]?.ToString();
+            if (!string.IsNullOrEmpty(id))
+                cards[id] = card.ToString(Formatting.None);
+        }
 
-        sqlDb.SaveChanges();
+        // Метка членства — ключ порядка, а не время. Голову категории надо знать заранее: «стоит
+        // первым» и «только что переехал в начало» различаются только этим.
+        var front = new Dictionary<string, long>(StringComparer.Ordinal);
+        var stored = new Dictionary<string, JObject>(StringComparer.Ordinal);
+
+        foreach (var row in rows)
+        {
+            var owned = ParseObject(row.categories);
+            stored[row.card_id] = owned;
+
+            foreach (var pair in owned)
+            {
+                long at = pair.Value?.Value<long>() ?? 0;
+                if (!front.TryGetValue(pair.Key, out long top) || at > top)
+                    front[pair.Key] = at;
+            }
+        }
+
+        var wanted = new Dictionary<string, JObject>(StringComparer.Ordinal);
+        foreach (string category in BookmarkCategories)
+        {
+            if (data[category] is not JArray array)
+                continue;
+
+            for (int i = 0; i < array.Count; i++)
+            {
+                string id = array[i]?.ToString();
+                if (string.IsNullOrEmpty(id))
+                    continue;
+
+                if (!wanted.TryGetValue(id, out var owned))
+                    wanted[id] = owned = new JObject();
+
+                long kept = 0;
+                if (stored.TryGetValue(id, out var existing))
+                {
+                    long at = existing[category]?.Value<long>() ?? 0;
+
+                    // Уже стоял в этой категории — метку сохраняем, иначе курсор двигали бы
+                    // строки, которых никто не трогал. Новая нужна только тому, кто реально
+                    // переехал в начало: он теперь первый, а раньше первым был не он.
+                    if (at > 0 && (i > 0 || at >= front.GetValueOrDefault(category)))
+                        kept = at;
+                }
+
+                // Новому нужен ключ выше всех сохранённых, поэтому отсчёт идёт вверх от текущего
+                // курсора, а не вниз: иначе длинный список утопил бы хвост ниже старых меток.
+                owned[category] = kept > 0 ? kept : stamp + (array.Count - i);
+            }
+        }
+        #endregion
+
+        int changed = 0;
+
+        foreach (var pair in wanted)
+        {
+            string categories = pair.Value.ToString(Formatting.None);
+            cards.TryGetValue(pair.Key, out string card);
+
+            if (byId.TryGetValue(pair.Key, out var row))
+            {
+                if (row.categories == categories && (card == null || row.card == card))
+                    continue;
+
+                row.categories = categories;
+                if (card != null)
+                    row.card = card;
+                row.changed_at = stamp;
+                row.updated_at = stamp;
+                sqlDb.bookmarks.Update(row);
+            }
+            else
+            {
+                sqlDb.bookmarks.Add(new SyncUserBookmarkSqlModel
+                {
+                    user = userUid,
+                    card_id = pair.Key,
+                    card = card,
+                    categories = categories,
+                    changed_at = stamp,
+                    updated_at = stamp
+                });
+            }
+
+            changed++;
+        }
+
+        // Пропавшее из объекта — это удаление. Строка остаётся пустым надгробием, иначе следующая
+        // сверка не увидит разницы и вернёт карточку всем клиентам назад.
+        foreach (var row in rows)
+        {
+            if (wanted.ContainsKey(row.card_id) || row.categories == "{}")
+                continue;
+
+            row.categories = "{}";
+            row.changed_at = stamp;
+            row.updated_at = stamp;
+            sqlDb.bookmarks.Update(row);
+            changed++;
+        }
+
+        if (changed > 0)
+            sqlDb.SaveChanges();
+    }
+
+    /// <summary>Курсор обязан строго возрастать: две строки в одну миллисекунду слились бы в одну точку.</summary>
+    static long NextStamp(SqlContext sqlDb, string userUid)
+    {
+        long now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds();
+        long last = sqlDb.bookmarks.AsNoTracking()
+            .Where(i => i.user == userUid)
+            .Max(i => (long?)i.updated_at) ?? 0;
+
+        return now > last ? now : last + 1;
     }
 
     JsonResult JsonSuccess() => Json(new { success = true });
