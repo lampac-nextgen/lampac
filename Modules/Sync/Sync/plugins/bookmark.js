@@ -104,56 +104,136 @@
           return payload;
         }
 
+        var CATEGORIES = ['history','like','watch','wath','book','look','viewed','scheduled','continued','thrown'];
+
+        function readFavorite() {
+          var raw = localStorage.getItem('favorite');
+          if (!raw) return {};
+          try { return JSON.parse(raw) || {}; } catch (e) { return {}; }
+        }
+
+        function ensureArrays(fav) {
+          if (!Array.isArray(fav.card)) fav.card = [];
+          CATEGORIES.forEach(function(category) {
+            if (!Array.isArray(fav[category])) fav[category] = [];
+          });
+        }
+
+        function indexOfId(list, id) {
+          for (var i = 0; i < list.length; i++) {
+            if (String(list[i]) === String(id)) return i;
+          }
+          return -1;
+        }
+
+        function cursor() { return Lampa.Storage.get('lampac_bookmark_version', '0'); }
+        function setCursor(value) { Lampa.Storage.set('lampac_bookmark_version', String(value || 0)); }
+
+        /**
+         * Сверка идёт дельтами: сервер держит строку на карточку и курсор, и присылает только то,
+         * что менялось. Полный список тянем лишь когда курсора ещё нет.
+         */
         function pullFromServer() {
-          if (syncInProgress || Lampa.Storage.field('account_use')) return;
+          if (syncInProgress) return;
           syncInProgress = true;
 
-          ajax('GET', '/list', null, function(status, response) {
-            if (status == 200 && response) {
-              try {
-                var data = JSON.parse(response);
+          var since = cursor();
+          var full = !since || since === '0';
 
-                // Проверяем флаг инициализации базы
-                if (data && data.dbInNotInitialization === true) {
-                  var seed = buildLocalBookmarkSetPayload();
+          ajax('GET', full ? '/dump' : '/changelog?since=' + encodeURIComponent(since), null, function(status, response) {
+            if (status != 200 || !response) { syncInProgress = false; return; }
 
-                  if (seed.length > 0) {
-                    ajax('POST', '/set', seed, function(pstStatus) {
-                      // После отправки — повторный GET /list
-                      ajax('GET', '/list', null, function(st2, resp2) {
-                        if (st2 == 200 && resp2) {
-                          try {
-                            var data2 = JSON.parse(resp2);
-                            if (data2 && typeof data2 === 'object') {
-                              applyBookmarks(data2);
-                            }
-                          } catch (e) {}
-                        }
-                        syncInProgress = false;
-                      });
-                    });
-                    return; // ждём повторного GET
-                  }
+            var data;
+            try { data = JSON.parse(response); } catch (e) { syncInProgress = false; return; }
 
-                  // Если нечего отправлять
-				  syncInProgress = false;
-                  return;
-                }
+            var rows = (data && data.rows) || [];
 
-                // Обычная загрузка
-                if (data && typeof data === 'object') {
-                  applyBookmarks(data);
-                }
-              } catch (e) {}
+            // Пустой сервер при первой сверке — наполняем его тем, что накопилось локально.
+            if (full && rows.length === 0) {
+              var seed = buildLocalBookmarkSetPayload();
+              if (seed.length > 0) ajax('POST', '/set', seed);
+              if (data && data.version) setCursor(data.version);
+              syncInProgress = false;
+              return;
             }
 
+            applyRows(rows, full);
+            if (data && data.version) setCursor(data.version);
             syncInProgress = false;
           });
         }
 
+        /**
+         * Строки сервера → локальный `favorite` СЛИЯНИЕМ, а не заменой.
+         *
+         * Замена целиком была причиной, по которой плагин молчал при включённом кубе: он затирал
+         * бы кубовый список своим. Слияние трогает только те карточки, о которых сервер сказал,
+         * поэтому оба источника уживаются.
+         */
+        function applyRows(rows, full) {
+          if (!rows.length) return;
 
-        function applyBookmarks(data) {
-          Lampa.Storage.set('favorite', data);
+          var fav = readFavorite();
+          ensureArrays(fav);
+
+          var order = {};
+          var changed = false;
+
+          rows.forEach(function(row) {
+            var id = row.id;
+            if (!id) return;
+
+            var categories = row.categories || {};
+            var names = Object.keys(categories);
+
+            if (row.card && names.length) {
+              var at = indexOfId(fav.card.map(function(c) { return c && c.id; }), id);
+              if (at < 0) { fav.card.unshift(row.card); changed = true; }
+              else if (JSON.stringify(fav.card[at]) !== JSON.stringify(row.card)) { fav.card[at] = row.card; changed = true; }
+            }
+
+            CATEGORIES.forEach(function(category) {
+              var at = indexOfId(fav[category], id);
+              var wanted = categories.hasOwnProperty(category);
+
+              if (wanted && at < 0) {
+                fav[category].unshift(isNaN(id) ? id : Number(id));
+                changed = true;
+              }
+              else if (!wanted && at >= 0) {
+                fav[category].splice(at, 1);
+                changed = true;
+              }
+
+              if (wanted) {
+                if (!order[category]) order[category] = {};
+                order[category][String(id)] = categories[category];
+              }
+            });
+
+            // Пустые категории — карточку убрали отовсюду, держать её описание больше незачем.
+            if (!names.length) {
+              var card = indexOfId(fav.card.map(function(c) { return c && c.id; }), id);
+              if (card >= 0) { fav.card.splice(card, 1); changed = true; }
+            }
+          });
+
+          // Порядок сервер знает точно только когда прислал всё: у дельты на руках лишь часть
+          // списка, и сортировать по ней значит перемешать остальное.
+          if (full) {
+            CATEGORIES.forEach(function(category) {
+              var keys = order[category];
+              if (!keys) return;
+              fav[category].sort(function(a, b) { return (keys[String(b)] || 0) - (keys[String(a)] || 0); });
+            });
+            changed = true;
+          }
+
+          if (!changed) return;
+
+          // Через Storage, а не напрямую в localStorage: у Lampa есть свой кеш прочитанного,
+          // и запись мимо него оставляет интерфейс на старых данных до перезагрузки.
+          Lampa.Storage.set('favorite', fav);
           if (Lampa.Favorite.read) Lampa.Favorite.read(true);
           else Lampa.Favorite.init();
         }
@@ -222,13 +302,17 @@
         pullFromServer();
 		
         document.addEventListener('lwsEvent', function(evnt) {
-          if (Lampa.Storage.field('account_use')) return;
           if (evnt.detail.name == 'bookmark'){
             var ob = JSON.parse(evnt.detail.data);
 			if (ob.profile_id && ob.profile_id != '' && Lampa.Storage.get('lampac_profile_id', '') != ob.profile_id)
 				return;
 			if (ob.type == 'set') {
 				setFavoriteField(ob.data);
+				return;
+			}
+			// Нативный клиент прислал строки: что именно — знает только сервер, идём за дельтой.
+			if (ob.type == 'sync') {
+				pullFromServer();
 				return;
 			}
 			if (ob.type != 'add' && ob.type != 'added' && ob.type != 'remove')
