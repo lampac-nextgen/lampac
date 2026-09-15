@@ -201,7 +201,9 @@ public class TimeCodeController : BaseController
             return JsonFailure();
 
         string root = Sanitize(requestInfo.user_uid);
-        string prefix = $"{root}_";
+        // Разделитель, а не подчёркивание: иначе в перепись попадёт пользователь, чьё имя просто
+        // начинается с нашего, — тот самый случай, ради которого разделитель и менялся.
+        string prefix = $"{root}{DataArea.Separator}";
 
         using (var sqlDb = SqlContext.Create())
         {
@@ -566,16 +568,11 @@ public class TimeCodeController : BaseController
 
     string getUserid(RequestModel requestInfo)
     {
-        string user_id = requestInfo.user_uid;
-
-        if (HttpContext.Request.Query.TryGetValue("profile_id", out var profile_id) && !string.IsNullOrEmpty(profile_id) && profile_id != "0")
-            user_id = $"{user_id}_{profile_id}";
-
-        return Sanitize(user_id);
+        HttpContext.Request.Query.TryGetValue("profile_id", out var profile_id);
+        return DataArea.Compose(requestInfo.user_uid, profile_id);
     }
 
-    /// <summary>Отбрасывание идёт посимвольно, поэтому склейка до и после даёт одно и то же.</summary>
-    static string Sanitize(string value) => Regex.Replace(value, "[^a-z0-9\\-_\\.]+", "", RegexOptions.IgnoreCase);
+    static string Sanitize(string value) => DataArea.Sanitize(value);
 
     JsonResult JsonSuccess(long version) => Json(new { success = true, version });
 

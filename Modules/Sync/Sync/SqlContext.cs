@@ -1,4 +1,5 @@
 ﻿using Microsoft.Data.Sqlite;
+using Shared.Services;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Newtonsoft.Json.Linq;
@@ -38,6 +39,7 @@ public class SqlContext : DbContext
         {
             sqlDb.Database.EnsureCreated();
             MigrateLegacyBlob(sqlDb);
+            MigrateProfileAreas(sqlDb);
         }
     }
 
@@ -75,6 +77,69 @@ public class SqlContext : DbContext
         modelBuilder.Entity<SyncUserBookmarkSqlModel>()
                     .HasIndex(t => new { t.user, t.updated_at });
     }
+
+    #region MigrateProfileAreas
+    /// <summary>
+    /// Переименование областей профилей: <c>uid_profile</c> → <c>uid:profile</c>.
+    ///
+    /// Прежний разделитель был неоднозначен — подчёркивание разрешено и в самом идентификаторе
+    /// пользователя, поэтому одно имя означало две разные области. Разбираем старое имя по списку
+    /// известных пользователей, и при совпадении побеждает самый длинный: это и есть тот, чьи
+    /// данные на самом деле. Неразобранное не трогаем — лучше оставить как есть, чем увести
+    /// чужое.
+    /// </summary>
+    static void MigrateProfileAreas(SqlContext db)
+    {
+        var known = DataArea.KnownUsers();
+        if (known.Count == 0)
+            return;
+
+        var existing = new HashSet<string>(StringComparer.Ordinal);
+        var legacy = new List<string>();
+
+        using (var connection = new SqliteConnection(_connection))
+        {
+            connection.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT DISTINCT user FROM bookmarks;";
+
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (reader.IsDBNull(0))
+                    continue;
+
+                string user = reader.GetString(0);
+                existing.Add(user);
+                if (user.Contains('_'))
+                    legacy.Add(user);
+            }
+        }
+
+        int renamed = 0;
+
+        foreach (string user in legacy)
+        {
+            if (!DataArea.TrySplitLegacy(user, known, out string target))
+                continue;
+
+            // Область с новым именем уже есть — сливать две истории молча нельзя.
+            if (existing.Contains(target))
+            {
+                Serilog.Log.Warning(
+                    "{Module} data area {Legacy} not renamed: {Target} already exists", "Sync", user, target);
+                continue;
+            }
+
+            db.Database.ExecuteSqlRaw("UPDATE bookmarks SET user = {0} WHERE user = {1};", target, user);
+            existing.Add(target);
+            renamed++;
+        }
+
+        if (renamed > 0)
+            Serilog.Log.Information("{Module} renamed {Count} profile data area(s)", "Sync", renamed);
+    }
+    #endregion
 
     #region MigrateLegacyBlob
     /// <summary>

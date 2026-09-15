@@ -534,15 +534,7 @@ public class BookmarkController : BaseController
 
     #region Utilities
     static string getUserid(RequestModel requestInfo, HttpContext httpContext)
-    {
-        string user_id = requestInfo.user_uid;
-        string profile_id = getProfileid(requestInfo, httpContext);
-
-        if (!string.IsNullOrEmpty(profile_id))
-            return $"{user_id}_{profile_id}";
-
-        return user_id;
-    }
+        => DataArea.Compose(requestInfo.user_uid, getProfileid(requestInfo, httpContext));
 
     static string getProfileid(RequestModel requestInfo, HttpContext httpContext)
     {
