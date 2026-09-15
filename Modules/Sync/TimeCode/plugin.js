@@ -63,8 +63,16 @@
           if (e.detail && e.detail.name == 'timecode') _this.update();
         });
 
-        // Закладки приезжают не мгновенно: даём синхронизации куба осесть.
-        setTimeout(function() { _this.migrate(); }, 15000);
+        _this.awaitBookmarks(0);
+
+        // Список закладок доступен только в узком окне сразу после входа и нигде не сохраняется.
+        // Поэтому ждём не только на старте: вход может случиться сильно позже.
+        Lampa.Storage.listener.follow('change', function(e) {
+          if (e.name == 'account' || e.name == 'account_bookmarks') {
+            window.lampac_timecode_migrated = false;
+            _this.awaitBookmarks(0);
+          }
+        });
       }
     }, {
       key: "url",
@@ -158,17 +166,29 @@
       }
     }, {
       /**
-       * Опознать отметки, которые лежат локально без идентичности.
+       * Дождаться закладок и только потом разбирать.
        *
-       * Кубовый дамп приходит одними хешами и оседает в localStorage мимо Timeline.update, так что
-       * до сервера не доезжает вовсе. Хеш необратим, но обратимо обратное: у закладок есть карточки
-       * с оригинальными названиями, а хеш считается ровно из них. Перебираем закладки, считаем их
-       * хеши и смотрим, какие из них лежат в file_view.
-       *
-       * Претендент принимается, только если он единственный. Один хеш достаётся двум одноимённым
-       * тайтлам, а `movie/20993` и `tv/20993` — это вообще разные произведения, поэтому выдуманная
-       * идентичность хуже отсутствующей.
+       * Таймлайн куба приезжает первым, закладки — отдельным запросом и позже, причём в
+       * localStorage они не оседают: `Bookmarks.all()` отдаёт то, что лежит в памяти после
+       * `update()`. Поэтому ждём появления, а если их никто не запросил — просим сами.
        */
+      key: "awaitBookmarks",
+      value: function awaitBookmarks(attempt) {
+        var _this5 = this;
+        var ready = 0;
+
+        try { ready = (Lampa.Account.Bookmarks.all() || []).length; } catch (e) {}
+        if (!ready) ready = ((Lampa.Storage.get('favorite', {}) || {}).card || []).length;
+
+        if (ready) return this.migrate();
+        if (attempt > 30) return;
+
+        // Никто не запросил — запрашиваем сами, но один раз.
+        if (attempt === 2) { try { Lampa.Account.Bookmarks.update(); } catch (e) {} }
+
+        setTimeout(function() { _this5.awaitBookmarks(attempt + 1); }, 2000);
+      }
+    }, {
       key: "migrate",
       value: function migrate() {
         var _this4 = this;
@@ -184,11 +204,19 @@
         }, function() {});
       }
     }, {
+      /**
+       * Опознать отметки, которые лежат локально без идентичности.
+       *
+       * Кубовый дамп приходит одними хешами и оседает в localStorage мимо Timeline.update, так что
+       * до сервера не доезжает вовсе. Хеш необратим, но обратимо обратное: у закладок есть карточки
+       * с оригинальными названиями, а хеш считается ровно из них. Перебираем закладки, считаем их
+       * хеши и смотрим, какие из них лежат в file_view.
+       */
       key: "resolve",
       value: function resolve(known) {
         var viewed = Lampa.Storage.cache(this.filename(), 10000, {});
-        var cards = (Lampa.Storage.get('favorite', {}) || {}).card || [];
-        if (!cards.length) return;
+        var index = this.cards();
+        if (!index.length) return;
 
         var claims = {};
 
@@ -201,41 +229,37 @@
           claims[hash].push({ identity: identity, card: card });
         }
 
-        cards.forEach(function(card) {
-          var id = parseInt(card.id, 10);
-          if (!id) return;
-
-          // Тип определяем так же, как сама Lampa: у сериала есть name, у фильма — title.
-          var serial = !!card.name;
-          var original = serial
-            ? (card.original_name || card.original_title)
-            : (card.original_title || card.original_name);
-          if (!original) return;
-
-          if (serial) {
-            for (var season = 0; season <= 50; season++) {
+        index.forEach(function(entry) {
+          if (entry.t === 'tv') {
+            // Настоящее число сезонов, когда закладка его несёт: перебор уже точный.
+            var seasons = entry.s > 0 ? Math.min(entry.s + 1, 60) : 50;
+            for (var season = 0; season <= seasons; season++) {
               for (var episode = 1; episode <= 200; episode++) {
                 claim(
-                  Lampa.Utils.hash([season, season > 10 ? ':' : '', episode, original].join('')),
-                  'tv-' + id + '-s' + season + 'e' + episode,
-                  id + '_tv'
+                  Lampa.Utils.hash([season, season > 10 ? ':' : '', episode, entry.o].join('')),
+                  'tv-' + entry.i + '-s' + season + 'e' + episode,
+                  entry.i + '_tv'
                 );
               }
             }
           }
-          else claim(Lampa.Utils.hash(original), 'movie-' + id, id + '_movie');
+          // Только оригинальное название: локализованное даст чужой хеш.
+          else claim(Lampa.Utils.hash(entry.o), 'movie-' + entry.i, entry.i + '_movie');
         });
 
         var rows = [];
+        var ambiguous = 0;
 
         for (var hash in claims) {
           // У сервера уже есть идентичность — чужую версию не навязываем.
           if (known[hash] && known[hash].id) continue;
-          if (claims[hash].length !== 1) continue;
 
-          var found = claims[hash][0];
-          // Сервер знает строку, но без идентичности: шлём ЕГО значения, иначе запись со старым
-          // штампом будет отброшена целиком и идентичности так и не получит.
+          // Один хеш достаётся двум одноимённым работам, и куб, ключующийся только хешем, хранит
+          // на них ОДНУ строку. У лампака ключ — (пользователь, карточка, хеш), поэтому каждой
+          // найдётся своя: закладка на обе и есть свидетельство, что смотрели обе.
+          var winners = claims[hash];
+          if (winners.length > 1) ambiguous++;
+
           var source = known[hash] || {
             position: viewed[hash].time || 0,
             duration: viewed[hash].duration || 0,
@@ -246,20 +270,24 @@
           // Пустая отметка на той стороне прочтётся как сброс таймлайна.
           if (!(source.percent > 0) && !(source.position > 1)) continue;
 
-          rows.push({
-            id: found.identity,
-            hash: hash,
-            card: found.card,
-            position: source.position || 0,
-            duration: source.duration || 0,
-            percent: source.percent || 0,
-            watched_at: source.watched_at || 0
+          winners.forEach(function(found) {
+            rows.push({
+              id: found.identity,
+              hash: hash,
+              card: found.card,
+              position: source.position || 0,
+              duration: source.duration || 0,
+              percent: source.percent || 0,
+              watched_at: source.watched_at || 0
+            });
           });
         }
 
-        if (!rows.length) return;
+        console.log('Lampac TimeCode', 'cards=' + index.length,
+          'local=' + Object.keys(viewed).length, 'claimed=' + Object.keys(claims).length,
+          'shared=' + ambiguous, 'rows=' + rows.length);
 
-        console.log('Lampac TimeCode', 'resolved ' + rows.length + ' of ' + Object.keys(claims).length + ' claimed hashes');
+        if (!rows.length) return;
 
         var url = this.apiUrl('set');
         // Пачками: у /timecode/ стоит лимит 10 запросов в секунду.
@@ -275,13 +303,138 @@
         })(0);
       }
     }, {
+      /**
+       * Записать отметку.
+       *
+       * Карточку берём не из текущей активности: дельта из куба прилетает фоном, когда открыта
+       * Главная, и строка легла бы под `0_movie`. Пишем только тогда, когда карточка установлена —
+       * либо открытая страница объясняет этот хеш, либо он уже опознан разбором. Всё остальное
+       * лежит в localStorage и доедет следующим разбором, так что ничего не теряется.
+       */
       key: "add",
       value: function add(e) {
-        var url = this.url('add');
-        this.network.silent(url, false, false, {
-          id: e.data.hash,
-          data: JSON.stringify(e.data.road)
+        var hash = e.data.hash;
+        var road = e.data.road || {};
+        var found = this.identify(hash);
+        if (!found) return;
+
+        $.ajax({
+          url: this.apiUrl('set'),
+          type: 'POST',
+          contentType: 'application/json',
+          data: JSON.stringify({ rows: [{
+            id: found.identity,
+            hash: hash,
+            card: found.card,
+            position: road.time || 0,
+            duration: road.duration || 0,
+            percent: road.percent || 0,
+            watched_at: road.updated || 0
+          }] })
         });
+      }
+    }, {
+      /**
+       * Карточки, по которым опознаются хеши.
+       *
+       * `Bookmarks.all()` живёт только в памяти и на свежей загрузке чаще всего пуст: его
+       * наполняет `update()`, а зовёт его не каждый экран. Поэтому при первом же непустом ответе
+       * складываем компактный индекс в localStorage и дальше опираемся на него — иначе опознание
+       * работало бы через раз, в зависимости от того, успели ли приехать закладки.
+       */
+      key: "cards",
+      value: function cards() {
+        var pool = [];
+        try { pool = pool.concat(Lampa.Account.Bookmarks.all() || []); } catch (e) {}
+        pool = pool.concat((Lampa.Storage.get('favorite', {}) || {}).card || []);
+
+        if (pool.length) {
+          var typesByID = {};
+          pool.forEach(function(card) {
+            var id = parseInt(card.id, 10);
+            if (!id) return;
+            var type = (card.name || card.original_name || card.first_air_date || card.number_of_seasons)
+              ? 'tv' : (card.release_date ? 'movie' : null);
+            if (!type) return;
+            if (!typesByID[id]) typesByID[id] = {};
+            typesByID[id][type] = true;
+          });
+
+          var index = [];
+          var seen = {};
+          pool.forEach(function(card) {
+            var id = parseInt(card.id, 10);
+            if (!id) return;
+            var own = (card.name || card.original_name || card.first_air_date || card.number_of_seasons)
+              ? 'tv' : (card.release_date ? 'movie' : null);
+            // Урезанная закладка несёт только original_title даже у сериала — тип берём из тех
+            // записей того же id, где признаки есть.
+            var types = own ? [own] : Object.keys(typesByID[id] || {});
+            types.forEach(function(type) {
+              var original = type === 'tv'
+                ? (card.original_name || card.original_title)
+                : card.original_title;
+              if (!original) return;
+              var key = type + id + original;
+              if (seen[key]) return;
+              seen[key] = true;
+              index.push({ i: id, t: type, o: original, s: card.number_of_seasons || 0 });
+            });
+          });
+
+          if (index.length) Lampa.Storage.set('lampac_timecode_cards', index);
+          return index;
+        }
+
+        return Lampa.Storage.get('lampac_timecode_cards', []) || [];
+      }
+    }, {
+      /**
+       * Чей это хеш.
+       *
+       * Сначала открытая карточка — она объясняет ЛОКАЛЬНЫЙ просмотр и стоит почти ничего.
+       * Если не объяснила, значит отметка пришла извне: кто-то посмотрел на другом устройстве,
+       * куб прислал дельту, и к открытой странице она отношения не имеет. Тогда ищем среди
+       * закладок — тем же перебором, что и разовый разбор.
+       */
+      key: "identify",
+      value: function identify(hash) {
+        if (this.misses && this.misses[hash]) return null;
+
+        var index = this.cards();
+        for (var i = 0; i < index.length; i++) {
+          var found = this.match(hash, index[i]);
+          if (found) return found;
+        }
+
+        // Запоминаем промах: дельты по неизвестному тайтлу иначе перебирали бы закладки заново.
+        if (!this.misses) this.misses = {};
+        this.misses[hash] = true;
+        return null;
+      }
+    }, {
+      /** Объясняет ли эта карточка данный хеш. Какая это серия, знает только сам хеш. */
+      key: "match",
+      value: function match(hash, entry) {
+        var id = entry.i;
+        if (!id) return null;
+
+        if (entry.t !== 'tv') {
+          return Lampa.Utils.hash(entry.o) === hash
+            ? { identity: 'movie-' + id, card: id + '_movie' }
+            : null;
+        }
+
+        var original = entry.o;
+        var seasons = entry.s > 0 ? Math.min(entry.s + 1, 60) : 50;
+        for (var season = 0; season <= seasons; season++) {
+          for (var episode = 1; episode <= 200; episode++) {
+            if (Lampa.Utils.hash([season, season > 10 ? ':' : '', episode, original].join('')) === hash) {
+              return { identity: 'tv-' + id + '-s' + season + 'e' + episode, card: id + '_tv' };
+            }
+          }
+        }
+        return null;
       }
     }]);
     return Timecode;
