@@ -111,13 +111,28 @@
         return url;
       }
     }, {
+      /**
+       * Имя ящика с прогрессом спрашиваем у самой лампы: она переезжает в профильный ящик по
+       * включённой синхронизации, а не по наличию профиля. Вход без синхронизации разводил нас
+       * по разным ящикам, и плагин переставал видеть то, что пишет лампа.
+       */
       key: "filename",
       value: function filename() {
-        var acc = Lampa.Storage.get('account', '{}');
-        var name = 'file_view' + (acc.profile ? '_' + acc.profile.id : '');
-        if (window.localStorage.getItem(name) === null && acc.profile) {
+        var name = '';
+
+        try { name = Lampa.Timeline.filename(); } catch (e) {}
+
+        if (!name) {
+          var acc = Lampa.Storage.get('account', '{}');
+          name = 'file_view' + (acc.profile ? '_' + acc.profile.id : '');
+        }
+
+        // Лампа копирует накопленное в профильный ящик только в ветке дампа, а мы можем прийти
+        // раньше неё.
+        if (name != 'file_view' && window.localStorage.getItem(name) === null) {
           Lampa.Storage.set(name, Lampa.Arrays.clone(Lampa.Storage.cache('file_view', 10000, {})));
         }
+
         return name;
       }
     }, {
