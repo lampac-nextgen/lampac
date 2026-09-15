@@ -184,6 +184,58 @@ public class TimeCodeController : BaseController
     }
     #endregion
 
+    #region /timecode/areas
+    /// <summary>
+    /// Перепись областей данных этого пользователя: общая плюс по одной на каждый profile_id.
+    ///
+    /// Профиля как сущности у сервера нет — область заводится первой же записью в неё. Поэтому
+    /// «а есть ли такой профиль» спросить не у кого, и вопрос сводится к «а лежит ли там хоть
+    /// что-нибудь». Клиенту это нужно, чтобы показать, куда он попал, и заметить, что два клиента
+    /// назвали один и тот же профиль по-разному и разъехались.
+    /// </summary>
+    [HttpGet]
+    [Route("/timecode/areas")]
+    async public Task<ActionResult> Areas()
+    {
+        if (requestInfo.user_uid == null)
+            return JsonFailure();
+
+        string root = Sanitize(requestInfo.user_uid);
+        string prefix = $"{root}_";
+
+        using (var sqlDb = SqlContext.Create())
+        {
+            var areas = await sqlDb.timecodes
+                .AsNoTracking()
+                .Where(i => i.user == root || i.user.StartsWith(prefix))
+                .GroupBy(i => i.user)
+                .Select(g => new
+                {
+                    user = g.Key,
+                    rows = g.Count(i => !i.deleted),
+                    deleted = g.Count(i => i.deleted),
+                    updated_at = g.Max(i => i.updated_at),
+                    watched_at = g.Max(i => i.watched_at)
+                })
+                .ToListAsync();
+
+            return Json(new
+            {
+                uid = root,
+                areas = areas.OrderByDescending(a => a.rows).Select(a => new
+                {
+                    // Общая область — та, куда пишут клиенты без profile_id.
+                    profile_id = a.user == root ? null : a.user.Substring(prefix.Length),
+                    a.rows,
+                    a.deleted,
+                    a.updated_at,
+                    a.watched_at
+                }).ToArray()
+            });
+        }
+    }
+    #endregion
+
     #region /timecode/set
     /// <summary>
     /// Запись для нативных клиентов. Тело — одна строка, массив строк или <c>{ "rows": [...] }</c>.
@@ -519,8 +571,11 @@ public class TimeCodeController : BaseController
         if (HttpContext.Request.Query.TryGetValue("profile_id", out var profile_id) && !string.IsNullOrEmpty(profile_id) && profile_id != "0")
             user_id = $"{user_id}_{profile_id}";
 
-        return Regex.Replace(user_id, "[^a-z0-9\\-_\\.]+", "", RegexOptions.IgnoreCase);
+        return Sanitize(user_id);
     }
+
+    /// <summary>Отбрасывание идёт посимвольно, поэтому склейка до и после даёт одно и то же.</summary>
+    static string Sanitize(string value) => Regex.Replace(value, "[^a-z0-9\\-_\\.]+", "", RegexOptions.IgnoreCase);
 
     JsonResult JsonSuccess(long version) => Json(new { success = true, version });
 
