@@ -26,6 +26,9 @@ namespace JacRed.Engine
             if (category != null && category.Count > 0)
                 queryString.Append($"&category[]={category.First().Value}");
 
+            if (!string.IsNullOrEmpty(ModInit.conf.webApiKey))
+                queryString.Append($"&apikey={HttpUtility.UrlEncode(ModInit.conf.webApiKey)}");
+
             var root = await Http.Get<JObject>($"{ModInit.conf.webApiHost}/api/v2.0/indexers/all/results?query={HttpUtility.UrlEncode(query)}" + queryString.ToString(), timeoutSeconds: 8);
             if (root == null)
                 return new List<TorrentDetails>();

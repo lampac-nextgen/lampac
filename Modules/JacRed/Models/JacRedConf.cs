@@ -21,6 +21,10 @@ namespace JacRed
 
         public string webApiHost { get; set; }
 
+        /// <summary>API-ключ внешнего JacRed (webApiHost), передаётся как ?apikey=.
+        /// Нужен, если в JacRed задан apikey (политика ApiKeyWhenConfigured, иначе 401).</summary>
+        public string webApiKey { get; set; }
+
         public string filter { get; set; }
 
         public string filter_ignore { get; set; }
