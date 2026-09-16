@@ -15,6 +15,69 @@ public static class Extensions
         return result;
     }
 
+    /// <summary>
+    /// Кестрел допускает в значениях заголовков только ASCII 32..126,
+    /// всё остальное (кириллица в uri, управляющие символы) percent-кодируем.
+    /// </summary>
+    public static string ToHeaderValue(this string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return value;
+
+        bool safe = true;
+        foreach (char c in value)
+        {
+            if (c < 32 || c > 126)
+            {
+                safe = false;
+                break;
+            }
+        }
+
+        if (safe)
+            return value;
+
+        var sb = new System.Text.StringBuilder(value.Length + 16);
+        foreach (byte b in System.Text.Encoding.UTF8.GetBytes(value))
+        {
+            if (b < 32 || b > 126)
+                sb.Append('%').Append(b.ToString("X2"));
+            else
+                sb.Append((char)b);
+        }
+
+        return sb.ToString();
+    }
+
+    /// <summary>
+    /// Заголовки исходящего запроса одной строкой для debug-заголовка PX-ReqHeaders.
+    /// </summary>
+    public static string ToDebugHeaderValue(this System.Net.Http.HttpRequestMessage request)
+    {
+        if (request == null)
+            return null;
+
+        var sb = new System.Text.StringBuilder();
+
+        void append(IEnumerable<KeyValuePair<string, IEnumerable<string>>> headers)
+        {
+            foreach (var h in headers)
+            {
+                if (sb.Length > 0)
+                    sb.Append(" | ");
+
+                sb.Append(h.Key).Append(": ").Append(string.Join(", ", h.Value));
+            }
+        }
+
+        append(request.Headers);
+
+        if (request.Content?.Headers != null)
+            append(request.Content.Headers);
+
+        return sb.ToString().ToHeaderValue();
+    }
+
     public static string ToLowerAndTrim(this string input)
     {
         if (string.IsNullOrEmpty(input))

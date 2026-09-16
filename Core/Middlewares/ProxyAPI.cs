@@ -65,7 +65,7 @@ public partial class ProxyAPI
         #endregion
 
         if (init.showOrigUri)
-            httpContext.Response.Headers["PX-Orig"] = servUri;
+            httpContext.Response.Headers["PX-Orig"] = servUri.ToHeaderValue();
 
         #region proxyHandler
         HttpClientHandler proxyHandler = null;
@@ -98,7 +98,7 @@ public partial class ProxyAPI
         }
 
         if (cacheStream.uriKey != null && init.showOrigUri)
-            httpContext.Response.Headers["PX-CacheStream"] = cacheStream.uriKey;
+            httpContext.Response.Headers["PX-CacheStream"] = cacheStream.uriKey.ToHeaderValue();
 
         if (cacheStream.uriKey != null)
         {
@@ -270,7 +270,10 @@ public partial class ProxyAPI
                             ctsHttp.CancelAfter(TimeSpan.FromSeconds(30));
 
                             if (init.showOrigUri)
-                                httpContext.Response.Headers["PX-Req"] = request.RequestUri.ToString();
+                            {
+                                httpContext.Response.Headers["PX-Req"] = request.RequestUri.AbsoluteUri;
+                                httpContext.Response.Headers["PX-ReqHeaders"] = request.ToDebugHeaderValue();
+                            }
 
                             using (var response = await client.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ctsHttp.Token).ConfigureAwait(false))
                             {

@@ -101,7 +101,7 @@ public partial class ProxyAPI
         var uri = new Uri($"{servUri}{servPath}{httpContext.Request.QueryString.Value}");
 
         if (init.showOrigUri)
-            httpContext.Response.Headers["PX-Orig"] = uri.ToString();
+            httpContext.Response.Headers["PX-Orig"] = uri.AbsoluteUri;
 
         var client = FriendlyHttp.MessageClient(
             "proxy",
@@ -121,7 +121,10 @@ public partial class ProxyAPI
                 }
 
                 if (init.showOrigUri)
-                    httpContext.Response.Headers["PX-Req"] = request.RequestUri.ToString();
+                {
+                    httpContext.Response.Headers["PX-Req"] = request.RequestUri.AbsoluteUri;
+                    httpContext.Response.Headers["PX-ReqHeaders"] = request.ToDebugHeaderValue();
+                }
 
                 using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(httpContext.RequestAborted))
                 {
