@@ -629,10 +629,10 @@ manage_packages() {
     return 0
   else
     if [ "${#packages_to_install[@]}" -gt 0 ]; then
-      apt-get install -y --no-install-recommends "${packages_to_install[@]}"
+      env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages_to_install[@]}"
     fi
     if [ "${#packages_to_upgrade[@]}" -gt 0 ]; then
-      apt-get install -y --only-upgrade "${packages_to_upgrade[@]}"
+      env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade "${packages_to_upgrade[@]}"
     fi
   fi
 }
@@ -645,7 +645,7 @@ install_os_packages() {
   icu_pkg="$(pick_libicu_package)"
     
   run_quiet "Installing system packages (curl, jq, fonts, GStreamer, ICU, ImageMagick, unzip, rsync)" \
-    env DEBIAN_FRONTEND=noninteractive manage_packages \
+    manage_packages \
       ca-certificates curl jq fontconfig \
       gstreamer1.0-libav gstreamer1.0-plugins-bad gstreamer1.0-plugins-base \
       gstreamer1.0-plugins-base-apps gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly \
