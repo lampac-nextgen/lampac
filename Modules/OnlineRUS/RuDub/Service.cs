@@ -57,6 +57,11 @@ public static class RudubRe
     public static readonly Regex PlaylistSpan = new Regex(
         "<span[^>]+data=\"([^\"]+)\"[^>]*>\\s*(\\d+)\\s*сери", RegexOptions.Compiled);
 
+    // Плеер отдаёт список серий не разметкой, а JSON'ом window.PLAYER_CONTEXT:
+    //   "episodes":[{"link":"/s6/<hash>","key":"...","label":"1 серия",...},...]
+    public static readonly Regex ContextEpisode = new Regex(
+        "\"link\"\\s*:\\s*\"([^\"]+)\"[\\s\\S]{0,400}?\"label\"\\s*:\\s*\"(\\d+)\\s*сери", RegexOptions.Compiled);
+
     public static readonly Regex Filename = new Regex("event-filename=\"([^\"]*)\"", RegexOptions.Compiled);
 
     public static readonly Regex PlayerSrc = new Regex(
@@ -964,6 +969,45 @@ public struct RuDubInvoke
 
     static List<RudubEpisode> ParsePlaylist(string html)
     {
+        var outp = ParseContext(html);
+
+        if (outp.Count == 0)
+            outp = ParseSpans(html);
+
+        outp.Sort((a, b) => a.num.CompareTo(b.num));
+        return outp;
+    }
+
+    static List<RudubEpisode> ParseContext(string html)
+    {
+        var outp = new List<RudubEpisode>();
+        if (string.IsNullOrEmpty(html))
+            return outp;
+
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+
+        foreach (Match m in RudubRe.ContextEpisode.Matches(html))
+        {
+            string hash = m.Groups[1].Value.Trim().TrimStart('/');
+
+            if (!RudubRe.Hash.IsMatch(hash))
+                continue;
+
+            if (!seen.Add(hash))
+                continue;
+
+            int.TryParse(m.Groups[2].Value, out int num);
+            if (num <= 0)
+                continue;
+
+            outp.Add(new RudubEpisode() { num = num, hash = hash });
+        }
+
+        return outp;
+    }
+
+    static List<RudubEpisode> ParseSpans(string html)
+    {
         var matches = RudubRe.PlaylistSpan.Matches(html);
         if (matches.Count == 0)
             return new List<RudubEpisode>();
@@ -988,7 +1032,6 @@ public struct RuDubInvoke
             outp.Add(new RudubEpisode() { num = num, hash = hash });
         }
 
-        outp.Sort((a, b) => a.num.CompareTo(b.num));
         return outp;
     }
     #endregion
