@@ -629,10 +629,12 @@ manage_packages() {
     return 0
   else
     if [ "${#packages_to_install[@]}" -gt 0 ]; then
-      env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages_to_install[@]}"
+      run_quiet "Installing system packages (curl, jq, fonts, GStreamer, ICU, ImageMagick, unzip, rsync)" \
+        env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages_to_install[@]}"
     fi
     if [ "${#packages_to_upgrade[@]}" -gt 0 ]; then
-      env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade "${packages_to_upgrade[@]}"
+      run_quiet "Updating system packages (curl, jq, fonts, GStreamer, ICU, ImageMagick, unzip, rsync)" \
+        env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade "${packages_to_upgrade[@]}"
     fi
   fi
 }
@@ -644,14 +646,13 @@ install_os_packages() {
   local icu_pkg
   icu_pkg="$(pick_libicu_package)"
     
-  run_quiet "Installing system packages (curl, jq, fonts, GStreamer, ICU, ImageMagick, unzip, rsync)" \
-    manage_packages \
-      ca-certificates curl jq fontconfig \
-      gstreamer1.0-libav gstreamer1.0-plugins-bad gstreamer1.0-plugins-base \
-      gstreamer1.0-plugins-base-apps gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly \
-      gstreamer1.0-tools \
-      imagemagick libgstreamer-plugins-base1.0-0 libgstreamer1.0-0 \
-      libjpeg-dev libnspr4 libpng-dev libwebp-dev unzip rsync "$icu_pkg"
+  manage_packages \
+    ca-certificates curl jq fontconfig \
+    gstreamer1.0-libav gstreamer1.0-plugins-bad gstreamer1.0-plugins-base \
+    gstreamer1.0-plugins-base-apps gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly \
+    gstreamer1.0-tools \
+    imagemagick libgstreamer-plugins-base1.0-0 libgstreamer1.0-0 \
+    libjpeg-dev libnspr4 libpng-dev libwebp-dev unzip rsync "$icu_pkg"
 
   install_google_chrome
 
