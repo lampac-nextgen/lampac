@@ -581,15 +581,71 @@ install_google_chrome() {
   ln -sf /usr/bin/google-chrome-stable /usr/bin/chromium
 }
 
+# Устанавливает отсутствующие и обновляет устаревшие пакеты из заданного списка.
+#
+# Аргументы:
+#   Все аргументы функции рассматриваются как имена пакетов.
+#
+# Пример использования:
+#   manage_packages curl wget git docker-ce nginx
+manage_packages() {
+# Проверяем, передан ли хотя бы один пакет
+  if [ "$#" -eq 0 ]; then
+    log_err "Package list is empty."
+    return 1
+  fi
+
+  local packages=("$@")
+  local packages_to_install=()
+  local packages_to_upgrade=()
+
+  # Создаем временный файл для хранения списка upgradable-пакетов
+  local upgradable_list=$(mktemp)
+  # Получаем список пакетов, которые можно обновить.
+  # grep отсекает заголовок и предупреждения.
+  apt list --upgradable 2>/dev/null | grep -v "Listing..." > "$upgradable_list"
+
+  # Проходим по каждому пакету из аргументов
+  for pkg in "${packages[@]}"; do
+    # Проверяем, установлен ли пакет
+    if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
+      # Пакет установлен. Проверим, есть ли он в списке на обновление.
+      if grep -E "^$pkg/" "$upgradable_list" &>/dev/null; then
+        packages_to_upgrade+=("$pkg")
+      fi
+    else
+    # Пакет не установлен.
+      packages_to_install+=("$pkg")
+    fi
+  done
+
+  # Удаляем временный файл
+  rm -f "$upgradable_list"
+
+  # Выполняем установку и/или обновление, если это необходимо.
+  # Этот блок выполняется, если хотя бы один из массивов (установки или обновления) не пуст.
+  if [ "${#packages_to_install[@]}" -eq 0 ] && [ "${#packages_to_upgrade[@]}" -eq 0 ]; then
+    log_skip "System packages already installed/upgdraded — skipping"
+    return 0
+  else
+    if [ "${#packages_to_install[@]}" -gt 0 ]; then
+      env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages_to_install[@]}"; then
+    fi
+    if [ "${#packages_to_upgrade[@]}" -gt 0 ]; then
+      env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade "${packages_to_upgrade[@]}"; then
+    fi
+  fi
+}
+
 install_os_packages() {
   run_quiet "Updating package lists" \
     apt-get update
 
   local icu_pkg
   icu_pkg="$(pick_libicu_package)"
-
+    
   run_quiet "Installing system packages (curl, jq, fonts, GStreamer, ICU, ImageMagick, unzip, rsync)" \
-    env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
+    manage_packages \
       ca-certificates curl jq fontconfig \
       gstreamer1.0-libav gstreamer1.0-plugins-bad gstreamer1.0-plugins-base \
       gstreamer1.0-plugins-base-apps gstreamer1.0-plugins-good gstreamer1.0-plugins-ugly \
