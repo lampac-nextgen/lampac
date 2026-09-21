@@ -57,6 +57,7 @@
   </Folder>
   <Folder Name="/Modules/OnlineAnime/">
     <Project Path="Modules/OnlineAnime/AiLiberty/AiLiberty.csproj" />
+    <Project Path="Modules/OnlineAnime/AniDub/AniDub.csproj" />
     <Project Path="Modules/OnlineAnime/AniLiberty/AniLiberty.csproj" />
     <Project Path="Modules/OnlineAnime/AniLibria/AniLibria.csproj" />
     <Project Path="Modules/OnlineAnime/Animebesst/Animebesst.csproj" />
