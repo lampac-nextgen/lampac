@@ -139,12 +139,19 @@ public class AniDubController : BaseOnlineController
             ("origin", result.player)
         );
 
+        // Кадр плеера Lampa создаётся как <video crossorigin="anonymous">, то есть
+        // поток тянется CORS-запросом. CDN sibnet заголовков CORS не отдаёт, и
+        // браузер молча бракует файл («no supported source was found»), хотя сам
+        // запрос проходит и отдаёт 206. Поэтому sibnet гоняем через свой прокси:
+        // он на нашем домене, и CORS там ни при чём.
+        bool proxied = init.streamproxy || result.player == AnidubConf.SibnetHost;
+
         var streamquality = new StreamQualityTpl();
 
         foreach (var variant in result.variants)
-            streamquality.Append(HostStreamProxy(variant.url, headers: headers_stream), variant.label);
+            streamquality.Append(HostStreamProxy(variant.url, headers: headers_stream, force_streamproxy: proxied), variant.label);
 
-        string stream = HostStreamProxy(result.variants[0].url, headers: headers_stream);
+        string stream = HostStreamProxy(result.variants[0].url, headers: headers_stream, force_streamproxy: proxied);
 
         if (play)
             return RedirectToPlay(stream);
@@ -157,7 +164,7 @@ public class AniDubController : BaseOnlineController
             quality: result.variants[0].label,
             vast: init.vast,
             hls_manifest_timeout: 30000,
-            headers: init.streamproxy ? null : headers_stream,
+            headers: proxied ? null : headers_stream,
             httpContext: HttpContext
         ));
     }
