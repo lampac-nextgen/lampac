@@ -4,6 +4,7 @@ using Shared.Services;
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading;
@@ -823,6 +824,45 @@ public struct AniDubInvoke
         return last;
     }
 
+    // Свой HttpClient: HttpHydra отдаёт только тело и не даёт ни задать
+    // диапазон, ни узнать конечный адрес после редиректов.
+    static readonly HttpClient sibHttp = new HttpClient(new HttpClientHandler()
+    {
+        AllowAutoRedirect = true,
+        MaxAutomaticRedirections = 5,
+        UseCookies = false
+    })
+    {
+        Timeout = TimeSpan.FromSeconds(12)
+    };
+
+    // До файла на CDN ведут два редиректа, и тело тут не нужно — хватит одного
+    // байта, важно узнать конечный адрес.
+    static async Task<string> SibnetDirect(string url)
+    {
+        try
+        {
+            using (var req = new HttpRequestMessage(HttpMethod.Get, url))
+            {
+                req.Headers.Referrer = new Uri(AnidubConf.SibnetHost + "/");
+                req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 1);
+
+                using (var res = await sibHttp.SendAsync(req, HttpCompletionOption.ResponseHeadersRead).ConfigureAwait(false))
+                {
+                    if ((int)res.StatusCode == 206 || res.IsSuccessStatusCode)
+                        return res.RequestMessage?.RequestUri?.ToString();
+                }
+            }
+        }
+        catch
+        {
+            // Не разрешилось — отдадим исходный адрес: клиенту, который всё же
+            // шлёт Referer, он подойдёт.
+        }
+
+        return null;
+    }
+
     // Sibnet отдаёт не HLS, а обычный mp4, и путь к файлу лежит в шелле вставки.
     // Ссылку на video.sibnet.ru пускают только с Referer своего же хоста — без
     // него 403, поэтому в player идёт sibnet: Controller соберёт из него
@@ -846,6 +886,15 @@ public struct AniDubInvoke
             file = AnidubConf.SibnetHost + file;
         else if (!file.StartsWith("http", StringComparison.Ordinal))
             return null;
+
+        // Отдавать клиенту адрес video.sibnet.ru бессмысленно: он пускает
+        // только с Referer своего хоста, а плеер его не шлёт — в ответ 403.
+        // Разрешаем оба редиректа здесь и отдаём готовый адрес CDN: он живёт
+        // около восьми часов и никаких заголовков не требует.
+        string direct = await SibnetDirect(file);
+
+        if (!string.IsNullOrEmpty(direct))
+            file = direct;
 
         string label = AnidubUtil.QualityFromRelease(AnidubUtil.First(shell, AnidubRe.SibnetTitle));
 
