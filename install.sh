@@ -629,10 +629,10 @@ manage_packages() {
     return 0
   else
     if [ "${#packages_to_install[@]}" -gt 0 ]; then
-      env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages_to_install[@]}"; then
+      env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends "${packages_to_install[@]}"
     fi
     if [ "${#packages_to_upgrade[@]}" -gt 0 ]; then
-      env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade "${packages_to_upgrade[@]}"; then
+      env DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade "${packages_to_upgrade[@]}"
     fi
   fi
 }
