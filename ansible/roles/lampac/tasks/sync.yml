@@ -1,0 +1,120 @@
+---
+- name: Check whether the unit already exists
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ lampac_service_name }}.service"
+  register: lampac_unit_stat
+
+- name: Sync the release when the version differs
+  when: (lampac_force | bool) or lampac_installed_version != lampac_resolved_version
+  block:
+    - name: Stop Lampac before replacing files
+      ansible.builtin.systemd:
+        name: "{{ lampac_service_name }}"
+        state: stopped
+      when: lampac_unit_stat.stat.exists
+
+    - name: Create a staging directory
+      ansible.builtin.tempfile:
+        state: directory
+        prefix: lampac-stage.
+      register: lampac_stage
+
+    - name: Download the release archive
+      ansible.builtin.get_url:
+        url: "{{ lampac_publish_url }}"
+        dest: "{{ lampac_stage.path }}/release.zip"
+        mode: "0644"
+      retries: 3
+      delay: 2
+
+    - name: Extract the release archive
+      ansible.builtin.unarchive:
+        src: "{{ lampac_stage.path }}/release.zip"
+        dest: "{{ lampac_stage.path }}"
+        remote_src: true
+
+    - name: Remove the release zip from staging
+      ansible.builtin.file:
+        path: "{{ lampac_stage.path }}/release.zip"
+        state: absent
+
+    - name: Flatten a single top-level directory
+      ansible.builtin.shell: |
+        set -euo pipefail
+        staging="{{ lampac_stage.path }}"
+        dir_count=$(find "$staging" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+        if [[ "$dir_count" -eq 1 ]]; then
+          only=$(find "$staging" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+          shopt -s dotglob nullglob
+          mv "$only"/* "$staging"/
+          shopt -u dotglob nullglob
+          rmdir "$only"
+        fi
+      args:
+        executable: /bin/bash
+      changed_when: false
+
+    - name: Require Core.dll in the release
+      ansible.builtin.stat:
+        path: "{{ lampac_stage.path }}/Core.dll"
+      register: lampac_core
+
+    - name: Fail when the release layout is wrong
+      ansible.builtin.fail:
+        msg: "Expected Core.dll not found in the release archive."
+      when: not ansible_check_mode and not lampac_core.stat.exists
+
+    - name: Read excludes.conf
+      ansible.builtin.slurp:
+        src: "{{ lampac_install_root }}/excludes.conf"
+      register: lampac_excludes_file
+      failed_when: false
+
+    - name: Parse excludes.conf
+      ansible.builtin.set_fact:
+        lampac_extra_excludes: >-
+          {{
+            (lampac_excludes_file.content | b64decode).splitlines()
+            | map('trim')
+            | reject('equalto', '')
+            | reject('match', '^#')
+            | list
+            if (lampac_excludes_file.content is defined)
+            else []
+          }}
+
+    - name: Sync release files
+      ansible.builtin.command:
+        argv: "{{ ['rsync', '-a', '--delete', '--itemize-changes'] + ((lampac_rsync_excludes + lampac_extra_excludes) | map('regex_replace', '^', '--exclude=') | list) + [lampac_stage.path ~ '/', lampac_install_root ~ '/'] }}"
+      register: lampac_rsync
+      changed_when: lampac_rsync.stdout | length > 0
+      notify: restart lampac
+
+    - name: Record the installed version
+      ansible.builtin.copy:
+        dest: "{{ lampac_install_root }}/version.txt"
+        content: "{{ lampac_resolved_version }}\n"
+        owner: "{{ lampac_user }}"
+        group: "{{ lampac_user }}"
+        mode: "0644"
+  rescue:
+    - name: Start Lampac again after a failed sync
+      ansible.builtin.systemd:
+        name: "{{ lampac_service_name }}"
+        state: started
+      when: lampac_unit_stat.stat.exists | default(false)
+      failed_when: false
+
+    - name: Surface the sync failure
+      ansible.builtin.fail:
+        msg: >-
+          Release sync failed: {{
+            ansible_failed_result.msg
+            | default(ansible_failed_result.stderr | default('unknown error'))
+          }}
+  always:
+    - name: Remove the staging directory
+      ansible.builtin.file:
+        path: "{{ lampac_stage.path | default('/no/such/lampac-stage', true) }}"
+        state: absent
+      when: lampac_stage is defined

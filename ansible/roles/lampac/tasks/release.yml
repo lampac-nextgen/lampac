@@ -1,0 +1,86 @@
+---
+- name: Resolve the latest stable release
+  when: lampac_version == "latest" and not (lampac_prerelease | bool)
+  block:
+    - name: Fetch the latest GitHub release
+      ansible.builtin.uri:
+        url: "https://api.github.com/repos/{{ lampac_github_repo }}/releases/latest"
+        return_content: true
+        headers:
+          Accept: application/vnd.github+json
+      register: lampac_latest
+
+    - name: Require the latest release asset
+      ansible.builtin.fail:
+        msg: "Latest release has no {{ lampac_release_zip }} asset for {{ lampac_github_repo }}."
+      when: >-
+        lampac_latest.json.assets | selectattr('name', 'equalto', lampac_release_zip) | list | length == 0
+
+    - name: Record the latest release
+      ansible.builtin.set_fact:
+        lampac_resolved_version: "{{ lampac_latest.json.tag_name | regex_replace('^v', '') }}"
+        lampac_publish_url: "{{ (lampac_latest.json.assets | selectattr('name', 'equalto', lampac_release_zip) | map(attribute='browser_download_url') | first) }}"
+
+- name: Resolve the latest pre-release
+  when: lampac_prerelease | bool
+  block:
+    - name: Fetch GitHub releases
+      ansible.builtin.uri:
+        url: "https://api.github.com/repos/{{ lampac_github_repo }}/releases"
+        return_content: true
+        headers:
+          Accept: application/vnd.github+json
+      register: lampac_releases
+
+    - name: Record the latest pre-release
+      ansible.builtin.set_fact:
+        lampac_pre: "{{ lampac_releases.json | selectattr('prerelease') | list }}"
+
+    - name: Require a pre-release asset
+      ansible.builtin.fail:
+        msg: "No pre-release asset named {{ lampac_release_zip }} for {{ lampac_github_repo }}."
+      when: >-
+        lampac_pre | length == 0
+        or (lampac_pre[0].assets | selectattr('name', 'equalto', lampac_release_zip) | list | length) == 0
+
+    - name: Record the pre-release URL
+      ansible.builtin.set_fact:
+        lampac_resolved_version: "{{ lampac_pre[0].tag_name | regex_replace('^v', '') }}"
+        lampac_publish_url: "{{ (lampac_pre[0].assets | selectattr('name', 'equalto', lampac_release_zip) | map(attribute='browser_download_url') | first) }}"
+
+- name: Resolve a pinned tag
+  when: lampac_version != "latest"
+  block:
+    - name: Probe tag asset URLs
+      ansible.builtin.uri:
+        url: "https://github.com/{{ lampac_github_repo }}/releases/download/{{ item }}/{{ lampac_release_zip }}"
+        method: HEAD
+        follow_redirects: all
+        status_code: [200, 302, 404]
+      loop: "{{ [lampac_version | string, (lampac_version | string)[1:]] if (lampac_version | string).startswith('v') else [lampac_version | string, 'v' ~ (lampac_version | string)] }}"
+      register: lampac_tag_probes
+
+    - name: Require a published tag asset
+      ansible.builtin.fail:
+        msg: "Release tag not found for {{ lampac_github_repo }}: {{ lampac_version }} (asset {{ lampac_release_zip }})."
+      when: lampac_tag_probes.results | selectattr('status', 'in', [200, 302]) | list | length == 0
+
+    - name: Record the pinned tag
+      ansible.builtin.set_fact:
+        lampac_resolved_version: "{{ lampac_version | string | regex_replace('^v', '') }}"
+        lampac_publish_url: "https://github.com/{{ lampac_github_repo }}/releases/download/{{ (lampac_tag_probes.results | selectattr('status', 'in', [200, 302]) | first).item }}/{{ lampac_release_zip }}"
+
+- name: Read the installed version
+  ansible.builtin.slurp:
+    src: "{{ lampac_install_root }}/version.txt"
+  register: lampac_version_slurp
+  failed_when: false
+
+- name: Normalize the installed version
+  ansible.builtin.set_fact:
+    lampac_installed_version: >-
+      {{
+        (lampac_version_slurp.content | b64decode | trim | regex_replace('^v', ''))
+        if (lampac_version_slurp.content is defined)
+        else 'N/A'
+      }}

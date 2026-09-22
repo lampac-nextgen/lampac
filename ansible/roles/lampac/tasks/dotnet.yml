@@ -1,0 +1,40 @@
+---
+- name: List installed .NET runtimes
+  ansible.builtin.command:
+    argv:
+      - "{{ lampac_dotnet_root }}/dotnet"
+      - --list-runtimes
+  register: lampac_dotnet_runtimes
+  changed_when: false
+  failed_when: false
+  check_mode: false
+
+- name: Install ASP.NET Core runtime
+  when: >-
+    lampac_dotnet_runtimes.rc != 0
+    or 'Microsoft.AspNetCore.App 10.' not in (lampac_dotnet_runtimes.stdout | default(''))
+  block:
+    - name: Download dotnet-install.sh
+      ansible.builtin.get_url:
+        url: https://dot.net/v1/dotnet-install.sh
+        dest: /tmp/dotnet-install.sh
+        mode: "0755"
+      retries: 3
+      delay: 2
+
+    - name: Run dotnet-install.sh
+      ansible.builtin.command:
+        argv:
+          - bash
+          - /tmp/dotnet-install.sh
+          - --channel
+          - "{{ lampac_dotnet_channel }}"
+          - --runtime
+          - aspnetcore
+          - --install-dir
+          - "{{ lampac_dotnet_root }}"
+
+    - name: Remove dotnet-install.sh
+      ansible.builtin.file:
+        path: /tmp/dotnet-install.sh
+        state: absent

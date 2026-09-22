@@ -1,0 +1,43 @@
+---
+- name: Refuse removal without lampac_confirm_remove
+  ansible.builtin.fail:
+    msg: "Refusing to remove Lampac. Re-run with -e lampac_confirm_remove=true."
+  when: not (lampac_confirm_remove | bool)
+
+- name: Check whether the systemd unit exists
+  ansible.builtin.stat:
+    path: "/etc/systemd/system/{{ lampac_service_name }}.service"
+  register: lampac_unit_stat
+
+- name: Stop and disable the service
+  ansible.builtin.systemd:
+    name: "{{ lampac_service_name }}"
+    state: stopped
+    enabled: false
+  when: lampac_unit_stat.stat.exists
+
+- name: Remove the systemd unit
+  ansible.builtin.file:
+    path: "/etc/systemd/system/{{ lampac_service_name }}.service"
+    state: absent
+  register: lampac_unit_removed
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+  when: lampac_unit_removed.changed
+
+- name: Remove the install directory
+  ansible.builtin.file:
+    path: "{{ lampac_install_root }}"
+    state: absent
+
+- name: Remove the service user
+  ansible.builtin.user:
+    name: "{{ lampac_user }}"
+    state: absent
+
+- name: Remove the service group
+  ansible.builtin.group:
+    name: "{{ lampac_user }}"
+    state: absent

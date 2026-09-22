@@ -1,0 +1,67 @@
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+# ponytail: apt cannot pick the first existing package name; pin one libicu* once the distro is fixed
+- name: Pick libicu package
+  ansible.builtin.shell: |
+    set -euo pipefail
+    for p in {{ lampac_libicu_candidates | join(' ') }}; do
+      if apt-cache show "$p" >/dev/null 2>&1; then
+        printf '%s\n' "$p"
+        exit 0
+      fi
+    done
+    echo "Could not find a suitable libicu package in apt caches." >&2
+    exit 1
+  args:
+    executable: /bin/bash
+  register: lampac_icu
+  changed_when: false
+  check_mode: false
+
+- name: Install OS packages
+  ansible.builtin.apt:
+    name: "{{ lampac_apt_packages + [lampac_icu.stdout | trim] }}"
+    state: present
+    install_recommends: false
+
+- name: Set deb architecture
+  ansible.builtin.set_fact:
+    lampac_deb_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+    lampac_chrome_deb: "/tmp/google-chrome-stable-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}.deb"
+
+- name: Check for Google Chrome
+  ansible.builtin.stat:
+    path: /usr/bin/google-chrome-stable
+  register: lampac_chrome
+
+- name: Download Google Chrome
+  ansible.builtin.get_url:
+    url: "https://dl.google.com/linux/direct/google-chrome-stable_current_{{ lampac_deb_arch }}.deb"
+    dest: "{{ lampac_chrome_deb }}"
+    mode: "0644"
+  when: not lampac_chrome.stat.exists
+  retries: 3
+  delay: 2
+
+- name: Install Google Chrome
+  ansible.builtin.apt:
+    deb: "{{ lampac_chrome_deb }}"
+    install_recommends: false
+  when: not lampac_chrome.stat.exists
+
+- name: Remove Chrome deb
+  ansible.builtin.file:
+    path: "{{ lampac_chrome_deb }}"
+    state: absent
+  when: not lampac_chrome.stat.exists
+
+- name: Symlink chromium to Google Chrome
+  ansible.builtin.file:
+    src: /usr/bin/google-chrome-stable
+    dest: /usr/bin/chromium
+    state: link
+    force: true

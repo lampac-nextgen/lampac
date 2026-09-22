@@ -1,0 +1,29 @@
+---
+- name: Install the systemd unit
+  ansible.builtin.template:
+    src: lampac.service.j2
+    dest: "/etc/systemd/system/{{ lampac_service_name }}.service"
+    mode: "0644"
+  notify: restart lampac
+
+- name: Give the install tree to the service user
+  ansible.builtin.file:
+    path: "{{ lampac_install_root }}"
+    state: directory
+    owner: "{{ lampac_user }}"
+    group: "{{ lampac_user }}"
+    recurse: true
+
+- name: Enable and start Lampac
+  ansible.builtin.systemd:
+    name: "{{ lampac_service_name }}"
+    enabled: true
+    state: started
+    daemon_reload: true
+
+- name: Show the listen hint
+  ansible.builtin.debug:
+    msg: >-
+      Lampac {{ lampac_resolved_version }} is installed at {{ lampac_install_root }}.
+      Hint: http://{{ (ansible_default_ipv4 | default({})).address | default('<your-ip>') }}:{{ lampac_port }}
+      — systemctl status {{ lampac_service_name }}
