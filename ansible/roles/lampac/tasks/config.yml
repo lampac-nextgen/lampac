@@ -1,0 +1,50 @@
+---
+- name: Write init.conf
+  ansible.builtin.copy:
+    dest: "{{ lampac_install_root }}/init.conf"
+    content: "{{ lampac_init_conf if lampac_init_conf is string else (lampac_init_conf | to_nice_json) }}\n"
+    owner: "{{ lampac_user }}"
+    group: "{{ lampac_user }}"
+    mode: "0640"
+  when: lampac_init_conf | length > 0
+  no_log: true
+
+- name: Write init.yaml
+  ansible.builtin.copy:
+    dest: "{{ lampac_install_root }}/init.yaml"
+    content: "{{ lampac_init_yaml if lampac_init_yaml is string else (lampac_init_yaml | to_nice_yaml) }}"
+    owner: "{{ lampac_user }}"
+    group: "{{ lampac_user }}"
+    mode: "0640"
+  when: lampac_init_yaml | length > 0
+  no_log: true
+
+- name: Write passwd
+  ansible.builtin.copy:
+    dest: "{{ lampac_install_root }}/passwd"
+    content: "{{ lampac_passwd }}\n"
+    owner: "{{ lampac_user }}"
+    group: "{{ lampac_user }}"
+    mode: "0600"
+  when: lampac_passwd | length > 0
+  no_log: true
+  notify: restart lampac
+
+- name: Write users.json
+  ansible.builtin.copy:
+    dest: "{{ lampac_install_root }}/users.json"
+    content: "{{ lampac_users | to_nice_json }}\n"
+    owner: "{{ lampac_user }}"
+    group: "{{ lampac_user }}"
+    mode: "0640"
+  when: lampac_users | length > 0
+  no_log: true
+
+- name: Write excludes.conf
+  ansible.builtin.copy:
+    dest: "{{ lampac_install_root }}/excludes.conf"
+    content: "{{ lampac_excludes | join('\n') }}\n"
+    owner: "{{ lampac_user }}"
+    group: "{{ lampac_user }}"
+    mode: "0640"
+  when: lampac_excludes | length > 0

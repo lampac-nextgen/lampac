@@ -15,6 +15,46 @@ lampac_dotnet_root: /usr/share/dotnet
 lampac_dotnet_channel: "10.0"
 lampac_state: present
 lampac_confirm_remove: false
+# Written to init.conf. Same settings as config/example.init.conf. {} skips the write.
+# Set lampac_init_yaml instead, and this to {}, to write init.yaml. Not both.
+lampac_init_conf:
+  listen:
+    version: true
+    ip: "0.0.0.0"
+    port: "{{ lampac_port }}"
+    scheme: http
+    localhost: "127.0.0.1"
+  BaseModule:
+    SkipModules:
+      - Catalog
+      - DLNA
+      - JacRed
+      - Sync
+      - TimeCode
+      - TorrServer
+      - Tracks
+      - Transcoding
+      - WebLog
+  chromium:
+    enable: true
+    executablePath: /usr/bin/chromium
+  openstat:
+    enable: true
+  online:
+    name: Lampac NextGen
+    spiderName: Lampac NextGen
+    version: true
+    btn_priority_forced: true
+  sisi:
+    lgbt: false
+    spider: false
+    NextHUB: true
+    history:
+      enable: false
+lampac_init_yaml: ""
+lampac_passwd: ""
+lampac_users: []
+lampac_excludes: []
 
 lampac_libicu_candidates:
   - libicu78

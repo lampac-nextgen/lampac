@@ -151,3 +151,14 @@ ansible-playbook -i ansible/inventory/hosts.yml ansible/site.yml -e lampac_state
 ```
 
 </CodeGroup>
+
+`lampac_init_conf` записывается в `init.conf` при каждом запуске. Значения по умолчанию совпадают с `config/example.init.conf`, а `listen.port` берётся из `lampac_port`. `lampac_init_conf: {}` оставляет файл на хосте без изменений. Чтобы записать `init.yaml`, задайте `lampac_init_conf: {}` и mapping в `lampac_init_yaml`. Оба сразу задавать нельзя: Lampac читает тот файл, что новее. `passwd`, `users.json` и `excludes.conf` записываются только когда переменная не пустая.
+
+```yaml
+lampac_passwd: "set-this"
+lampac_users:
+  - id: "user@example.com"
+    group: 1
+lampac_excludes:
+  - "my_custom_folder/"
+```

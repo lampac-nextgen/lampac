@@ -22,6 +22,14 @@
     - lampac_prerelease | bool
     - lampac_version != "latest"
 
+- name: Reject init.conf and init.yaml together
+  ansible.builtin.fail:
+    msg: "Set lampac_init_conf or lampac_init_yaml, not both. Lampac loads whichever file is newer."
+  when:
+    - lampac_state == "present"
+    - lampac_init_conf | length > 0
+    - lampac_init_yaml | length > 0
+
 - name: Remove Lampac
   ansible.builtin.import_tasks: remove.yml
   when: lampac_state == "absent"
@@ -36,6 +44,10 @@
 
 - name: Create the service account
   ansible.builtin.import_tasks: user.yml
+  when: lampac_state == "present"
+
+- name: Write optional Lampac config
+  ansible.builtin.import_tasks: config.yml
   when: lampac_state == "present"
 
 - name: Resolve the release
