@@ -1,38 +1,18 @@
 ---
-- name: See if the service group exists
-  ansible.builtin.command: getent group {{ lampac_user }}
-  register: lampac_group_ent
-  changed_when: false
-  failed_when: false
-  check_mode: false
+- name: Read the group database
+  ansible.builtin.getent:
+    database: group
 
-- name: See if the preferred GID is taken
-  ansible.builtin.command: getent group {{ lampac_gid }}
-  register: lampac_gid_ent
-  changed_when: false
-  failed_when: false
-  check_mode: false
+- name: Read the user database
+  ansible.builtin.getent:
+    database: passwd
 
 - name: Create the service group
   ansible.builtin.group:
     name: "{{ lampac_user }}"
     system: true
-    gid: "{{ lampac_gid if lampac_gid_ent.rc != 0 else omit }}"
-  when: lampac_group_ent.rc != 0
-
-- name: See if the service user exists
-  ansible.builtin.command: getent passwd {{ lampac_user }}
-  register: lampac_user_ent
-  changed_when: false
-  failed_when: false
-  check_mode: false
-
-- name: See if the preferred UID is taken
-  ansible.builtin.command: getent passwd {{ lampac_uid }}
-  register: lampac_uid_ent
-  changed_when: false
-  failed_when: false
-  check_mode: false
+    gid: "{{ omit if (lampac_gid | string) in (ansible_facts.getent_group.values() | map('join', ':') | map('regex_replace', '^[^:]*:([^:]*).*$', '\\1') | list) else lampac_gid }}"
+  when: lampac_user not in ansible_facts.getent_group
 
 - name: Create the service user
   ansible.builtin.user:
@@ -42,8 +22,8 @@
     home: "{{ lampac_install_root }}"
     shell: /usr/sbin/nologin
     create_home: false
-    uid: "{{ lampac_uid if lampac_uid_ent.rc != 0 else omit }}"
-  when: lampac_user_ent.rc != 0
+    uid: "{{ omit if (lampac_uid | string) in (ansible_facts.getent_passwd.values() | map('join', ':') | map('regex_replace', '^[^:]*:([^:]*).*$', '\\1') | list) else lampac_uid }}"
+  when: lampac_user not in ansible_facts.getent_passwd
 
 - name: Ensure the install directory exists
   ansible.builtin.file:
