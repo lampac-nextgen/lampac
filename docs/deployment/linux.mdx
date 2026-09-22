@@ -1,8 +1,8 @@
 ---
 title: "Установка Lampac на Linux: systemd и автообновление"
 sidebarTitle: "Linux"
-description: "Установите Lampac NextGen на Debian/Ubuntu через install.sh. Systemd-сервис, .NET 10 runtime и поддержка amd64/arm64."
-keywords: ["Lampac Linux", "systemd", "install.sh", "Debian", "Ubuntu"]
+description: "Установите Lampac NextGen на Debian/Ubuntu через install.sh или Ansible. Systemd-сервис, .NET 10 runtime и поддержка amd64/arm64."
+keywords: ["Lampac Linux", "systemd", "install.sh", "Ansible", "Debian", "Ubuntu"]
 ---
 
 На Linux Lampac NextGen устанавливается одним скриптом `install.sh`. Скрипт загружает .NET 10 runtime, создает системного пользователя `lampac`, распаковывает последний релиз и регистрирует systemd-сервис. Поддерживаются Debian и Ubuntu на архитектурах amd64 и arm64.
@@ -127,3 +127,27 @@ my_custom_folder/
 config/local.conf
 *.custom
 ```
+
+## Установка через Ansible
+
+Плейбук в `ansible/` делает то же, что `install.sh`: пакеты, Google Chrome, ASP.NET Core 10, пользователь `lampac`, релиз с GitHub и systemd. Скопируйте `ansible/inventory/hosts.yml.example` и укажите свой хост. Повторный запуск не скачивает архив, если `version.txt` уже совпадает с нужным тегом. `-e lampac_force=true` синхронизирует ту же версию ещё раз. Исключения `rsync` те же, включая `excludes.conf`.
+
+<CodeGroup>
+
+```bash Установка
+ansible-playbook -i ansible/inventory/hosts.yml ansible/site.yml
+```
+
+```bash Конкретный тег
+ansible-playbook -i ansible/inventory/hosts.yml ansible/site.yml -e lampac_version=v1.2.3
+```
+
+```bash Пред-релиз
+ansible-playbook -i ansible/inventory/hosts.yml ansible/site.yml -e lampac_prerelease=true
+```
+
+```bash Удаление
+ansible-playbook -i ansible/inventory/hosts.yml ansible/site.yml -e lampac_state=absent -e lampac_confirm_remove=true
+```
+
+</CodeGroup>

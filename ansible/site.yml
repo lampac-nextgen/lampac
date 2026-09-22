@@ -1,0 +1,6 @@
+---
+- name: Lampac NextGen
+  hosts: lampac
+  become: true
+  roles:
+    - lampac

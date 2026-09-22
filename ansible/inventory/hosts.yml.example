@@ -1,0 +1,5 @@
+---
+lampac:
+  hosts:
+    lampac-1:
+      ansible_host: 192.0.2.10

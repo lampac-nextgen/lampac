@@ -1,0 +1,465 @@
+---
+- name: Require Debian or Ubuntu on amd64 or arm64
+  ansible.builtin.assert:
+    that:
+      - ansible_distribution in ["Debian", "Ubuntu"]
+      - ansible_architecture in ["x86_64", "aarch64"]
+    fail_msg: >-
+      Supported targets are Debian or Ubuntu, amd64 or arm64
+      (got {{ ansible_distribution }} {{ ansible_architecture }}).
+
+- name: Require lampac_state present or absent
+  ansible.builtin.assert:
+    that:
+      - lampac_state in ["present", "absent"]
+    fail_msg: "lampac_state must be present or absent."
+
+- name: Remove Lampac
+  when: lampac_state == "absent"
+  block:
+    - name: Refuse removal without lampac_confirm_remove
+      ansible.builtin.fail:
+        msg: "Refusing to remove Lampac. Re-run with -e lampac_confirm_remove=true."
+      when: not (lampac_confirm_remove | bool)
+
+    - name: Check whether the systemd unit exists
+      ansible.builtin.stat:
+        path: "/etc/systemd/system/{{ lampac_service_name }}.service"
+      register: lampac_unit_stat
+
+    - name: Stop and disable the service
+      ansible.builtin.systemd:
+        name: "{{ lampac_service_name }}"
+        state: stopped
+        enabled: false
+      when: lampac_unit_stat.stat.exists
+
+    - name: Remove the systemd unit
+      ansible.builtin.file:
+        path: "/etc/systemd/system/{{ lampac_service_name }}.service"
+        state: absent
+      register: lampac_unit_removed
+
+    - name: Reload systemd
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when: lampac_unit_removed.changed
+
+    - name: Remove the install directory
+      ansible.builtin.file:
+        path: "{{ lampac_install_root }}"
+        state: absent
+
+    - name: Remove the service user
+      ansible.builtin.user:
+        name: "{{ lampac_user }}"
+        state: absent
+
+    - name: Remove the service group
+      ansible.builtin.group:
+        name: "{{ lampac_user }}"
+        state: absent
+
+- name: Install Lampac
+  when: lampac_state == "present"
+  block:
+    - name: Reject a pinned tag combined with pre-release
+      ansible.builtin.fail:
+        msg: "lampac_version and lampac_prerelease are mutually exclusive."
+      when: (lampac_prerelease | bool) and lampac_version != "latest"
+
+    - name: Update apt cache
+      ansible.builtin.apt:
+        update_cache: true
+        cache_valid_time: 3600
+
+    # ponytail: apt cannot pick the first existing package name; pin one libicu* once the distro is fixed
+    - name: Pick libicu package
+      ansible.builtin.shell: |
+        set -euo pipefail
+        for p in {{ lampac_libicu_candidates | join(' ') }}; do
+          if apt-cache show "$p" >/dev/null 2>&1; then
+            printf '%s\n' "$p"
+            exit 0
+          fi
+        done
+        echo "Could not find a suitable libicu package in apt caches." >&2
+        exit 1
+      args:
+        executable: /bin/bash
+      register: lampac_icu
+      changed_when: false
+      check_mode: false
+
+    - name: Install OS packages
+      ansible.builtin.apt:
+        name: "{{ lampac_apt_packages + [lampac_icu.stdout | trim] }}"
+        state: present
+        install_recommends: false
+
+    - name: Set deb architecture
+      ansible.builtin.set_fact:
+        lampac_deb_arch: "{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}"
+        lampac_chrome_deb: "/tmp/google-chrome-stable-{{ 'arm64' if ansible_architecture == 'aarch64' else 'amd64' }}.deb"
+
+    - name: Check for Google Chrome
+      ansible.builtin.stat:
+        path: /usr/bin/google-chrome-stable
+      register: lampac_chrome
+
+    - name: Download Google Chrome
+      ansible.builtin.get_url:
+        url: "https://dl.google.com/linux/direct/google-chrome-stable_current_{{ lampac_deb_arch }}.deb"
+        dest: "{{ lampac_chrome_deb }}"
+        mode: "0644"
+      when: not lampac_chrome.stat.exists
+      retries: 3
+      delay: 2
+
+    - name: Install Google Chrome
+      ansible.builtin.apt:
+        deb: "{{ lampac_chrome_deb }}"
+        install_recommends: false
+      when: not lampac_chrome.stat.exists
+
+    - name: Remove Chrome deb
+      ansible.builtin.file:
+        path: "{{ lampac_chrome_deb }}"
+        state: absent
+      when: not lampac_chrome.stat.exists
+
+    - name: Symlink chromium to Google Chrome
+      ansible.builtin.file:
+        src: /usr/bin/google-chrome-stable
+        dest: /usr/bin/chromium
+        state: link
+        force: true
+
+    - name: List installed .NET runtimes
+      ansible.builtin.command:
+        argv:
+          - "{{ lampac_dotnet_root }}/dotnet"
+          - --list-runtimes
+      register: lampac_dotnet_runtimes
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Install ASP.NET Core runtime
+      when: >-
+        lampac_dotnet_runtimes.rc != 0
+        or 'Microsoft.AspNetCore.App 10.' not in (lampac_dotnet_runtimes.stdout | default(''))
+      block:
+        - name: Download dotnet-install.sh
+          ansible.builtin.get_url:
+            url: https://dot.net/v1/dotnet-install.sh
+            dest: /tmp/dotnet-install.sh
+            mode: "0755"
+          retries: 3
+          delay: 2
+
+        - name: Run dotnet-install.sh
+          ansible.builtin.command:
+            argv:
+              - bash
+              - /tmp/dotnet-install.sh
+              - --channel
+              - "{{ lampac_dotnet_channel }}"
+              - --runtime
+              - aspnetcore
+              - --install-dir
+              - "{{ lampac_dotnet_root }}"
+
+        - name: Remove dotnet-install.sh
+          ansible.builtin.file:
+            path: /tmp/dotnet-install.sh
+            state: absent
+
+    - name: See if the service group exists
+      ansible.builtin.command: getent group {{ lampac_user }}
+      register: lampac_group_ent
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: See if the preferred GID is taken
+      ansible.builtin.command: getent group {{ lampac_gid }}
+      register: lampac_gid_ent
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Create the service group
+      ansible.builtin.group:
+        name: "{{ lampac_user }}"
+        system: true
+        gid: "{{ lampac_gid if lampac_gid_ent.rc != 0 else omit }}"
+      when: lampac_group_ent.rc != 0
+
+    - name: See if the service user exists
+      ansible.builtin.command: getent passwd {{ lampac_user }}
+      register: lampac_user_ent
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: See if the preferred UID is taken
+      ansible.builtin.command: getent passwd {{ lampac_uid }}
+      register: lampac_uid_ent
+      changed_when: false
+      failed_when: false
+      check_mode: false
+
+    - name: Create the service user
+      ansible.builtin.user:
+        name: "{{ lampac_user }}"
+        system: true
+        group: "{{ lampac_user }}"
+        home: "{{ lampac_install_root }}"
+        shell: /usr/sbin/nologin
+        create_home: false
+        uid: "{{ lampac_uid if lampac_uid_ent.rc != 0 else omit }}"
+      when: lampac_user_ent.rc != 0
+
+    - name: Ensure the install directory exists
+      ansible.builtin.file:
+        path: "{{ lampac_install_root }}"
+        state: directory
+        owner: "{{ lampac_user }}"
+        group: "{{ lampac_user }}"
+        mode: "0755"
+
+    - name: Resolve the latest stable release
+      when: lampac_version == "latest" and not (lampac_prerelease | bool)
+      block:
+        - name: Fetch the latest GitHub release
+          ansible.builtin.uri:
+            url: "https://api.github.com/repos/{{ lampac_github_repo }}/releases/latest"
+            return_content: true
+            headers:
+              Accept: application/vnd.github+json
+          register: lampac_latest
+
+        - name: Require the latest release asset
+          ansible.builtin.fail:
+            msg: "Latest release has no {{ lampac_release_zip }} asset for {{ lampac_github_repo }}."
+          when: >-
+            lampac_latest.json.assets | selectattr('name', 'equalto', lampac_release_zip) | list | length == 0
+
+        - name: Record the latest release
+          ansible.builtin.set_fact:
+            lampac_resolved_version: "{{ lampac_latest.json.tag_name | regex_replace('^v', '') }}"
+            lampac_publish_url: "{{ (lampac_latest.json.assets | selectattr('name', 'equalto', lampac_release_zip) | map(attribute='browser_download_url') | first) }}"
+
+    - name: Resolve the latest pre-release
+      when: lampac_prerelease | bool
+      block:
+        - name: Fetch GitHub releases
+          ansible.builtin.uri:
+            url: "https://api.github.com/repos/{{ lampac_github_repo }}/releases"
+            return_content: true
+            headers:
+              Accept: application/vnd.github+json
+          register: lampac_releases
+
+        - name: Record the latest pre-release
+          ansible.builtin.set_fact:
+            lampac_pre: "{{ lampac_releases.json | selectattr('prerelease') | list }}"
+
+        - name: Require a pre-release asset
+          ansible.builtin.fail:
+            msg: "No pre-release asset named {{ lampac_release_zip }} for {{ lampac_github_repo }}."
+          when: >-
+            lampac_pre | length == 0
+            or (lampac_pre[0].assets | selectattr('name', 'equalto', lampac_release_zip) | list | length) == 0
+
+        - name: Record the pre-release URL
+          ansible.builtin.set_fact:
+            lampac_resolved_version: "{{ lampac_pre[0].tag_name | regex_replace('^v', '') }}"
+            lampac_publish_url: "{{ (lampac_pre[0].assets | selectattr('name', 'equalto', lampac_release_zip) | map(attribute='browser_download_url') | first) }}"
+
+    - name: Resolve a pinned tag
+      when: lampac_version != "latest"
+      block:
+        - name: Probe tag asset URLs
+          ansible.builtin.uri:
+            url: "https://github.com/{{ lampac_github_repo }}/releases/download/{{ item }}/{{ lampac_release_zip }}"
+            method: HEAD
+            follow_redirects: all
+            status_code: [200, 302, 404]
+          loop: "{{ [lampac_version | string, (lampac_version | string)[1:]] if (lampac_version | string).startswith('v') else [lampac_version | string, 'v' ~ (lampac_version | string)] }}"
+          register: lampac_tag_probes
+
+        - name: Require a published tag asset
+          ansible.builtin.fail:
+            msg: "Release tag not found for {{ lampac_github_repo }}: {{ lampac_version }} (asset {{ lampac_release_zip }})."
+          when: lampac_tag_probes.results | selectattr('status', 'in', [200, 302]) | list | length == 0
+
+        - name: Record the pinned tag
+          ansible.builtin.set_fact:
+            lampac_resolved_version: "{{ lampac_version | string | regex_replace('^v', '') }}"
+            lampac_publish_url: "https://github.com/{{ lampac_github_repo }}/releases/download/{{ (lampac_tag_probes.results | selectattr('status', 'in', [200, 302]) | first).item }}/{{ lampac_release_zip }}"
+
+    - name: Read the installed version
+      ansible.builtin.slurp:
+        src: "{{ lampac_install_root }}/version.txt"
+      register: lampac_version_slurp
+      failed_when: false
+
+    - name: Normalize the installed version
+      ansible.builtin.set_fact:
+        lampac_installed_version: >-
+          {{
+            (lampac_version_slurp.content | b64decode | trim | regex_replace('^v', ''))
+            if (lampac_version_slurp.content is defined)
+            else 'N/A'
+          }}
+
+    - name: Check whether the unit already exists
+      ansible.builtin.stat:
+        path: "/etc/systemd/system/{{ lampac_service_name }}.service"
+      register: lampac_unit_stat
+
+    - name: Sync the release when the version differs
+      when: (lampac_force | bool) or lampac_installed_version != lampac_resolved_version
+      block:
+        - name: Stop Lampac before replacing files
+          ansible.builtin.systemd:
+            name: "{{ lampac_service_name }}"
+            state: stopped
+          when: lampac_unit_stat.stat.exists
+
+        - name: Create a staging directory
+          ansible.builtin.tempfile:
+            state: directory
+            prefix: lampac-stage.
+          register: lampac_stage
+
+        - name: Download the release archive
+          ansible.builtin.get_url:
+            url: "{{ lampac_publish_url }}"
+            dest: "{{ lampac_stage.path }}/release.zip"
+            mode: "0644"
+          retries: 3
+          delay: 2
+
+        - name: Extract the release archive
+          ansible.builtin.unarchive:
+            src: "{{ lampac_stage.path }}/release.zip"
+            dest: "{{ lampac_stage.path }}"
+            remote_src: true
+
+        - name: Remove the release zip from staging
+          ansible.builtin.file:
+            path: "{{ lampac_stage.path }}/release.zip"
+            state: absent
+
+        - name: Flatten a single top-level directory
+          ansible.builtin.shell: |
+            set -euo pipefail
+            staging="{{ lampac_stage.path }}"
+            dir_count=$(find "$staging" -mindepth 1 -maxdepth 1 -type d | wc -l | tr -d ' ')
+            if [[ "$dir_count" -eq 1 ]]; then
+              only=$(find "$staging" -mindepth 1 -maxdepth 1 -type d | head -n 1)
+              shopt -s dotglob nullglob
+              mv "$only"/* "$staging"/
+              shopt -u dotglob nullglob
+              rmdir "$only"
+            fi
+          args:
+            executable: /bin/bash
+          changed_when: false
+
+        - name: Require Core.dll in the release
+          ansible.builtin.stat:
+            path: "{{ lampac_stage.path }}/Core.dll"
+          register: lampac_core
+
+        - name: Fail when the release layout is wrong
+          ansible.builtin.fail:
+            msg: "Expected Core.dll not found in the release archive."
+          when: not ansible_check_mode and not lampac_core.stat.exists
+
+        - name: Read excludes.conf
+          ansible.builtin.slurp:
+            src: "{{ lampac_install_root }}/excludes.conf"
+          register: lampac_excludes_file
+          failed_when: false
+
+        - name: Parse excludes.conf
+          ansible.builtin.set_fact:
+            lampac_extra_excludes: >-
+              {{
+                (lampac_excludes_file.content | b64decode).splitlines()
+                | map('trim')
+                | reject('equalto', '')
+                | reject('match', '^#')
+                | list
+                if (lampac_excludes_file.content is defined)
+                else []
+              }}
+
+        - name: Sync release files
+          ansible.builtin.command:
+            argv: "{{ ['rsync', '-a', '--delete', '--itemize-changes'] + ((lampac_rsync_excludes + lampac_extra_excludes) | map('regex_replace', '^', '--exclude=') | list) + [lampac_stage.path ~ '/', lampac_install_root ~ '/'] }}"
+          register: lampac_rsync
+          changed_when: lampac_rsync.stdout | length > 0
+          notify: restart lampac
+
+        - name: Record the installed version
+          ansible.builtin.copy:
+            dest: "{{ lampac_install_root }}/version.txt"
+            content: "{{ lampac_resolved_version }}\n"
+            owner: "{{ lampac_user }}"
+            group: "{{ lampac_user }}"
+            mode: "0644"
+      rescue:
+        - name: Start Lampac again after a failed sync
+          ansible.builtin.systemd:
+            name: "{{ lampac_service_name }}"
+            state: started
+          when: lampac_unit_stat.stat.exists | default(false)
+          failed_when: false
+
+        - name: Surface the sync failure
+          ansible.builtin.fail:
+            msg: >-
+              Release sync failed: {{
+                ansible_failed_result.msg
+                | default(ansible_failed_result.stderr | default('unknown error'))
+              }}
+      always:
+        - name: Remove the staging directory
+          ansible.builtin.file:
+            path: "{{ lampac_stage.path | default('/no/such/lampac-stage', true) }}"
+            state: absent
+          when: lampac_stage is defined
+
+    - name: Install the systemd unit
+      ansible.builtin.template:
+        src: lampac.service.j2
+        dest: "/etc/systemd/system/{{ lampac_service_name }}.service"
+        mode: "0644"
+      notify: restart lampac
+
+    - name: Give the install tree to the service user
+      ansible.builtin.file:
+        path: "{{ lampac_install_root }}"
+        state: directory
+        owner: "{{ lampac_user }}"
+        group: "{{ lampac_user }}"
+        recurse: true
+
+    - name: Enable and start Lampac
+      ansible.builtin.systemd:
+        name: "{{ lampac_service_name }}"
+        enabled: true
+        state: started
+        daemon_reload: true
+
+    - name: Show the listen hint
+      ansible.builtin.debug:
+        msg: >-
+          Lampac {{ lampac_resolved_version }} is installed at {{ lampac_install_root }}.
+          Hint: http://{{ (ansible_default_ipv4 | default({})).address | default('<your-ip>') }}:{{ lampac_port }}
+          — systemctl status {{ lampac_service_name }}

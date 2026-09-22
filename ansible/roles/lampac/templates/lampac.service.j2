@@ -1,0 +1,21 @@
+[Unit]
+Description=Lampac NextGen
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+User={{ lampac_user }}
+Group={{ lampac_user }}
+WorkingDirectory={{ lampac_install_root }}
+Environment=DOTNET_ROOT={{ lampac_dotnet_root }}
+Environment=PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:{{ lampac_dotnet_root }}
+Environment=DOTNET_RUNNING_IN_CONTAINER=false
+Environment=DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false
+Environment=DOTNET_CLI_TELEMETRY_OPTOUT=1
+ExecStart={{ lampac_dotnet_root }}/dotnet {{ lampac_install_root }}/Core.dll
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=multi-user.target

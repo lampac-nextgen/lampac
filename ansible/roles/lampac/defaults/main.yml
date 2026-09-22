@@ -1,0 +1,78 @@
+---
+lampac_install_root: /opt/lampac
+lampac_user: lampac
+lampac_uid: 1000
+lampac_gid: 1000
+lampac_service_name: lampac
+lampac_port: 9118
+lampac_github_repo: lampac-nextgen/lampac
+lampac_release_zip: lampac-nextgen.zip
+# latest, or a tag with or without a leading v
+lampac_version: latest
+lampac_prerelease: false
+lampac_force: false
+lampac_dotnet_root: /usr/share/dotnet
+lampac_dotnet_channel: "10.0"
+lampac_state: present
+lampac_confirm_remove: false
+
+lampac_libicu_candidates:
+  - libicu78
+  - libicu76
+  - libicu74
+  - libicu72
+  - libicu70
+  - libicu67
+
+lampac_apt_packages:
+  - ca-certificates
+  - curl
+  - jq
+  - fontconfig
+  - gstreamer1.0-libav
+  - gstreamer1.0-plugins-bad
+  - gstreamer1.0-plugins-base
+  - gstreamer1.0-plugins-base-apps
+  - gstreamer1.0-plugins-good
+  - gstreamer1.0-plugins-ugly
+  - gstreamer1.0-tools
+  - imagemagick
+  - libgstreamer-plugins-base1.0-0
+  - libgstreamer1.0-0
+  - libjpeg-dev
+  - libnspr4
+  - libpng-dev
+  - libwebp-dev
+  - unzip
+  - rsync
+
+# Same paths install.sh build_rsync_excludes refuses to delete or overwrite.
+lampac_rsync_excludes:
+  - install.sh
+  - init.conf
+  - init.yaml
+  - mods/
+  - data/kinoukr.json
+  - data/PizdatoeDb.json
+  - "*.db"
+  - "*.db-shm"
+  - "*.db-wal"
+  - logs/
+  - cache/
+  - TorrServer
+  - torrserver/
+  - data/ts/
+  - .local/
+  - .aspnet/
+  - .claude/
+  - .config/
+  - .playwright/
+  - users.json
+  - passwd
+  - current.conf
+  - database/
+  - wwwroot/
+  - plugins/override/
+  - notifications_date.txt
+  - excludes.conf
+  - version.txt

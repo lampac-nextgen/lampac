@@ -1,0 +1,7 @@
+---
+- name: restart lampac
+  ansible.builtin.systemd:
+    name: "{{ lampac_service_name }}"
+    state: restarted
+    daemon_reload: true
+    enabled: true
