@@ -30,7 +30,7 @@
 
         if (
             /\/dlna\/stream(?:\?|$)/i.test(url) &&
-            /[?&]path=[^&#]*\.mkv(?:[&#]|$)/i.test(url)
+            /[?&]path=[^&#]*\.(?:mkv|avi)(?:[&#]|$)/i.test(url)
         ) {
             return true;
         }
