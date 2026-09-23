@@ -82,7 +82,17 @@ public class Track
 
 public class HlsSource
 {
+    public string label { get; set; }
     public bool @default { get; set; }
     public Dictionary<string, string> quality { get; set; }
     public Dictionary<string, string> reserve { get; set; }
 }
+
+public class BnsiResponse
+{
+    public string pnr { get; set; }
+    public string pnk { get; set; }
+    public List<Track> tracks { get; set; }
+    public List<HlsSource> hlsSource { get; set; }
+}
+

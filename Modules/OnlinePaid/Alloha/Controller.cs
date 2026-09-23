@@ -213,45 +213,58 @@ public class AllohaController : BaseOnlineController<ModuleConf>
     [HttpGet]
     [Route("lite/alloha/video")]
     [Route("lite/alloha/video.m3u8")]
-    async public Task<ActionResult> Video(string token_movie, string title, string original_title, string t, int s, short e, bool play, bool directors_cut)
+    async public Task<ActionResult> Video(string token_movie, string title, string original_title, string t, int s, short e, bool play, bool directors_cut, long kinopoisk_id = 0, string imdb_id = null)
     {
         if (await IsRequestBlocked(rch: !string.IsNullOrEmpty(init.secret_token), rch_check: !play))
             return badInitMsg;
 
-        var cache = await InvokeCacheResult<DirectData>($"alloha:view:stream:{init.secret_token}:{token_movie}:{t}:{s}:{e}:{init.m4s}:{directors_cut}", 20, async cacheEntry =>
+        var cache = await InvokeCacheResult<DirectData>($"alloha:view:stream:{init.secret_token}:{init.token}:{token_movie}:{t}:{s}:{e}:{init.m4s}:{directors_cut}", 20, async cacheEntry =>
         {
-            string userIp = requestInfo.IP;
-            if (init.localip || init.streamproxy)
+            DirectData data = null;
+
+            if (!string.IsNullOrEmpty(init.secret_token))
             {
-                userIp = await mylocalip();
-                if (userIp == null)
-                    return cacheEntry.Fail("userIp");
+                string userIp = requestInfo.IP;
+                if (init.localip || init.streamproxy)
+                {
+                    userIp = await mylocalip();
+                    if (userIp == null)
+                        return cacheEntry.Fail("userIp");
+                }
+
+                #region url запроса
+                var uri = StringBuilderPool.ThreadInstance;
+
+                uri.Append($"{init.linkhost}/direct?secret_token={init.secret_token}&token_movie={token_movie}")
+                   .Append($"&ip={userIp}&translation={t}");
+
+                if (s > 0)
+                    uri.Append($"&season={s}");
+
+                if (e > 0)
+                    uri.Append($"&episode={e}");
+
+                if (init.m4s)
+                    uri.Append("&av1=true");
+
+                if (directors_cut)
+                    uri.Append("&directors_cut");
+                #endregion
+
+                var root = await httpHydra.Get<DirectRoot>(uri.ToString(), safety: true);
+                if (root?.data?.file?.hlsSource != null && root.data.file.hlsSource.Count > 0)
+                    data = root.data;
             }
 
-            #region url запроса
-            var uri = StringBuilderPool.ThreadInstance;
+            if (data == null)
+            {
+                data = await ResolveBnsiStream(token_movie, t, s, e, kinopoisk_id, imdb_id);
+            }
 
-            uri.Append($"{init.linkhost}/direct?secret_token={init.secret_token}&token_movie={token_movie}")
-               .Append($"&ip={userIp}&translation={t}");
-
-            if (s > 0)
-                uri.Append($"&season={s}");
-
-            if (e > 0)
-                uri.Append($"&episode={e}");
-
-            if (init.m4s)
-                uri.Append("&av1=true");
-
-            if (directors_cut)
-                uri.Append("&directors_cut");
-            #endregion
-
-            var root = await httpHydra.Get<DirectRoot>(uri.ToString(), safety: true);
-            if (root?.data == null)
+            if (data?.file?.hlsSource == null || data.file.hlsSource.Count == 0)
                 return cacheEntry.Fail("data", refresh_proxy: true);
 
-            return cacheEntry.Success(root.data);
+            return cacheEntry.Success(data);
         });
 
         if (!cache.IsSuccess)
@@ -268,6 +281,12 @@ public class AllohaController : BaseOnlineController<ModuleConf>
 
         List<StreamQualityDto> streams = null;
 
+        string streamOrigin = string.IsNullOrEmpty(init.linkhost) ? "https://scalp-as.stloadi.live" : init.linkhost.TrimEnd('/');
+        var streamHeaders = HeadersModel.Init(
+            ("Origin", streamOrigin),
+            ("Referer", streamOrigin + "/")
+        );
+
         foreach (var hlsSource in data.file?.hlsSource ?? new List<HlsSource>())
         {
             // first or default
@@ -281,7 +300,7 @@ public class AllohaController : BaseOnlineController<ModuleConf>
                     if (init.reserve && hlsSource.reserve != null && hlsSource.reserve.TryGetValue(q.Key, out string reserve))
                         file += " or " + reserve;
 
-                    streams.Add(new StreamQualityDto(HostStreamProxy(file), $"{q.Key}p"));
+                    streams.Add(new StreamQualityDto(HostStreamProxy(file, headers: streamHeaders, force_streamproxy: true), $"{q.Key}p"));
                 }
             }
         }
@@ -336,6 +355,130 @@ public class AllohaController : BaseOnlineController<ModuleConf>
             segments: segments,
             httpContext: HttpContext
         ));
+    }
+    #endregion
+
+    #region ResolveBnsiStream
+    async Task<DirectData> ResolveBnsiStream(string token_movie, string t, int s, short e, long kinopoisk_id, string imdb_id)
+    {
+        string linkHost = string.IsNullOrEmpty(init.linkhost) ? "https://scalp-as.stloadi.live" : init.linkhost.TrimEnd('/');
+        string token = string.IsNullOrEmpty(init.token) ? init.secret_token : init.token;
+        if (string.IsNullOrEmpty(token))
+            return null;
+
+        var pUri = new System.Text.StringBuilder();
+        pUri.Append($"{linkHost}/?token={token}");
+        if (!string.IsNullOrEmpty(token_movie))
+            pUri.Append($"&token_movie={token_movie}");
+        else if (kinopoisk_id > 0)
+            pUri.Append($"&kp={kinopoisk_id}");
+        else if (!string.IsNullOrEmpty(imdb_id))
+            pUri.Append($"&imdb={imdb_id}");
+
+        if (s > 0) pUri.Append($"&season={s}");
+        if (e > 0) pUri.Append($"&episode={e}");
+        if (!string.IsNullOrEmpty(t)) pUri.Append($"&translation={t}");
+
+        string playerUrl = pUri.ToString();
+        var playerHeaders = HeadersModel.Init(
+            ("User-Agent", Http.UserAgent),
+            ("Referer", $"{linkHost}/")
+        );
+
+        string html = await httpHydra.Get(playerUrl, safety: true, addheaders: playerHeaders);
+        if (string.IsNullOrEmpty(html))
+            return null;
+
+        var vpMatch = System.Text.RegularExpressions.Regex.Match(html, @"name=[""']viewporti[""']\s+content=[""']([^""']+)[""']");
+        if (!vpMatch.Success)
+            return null;
+        string viewporti = vpMatch.Groups[1].Value;
+
+        var flMatch = System.Text.RegularExpressions.Regex.Match(html, @"fileList\s*=\s*JSON\.parse\('([^']+)'\);");
+        if (!flMatch.Success)
+            flMatch = System.Text.RegularExpressions.Regex.Match(html, @"fileList\s*=\s*JSON\.parse\(""([^""]+)""\);");
+        if (!flMatch.Success)
+            return null;
+
+        string actId = null;
+        try
+        {
+            string rawJson = flMatch.Groups[1].Value;
+            var fl = Newtonsoft.Json.Linq.JObject.Parse(rawJson);
+
+            if (fl["active"]?["id"] != null)
+                actId = fl["active"]["id"].ToString();
+
+            if (fl["all"] != null && !string.IsNullOrEmpty(t))
+            {
+                string trKey = "t" + t;
+                if (s > 0 && e > 0)
+                {
+                    var epToken = fl["all"]?[s.ToString()]?[e.ToString()]?[trKey];
+                    if (epToken?["id"] != null)
+                        actId = epToken["id"].ToString();
+                }
+                else
+                {
+                    var theatrical = fl["all"]?["theatrical"]?[trKey];
+                    if (theatrical is Newtonsoft.Json.Linq.JObject thObj)
+                    {
+                        foreach (var prop in thObj.Properties())
+                        {
+                            if (prop.Value?["id"] != null)
+                            {
+                                actId = prop.Value["id"].ToString();
+                                break;
+                            }
+                        }
+                    }
+                    if (actId == null && fl["all"]?["directors"]?[trKey] is Newtonsoft.Json.Linq.JObject dirObj)
+                    {
+                        foreach (var prop in dirObj.Properties())
+                        {
+                            if (prop.Value?["id"] != null)
+                            {
+                                actId = prop.Value["id"].ToString();
+                                break;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        catch { }
+
+        if (string.IsNullOrEmpty(actId))
+            return null;
+
+        string borth = AllohaBorth.Compute(viewporti);
+        string postUrl = $"{linkHost}/bnsi/movies/{actId}";
+
+        var bnsiHeaders = HeadersModel.Init(
+            ("User-Agent", Http.UserAgent),
+            ("Origin", linkHost),
+            ("Referer", playerUrl),
+            ("Borth", borth),
+            ("Accept", "application/json, text/plain, */*"),
+            ("X-Requested-With", "XMLHttpRequest"),
+            ("Content-Type", "application/x-www-form-urlencoded")
+        );
+
+        string audioParam = string.IsNullOrEmpty(t) ? "66" : t;
+        string postData = $"token={token}&av1={(init.m4s ? "true" : "false")}&autoplay=0&audio={audioParam}";
+
+        var bnsiResp = await httpHydra.Post<BnsiResponse>(postUrl, postData, safety: true, addheaders: bnsiHeaders);
+        if (bnsiResp?.hlsSource == null || bnsiResp.hlsSource.Count == 0)
+            return null;
+
+        return new DirectData
+        {
+            file = new FileData
+            {
+                hlsSource = bnsiResp.hlsSource,
+                tracks = bnsiResp.tracks
+            }
+        };
     }
     #endregion
 
