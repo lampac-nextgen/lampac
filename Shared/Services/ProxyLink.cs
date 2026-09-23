@@ -41,12 +41,15 @@ public class ProxyLink : IProxyLink
         => Encrypt(uri, null, verifyip: false, ex: ex, plugin: plugin, IsProxyImg: IsProxyImg);
 
     public static string Encrypt(ReadOnlySpan<char> uri, ProxyLinkModel p, bool forceMd5 = false, string[] prefix = null, Action<StringBuilder> sbWriter = null)
-        => Encrypt(uri, p.reqip, p.headers, p.proxy, p.plugin, p.verifyip, default, p.md5 || forceMd5, false, prefix, p.userdata, sbWriter);
+        => Encrypt(uri, p.reqip, p.headers, p.proxy, p.plugin, p.verifyip, default, p.md5 || forceMd5, false, prefix, p.userdata, sbWriter, writeHeaders: p.headers != null && p.headers.Count > 0);
 
     public static string Encrypt(ReadOnlySpan<char> uri, string reqip, IReadOnlyList<HeadersModel> headers = null, WebProxy proxy = null, string plugin = null, bool verifyip = true, DateTime ex = default, bool forceMd5 = false, bool IsProxyImg = false, string[] prefix = null, object userdata = null, Action<StringBuilder> sbWriter = null, bool writeHeaders = false)
     {
         if (uri.IsEmpty)
             return string.Empty;
+
+        if (headers != null && headers.Count > 0)
+            writeHeaders = true;
 
         StringBuilder hash = _threadHashBuilder ??= new StringBuilder(2048);
         hash.Clear();
