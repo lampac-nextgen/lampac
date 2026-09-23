@@ -1,0 +1,54 @@
+manifestVersion: 1
+id: lampac
+category: media
+name: Lampac
+version: "1.59.2"
+tagline: Media aggregator server for the Lampa client
+icon: https://raw.githubusercontent.com/lampac-nextgen/lampac/main/docs/assets/logo-mark.png
+description: >-
+  Lampac NextGen is the server side of the Lampa media client: it aggregates
+  online sources and balances (including SISI), proxies and transcodes streams
+  with the bundled FFmpeg and Google Chrome, serves TorrServer-compatible
+  torrent playback, exposes a DLNA server, and ships an administration panel
+  behind a root password.
+
+
+  This package runs the official image ghcr.io/lampac-nextgen/lampac and keeps
+  the working directory on the host under the app data directory: the server
+  config is /data/config/init.conf, the root password is /data/config/passwd,
+  and the file cache and databases live in /data/cache and /data/database. The
+  config ships the upstream starter file (config/example.init.conf); edit it and
+  restart the app to apply changes.
+
+
+  The root password for WebLog and administrative functions is generated on the
+  first start and stored in data/config/passwd inside this app's data
+  directory. Read it there when a module asks for it.
+
+
+  The user interface is served through the Umbrel app proxy, so the app requires
+  your Umbrel login. Do not publish port 9118 to the internet: Lampac is an
+  unauthenticated media proxy and its administration endpoints must stay on a
+  trusted network. Some modules ship disabled upstream (AdminPanel,
+  ExternalBind); enable them by their manifest.json as described in the
+  project documentation.
+releaseNotes: >-
+  Initial Umbrel package for Lampac NextGen 1.59.2: umbrel-app.yml and
+  docker-compose.yml with a digest-pinned image, host-persistent config, cache
+  and databases.
+developer: Lampac NextGen
+website: https://lampac.dev
+dependencies: []
+repo: https://github.com/lampac-nextgen/lampac
+support: https://github.com/lampac-nextgen/lampac/issues
+
+port: 9118
+gallery:
+  - https://raw.githubusercontent.com/lampac-nextgen/lampac/main/docs/assets/lampac-nextgen.jpg
+path: ""
+
+defaultUsername: ""
+defaultPassword: ""
+
+submitter: Lampac NextGen
+submission: https://github.com/lampac-nextgen/lampac
