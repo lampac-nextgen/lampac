@@ -1,0 +1,72 @@
+version: "3.7"
+
+# Lampac NextGen packaged for umbrelOS.
+#
+# Adapted from the upstream docker-compose.yaml
+# (https://github.com/lampac-nextgen/lampac/blob/main/docker-compose.yaml) and
+# docs/deployment/docker.mdx. Differences from upstream: state lives under
+# ${APP_DATA_DIR} instead of relative host directories, the fixed 10.10.10.10
+# bridge network is dropped in favour of the Umbrel main network, and the
+# config files are seeded by an init service before the app starts.
+#
+# The image is pinned by digest (multi-arch index, linux/amd64 + linux/arm64),
+# so bumping the app version is an explicit change: update the tag and digest in
+# both services below, then the manifest version.
+
+services:
+  app_proxy:
+    environment:
+      APP_HOST: lampac_lampac_1
+      APP_PORT: 9118
+
+  # umbrelOS materializes bind-mount targets that do not exist yet as
+  # directories, so /data/config/init.conf and /data/config/passwd would be
+  # created as directories and the app cannot write its config or root password
+  # file. This init service removes those empty placeholders and writes both
+  # files once; it never overwrites them afterwards, so edits survive restarts
+  # and updates.
+  init:
+    image: ghcr.io/lampac-nextgen/lampac:1.59.2@sha256:45d3623eda8eb9b6376101154796527ca850ec57b6d10b07b3b1be56e34b719d
+    entrypoint: ["/bin/sh", "-c"]
+    user: "0:0"
+    restart: "no"
+    environment:
+      APP_LAMPAC_ROOT_PASSWORD: ${APP_LAMPAC_ROOT_PASSWORD}
+    volumes:
+      - ${APP_DATA_DIR}/data:/seed
+    command:
+      - |
+        set -e
+        mkdir -p /seed/config /seed/cache /seed/database
+        for f in /seed/config/init.conf /seed/config/passwd; do
+          if [ -d "$f" ]; then rmdir "$f"; fi
+        done
+        if [ ! -s /seed/config/init.conf ]; then
+          if [ -f /lampac/config/example.init.conf ]; then
+            cp /lampac/config/example.init.conf /seed/config/init.conf
+          else
+            printf '%s\n' '{}' > /seed/config/init.conf
+          fi
+        fi
+        if [ ! -s /seed/config/passwd ]; then
+          printf '%s' "${APP_LAMPAC_ROOT_PASSWORD}" > /seed/config/passwd
+        fi
+        chmod 600 /seed/config/passwd
+        chown -R 1000:1000 /seed
+        echo "Lampac config ready"
+
+  lampac:
+    image: ghcr.io/lampac-nextgen/lampac:1.59.2@sha256:45d3623eda8eb9b6376101154796527ca850ec57b6d10b07b3b1be56e34b719d
+    restart: unless-stopped
+    stop_grace_period: 30s
+    # Chromium (Playwright) uses shared memory heavily; the 64 MB default is not
+    # enough for the modules that render pages.
+    shm_size: 1024mb
+    depends_on:
+      init:
+        condition: service_completed_successfully
+    volumes:
+      - ${APP_DATA_DIR}/data/config/init.conf:/lampac/init.conf
+      - ${APP_DATA_DIR}/data/config/passwd:/lampac/passwd
+      - ${APP_DATA_DIR}/data/cache:/lampac/cache
+      - ${APP_DATA_DIR}/data/database:/lampac/database
