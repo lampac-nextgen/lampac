@@ -4,16 +4,21 @@
     var lampac_host = '{localhost}';
     var network = new Lampa.Reguest();
 
-    function getToken() {
-        return Lampa.Storage.get('token', '')
-            || Lampa.Storage.get('lampac_unic_id', '')
-            || Lampa.Storage.get('account_email', '');
-    }
-
+    // Пользователя выбирает сервер, как в account() остальных плагинов Lampac: token,
+    // account_email и uid передаются отдельными параметрами, RequestInfo.getuid берёт первое
+    // непустое. Иначе подписки живут под номером устройства, а закладки и тайм-коды того же
+    // человека — под его аккаунтом.
     function apiUrl(path) {
-        var token = getToken();
-        var sep = path.indexOf('?') >= 0 ? '&' : '?';
-        return lampac_host + path + (token ? sep + 'token=' + encodeURIComponent(token) : '');
+        var url = lampac_host + path;
+        var ids = {
+            token: Lampa.Storage.get('token', ''),
+            account_email: Lampa.Storage.get('account_email', ''),
+            uid: Lampa.Storage.get('lampac_unic_id', '')
+        };
+        for (var name in ids) {
+            if (ids[name]) url = Lampa.Utils.addUrlComponent(url, name + '=' + encodeURIComponent(ids[name]));
+        }
+        return url;
     }
 
     function pad(n) { return n < 10 ? '0' + n : '' + n; }

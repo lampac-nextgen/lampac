@@ -239,9 +239,8 @@ namespace TelegramBot
             if (text.StartsWith("/start"))
             {
                 var parts = text.Split(' ');
-                if (parts.Length > 1 && parts[1].StartsWith("link_"))
+                if (parts.Length > 1 && TryParseLinkPayload(parts[1], out var uid))
                 {
-                    var uid = parts[1].Substring(5);
                     Users[chatId] = new TgUser { chat_id = chatId, username = msg.From?.Username ?? "", lampac_uid = uid, linked_at = DateTime.UtcNow };
                     SaveUsers();
                     await Bot.SendMessage(chatId, "✅ *Аккаунт привязан!*\n\nИспользуйте кнопки ниже для управления.", parseMode: ParseMode.Markdown, replyMarkup: MainKeyboard);
@@ -1732,7 +1731,68 @@ namespace TelegramBot
         {
             if (Bot == null) return new { success = false, msg = "bot_not_running" };
             var me = await Bot.GetMe();
-            return new { success = true, link = $"https://t.me/{me.Username}?start=link_{uid}" };
+            return new { success = true, link = $"https://t.me/{me.Username}?start={LinkPayload(uid)}" };
+        }
+
+        // Telegram пропускает в параметре deep-link только A-Za-z0-9_- и не длиннее 64 символов,
+        // а uid бывает email-ом: «@» и «.» обрывают параметр, и бот получает голый /start.
+        // Такой uid уходит в base64url с префиксом link64_; безопасный — как раньше, link_{uid}.
+        const string LinkPrefix = "link_";
+        const string LinkPrefix64 = "link64_";
+        const int DeepLinkMaxLength = 64;
+
+        static string LinkPayload(string uid)
+        {
+            if (Regex.IsMatch(uid, "^[A-Za-z0-9_-]+$"))
+                return LinkPrefix + uid;
+
+            string encoded = Convert.ToBase64String(System.Text.Encoding.UTF8.GetBytes(uid))
+                .TrimEnd('=').Replace('+', '-').Replace('/', '_');
+
+            // Длинный email не влезет и так; прежний формат хотя бы работает командой
+            // «/start link_{uid}», набранной боту вручную.
+            return LinkPrefix64.Length + encoded.Length <= DeepLinkMaxLength
+                ? LinkPrefix64 + encoded
+                : LinkPrefix + uid;
+        }
+
+        static bool TryParseLinkPayload(string payload, out string uid)
+        {
+            uid = null;
+
+            if (payload.StartsWith(LinkPrefix64))
+            {
+                string encoded = payload.Substring(LinkPrefix64.Length).Replace('-', '+').Replace('_', '/');
+                encoded = encoded.PadRight(encoded.Length + (4 - encoded.Length % 4) % 4, '=');
+                try
+                {
+                    uid = System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(encoded));
+                }
+                catch (FormatException)
+                {
+                    return false;
+                }
+            }
+            else if (payload.StartsWith(LinkPrefix))
+            {
+                uid = payload.Substring(LinkPrefix.Length);
+            }
+
+            return !string.IsNullOrEmpty(uid);
+        }
+
+        // Плагин передаёт account_email и uid устройства, сервер выбирает account_email. У кого бот
+        // привязан по uid устройства (прежний плагин слал только его), подписки не должны пропасть:
+        // если под основным id привязки нет, а под uid устройства есть — берём его.
+        public static string ResolveUid(string uid, string deviceUid)
+        {
+            if (string.IsNullOrEmpty(deviceUid) || deviceUid == uid)
+                return uid;
+
+            if (Users.Values.Any(u => u.lampac_uid == uid))
+                return uid;
+
+            return Users.Values.Any(u => u.lampac_uid == deviceUid) ? deviceUid : uid;
         }
         #endregion
 
