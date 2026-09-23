@@ -1,0 +1,1 @@
+export APP_LAMPAC_ROOT_PASSWORD="$(derive_entropy "${app_entropy_identifier}-root-password")"
