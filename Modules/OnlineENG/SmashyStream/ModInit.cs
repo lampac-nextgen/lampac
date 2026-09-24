@@ -50,6 +50,8 @@ public class ModInit : IModuleLoaded, IModuleOnline
         // https://anyembed.xyz/
         conf = ModuleInvoke.Init("Smashystream", new OnlinesSettings("Smashystream", "https://anyembed.xyz")
         {
+            // anyembed.xyz returns 451 (DMCA); no working drop-in mirror — disabled by default
+            enable = false,
             displayindex = 1030,
             streamproxy = true
         });
