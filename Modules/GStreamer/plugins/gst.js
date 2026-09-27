@@ -131,7 +131,7 @@
                 var src = e.data.url.replace(/&(preload|stat|m3u)/g, '&play');
 
                 var network = new Lampa.Reguest();
-                network.timeout = 40000;
+                network.timeout(40000);
 
                 network.native(account('{localhost}/gst/add?linkencode=' + encodeURIComponent(Lampa.Base64.encode(src))), function (response) {
                     Lampa.Loading.stop();
@@ -217,7 +217,7 @@
     function handlePlayerDestroy() {
         if (taskId != null) {
             var network = new Lampa.Reguest();
-            network.timeout = 5000;
+            network.timeout(5000);
             network.native('{localhost}/gst/remove?id=' + taskId, function (response) { }, function (error) { });
             taskId = null;
         }
