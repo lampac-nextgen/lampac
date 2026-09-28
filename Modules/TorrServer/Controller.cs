@@ -26,7 +26,9 @@ public class TorrServerController : BaseController
     #region HttpClient
     private static readonly HttpClient httpClient = new HttpClient(new SocketsHttpHandler
     {
-        AllowAutoRedirect = true,
+        // HttpClient drops the Authorization header on redirect, so TorrServer answers 401.
+        // Redirects are passed to the client instead, see CopyProxyHttpResponse.
+        AllowAutoRedirect = false,
         AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate,
         SslOptions = { RemoteCertificateValidationCallback = (sender, cert, chain, sslPolicyErrors) => true },
         MaxConnectionsPerServer = 100
@@ -325,6 +327,13 @@ public class TorrServerController : BaseController
 
         UpdateHeaders(responseMessage.Headers);
         UpdateHeaders(responseMessage.Content?.Headers);
+
+        if (responseMessage.Headers.NonValidated.TryGetValues("Location", out var location))
+        {
+            string path = location.ToString();
+            if (path.StartsWith('/') && !path.StartsWith("//"))
+                response.Headers.Location = "/ts" + path;
+        }
 
         await using (var responseStream = await responseMessage.Content.ReadAsStreamAsync(context.RequestAborted).ConfigureAwait(false))
         {
