@@ -123,16 +123,24 @@ public partial class GStask
 
                 if (ret == StateChangeReturn.Async)
                 {
-                    // ждём завершение команды в pipeline
+                    // ждём завершение команды в pipeline.
+                    // Новый pipeline (Defrost) до preroll не имеет mq.src_0, куда уходит seek:
+                    // pad появляется, когда demuxer прочитал заголовок источника. TorrServer
+                    // после простоя открывает раздачу дольше 5 с, поэтому ждём как EnsureSegment.
+                    ulong prerollTimeoutNs = reusePipeline
+                        ? 5_000_000_000UL
+                        : 45 * GstSecond;
+
                     using var msg = bus.TimedPopFiltered(
-                        5_000_000_000UL,
+                        prerollTimeoutNs,
                         MessageType.AsyncDone | MessageType.Error | MessageType.Eos
                     );
 
                     uint type = BusReader.GetType(msg);
 
                     if (type == BusReader.Error ||
-                        type == BusReader.Eos)
+                        type == BusReader.Eos ||
+                        (!reusePipeline && type != BusReader.AsyncDone))
                     {
                         LogTaskError(
                             "SeekClockTime",
