@@ -126,8 +126,18 @@
           return -1;
         }
 
-        function cursor() { return Lampa.Storage.get('lampac_bookmark_version', '0'); }
-        function setCursor(value) { Lampa.Storage.set('lampac_bookmark_version', String(value || 0)); }
+        // Курсор верен только для того scope, под который выдан: сменили профиль/аккаунт — тянем полный /dump.
+        function syncScope() {
+          return [Lampa.Storage.get('account_email', ''), Lampa.Storage.get('lampac_unic_id', ''), Lampa.Storage.get('lampac_profile_id', '')].join('|');
+        }
+        function cursor() {
+          if (Lampa.Storage.get('lampac_bookmark_scope', '') !== syncScope()) return '0';
+          return Lampa.Storage.get('lampac_bookmark_version', '0');
+        }
+        function setCursor(value) {
+          Lampa.Storage.set('lampac_bookmark_scope', syncScope());
+          Lampa.Storage.set('lampac_bookmark_version', String(value || 0));
+        }
 
         /**
          * Сверка идёт дельтами: сервер держит строку на карточку и курсор, и присылает только то,
