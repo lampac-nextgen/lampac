@@ -30,8 +30,9 @@ namespace JacRed.Engine
                 queryString.Append($"&apikey={HttpUtility.UrlEncode(ModInit.conf.webApiKey)}");
 
             var root = await Http.Get<JObject>($"{ModInit.conf.webApiHost}/api/v2.0/indexers/all/results?query={HttpUtility.UrlEncode(query)}" + queryString.ToString(), timeoutSeconds: 8);
+            // null = upstream non-2xx/timeout/invalid JSON, not an empty search
             if (root == null)
-                return new List<TorrentDetails>();
+                return null;
 
             var results = root.GetValue("Results")?.ToObject<JArray>();
             if (results == null || results.Count == 0)
