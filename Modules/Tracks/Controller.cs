@@ -5,6 +5,7 @@ using Shared.Attributes;
 using Shared.Services;
 using Shared.Services.Utilities;
 using System;
+using System.Linq;
 using System.Text;
 using System.Text.RegularExpressions;
 using System.Threading.Tasks;
@@ -49,8 +50,21 @@ public class TracksController : BaseController
         {
             media = Regex.Replace(media, "[^a-z0-9_:\\-\\/\\.\\=\\?\\&\\%\\@]+", "", RegexOptions.IgnoreCase);
 
-            if (media.Contains("/stream/") && ModInit.conf.tsuri != null)
-                media = Regex.Replace(media, "^https?://[^/]+", ModInit.conf.tsuri, RegexOptions.IgnoreCase);
+            if (media.Contains("/stream/"))
+            {
+                if (ModInit.conf.tsuri != null)
+                    media = Regex.Replace(media, "^https?://[^/]+", ModInit.conf.tsuri, RegexOptions.IgnoreCase);
+
+                // TorrServer returns an empty body for preload/stat/m3u; ffprobe needs the play stream
+                int q = media.IndexOf('?');
+                if (q > 0)
+                {
+                    var args = media[(q + 1)..].Split('&', StringSplitOptions.RemoveEmptyEntries)
+                        .Where(a => !Regex.IsMatch(a, "^(preload|stat|m3u|play)(=|$)", RegexOptions.IgnoreCase));
+
+                    media = media[..q] + "?" + string.Join("&", args.Append("play"));
+                }
+            }
         }
         else if (media.Contains("/proxy/") && media.Contains(".mkv"))
         {
