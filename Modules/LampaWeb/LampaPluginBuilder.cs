@@ -1,3 +1,4 @@
+using Shared;
 using System.Collections.Generic;
 using System.Web;
 
@@ -27,10 +28,10 @@ public static class LampaPluginBuilder
         bool useTokenRoutes,
         string routeToken)
     {
-        if (initPlugins.dlna)
+        if (initPlugins.dlna && ModuleLoaded("DLNA"))
             AddPlugin(target, "dlna", "DLNA", useTokenRoutes, routeToken, worktoken: true);
 
-        if (initPlugins.tracks)
+        if (initPlugins.tracks && ModuleLoaded("Tracks"))
             AddPlugin(target, "tracks", "Tracks.js", useTokenRoutes, routeToken, worktoken: true);
 
         if (initPlugins.transcoding)
@@ -69,7 +70,7 @@ public static class LampaPluginBuilder
         if (!initPlugins.sync && initPlugins.bookmark)
             AddPlugin(target, "bookmark", "Синхронизация закладок", useTokenRoutes, routeToken, worktoken: true);
 
-        if (initPlugins.torrserver)
+        if (initPlugins.torrserver && ModuleLoaded("TorrServer"))
             AddPlugin(target, "ts", "TorrServer", useTokenRoutes, routeToken, worktoken: true);
 
         if (initPlugins.backup)
@@ -89,6 +90,9 @@ public static class LampaPluginBuilder
                 urlList.Add($"\"{p.url}\"");
         }
     }
+
+    static bool ModuleLoaded(string name)
+        => CoreInit.modules?.Exists(m => m?.enable == true && m.name == name) == true;
 
     static void AddPlugin<T>(
         List<T> target,
