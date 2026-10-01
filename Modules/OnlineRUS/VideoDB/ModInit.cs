@@ -1,3 +1,4 @@
+using Shared;
 using Shared.Models.Base;
 using Shared.Models.Events;
 using Shared.Models.Module;
@@ -10,6 +11,9 @@ namespace VideoDB;
 public class ModInit : IModuleLoaded
 {
     public static OnlinesSettings conf;
+
+    /// <summary>"VideoDB": { "cdp": "http://chrome:9222" } — Chrome для обновления cookie антибота obrut.show</summary>
+    public static string cdp;
 
     public void Loaded(InitspaceModel baseconf)
     {
@@ -27,6 +31,7 @@ public class ModInit : IModuleLoaded
         conf = ModuleInvoke.Init("VideoDB", new OnlinesSettings("VideoDB", "https://kinogo.media", streamproxy: true)
         {
             httpversion = 2,
+            httptimeout = 30,
             rch_access = "apk",
             stream_access = "apk,cors,web",
             priorityBrowser = "http",
@@ -44,5 +49,7 @@ public class ModInit : IModuleLoaded
                 ("sec-fetch-site", "same-site")
             ).ToDictionary()
         });
+
+        cdp = CoreInit.CurrentConf?["VideoDB"]?["cdp"]?.ToString();
     }
 }

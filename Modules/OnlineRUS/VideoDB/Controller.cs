@@ -41,20 +41,34 @@ public class VideoDBController : BaseOnlineController
 
             if (rch?.enable == true || init.priorityBrowser == "http")
             {
+                if (init.httpversion == 2)
+                    httpHydra.RegisterHttp(http2Client);
+
+                string cookie = ChromeCookie.Value;
+
+            cookieRetry:
                 var headers = httpHeaders(init, HeadersModel.Init(
                     ("sec-fetch-dest", "iframe"),
                     ("sec-fetch-mode", "navigate"),
                     ("sec-fetch-site", "cross-site"),
-                    ("referer", "{host}/")
+                    ("referer", "{host}/"),
+                    ("cookie", cookie)
                 ));
-
-                if (init.httpversion == 2)
-                    httpHydra.RegisterHttp(http2Client);
 
                 await httpHydra.GetSpan(href, newheaders: headers, spanAction: html =>
                 {
                     embed = oninvk.Embed(html);
                 });
+
+                if (embed == null && rch?.enable != true && !string.IsNullOrEmpty(ModInit.cdp))
+                {
+                    string fresh = await ChromeCookie.Refresh(ModInit.cdp, href);
+                    if (fresh != null && fresh != cookie)
+                    {
+                        cookie = fresh;
+                        goto cookieRetry;
+                    }
+                }
             }
             else
             {
@@ -124,7 +138,8 @@ public class VideoDBController : BaseOnlineController
                     ("sec-fetch-mode", "cors"),
                     ("sec-fetch-site", "same-site"),
                     ("origin", "{host}"),
-                    ("referer", "{host}/")
+                    ("referer", "{host}/"),
+                    ("cookie", ChromeCookie.Value)
                 ));
 
                 if (rch?.enable == true)
