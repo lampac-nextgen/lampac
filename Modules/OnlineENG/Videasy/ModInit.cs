@@ -46,7 +46,7 @@ public class ModInit : IModuleLoaded, IModuleOnline
 
     private void UpdateConf()
     {
-        conf = ModuleInvoke.Init("Videasy", new OnlinesSettings("Videasy", "https://player.videasy.net")
+        conf = ModuleInvoke.Init("Videasy", new OnlinesSettings("Videasy", "https://player.videasy.to")
         {
             displayindex = 1020,
             streamproxy = true
