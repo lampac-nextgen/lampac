@@ -34,46 +34,48 @@ public static class LampaPluginBuilder
         if (initPlugins.tracks && ModuleLoaded("Tracks"))
             AddPlugin(target, "tracks", "Tracks.js", useTokenRoutes, routeToken, worktoken: true);
 
-        if (initPlugins.transcoding)
+        if (initPlugins.transcoding && ModuleLoaded("Transcoding"))
             AddPlugin(target, "transcoding", "Transcoding video", useTokenRoutes, routeToken, worktoken: true);
 
-        if (initPlugins.tmdbProxy)
+        if (initPlugins.tmdbProxy && ModuleLoaded("TmdbProxy"))
             AddPlugin(target, "tmdbproxy", "TMDB Proxy", useTokenRoutes, routeToken, worktoken: true);
 
-        if (initPlugins.cubProxy)
+        if (initPlugins.cubProxy && ModuleLoaded("CubProxy"))
             AddPlugin(target, "cubproxy", "CUB Proxy", useTokenRoutes, routeToken, worktoken: true);
 
-        if (initPlugins.online)
+        if (initPlugins.online && ModuleLoaded("Online"))
             AddPlugin(target, "online", "Онлайн", useTokenRoutes, routeToken, worktoken: true);
 
-        if (initPlugins.watch_together)
+        if (initPlugins.watch_together && ModuleLoaded("WatchTogether"))
             AddPlugin(target, "watchtogether", "Watch Together", useTokenRoutes, routeToken, worktoken: false);
 
-        if (initPlugins.catalog)
+        if (initPlugins.catalog && ModuleLoaded("Catalog"))
             AddPlugin(target, "catalog", "Альтернативные источники каталога", useTokenRoutes, routeToken, worktoken: true);
 
         if (initPlugins.dorama)
             AddPlugin(target, "dorama", "Дорамы", useTokenRoutes, routeToken, worktoken: true);
 
-        if (adult && initPlugins.sisi)
+        if (adult && initPlugins.sisi && ModuleLoaded("SISI"))
         {
             AddPlugin(target, "sisi", "Клубничка", useTokenRoutes, routeToken, worktoken: true);
             AddPlugin(target, "startpage", "Стартовая страница", useTokenRoutes, routeToken, worktoken: false);
         }
 
-        if (initPlugins.sync)
+        bool sync = initPlugins.sync && ModuleLoaded("Sync");
+
+        if (sync)
             AddPlugin(target, "sync", "Синхронизация", useTokenRoutes, routeToken, worktoken: true);
 
-        if (!initPlugins.sync && initPlugins.timecode)
+        if (!sync && initPlugins.timecode && ModuleLoaded("TimeCode"))
             AddPlugin(target, "timecode", "Синхронизация тайм-кодов", useTokenRoutes, routeToken, worktoken: true);
 
-        if (!initPlugins.sync && initPlugins.bookmark)
+        if (!sync && initPlugins.bookmark && ModuleLoaded("Sync"))
             AddPlugin(target, "bookmark", "Синхронизация закладок", useTokenRoutes, routeToken, worktoken: true);
 
         if (initPlugins.torrserver && ModuleLoaded("TorrServer"))
             AddPlugin(target, "ts", "TorrServer", useTokenRoutes, routeToken, worktoken: true);
 
-        if (initPlugins.backup)
+        if (initPlugins.backup && ModuleLoaded("Storage"))
             AddPlugin(target, "backup", "Backup", useTokenRoutes, routeToken, worktoken: true);
 
         if (customPlugins == null)
@@ -91,8 +93,9 @@ public static class LampaPluginBuilder
         }
     }
 
-    static bool ModuleLoaded(string name)
-        => CoreInit.modules?.Exists(m => m?.enable == true && m.name == name) == true;
+    // Precompiled modules from mods/*.dll are registered as "Name.dll" without enable set.
+    internal static bool ModuleLoaded(string name)
+        => CoreInit.modules?.Exists(m => m?.assembly != null && (m.name == name || m.name == name + ".dll")) == true;
 
     static void AddPlugin<T>(
         List<T> target,
