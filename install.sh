@@ -27,6 +27,15 @@ readonly LISTEN_PORT="${LAMPAC_PORT:-9118}"
 readonly UPDATE_SCRIPT_NAME="install.sh"
 # Имя файлика для хранения установленной версии Лампака
 readonly VERSION_FILE_NAME="version.txt"
+# Бэкапы перед --update — вне INSTALL_ROOT, иначе их сотрёт rsync --delete
+readonly BACKUP_ROOT="${LAMPAC_BACKUP_DIR:-${INSTALL_ROOT%/}-backups}"
+readonly BACKUP_KEEP="${LAMPAC_BACKUP_KEEP:-1}"
+# Метка в каждом бэкапе: удаляем только каталоги с ней, чужие не трогаем
+readonly BACKUP_MARKER=".lampac-backup"
+# Проверка запуска после --update: /version?type=hash отдаёт ядро, без редиректа
+readonly HEALTH_URL="${LAMPAC_HEALTH_URL:-http://127.0.0.1:${LISTEN_PORT}/version?type=hash}"
+readonly HEALTH_TIMEOUT="${LAMPAC_HEALTH_TIMEOUT:-240}"
+readonly HEALTH_INTERVAL=5
 
 REMOVE=0
 UPDATE=0
@@ -34,12 +43,18 @@ DRY_RUN=0
 PRE_RELEASE=0
 VERBOSE=0
 FORCE=0
+NO_BACKUP=0
+NO_HEALTH_CHECK=0
 TARGET_VERSION=""
 ARCH=""
 PUBLISH_URL=""
 CLEANUP_PATHS=()
 # Set while service is stopped during --update; EXIT trap may restart it.
 _UPDATE_SERVICE_STOPPED=0
+# Set when HEALTH_URL answered before --update; enables the post-update health check.
+_HEALTH_CHECK_ARMED=0
+# Backup made by the running --update; the EXIT trap names it if the update is interrupted.
+_UPDATE_BACKUP_DIR=""
 
 # ─── Colors ──────────────────────────────────────────────────────────────────
 
@@ -186,21 +201,31 @@ usage() {
   printf '  %s%-24s%s %-34s %s(default: %s)%s\n' \
     "$C_CYAN" "LAMPAC_GID" "$C_RESET" "Preferred GID" "$C_DIM" "1000" "$C_RESET"
   printf '  %s%-24s%s %-34s %s(default: %s)%s\n' \
-    "$C_CYAN" "LAMPAC_PORT" "$C_RESET" "HTTP port hint" "$C_DIM" "$LISTEN_PORT" "$C_RESET"
+    "$C_CYAN" "LAMPAC_PORT" "$C_RESET" "HTTP port (hint, health check)" "$C_DIM" "$LISTEN_PORT" "$C_RESET"
+  printf '  %s%-24s%s %-34s %s(default: %s)%s\n' \
+    "$C_CYAN" "LAMPAC_BACKUP_DIR" "$C_RESET" "Backups made by --update" "$C_DIM" "$BACKUP_ROOT" "$C_RESET"
+  printf '  %s%-24s%s %-34s %s(default: %s)%s\n' \
+    "$C_CYAN" "LAMPAC_BACKUP_KEEP" "$C_RESET" "How many backups to keep" "$C_DIM" "$BACKUP_KEEP" "$C_RESET"
+  printf '  %s%-24s%s %-34s %s(default: %s)%s\n' \
+    "$C_CYAN" "LAMPAC_HEALTH_URL" "$C_RESET" "Health check after --update" "$C_DIM" "$HEALTH_URL" "$C_RESET"
+  printf '  %s%-24s%s %-34s %s(default: %s)%s\n' \
+    "$C_CYAN" "LAMPAC_HEALTH_TIMEOUT" "$C_RESET" "Health check wait, seconds" "$C_DIM" "$HEALTH_TIMEOUT" "$C_RESET"
   printf '  %s%-24s%s Skip %s--remove%s confirmation when set to 1\n' \
     "$C_CYAN" "LAMPAC_CONFIRM_REMOVE" "$C_RESET" "$C_RED" "$C_RESET"
   printf '\n'
 
   printf '%sOptions:%s\n' "$C_BOLD" "$C_RESET"
-  printf '  %s%-16s%s %s\n' "$C_GREEN"  "--update"      "$C_RESET" "Replace app files from latest (or --tag) release"
-  printf '  %s%-16s%s %s\n' "$C_GREEN"  "--tag VER"     "$C_RESET" "Install or update a specific release tag"
-  printf '  %s%-16s%s %s\n' "$C_YELLOW" "--force"       "$C_RESET" "Reinstall even if the desired version is already installed"
-  printf '  %s%-16s%s %s\n' "$C_YELLOW" "--dry-run"     "$C_RESET" "Show what would change without applying updates"
-  printf '  %s%-16s%s %s\n' "$C_YELLOW" "--pre-release" "$C_RESET" "Use latest GitHub pre-release (${RELEASE_ZIP_NAME})"
-  printf '  %s%-16s%s %s\n' "$C_RED"    "--remove"      "$C_RESET" "Remove systemd unit, user, and install directory"
-  printf '  %s%-16s%s %s\n' "$C_BLUE"   "-v, --verbose" "$C_RESET" "Show full output of all commands (for debugging)"
-  printf '  %s%-16s%s %s\n' "$C_BLUE"   "-h, --help"    "$C_RESET" "Show this help and exit"
-  printf '  %s%-16s%s %s\n' "$C_BLUE"   "--version"     "$C_RESET" "Show installed version"
+  printf '  %s%-18s%s %s\n' "$C_GREEN"  "--update"          "$C_RESET" "Replace app files from latest (or --tag) release"
+  printf '  %s%-18s%s %s\n' "$C_GREEN"  "--tag VER"         "$C_RESET" "Install or update a specific release tag"
+  printf '  %s%-18s%s %s\n' "$C_YELLOW" "--force"           "$C_RESET" "Reinstall even if the desired version is already installed"
+  printf '  %s%-18s%s %s\n' "$C_YELLOW" "--dry-run"         "$C_RESET" "Show what would change without applying updates"
+  printf '  %s%-18s%s %s\n' "$C_YELLOW" "--pre-release"     "$C_RESET" "Use latest GitHub pre-release (${RELEASE_ZIP_NAME})"
+  printf '  %s%-18s%s %s\n' "$C_YELLOW" "--no-backup"       "$C_RESET" "Update without a backup (nothing to roll back to)"
+  printf '  %s%-18s%s %s\n' "$C_YELLOW" "--no-health-check" "$C_RESET" "Do not wait for the service to respond after --update"
+  printf '  %s%-18s%s %s\n' "$C_RED"    "--remove"          "$C_RESET" "Remove systemd unit, user, and install directory"
+  printf '  %s%-18s%s %s\n' "$C_BLUE"   "-v, --verbose"     "$C_RESET" "Show full output of all commands (for debugging)"
+  printf '  %s%-18s%s %s\n' "$C_BLUE"   "-h, --help"        "$C_RESET" "Show this help and exit"
+  printf '  %s%-18s%s %s\n' "$C_BLUE"   "--version"         "$C_RESET" "Show installed version"
   printf '\n'
 
   printf '%sExamples:%s\n' "$C_BOLD" "$C_RESET"
@@ -295,6 +320,14 @@ parse_args() {
         ;;
       --force)
         FORCE=1
+        shift
+        ;;
+      --no-backup)
+        NO_BACKUP=1
+        shift
+        ;;
+      --no-health-check)
+        NO_HEALTH_CHECK=1
         shift
         ;;
       -v|--verbose)
@@ -869,12 +902,223 @@ install_app() {
   save_installed_version "$release_version"
 }
 
+# ─── Backup / health check / rollback ────────────────────────────────────────
+
+# Проверить настройки бэкапа и проверки запуска до того, как что-то менять
+validate_update_settings() {
+  if [[ ! "$BACKUP_KEEP" =~ ^[1-9][0-9]{0,2}$ ]]; then
+    log_err "LAMPAC_BACKUP_KEEP must be a number from 1 to 999 (got \"${BACKUP_KEEP}\")."
+    exit 1
+  fi
+  if [[ ! "$HEALTH_TIMEOUT" =~ ^[1-9][0-9]{0,4}$ ]]; then
+    log_err "LAMPAC_HEALTH_TIMEOUT must be a number of seconds from 1 to 99999 (got \"${HEALTH_TIMEOUT}\")."
+    exit 1
+  fi
+  local root backups
+  root="$(realpath -m "$INSTALL_ROOT")"
+  backups="$(realpath -m "$BACKUP_ROOT")"
+  if [[ "$backups" == "$root" || "$backups" == "$root"/* ]]; then
+    log_err "LAMPAC_BACKUP_DIR (${BACKUP_ROOT}) must be outside ${INSTALL_ROOT}: rsync --delete would erase it."
+    exit 1
+  fi
+}
+
+# Один запрос к HEALTH_URL. Любой ответ ниже 500 значит, что Lampac запущен:
+# Kestrel открывает порт только после сборки модулей, а при listen.version=false
+# /version отвечает 404.
+health_probe() {
+  local code
+  code=$(curl -s -o /dev/null --noproxy '*' --max-time 5 -w '%{http_code}' "$HEALTH_URL" 2>/dev/null) || true
+  [[ "$code" =~ ^[234][0-9][0-9]$ ]]
+}
+
+# Ждать ответа HEALTH_URL не дольше HEALTH_TIMEOUT секунд
+wait_for_health() {
+  local started=$SECONDS
+  spinner_start "Waiting for ${SERVICE_NAME} to respond (up to ${HEALTH_TIMEOUT}s)..."
+  while (( SECONDS - started < HEALTH_TIMEOUT )); do
+    if health_probe; then
+      spinner_ok "${SERVICE_NAME} responded after $(( SECONDS - started ))s"
+      return 0
+    fi
+    sleep "$HEALTH_INTERVAL"
+  done
+  spinner_err "${SERVICE_NAME} did not respond within ${HEALTH_TIMEOUT}s (${HEALTH_URL})"
+  return 1
+}
+
+# Решить, проверять ли запуск после обновления. Адрес проверяем на старой версии,
+# пока она работает: если он не отвечает уже сейчас (свой порт, listen.ip, listen.sock,
+# сервис остановлен), новая версия по нему тоже не ответит, и откат снёс бы рабочий релиз.
+arm_health_check() {
+  _HEALTH_CHECK_ARMED=0
+  if [[ "$NO_HEALTH_CHECK" -eq 1 ]]; then
+    log_skip "Health check disabled (--no-health-check)"
+    return 0
+  fi
+  if health_probe; then
+    _HEALTH_CHECK_ARMED=1
+    return 0
+  fi
+  log_warn "${HEALTH_URL} does not respond before the update — skipping the health check,"
+  log_warn "a release that fails to start will not be rolled back. Set LAMPAC_HEALTH_URL or LAMPAC_PORT."
+}
+
+# Размер будущего бэкапа в КБ: rsync --dry-run с теми же исключениями
+backup_size_kb() {
+  local empty bytes
+  empty="$(mktemp -d /tmp/lampac-backup-size.XXXXXX)"
+  bytes=$(rsync -a --dry-run --stats "$@" "${INSTALL_ROOT}/" "${empty}/" \
+    | awk -F: '/^Total file size/ {print $2}' | tr -cd '0-9')
+  rmdir "$empty"
+  echo $(( ${bytes:-0} / 1024 + 1 ))
+}
+
+# Создать каталог бэкапов. Права меняем, только если создали его сами.
+prepare_backup_root() {
+  if [[ ! -d "$BACKUP_ROOT" ]]; then
+    mkdir -p "$BACKUP_ROOT"
+    chmod 700 "$BACKUP_ROOT"
+  fi
+}
+
+# Прервать обновление до остановки сервиса, если под бэкап не хватает места
+check_backup_space() {
+  local need_kb="$1" free_kb
+  free_kb=$(df -Pk "$BACKUP_ROOT" | awk 'NR == 2 {print $4}') || free_kb=0
+  if (( free_kb < need_kb )); then
+    log_err "Not enough space for a backup in ${BACKUP_ROOT}: need $(( need_kb / 1024 )) MB, free $(( free_kb / 1024 )) MB."
+    log_err "Free up space, point LAMPAC_BACKUP_DIR to another disk, or run with --no-backup."
+    exit 1
+  fi
+}
+
+# Оставить не больше $1 бэкапов, удалив самые старые. Имя бэкапа начинается с даты
+# и времени, поэтому порядок по имени хронологический. Каталоги без метки не трогаем:
+# LAMPAC_BACKUP_DIR может быть общим каталогом бэкапов.
+prune_backups() {
+  local keep="$1" dir
+  local -a candidates=() backups=()
+  shopt -s nullglob
+  candidates=("${BACKUP_ROOT}"/[0-9][0-9][0-9][0-9][0-9][0-9][0-9][0-9]-[0-9][0-9][0-9][0-9][0-9][0-9]_*/)
+  shopt -u nullglob
+  for dir in "${candidates[@]}"; do
+    if [[ -f "${dir}${BACKUP_MARKER}" ]]; then
+      backups+=("$dir")
+    fi
+  done
+  local excess=$(( ${#backups[@]} - keep ))
+  (( excess > 0 )) || return 0
+  for dir in "${backups[@]:0:excess}"; do
+    rm -rf "${dir%/}"
+    log_del "Removed old backup ${dir%/}"
+  done
+}
+
+# Сохранить файлы приложения. Исключения те же, что у обновления: конфиг, базы
+# и кэш обновление не трогает, поэтому их не бэкапим и при откате не возвращаем.
+create_backup() {
+  local dir="$1"; shift
+  if ! mkdir -m 700 "$dir"; then
+    log_err "Update aborted — could not create backup directory ${dir}."
+    exit 1
+  fi
+  : > "${dir}/${BACKUP_MARKER}"
+  spinner_start "Backing up ${INSTALL_ROOT}..."
+  if ! rsync -a "$@" "${INSTALL_ROOT}/" "${dir}/app/"; then
+    spinner_err "Backup failed"
+    rm -rf "$dir"
+    log_err "Update aborted — could not back up ${INSTALL_ROOT} to ${dir}."
+    exit 1
+  fi
+  if [[ -f "${INSTALL_ROOT}/${VERSION_FILE_NAME}" ]]; then
+    cp -a "${INSTALL_ROOT}/${VERSION_FILE_NAME}" "${dir}/${VERSION_FILE_NAME}"
+  fi
+  spinner_ok "Backup saved to ${dir}"
+}
+
+# Вернуть файлы из бэкапа и завершить скрипт с ошибкой. Сначала убедиться,
+# что бэкап на месте: с неполным бэкапом не трогаем ничего.
+rollback_update() {
+  local backup_dir="$1" new_version="$2"; shift 2
+  local previous="the previous version"
+  if [[ -f "${backup_dir}/${VERSION_FILE_NAME}" ]]; then
+    previous="$(normalize_version "$(cat "${backup_dir}/${VERSION_FILE_NAME}")")"
+  fi
+
+  if [[ ! -r "${backup_dir}/app/Core.dll" ]]; then
+    log_err "Backup ${backup_dir} is missing or incomplete — nothing was restored."
+    log_err "Lampac ${new_version} is left in ${INSTALL_ROOT}. Logs: journalctl -u ${SERVICE_NAME}"
+    exit 1
+  fi
+
+  log_warn "Rolling back to ${previous} from ${backup_dir}..."
+  systemctl stop "$SERVICE_NAME" 2>/dev/null || true
+  _UPDATE_SERVICE_STOPPED=1
+  if ! rsync -a --delete "$@" "${backup_dir}/app/" "${INSTALL_ROOT}/"; then
+    log_err "Rollback failed while copying files from ${backup_dir}."
+    exit 1
+  fi
+  if [[ -f "${backup_dir}/${VERSION_FILE_NAME}" ]]; then
+    cp -a "${backup_dir}/${VERSION_FILE_NAME}" "${INSTALL_ROOT}/${VERSION_FILE_NAME}"
+  else
+    rm -f "${INSTALL_ROOT:?}/${VERSION_FILE_NAME}"
+  fi
+  set_install_ownership
+  systemctl start "$SERVICE_NAME" || log_warn "systemctl start ${SERVICE_NAME} failed"
+  _UPDATE_SERVICE_STOPPED=0
+
+  if [[ "$_HEALTH_CHECK_ARMED" -eq 1 ]] && ! wait_for_health; then
+    log_err "Rolled back to ${previous}, but ${SERVICE_NAME} still does not respond."
+  else
+    log_err "Update to ${new_version} failed and was rolled back to ${previous}."
+  fi
+  printf '  %sBackup:%s %s\n  %sLogs:%s   journalctl -u %s\n\n' \
+    "$C_CYAN" "$C_RESET" "$backup_dir" "$C_CYAN" "$C_RESET" "$SERVICE_NAME" >&2
+  exit 1
+}
+
+# Обновление не удалось: откатить из бэкапа (если он есть) и выйти с ошибкой.
+# Аргументы: причина, каталог бэкапа (пусто при --no-backup), новая версия, исключения rsync.
+fail_update() {
+  local reason="$1" backup_dir="$2" new_version="$3"; shift 3
+  log_err "$reason"
+  if [[ -z "$backup_dir" ]]; then
+    log_err "No backup (--no-backup): nothing to roll back to. Logs: journalctl -u ${SERVICE_NAME}"
+    exit 1
+  fi
+  rollback_update "$backup_dir" "$new_version" "$@"
+}
+
+# Для --dry-run: куда ляжет бэкап и по какому адресу будет проверка запуска
+print_update_safety_preview() {
+  local backup_dir="$1"; shift
+  printf '\n  %s  Backup:%s\n' "$C_BOLD" "$C_RESET"
+  if [[ -n "$backup_dir" ]]; then
+    log_info "${backup_dir} (~$(( $(backup_size_kb "$@") / 1024 )) MB, keeping ${BACKUP_KEEP})"
+  else
+    log_skip "disabled (--no-backup)"
+  fi
+
+  printf '\n  %s  Health check:%s\n' "$C_BOLD" "$C_RESET"
+  if [[ "$NO_HEALTH_CHECK" -eq 1 ]]; then
+    log_skip "disabled (--no-health-check)"
+  elif health_probe; then
+    log_info "${HEALTH_URL} responds now; after the update wait up to ${HEALTH_TIMEOUT}s"
+  else
+    log_warn "${HEALTH_URL} does not respond now — the health check would be skipped"
+  fi
+}
+
 # ─── Update ──────────────────────────────────────────────────────────────────
 
 # Best-effort restart if --update stopped the service and then failed.
 _update_restart_service_if_needed() {
   if [[ "${_UPDATE_SERVICE_STOPPED}" -eq 1 ]]; then
     log_warn "Update interrupted — attempting to restart ${SERVICE_NAME}..."
+    if [[ -n "$_UPDATE_BACKUP_DIR" ]]; then
+      log_warn "Files in ${INSTALL_ROOT} may be partly updated. Previous version: ${_UPDATE_BACKUP_DIR}"
+    fi
     systemctl start "$SERVICE_NAME" 2>/dev/null || true
     _UPDATE_SERVICE_STOPPED=0
   fi
@@ -919,6 +1163,13 @@ do_update() {
     rsync_exclude_args+=(--exclude="$excl")
   done
 
+  # <дата>-<время>_<установленная версия>: по имени бэкапы сортируются по времени
+  local backup_dir="" installed_version
+  if [[ "$NO_BACKUP" -eq 0 ]]; then
+    installed_version="$(get_installed_version)"
+    backup_dir="${BACKUP_ROOT}/$(date +%Y%m%d-%H%M%S)_${installed_version//[^A-Za-z0-9._-]/_}"
+  fi
+
   if [[ "$DRY_RUN" -eq 1 ]]; then
     printf '\n  %s┌─ DRY-RUN — no changes will be applied ─────────────────┐%s\n' "$C_YELLOW" "$C_RESET"
 
@@ -951,11 +1202,20 @@ do_update() {
       log_skip "(no new or changed files)"
     fi
 
+    print_update_safety_preview "$backup_dir" "${rsync_exclude_args[@]}"
+
     printf '\n  %s└─ Run without --dry-run to apply changes ───────────────┘%s\n\n' "$C_YELLOW" "$C_RESET"
     return 0
   fi
 
   # Реальное обновление
+  arm_health_check
+  if [[ -n "$backup_dir" ]]; then
+    prepare_backup_root
+    prune_backups $(( BACKUP_KEEP - 1 ))
+    check_backup_space "$(backup_size_kb "${rsync_exclude_args[@]}")"
+  fi
+
   trap '_update_restart_service_if_needed; cleanup' EXIT
 
   spinner_start "Stopping ${SERVICE_NAME}..."
@@ -963,12 +1223,17 @@ do_update() {
   _UPDATE_SERVICE_STOPPED=1
   spinner_ok "Service stopped"
 
+  if [[ -n "$backup_dir" ]]; then
+    create_backup "$backup_dir" "${rsync_exclude_args[@]}"
+    _UPDATE_BACKUP_DIR="$backup_dir"
+  fi
+
   if ! rsync -a --delete \
       "${rsync_exclude_args[@]}" \
       "${staging_dir}/" \
       "${INSTALL_ROOT}/"; then
-    log_err "Syncing release files (rsync --delete) — failed"
-    exit 1
+    fail_update "Syncing release files (rsync --delete) — failed" \
+      "$backup_dir" "$new_version" "${rsync_exclude_args[@]}"
   fi
   log_ok "Syncing release files (rsync --delete)"
 
@@ -977,9 +1242,22 @@ do_update() {
   save_installed_version "$new_version"
 
   spinner_start "Starting ${SERVICE_NAME}..."
-  systemctl start "$SERVICE_NAME"
+  if ! systemctl start "$SERVICE_NAME"; then
+    spinner_err "Service failed to start"
+    fail_update "Update to ${new_version} failed: systemctl start ${SERVICE_NAME} returned an error." \
+      "$backup_dir" "$new_version" "${rsync_exclude_args[@]}"
+  fi
   _UPDATE_SERVICE_STOPPED=0
   spinner_ok "Service started"
+
+  if [[ "$_HEALTH_CHECK_ARMED" -eq 1 ]] && ! wait_for_health; then
+    fail_update "Update to ${new_version} failed: ${SERVICE_NAME} did not respond within ${HEALTH_TIMEOUT}s." \
+      "$backup_dir" "$new_version" "${rsync_exclude_args[@]}"
+  fi
+
+  if [[ -n "$backup_dir" ]]; then
+    log_ok "Previous version saved to ${backup_dir}"
+  fi
 
   # Restore the global cleanup-only trap from main.
   trap cleanup EXIT
@@ -1075,6 +1353,10 @@ do_remove() {
   remove_user_and_group
 
   printf '\n  %s✓  Lampac NextGen has been removed.%s\n\n' "$C_GREEN" "$C_RESET"
+  if [[ -d "$BACKUP_ROOT" ]]; then
+    log_warn "Backups made by --update were kept in ${BACKUP_ROOT} — delete them manually if not needed."
+    printf '\n'
+  fi
 }
 
 start_service() {
@@ -1130,6 +1412,11 @@ main() {
   fi
 
   print_banner
+
+  # Неверные LAMPAC_BACKUP_* / LAMPAC_HEALTH_* — до apt и загрузки
+  if [[ "$UPDATE" -eq 1 ]]; then
+    validate_update_settings
+  fi
 
   resolve_publish_url
 

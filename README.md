@@ -236,10 +236,14 @@ journalctl -u lampac -f
 | `LAMPAC_USER` | `lampac` | Системный пользователь |
 | `LAMPAC_UID` | `1000` | UID (если занят — выбирается свободный) |
 | `LAMPAC_GID` | `1000` | GID (если занят — выбирается свободный) |
-| `LAMPAC_PORT` | `9118` | Порт (для подсказки после установки) |
+| `LAMPAC_PORT` | `9118` | Порт (подсказка после установки, проверка после обновления) |
 | `LAMPAC_GITHUB_REPO` | `lampac-nextgen/lampac` | GitHub-репозиторий релизов |
 | `LAMPAC_DOTNET_ROOT` | `/usr/share/dotnet` | Путь установки .NET |
 | `LAMPAC_DOTNET_CHANNEL` | `10.0` | Версия .NET runtime |
+| `LAMPAC_BACKUP_DIR` | `/opt/lampac-backups` | Бэкапы перед `--update` |
+| `LAMPAC_BACKUP_KEEP` | `1` | Сколько бэкапов хранить |
+| `LAMPAC_HEALTH_URL` | `http://127.0.0.1:9118/version?type=hash` | Проверка запуска после `--update` |
+| `LAMPAC_HEALTH_TIMEOUT` | `240` | Сколько секунд ждать ответа |
 
 </details>
 

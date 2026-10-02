@@ -40,6 +40,8 @@ keywords: ["Lampac обновление", "Docker update", "rollback", "backup",
     systemctl status lampac
     journalctl -u lampac -f
     ```
+
+    Перед заменой файлов `install.sh` сохраняет бэкап приложения в `/opt/lampac-backups/`, а после запуска ждёт ответа сервиса до 240 секунд. Если новая версия не запустилась, скрипт сам вернёт прежнюю и завершится с ошибкой. Флаги и переменные описаны на странице [Linux](/deployment/linux).
   </Tab>
   <Tab title="Docker">
     В Docker обновление выполняется через замену образа и пересоздание контейнера.
