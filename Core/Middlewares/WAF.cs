@@ -105,7 +105,7 @@ public class WAF
                     }
                 }
 
-                ipsDeny = ips.ToFrozenSet();
+                ipsAllow = ips.ToFrozenSet();
             }
             else
             {
