@@ -1,0 +1,46 @@
+name: Issue component label
+
+on:
+  issues:
+    types: [opened, edited]
+
+permissions:
+  issues: write
+
+jobs:
+  label:
+    name: Apply Component / Area label
+    runs-on: ubuntu-latest
+    steps:
+      - name: Parse form field and label
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const body = context.payload.issue.body || '';
+            const match = body.match(
+              /^### (?:Component|Area)\s*\r?\n\r?\n([^\r\n]+)/m
+            );
+            if (!match) {
+              core.info('No Component/Area field found');
+              return;
+            }
+            const value = match[1].trim();
+            if (!value || value === 'Other / unknown') {
+              core.info(`Skipping label for: ${value || '(empty)'}`);
+              return;
+            }
+            if (!/^(core|module|meta):/.test(value)) {
+              core.info(`Not a filesystem label: ${value}`);
+              return;
+            }
+            try {
+              await github.rest.issues.addLabels({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                labels: [value],
+              });
+              core.info(`Applied label: ${value}`);
+            } catch (err) {
+              core.warning(`Could not apply label ${value}: ${err.message}`);
+            }

@@ -1,0 +1,21 @@
+name: Labeler
+
+on:
+  pull_request_target:
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  label:
+    name: Label PR by paths
+    runs-on: ubuntu-latest
+    steps:
+      - name: Label
+        uses: actions/labeler@v5
+        with:
+          configuration-path: .github/labeler.yml
+          sync-labels: false
+          repo-token: ${{ secrets.GITHUB_TOKEN }}

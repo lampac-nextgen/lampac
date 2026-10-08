@@ -18,17 +18,17 @@ jobs:
       - uses: actions/stale@v11
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          days-before-issue-stale: 7
-          days-before-issue-close: 3
+          days-before-issue-stale: 30
+          days-before-issue-close: 14
           days-before-pr-stale: -1
           days-before-pr-close: -1
-          stale-issue-label: stale
+          stale-issue-label: Stale
           exempt-issue-labels: pinned,security
           stale-issue-message: >
             This issue has been automatically marked as stale because it has
-            not had recent activity. It will be closed in 3 days if there are
+            not had recent activity. It will be closed in 14 days if there are
             no further updates. Please comment if this is still relevant.
           close-issue-message: >
-            This issue was closed because it has been inactive for 3 days
+            This issue was closed because it has been inactive for 14 days
             since being marked stale. If the problem persists, please open a
             new issue with updated details.

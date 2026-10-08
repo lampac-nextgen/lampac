@@ -4,5 +4,8 @@ contact_links:
     url: https://github.com/lampac-nextgen/lampac/discussions
     about: Usage questions, setup help, and general discussion (not bugs or features).
   - name: Documentation
-    url: https://github.com/lampac-nextgen/lampac#readme
-    about: Install, Docker, and configuration docs before opening an issue.
+    url: https://docs.lampac.dev
+    about: Install, Docker, modules, and configuration docs before opening an issue.
+  - name: Security vulnerability
+    url: https://github.com/lampac-nextgen/lampac/security/advisories/new
+    about: Report security issues privately (do not open a public issue).

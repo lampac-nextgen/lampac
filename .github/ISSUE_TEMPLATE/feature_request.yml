@@ -6,22 +6,67 @@ body:
   - type: markdown
     attributes:
       value: |
-        RU or EN is fine. Explain the **problem** first, then the proposal (see #185, #241).
+        RU or EN is fine. Explain the **problem** first, then the proposal.
         For usage questions use [Discussions](https://github.com/lampac-nextgen/lampac/discussions).
+
+        Area values match filesystem labels (`core:*` / `module:*` / `meta:*`).
+        See [CONTRIBUTING.md](https://github.com/lampac-nextgen/lampac/blob/main/CONTRIBUTING.md).
 
   - type: dropdown
     id: area
     attributes:
       label: Area
+      description: Exact label name (auto-applied on submit).
       options:
-        - Online / Adult modules
-        - Torrents / JacRed / TorrServer
-        - GStreamer / playback
-        - Sync / auth / QRAuth / OIDC
-        - install / Docker / packaging
-        - Admin / config / docs
-        - Lampa client plugins
-        - Other
+        - core:Core
+        - core:Shared
+        - core:Online
+        - core:SISI
+        - module:AdminPanel
+        - module:Adult
+        - module:Analytics
+        - module:Catalog
+        - module:Community
+        - module:DLNA
+        - module:DatabaseEditor
+        - module:ExternalBind
+        - module:ForkPlayerXML
+        - module:GStreamer
+        - module:HealthCheck
+        - module:JacRed
+        - module:Kit
+        - module:LampaWeb
+        - module:LampacApk
+        - module:LogUserRequest-Lite
+        - module:MsxNative
+        - module:Music
+        - module:NextHUB
+        - module:Online
+        - module:OnlineAnime
+        - module:OnlineENG
+        - module:OnlineGEO
+        - module:OnlinePaid
+        - module:OnlineRUS
+        - module:OnlineUKR
+        - module:PidTor
+        - module:Potok
+        - module:Proxy
+        - module:Sync
+        - module:Telemetry
+        - module:Tg-notify.bot
+        - module:TorrServer
+        - module:Tracks
+        - module:Transcoding
+        - module:WatchTogether
+        - module:WebLog
+        - module:QRAuth
+        - module:OidcAuth
+        - module:TelegramAuth
+        - meta:install
+        - meta:ci
+        - meta:docs
+        - meta:config
+        - Other / unknown
     validations:
       required: true
 

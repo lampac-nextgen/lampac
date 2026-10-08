@@ -626,6 +626,11 @@ lampac/
 
 ---
 
+## Contributing / Security
+
+- How to open issues and PRs: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Vulnerability reports (private only): [SECURITY.md](SECURITY.md)
+
 ## Лицензия
 
 Copyright (c) 2026 lampac-nextgen

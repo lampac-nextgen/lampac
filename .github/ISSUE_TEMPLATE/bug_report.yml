@@ -6,30 +6,67 @@ body:
   - type: markdown
     attributes:
       value: |
-        RU or EN is fine. Good reports name the **component**, give **version + install type**, and include **steps or a curl/log** that reproduce the issue (see #235, #243, #245).
+        RU or EN is fine. Good reports name the **component**, give **version + install type**, and include **steps or a curl/log** that reproduce the issue.
 
-        Title tip: `GStreamer: …`, `JacRed: …`, `Kinogo: …`, `install.sh: …`
+        Labels match the filesystem: `core:*` (platform), `module:*` (`Modules/<Name>/`), `meta:*` (CI/docs/install).
+        Put the specific balancer/site in the **title** (e.g. `Kinogo: …`, `GStreamer: …`).
+
+        See also [CONTRIBUTING.md](https://github.com/lampac-nextgen/lampac/blob/main/CONTRIBUTING.md) and [SECURITY.md](https://github.com/lampac-nextgen/lampac/blob/main/SECURITY.md).
 
   - type: dropdown
     id: component
     attributes:
       label: Component
-      description: Where the bug shows up. Pick the closest match.
+      description: Exact label name (auto-applied on submit). Pick the closest Modules/ or core path.
       options:
-        - Online module (Alloha, Vibix, Kinogo, …)
-        - Adult / NextHUB
-        - JacRed / Torrents
-        - TorrServer / Tracks
-        - GStreamer / transcoding
-        - DLNA
-        - Sync / TimeCode / bookmarks
-        - Chromium / Playwright / RCH
-        - Lampa plugins (online.js, ts.js, …)
-        - install.sh / update / scripts
-        - Docker / umbrel / ansible
-        - Admin / config / accsdb
-        - Music
-        - Security
+        - core:Core
+        - core:Shared
+        - core:Online
+        - core:SISI
+        - module:AdminPanel
+        - module:Adult
+        - module:Analytics
+        - module:Catalog
+        - module:Community
+        - module:DLNA
+        - module:DatabaseEditor
+        - module:ExternalBind
+        - module:ForkPlayerXML
+        - module:GStreamer
+        - module:HealthCheck
+        - module:JacRed
+        - module:Kit
+        - module:LampaWeb
+        - module:LampacApk
+        - module:LogUserRequest-Lite
+        - module:MsxNative
+        - module:Music
+        - module:NextHUB
+        - module:Online
+        - module:OnlineAnime
+        - module:OnlineENG
+        - module:OnlineGEO
+        - module:OnlinePaid
+        - module:OnlineRUS
+        - module:OnlineUKR
+        - module:PidTor
+        - module:Potok
+        - module:Proxy
+        - module:Sync
+        - module:Telemetry
+        - module:Tg-notify.bot
+        - module:TorrServer
+        - module:Tracks
+        - module:Transcoding
+        - module:WatchTogether
+        - module:WebLog
+        - module:QRAuth
+        - module:OidcAuth
+        - module:TelegramAuth
+        - meta:install
+        - meta:ci
+        - meta:docs
+        - meta:config
         - Other / unknown
     validations:
       required: true

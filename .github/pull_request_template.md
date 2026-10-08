@@ -4,6 +4,7 @@ Title (required): type(scope): short summary
   Scope: module/area, e.g. Kinogo, GStreamer, install, Sync
   Breaking: add ! after type/scope → fix(QRAuth)!: ...
   Prefer English titles (existing convention). Body may be RU or EN.
+  See CONTRIBUTING.md
 -->
 
 ## Summary
