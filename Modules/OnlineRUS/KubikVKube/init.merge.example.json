@@ -1,0 +1,11 @@
+{
+  "KubikVKube": {
+    "enable": true,
+    "onlykubik": false,
+    "mp4": true,
+    "usevh": true,
+    "usevk": true,
+    "uselat": true,
+    "streamproxy": true
+  }
+}

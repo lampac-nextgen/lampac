@@ -1,0 +1,13 @@
+{
+  "enable": true,
+  "dynamic": true,
+  "tree": [
+    "ModuleConf.cs",
+    "StreamData.cs",
+    "Service.cs",
+    "Controller.cs",
+    "Ladoni.cs",
+    "Api.cs",
+    "ModInit.cs"
+  ]
+}

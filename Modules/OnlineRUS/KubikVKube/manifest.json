@@ -1,0 +1,11 @@
+{
+  "enable": true,
+  "dynamic": true,
+  "tree": [
+    "ModuleConf.cs",
+    "Models.cs",
+    "KubikService.cs",
+    "Controller.cs",
+    "ModInit.cs"
+  ]
+}
