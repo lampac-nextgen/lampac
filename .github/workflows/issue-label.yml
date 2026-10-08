@@ -10,10 +10,10 @@ permissions:
 jobs:
   label:
     name: Apply Component / Area label
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Parse form field and label
-        uses: actions/github-script@v7
+        uses: actions/github-script@v9.0.0
         with:
           script: |
             const body = context.payload.issue.body || '';

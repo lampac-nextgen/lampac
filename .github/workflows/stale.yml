@@ -13,9 +13,9 @@ permissions:
 jobs:
   stale:
     name: Mark and close stale issues
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
-      - uses: actions/stale@v11
+      - uses: actions/stale@v11.0.0
         with:
           repo-token: ${{ secrets.GITHUB_TOKEN }}
           days-before-issue-stale: 30
