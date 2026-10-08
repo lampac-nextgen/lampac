@@ -220,13 +220,15 @@ public class CoreInit
     public static string Host(HttpContext httpContext, string suffix = null)
     {
         string scheme = string.IsNullOrEmpty(conf.listen.scheme) ? httpContext.Request.Scheme : conf.listen.scheme;
-        if (httpContext.Request.Headers.TryGetValue("xscheme", out var xscheme) && xscheme.Count > 0)
-            scheme = xscheme;
+        if (httpContext.Request.Headers.TryGetValue("xscheme", out var xscheme) && xscheme.Count > 0 && xscheme[0] is "http" or "https")
+            scheme = xscheme[0];
 
         if (!string.IsNullOrEmpty(conf.listen.host))
             return $"{scheme}://{conf.listen.host}{suffix}";
 
-        if (httpContext.Request.Headers.TryGetValue("xhost", out var xhost) && xhost.Count > 0)
+        // xhost is only for internal self-requests; clients must not control the advertised host
+        if (httpContext.Request.Headers.TryGetValue("xhost", out var xhost) && xhost.Count > 0
+            && httpContext.Request.Headers.TryGetValue("lcrqpasswd", out var passwd) && passwd.Count > 0 && passwd[0] == rootPasswd)
             return $"{scheme}://{Regex.Replace(xhost, "^https?://", "")}{suffix}";
 
         return $"{scheme}://{httpContext.Request.Host.Value}{suffix}";

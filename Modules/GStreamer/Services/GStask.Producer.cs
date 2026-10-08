@@ -22,7 +22,7 @@ public partial class GStask
     #region Seek
     public bool Seek(int seconds)
     {
-        // берем на conf.segment_seconds ниже позиции, что бы браузер не вернулся на -1 сегмент
+        // берём на conf.segment_seconds ниже позиции, чтобы браузер не вернулся на -1 сегмент
         ulong ns = SecondsToClockTime(seconds - conf.segment_seconds);
         return SeekClockTime(ns);
     }

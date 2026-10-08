@@ -93,7 +93,7 @@ public class RezkaController : BaseOnlineController<RezkaSettings>
                 if (requestInfo.Country == "RU")
                 {
                     if (rch.InfoConnected()?.rchtype != "apk")
-                        return ShowError("На даном устровстве недоступно");
+                        return ShowError("На данном устройстве недоступно");
 
                     if (string.IsNullOrWhiteSpace(init.cookie))
                         return ShowError("Укажите логин/пароль или cookie");

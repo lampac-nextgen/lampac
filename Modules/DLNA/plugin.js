@@ -8,6 +8,10 @@
     }
 	
 	var preview_timer, preview_video;
+
+	function escapeHtml(text) {
+		return $('<div></div>').text(text == null ? '' : text).html();
+	}
 	
 	function hidePreview() {
 		clearTimeout(preview_timer);
@@ -152,9 +156,9 @@
         return this.render();
       };
       this.road = function () {
-        head.empty().html('<div>' + path.map(function (p) {
+        head.empty().append($('<div></div>').text(path.map(function (p) {
           return p.name;
-        }).join(' / ') + '</div>');
+        }).join(' / ')));
       };
       this.clear = function () {
         last = false;
@@ -302,7 +306,7 @@
         var _this3 = this;
         data.forEach(function (element) {
           var card = Lampa.Template.get('card', {
-            title: element.type == 'file' && element.episode && element.episode.name ? element.episode.name : element.name
+            title: escapeHtml(element.type == 'file' && element.episode && element.episode.name ? element.episode.name : element.name)
           });
           card.data('name', element.name);
           var icon = $('<div class="card__file-icon"></div>');
@@ -342,6 +346,9 @@
           });
           card.on('hover:enter', function () {
 			  hidePreview()
+			  // мышью и пальцем hover:focus не приходит, и last остаётся на первой карточке —
+			  // после выхода из плеера список отбрасывало в начало
+			  last = card[0];
             if (element.type == 'folder') {
               if (element.back) {
                 _this3.back();
@@ -361,7 +368,7 @@
                 });
               }
               var video = {
-                title: element.name,
+                title: escapeHtml(element.name),
                 url: account(element.uri),
                 subtitles: subtitles,
                 timeline: timeline
@@ -430,7 +437,7 @@
 						var files = manager.files.map(function(fi, i){
 							return {
 								index: i,
-								title: fi.path,
+								title: escapeHtml(fi.path),
 								checked: fi.priority == 'Normal',
 								checkbox: true
 							}
@@ -634,10 +641,10 @@
 							network.timeout(timeout);
 							network["native"](account(downloadUri), function (result) {
 								//down();
-								Lampa.Bell.push({text: result.status ? 'Добавлено в загрузку' : 'Ошибка при добавление в загрузку'});
+								Lampa.Bell.push({text: result.status ? 'Добавлено в загрузку' : 'Ошибка при добавлении в загрузку'});
 							  }, function () {
 								//down();
-								Lampa.Bell.push({text:'Ошибка при добавление в загрузку'});
+								Lampa.Bell.push({text:'Ошибка при добавлении в загрузку'});
 							  },{},{timeout:timeout});
 						}
 						else if(a.action == 'latest'){
@@ -661,10 +668,10 @@
 									network.timeout(timeout);
 									network["native"](account(downloadUri + '&lastCount=' + c.files), function (result) {
 										//down();
-										Lampa.Bell.push({text: result.status ? 'Добавлено в загрузку' : 'Ошибка при добавление в загрузку'});
+										Lampa.Bell.push({text: result.status ? 'Добавлено в загрузку' : 'Ошибка при добавлении в загрузку'});
 									  }, function () {
 										//down();
-										Lampa.Bell.push({text:'Ошибка при добавление в загрузку'});
+										Lampa.Bell.push({text:'Ошибка при добавлении в загрузку'});
 									  },{},{timeout:timeout});
 								},
 								onBack: function onBack() {
@@ -687,7 +694,7 @@
 							  if (files.length) {
 								var items = files.map(function (file, index) {
 								  return {
-									title: file.path,
+									title: escapeHtml(file.path),
 									checkbox: true,
 									index: index,
 									checked: true
@@ -714,10 +721,10 @@
 									  network.timeout(timeout);
 									  network["native"](account(downloadUri + '&' + select), function (result) {
 										//down();
-										Lampa.Bell.push({text: result.status ? 'Добавлено в загрузку' : 'Ошибка при добавление в загрузку'});
+										Lampa.Bell.push({text: result.status ? 'Добавлено в загрузку' : 'Ошибка при добавлении в загрузку'});
 									  }, function () {
 										//down();
-										Lampa.Bell.push({text:'Ошибка при добавление в загрузку'});
+										Lampa.Bell.push({text:'Ошибка при добавлении в загрузку'});
 									  }, {});
 									}
 									Lampa.Controller.toggle(enabled);

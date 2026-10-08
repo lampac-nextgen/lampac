@@ -196,7 +196,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
   background: var(--surface);
   box-shadow: var(--shadow-sm);
 }
-.summary-card::before { position: absolute; inset: 0 0 auto; height: 2px; background: linear-gradient(90deg, var(--accent), transparent 72%); content: ""; opacity: .75; }
+.summary-card::before { position: absolute; inset: 0 auto 0 0; width: 3px; background: var(--accent); content: ""; }
 .summary-head { display: flex; justify-content: space-between; gap: var(--sp-2); color: var(--text-muted); font-size: var(--text-xs); }
 .summary-value { margin: var(--sp-2) 0 var(--sp-1); color: var(--text); font-size: 1.45rem; font-weight: 700; letter-spacing: -.03em; }
 .summary-foot { display: flex; align-items: center; gap: var(--sp-3); margin-top: var(--sp-2); }
@@ -205,6 +205,9 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .summary-backup:hover { color: var(--accent-soft); }
 .available { color: var(--ok); }
 .missing { color: var(--err); }
+.good-text { color: var(--ok) !important; }
+.warn-text { color: var(--warn) !important; }
+.bad-text { color: var(--err) !important; }
 
 .workspace, .sync-detail { overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-lg); background: var(--surface); box-shadow: var(--shadow-md); }
 .toolbar, .detail-toolbar { display: flex; min-height: 58px; align-items: center; gap: var(--sp-3); padding: 10px var(--sp-3); border-bottom: 1px solid var(--border); background: var(--surface); }
@@ -280,6 +283,8 @@ button:focus-visible, a:focus-visible, input:focus-visible, select:focus-visible
 .detail-actions { display: flex; gap: var(--sp-2); margin-left: auto; }
 .detail-toolbar .result-count { margin-left: auto; color: var(--text-muted); font: var(--text-xs) var(--font-mono); white-space: nowrap; }
 .media-grid { display: grid; min-height: 380px; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: var(--sp-3); padding: var(--sp-3); }
+.merge-preview { padding: var(--sp-3); border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); color: var(--text); font-size: var(--text-sm); line-height: 1.6; overflow-wrap: anywhere; }
+.merge-preview strong { color: var(--accent); }
 .sync-card { display: flex; min-width: 0; min-height: 132px; gap: var(--sp-3); padding: 10px; border: 1px solid var(--border); border-radius: var(--r-md); background: var(--surface-2); transition: transform var(--dur) var(--ease), border-color var(--dur) var(--ease), box-shadow var(--dur) var(--ease); }
 .sync-card:hover { border-color: var(--accent); transform: translateY(-1px); box-shadow: var(--shadow-sm); }
 .sync-card .poster, .sync-card .poster-placeholder { width: 74px; height: 110px; flex-basis: 74px; }

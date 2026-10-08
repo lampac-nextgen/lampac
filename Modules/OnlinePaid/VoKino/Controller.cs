@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Newtonsoft.Json.Linq;
 using Shared;
@@ -55,7 +55,7 @@ public class VoKino : BaseOnlineController<ModuleConf>
                 ("user-agent", "lampac")
             );
 
-            var token_request = await Http.Get<JObject>(uri, proxy: proxy, headers: head);
+            var token_request = await Http.Get<JObject>(uri, proxy: proxy, headers: head, timeoutSeconds: 8);
 
             if (token_request == null)
                 return ContentTo($"нет доступа к {init.host}");
@@ -70,6 +70,42 @@ public class VoKino : BaseOnlineController<ModuleConf>
         return ContentTo(html);
     }
     #endregion
+
+    [HttpGet]
+    [AllowAnonymous]
+    [Route("lite/vokino/stream")]
+    async public Task<ActionResult> Stream(string url)
+    {
+        if (string.IsNullOrEmpty(url) || !init.HasToken())
+            return OnError();
+
+        string currentToken = init.GetToken();
+
+        string uri = url;
+        if (!uri.Contains("token=", StringComparison.OrdinalIgnoreCase))
+            uri += (uri.Contains("?") ? "&" : "?") + "token=" + currentToken;
+
+        var json = await Http.Get<JObject>(uri, proxy: proxy, timeoutSeconds: 8);
+        if (json == null)
+            return OnError();
+
+        var streams = json["streams"] as JArray;
+        if (streams == null || streams.Count == 0)
+            return OnError();
+
+        string best = null;
+        foreach (var s in streams)
+        {
+            best = s.Value<string>("stream_url");
+            if (!string.IsNullOrEmpty(best))
+                break;
+        }
+
+        if (string.IsNullOrEmpty(best))
+            return OnError();
+
+        return Redirect(HostStreamProxy(best));
+    }
 
     [HttpGet, Staticache(manually: true)]
     [Route("lite/vokino")]
@@ -87,26 +123,28 @@ public class VoKino : BaseOnlineController<ModuleConf>
         if (await IsRequestBlocked(rch: true))
             return badInitMsg;
 
-        if (string.IsNullOrEmpty(init.token))
+        if (!init.HasToken())
             return OnError("token", statusCode: 401, gbcache: false);
 
-        if (balancer is "filmix" or "monframe")
-            init.streamproxy = false;
+        // Динамическое определение streamproxy: проверяет init.conf, иначе берет безопасный дефолт
+        init.streamproxy = init.IsStreamProxy(balancer);
 
-        if (checksearch /*&& balancer != "vokino"*/)
-            return Content("data-json="); // заглушка от 429 и от +1 к просмотру
+        if (checksearch)
+            return Content("data-json=");
+
+        string currentToken = init.GetToken();
 
         var oninvk = new VoKinoInvoke
         (
            host,
            init.host,
-           init.token,
+           currentToken,
            httpHydra,
            streamfile => HostStreamProxy(streamfile)
         );
 
     rhubFallback:
-        var cache = await InvokeCacheResult(ipkey($"vokino:{kinopoisk_id}:{origid}:{balancer}:{t}:{init.token}"), 20,
+        var cache = await InvokeCacheResult(ipkey($"vokino:{kinopoisk_id}:{origid}:{balancer}:{t}"), 60,
             () => oninvk.Embed(origid, kinopoisk_id, balancer, t),
             textJson: true
         );

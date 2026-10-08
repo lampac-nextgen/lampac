@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Mvc;
 using Shared;
 using System;
 using System.Linq;
+using System.Net;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using Shared.Services.Utilities;
@@ -158,6 +159,12 @@ public class ApiController : BaseController
     {
         SetHeadersNoCache();
 
+        if (string.IsNullOrEmpty(src) || !Uri.TryCreate(src, UriKind.Absolute, out var uri) ||
+            (uri.Scheme != "http" && uri.Scheme != "https"))
+            return BadRequest("invalid src: must be absolute http(s) URL");
+
+        var safeSrc = WebUtility.HtmlEncode(src);
+
         return ContentTo($@"<html lang=""ru"">
                 <head>
                     <meta charset=""UTF-8"">
@@ -166,7 +173,7 @@ public class ApiController : BaseController
                     <title>chromium iframe</title>
                 </head>
                 <body>
-                    <iframe width=""560"" height=""400"" src=""{src}"" frameborder=""0"" allow=""*"" allowfullscreen></iframe>
+                    <iframe width=""560"" height=""400"" src=""{safeSrc}"" frameborder=""0"" allow=""*"" allowfullscreen></iframe>
                 </body>
             </html>");
     }

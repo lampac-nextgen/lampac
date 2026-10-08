@@ -1,0 +1,253 @@
+# Path → label. Add-only via labeler workflow (sync-labels: false).
+
+"core:Core":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Core/**"
+
+"core:Shared":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Shared/**"
+
+"core:Online":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Online/**"
+
+"core:SISI":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "SISI/**"
+
+"module:AdminPanel":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/AdminPanel/**"
+
+"module:Adult":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Adult/**"
+
+"module:Analytics":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Analytics/**"
+
+"module:Catalog":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Catalog/**"
+
+"module:Community":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Community/**"
+
+"module:DLNA":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/DLNA/**"
+
+"module:DatabaseEditor":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/DatabaseEditor/**"
+
+"module:ExternalBind":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/ExternalBind/**"
+
+"module:ForkPlayerXML":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/ForkPlayerXML/**"
+
+"module:GStreamer":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/GStreamer/**"
+
+"module:HealthCheck":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/HealthCheck/**"
+
+"module:JacRed":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/JacRed/**"
+
+"module:Kit":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Kit/**"
+
+"module:LampaWeb":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/LampaWeb/**"
+
+"module:LampacApk":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/LampacApk/**"
+
+"module:LogUserRequest-Lite":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/LogUserRequest-Lite/**"
+
+"module:MsxNative":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/MsxNative/**"
+
+"module:Music":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Music/**"
+
+"module:NextHUB":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/NextHUB/**"
+
+"module:Online":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Online/**"
+
+"module:OnlineAnime":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/OnlineAnime/**"
+
+"module:OnlineENG":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/OnlineENG/**"
+
+"module:OnlineGEO":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/OnlineGEO/**"
+
+"module:OnlinePaid":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/OnlinePaid/**"
+
+"module:OnlineRUS":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/OnlineRUS/**"
+
+"module:OnlineUKR":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/OnlineUKR/**"
+
+"module:PidTor":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/PidTor/**"
+
+"module:Potok":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Potok/**"
+
+"module:Proxy":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Proxy/**"
+
+"module:Sync":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Sync/**"
+
+"module:Telemetry":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Telemetry/**"
+
+"module:Tg-notify.bot":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Tg-notify.bot/**"
+
+"module:TorrServer":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/TorrServer/**"
+
+"module:Tracks":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Tracks/**"
+
+"module:Transcoding":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Transcoding/**"
+
+"module:WatchTogether":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/WatchTogether/**"
+
+"module:WebLog":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/WebLog/**"
+
+"module:QRAuth":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Community/QRAuth/**"
+
+"module:OidcAuth":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Community/OidcAuth/**"
+
+"module:TelegramAuth":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "Modules/Community/TelegramAuth/**"
+          - "Modules/Community/TelegramAuthBot/**"
+
+"meta:ci":
+  - changed-files:
+      - any-glob-to-any-file:
+          - ".github/**"
+
+"meta:docs":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "docs/**"
+          - "site/**"
+          - "*.md"
+
+"meta:install":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "install.sh"
+          - "Dockerfile"
+          - "Dockerfile.*"
+          - "docker-compose*.yml"
+          - "docker-compose*.yaml"
+          - "ansible/**"
+          - "charts/**"
+          - "umbrel/**"
+
+"meta:config":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "config/**"
+          - "examples/**"
+

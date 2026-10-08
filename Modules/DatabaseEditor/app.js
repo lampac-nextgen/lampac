@@ -27,18 +27,25 @@
     confirmDeleteUser: $('confirmDeleteUserBtn'), restoreModal: $('restoreModal'), restoreResults: $('restoreResults'), restoreEmpty: $('restoreEmpty')
   };
   var errorMessages = {
-    unauthorized: 'Требуется повторный вход', unknown_database: 'Неизвестная база', database_not_found: 'Файл базы не найден',
+    unauthorized: 'Требуется повторный вход', unknown_database: 'Неизвестная база',
+    unsupported_database_schema: 'Схема базы устарела. Обновите и перезапустите Lampac для штатной миграции',
+    invalid_timecode_data: 'Позиция, длительность, процент, профиль и дата должны быть числами; id — строкой', database_not_found: 'Файл базы не найден',
     database_busy: 'База занята, повторите попытку', invalid_json: 'JSON содержит ошибку',
     data_must_be_json_object: 'В корне JSON должен быть объект', data_required: 'JSON не может быть пустым',
     data_too_large: 'JSON превышает 8 МБ', user_required: 'Укажите пользователя', card_required: 'Укажите карточку',
-    item_required: 'Укажите элемент', duplicate_record_key: 'Запись с таким уникальным ключом уже существует',
+    item_required: 'Укажите элемент', item_or_identity_required: 'Укажите hash или поле id в JSON',
+    sync_raw_editor_unavailable: 'Sync редактируется по карточкам', duplicate_record_key: 'Запись с таким уникальным ключом уже существует',
     record_not_found: 'Запись уже удалена', card_not_found: 'Карточка не найдена', unknown_category: 'Неизвестная категория',
     multiple_statuses: 'Для карточки можно выбрать только один статус', old_user_required: 'Укажите текущее имя пользователя',
     new_user_required: 'Укажите новое имя пользователя', user_name_unchanged: 'Новое имя совпадает с текущим',
     user_not_found: 'Пользователь не найден ни в Sync, ни в TimeCode', rename_user_conflict: 'Новое имя уже занято или создаёт конфликт записей',
     invalid_backup_file: 'Недопустимое имя файла резервной копии', backup_not_found: 'Резервная копия не найдена',
-    backup_integrity_failed: 'Проверка целостности резервной копии не пройдена', backup_schema_mismatch: 'Копия относится к другой базе',
+    backup_integrity_failed: 'Проверка целостности резервной копии не пройдена', backup_schema_mismatch: 'Схема копии несовместима с текущей версией Lampac',
     invalid_backup_database: 'Файл не является исправной SQLite-базой',
+    first_user_required: 'Выберите первого пользователя', second_user_required: 'Выберите второго пользователя',
+    different_users_required: 'Выберите двух разных пользователей', merge_target_occupied: 'Итоговое имя занято третьим пользователем',
+    merge_preview_required: 'Сначала проверьте результат объединения', merge_preview_changed: 'Данные изменились. Проверьте результат объединения ещё раз',
+    merge_user_conflict: 'Конфликт записей. Объединение отменено', merge_invalid_data: 'Обнаружены некорректные данные. Объединение отменено',
     internal_error: 'Внутренняя ошибка сервера', invalid_response: 'Сервер вернул неожиданный ответ'
   };
 
@@ -85,6 +92,14 @@
     els.prev.disabled = value || state.page <= 1;
     els.next.disabled = value || state.page >= state.pages;
   }
+  function scrollWorkspaceToTop() {
+    var workspace = els.body.closest('.workspace');
+    if (!workspace) return;
+    var topbar = document.querySelector('.topbar');
+    var currentScroll = window.scrollY || window.pageYOffset || 0;
+    var top = workspace.getBoundingClientRect().top + currentScroll - (topbar ? topbar.offsetHeight : 0) - 12;
+    window.scrollTo(0, Math.max(0, top));
+  }
   function formatBytes(bytes) {
     if (!bytes) return '0 Б';
     var units = ['Б', 'КБ', 'МБ', 'ГБ'];
@@ -123,6 +138,15 @@
     return image;
   }
   function typeLabel(type) { return type === 'tv' ? 'Сериал' : type === 'movie' ? 'Фильм' : ''; }
+  function sourceLabel(source) {
+    var value = String(source || '').trim();
+    var aliases = { tmdb: 'TMDB', youtube: 'YouTube', cub: 'CUB' };
+    return aliases[value.toLowerCase()] || value;
+  }
+  function syncItemTitle(item) {
+    var title = String(item && item.title || '').trim();
+    return title && title.indexOf('Карточка #') !== 0 ? title : 'Карточка';
+  }
   function fallbackTitle(record) {
     if (record.title) return record.title;
     return typeLabel(record.mediaType) || 'Карточка';
@@ -156,7 +180,7 @@
     table.classList.toggle('sync-table', state.database === 'sync');
     var columns = state.database === 'timecode'
       ? [['ID', 'col-id'], ['Пользователь', 'col-user'], ['Карточка', 'col-media'], ['Позиция', 'col-progress'], ['Обновлено', 'col-date'], ['', 'col-actions']]
-      : [['ID', 'col-id'], ['Пользователь', 'col-user'], ['Обновлено', 'col-date'], ['', 'col-actions']];
+      : [['Карточек', 'col-id'], ['Пользователь', 'col-user'], ['Обновлено', 'col-date'], ['', 'col-actions']];
     columns.forEach(function (column) { els.head.appendChild(el('th', column[1], column[0])); });
   }
 
@@ -165,10 +189,12 @@
     els.empty.classList.toggle('show', !records.length);
     records.forEach(function (record) {
       var row = document.createElement('tr');
-      row.appendChild(el('td', 'mono', '#' + record.id));
+      row.appendChild(el('td', 'mono', state.database === 'sync' ? String(record.dataLength || 0) : '#' + record.id));
       var userCell = el('td');
       userCell.appendChild(el('div', 'record-user', record.user || '—'));
-      userCell.appendChild(el('div', 'record-sub', formatBytes(record.dataLength || 0)));
+      userCell.appendChild(el('div', 'record-sub', state.database === 'sync'
+        ? Number(record.dataLength || 0).toLocaleString('ru-RU') + ' карточек'
+        : formatBytes(record.dataLength || 0)));
       row.appendChild(userCell);
 
       if (state.database === 'timecode') {
@@ -184,6 +210,7 @@
         if (record.mediaType === 'tv' && record.season != null && record.episode != null) {
           mediaDetails.push('Сезон ' + record.season, 'Серия ' + record.episode);
         }
+        if (record.source) mediaDetails.push(sourceLabel(record.source));
         if (record.year) mediaDetails.push(record.year);
         if (mediaDetails.length) meta.appendChild(document.createTextNode(mediaDetails.join(' · ')));
         copy.appendChild(meta);
@@ -215,19 +242,21 @@
         open.addEventListener('click', function () { openSyncUser(record.id); });
         actions.appendChild(open);
       }
-      var edit = el('button', 'mini-btn', 'JSON');
-      edit.addEventListener('click', function () { openRecord(record.id, state.database); });
-      var remove = el('button', 'mini-btn delete', '×');
-      remove.title = 'Удалить всю запись';
-      remove.addEventListener('click', function () { deleteRecord(record.id, state.database); });
-      actions.appendChild(edit);
-      actions.appendChild(remove);
+      if (state.database === 'timecode') {
+        var edit = el('button', 'mini-btn', 'JSON');
+        edit.addEventListener('click', function () { openRecord(record.id, state.database); });
+        var remove = el('button', 'mini-btn delete', '×');
+        remove.title = 'Снять отметку просмотра';
+        remove.addEventListener('click', function () { deleteRecord(record.id, state.database); });
+        actions.appendChild(edit);
+        actions.appendChild(remove);
+      }
       row.appendChild(actions);
       els.body.appendChild(row);
     });
   }
 
-  function loadRecords() {
+  function loadRecords(scrollToTop) {
     if (state.loading) return;
     setLoading(true);
     var params = new URLSearchParams({ database: state.database, page: String(state.page), pageSize: String(state.pageSize) });
@@ -240,6 +269,7 @@
       var to = Math.min(state.page * state.pageSize, state.total);
       els.pagerInfo.textContent = from + '–' + to + ' из ' + state.total.toLocaleString('ru-RU');
       els.pageLabel.textContent = state.page + ' / ' + state.pages;
+      if (scrollToTop) scrollWorkspaceToTop();
     }).catch(showError).finally(function () { setLoading(false); });
   }
 
@@ -269,7 +299,7 @@
   function switchDatabase(database) {
     if (database === state.database) return;
     state.database = database; state.page = 1;
-    document.querySelectorAll('.db-tab').forEach(function (tab) { tab.classList.toggle('active', tab.dataset.db === database); });
+    document.querySelectorAll('[data-db]').forEach(function (tab) { tab.classList.toggle('active', tab.dataset.db === database); });
     els.userFilter.hidden = database !== 'timecode';
     loadRecords();
   }
@@ -320,7 +350,7 @@
   function filteredSyncItems() {
     var query = state.syncQuery.toLowerCase();
     var filtered = state.syncItems.filter(function (item) {
-      var matchesText = !query || String(item.title || '').toLowerCase().indexOf(query) >= 0 || String(item.cardId || '').toLowerCase().indexOf(query) >= 0;
+      var matchesText = !query || String(item.title || '').toLowerCase().indexOf(query) >= 0 || String(item.cardId || '').toLowerCase().indexOf(query) >= 0 || String(item.source || '').toLowerCase().indexOf(query) >= 0;
       var matchesCategory = !state.syncCategory || (item.categories || []).indexOf(state.syncCategory) >= 0;
       return matchesText && matchesCategory;
     });
@@ -347,11 +377,12 @@
     els.syncNext.disabled = state.syncPage >= pages;
 
     visible.forEach(function (item) {
+      var title = syncItemTitle(item);
       var card = el('article', 'sync-card');
-      card.appendChild(posterNode(item.poster, item.title));
+      card.appendChild(posterNode(item.poster, title));
       var body = el('div', 'sync-card-body');
-      body.appendChild(el('div', 'sync-card-title', item.title || 'Карточка #' + item.cardId));
-      body.appendChild(el('div', 'sync-card-meta', [typeLabel(item.mediaType), item.year, '#' + item.cardId].filter(Boolean).join(' · ')));
+      body.appendChild(el('div', 'sync-card-title', title));
+      body.appendChild(el('div', 'sync-card-meta', [typeLabel(item.mediaType), item.source ? sourceLabel(item.source) : '', item.year].filter(Boolean).join(' · ')));
       var tags = el('div', 'category-tags');
       if (item.categories && item.categories.length) item.categories.forEach(function (category) { tags.appendChild(el('span', 'category-tag', categoryLabels[category] || category)); });
       else tags.appendChild(el('span', 'category-tag empty-tag', 'Без категории'));
@@ -365,11 +396,12 @@
 
   function openCategoryModal(item) {
     state.syncItem = item;
+    var title = syncItemTitle(item);
     els.categoryHead.textContent = '';
-    els.categoryHead.appendChild(posterNode(item.poster, item.title));
+    els.categoryHead.appendChild(posterNode(item.poster, title));
     var copy = el('div');
-    copy.appendChild(el('div', 'media-title', item.title || 'Карточка #' + item.cardId));
-    copy.appendChild(el('div', 'media-meta mono', '#' + item.cardId));
+    copy.appendChild(el('div', 'media-title', title));
+    if (item.source) copy.appendChild(el('div', 'media-meta mono', sourceLabel(item.source)));
     els.categoryHead.appendChild(copy);
     els.categoryOptions.textContent = '';
     state.syncCategories.forEach(function (category, index) {
@@ -407,7 +439,7 @@
 
   function deleteSyncItem() {
     if (!state.syncUser || !state.syncItem) return;
-    if (!confirm('Удалить карточку «' + (state.syncItem.title || state.syncItem.cardId) + '» у этого пользователя?')) return;
+    if (!confirm('Удалить карточку «' + syncItemTitle(state.syncItem) + '» у этого пользователя?')) return;
     api('sync-item/delete', { method: 'POST', body: JSON.stringify({ recordId: state.syncUser.id, cardId: state.syncItem.cardId }) })
       .then(function () {
         state.syncItems = state.syncItems.filter(function (item) { return item.cardId !== state.syncItem.cardId; });
@@ -449,7 +481,7 @@
     }).catch(showError).finally(function () { els.saveRecord.disabled = false; });
   }
   function deleteRecord(id, database) {
-    if (!confirm('Удалить всю запись #' + id + ' из ' + database + '?')) return;
+    if (!confirm('Снять отметку просмотра #' + id + '?')) return;
     api('delete', { method: 'POST', body: JSON.stringify({ database: database, id: id }) }).then(function () {
       toast('Запись удалена'); closeModal('recordModal'); loadRecords(); loadSummary();
       if (database === 'timecode') loadTimeCodeUsers();
@@ -504,71 +536,95 @@
       setTimeout(function () { location.reload(); }, 1600);
     }).catch(showError).finally(function () { button.disabled = false; });
   }
+  function loadUserAreas() {
+    return api('user-areas').then(function (response) { return response.users || []; });
+  }
+  function fillUserSelect(select, list, selected) {
+    select.textContent = '';
+    var placeholder = document.createElement('option');
+    placeholder.value = ''; placeholder.textContent = list.length ? 'Выберите пользователя' : 'Пользователей нет';
+    select.appendChild(placeholder);
+    list.forEach(function (entry) {
+      var option = document.createElement('option'); option.value = entry.user;
+      option.textContent = entry.user + ' · Sync: ' + entry.syncRecords + ', TimeCode: ' + entry.timecodeRecords;
+      select.appendChild(option);
+    });
+    if (list.some(function (entry) { return entry.user === selected; })) select.value = selected;
+  }
   function openRenameUser() {
     var selected = state.syncUser ? state.syncUser.user || '' : state.selectedUser || '';
-    els.oldUser.textContent = '';
-    var loadingOption = document.createElement('option'); loadingOption.value = ''; loadingOption.textContent = 'Загрузка пользователей…';
-    els.oldUser.appendChild(loadingOption);
-    els.newUser.value = '';
-    els.confirmRenameUser.disabled = true;
+    fillUserSelect(els.oldUser, [], ''); els.newUser.value = ''; els.confirmRenameUser.disabled = true;
     openModal('renameUserModal');
-    Promise.all([api('users?database=sync'), api('users?database=timecode')]).then(function (responses) {
-      var users = new Map();
-      responses.forEach(function (response, databaseIndex) {
-        (response.users || []).forEach(function (entry) {
-          var key = (entry.user || '').toLowerCase();
-          if (!key) return;
-          var current = users.get(key) || { user: entry.user, sync: 0, timecode: 0 };
-          current[databaseIndex === 0 ? 'sync' : 'timecode'] += Number(entry.records || 0);
-          users.set(key, current);
-        });
-      });
-      var list = Array.from(users.values()).sort(function (left, right) { return left.user.localeCompare(right.user, 'ru', { sensitivity: 'base' }); });
-      els.oldUser.textContent = '';
-      var placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = list.length ? 'Выберите пользователя' : 'Пользователей нет';
-      els.oldUser.appendChild(placeholder);
-      list.forEach(function (entry) {
-        var option = document.createElement('option'); option.value = entry.user;
-        option.textContent = entry.user + ' · Sync: ' + entry.sync + ', TimeCode: ' + entry.timecode;
-        els.oldUser.appendChild(option);
-      });
-      var match = list.find(function (entry) { return entry.user.toLowerCase() === selected.toLowerCase(); });
-      if (match) els.oldUser.value = match.user;
-      els.confirmRenameUser.disabled = !list.length;
-      setTimeout(function () { (els.oldUser.value ? els.newUser : els.oldUser).focus(); }, 0);
-    }).catch(function (error) {
-      els.oldUser.textContent = '';
-      var failed = document.createElement('option'); failed.value = ''; failed.textContent = 'Не удалось загрузить пользователей'; els.oldUser.appendChild(failed);
-      showError(error);
-    });
+    loadUserAreas().then(function (list) {
+      fillUserSelect(els.oldUser, list, selected); els.confirmRenameUser.disabled = !list.length;
+      (els.oldUser.value ? els.newUser : els.oldUser).focus();
+    }).catch(showError);
   }
   function openDeleteUser() {
     var selected = state.syncUser ? state.syncUser.user || '' : state.selectedUser || '';
-    els.deleteUser.textContent = '';
-    var loading = document.createElement('option'); loading.value = ''; loading.textContent = 'Загрузка пользователей…'; els.deleteUser.appendChild(loading);
-    els.confirmDeleteUser.disabled = true;
+    fillUserSelect(els.deleteUser, [], ''); els.confirmDeleteUser.disabled = true;
     openModal('deleteUserModal');
-    Promise.all([api('users?database=sync'), api('users?database=timecode')]).then(function (responses) {
-      var users = new Map();
-      responses.forEach(function (response, databaseIndex) {
-        (response.users || []).forEach(function (entry) {
-          var key = (entry.user || '').toLowerCase();
-          if (!key) return;
-          var current = users.get(key) || { user: entry.user, sync: 0, timecode: 0 };
-          current[databaseIndex === 0 ? 'sync' : 'timecode'] += Number(entry.records || 0); users.set(key, current);
-        });
-      });
-      var list = Array.from(users.values()).sort(function (left, right) { return left.user.localeCompare(right.user, 'ru', { sensitivity: 'base' }); });
-      els.deleteUser.textContent = '';
-      var placeholder = document.createElement('option'); placeholder.value = ''; placeholder.textContent = list.length ? 'Выберите пользователя' : 'Пользователей нет'; els.deleteUser.appendChild(placeholder);
-      list.forEach(function (entry) { var option = document.createElement('option'); option.value = entry.user; option.textContent = entry.user + ' · Sync: ' + entry.sync + ', TimeCode: ' + entry.timecode; els.deleteUser.appendChild(option); });
-      var match = list.find(function (entry) { return entry.user.toLowerCase() === selected.toLowerCase(); });
-      if (match) els.deleteUser.value = match.user;
-      els.confirmDeleteUser.disabled = !list.length;
-      setTimeout(function () { els.deleteUser.focus(); }, 0);
+    loadUserAreas().then(function (list) {
+      fillUserSelect(els.deleteUser, list, selected); els.confirmDeleteUser.disabled = !list.length;
+      els.deleteUser.focus();
+    }).catch(showError);
+  }
+  var mergePreview = null, mergeGeneration = 0, mergeBusy = false;
+  function mergeRequest() {
+    return { firstUser: $('mergeFirstUser').value, secondUser: $('mergeSecondUser').value, newUser: $('mergeNewUser').value.trim() };
+  }
+  function invalidateMergePreview() {
+    mergeGeneration++; mergePreview = null; $('mergePreview').hidden = true;
+    $('confirmMergeUsersBtn').disabled = true;
+  }
+  function setMergeBusy(value) {
+    mergeBusy = value;
+    ['mergeFirstUser', 'mergeSecondUser', 'mergeNewUser', 'previewMergeUsersBtn'].forEach(function (id) { $(id).disabled = value; });
+    $('confirmMergeUsersBtn').disabled = value || !mergePreview;
+  }
+  function openMergeUsers() {
+    invalidateMergePreview(); $('mergeNewUser').value = ''; setMergeBusy(true);
+    fillUserSelect($('mergeFirstUser'), [], ''); fillUserSelect($('mergeSecondUser'), [], '');
+    openModal('mergeUsersModal');
+    loadUserAreas().then(function (list) {
+      fillUserSelect($('mergeFirstUser'), list, state.syncUser ? state.syncUser.user : state.selectedUser);
+      fillUserSelect($('mergeSecondUser'), list, '');
+    }).catch(showError).finally(function () { setMergeBusy(false); });
+  }
+  function previewMergeUsers() {
+    if (mergeBusy) return;
+    var request = mergeRequest();
+    if (!request.firstUser) return showError(new Error('first_user_required'));
+    if (!request.secondUser) return showError(new Error('second_user_required'));
+    if (request.firstUser === request.secondUser) return showError(new Error('different_users_required'));
+    invalidateMergePreview(); var generation = mergeGeneration; setMergeBusy(true);
+    api('merge-users/preview', { method: 'POST', body: JSON.stringify(request) }).then(function (data) {
+      if (generation !== mergeGeneration) return;
+      var result = data.result; mergePreview = { request: request, result: result };
+      var box = $('mergePreview'); box.textContent = ''; box.hidden = false;
+      box.appendChild(el('strong', '', 'Итоговый пользователь: ' + result.targetUser));
+      box.appendChild(el('div', '', 'Sync: ' + result.syncInputRecords + ' → ' + result.syncRecords + ' строк; карточек — ' + result.syncActiveCards + '; совпадений — ' + result.syncDuplicates));
+      box.appendChild(el('div', '', 'TimeCode: ' + result.timecodeInputRecords + ' → ' + result.timecodeRecords + ' строк; активных — ' + result.timecodeActiveRecords + '; совпадений — ' + result.timecodeDuplicates));
+      if (result.hashCollisions) box.appendChild(el('div', '', 'Совпавшие hash разных нативных записей: ' + result.hashCollisions + '. Записи будут сохранены по их id.'));
+      box.appendChild(el('div', '', 'Записи удаления учтены. Перед выполнением будут созданы копии обеих баз.'));
+    }).catch(showError).finally(function () { setMergeBusy(false); });
+  }
+  function mergeUsers() {
+    if (mergeBusy || !mergePreview) return;
+    var preview = mergePreview;
+    if (!confirm('Объединить «' + preview.result.firstUser + '» и «' + preview.result.secondUser + '» в «' + preview.result.targetUser + '»?\n\nВыйдите из исходных пользователей на всех устройствах. Старые имена после объединения больше не должны использоваться клиентами. Перед изменением будут сохранены обе базы.')) return;
+    setMergeBusy(true);
+    var request = Object.assign({}, preview.request, { revision: preview.result.revision });
+    api('merge-users', { method: 'POST', body: JSON.stringify(request) }).then(function (data) {
+      closeModal('mergeUsersModal'); invalidateMergePreview();
+      state.selectedUser = ''; state.syncUser = null; state.page = 1;
+      els.syncDetail.hidden = true; els.listView.hidden = false;
+      loadRecords(); loadSummary(); loadTimeCodeUsers();
+      toast('Объединено в «' + data.result.targetUser + '»: Sync — ' + data.result.syncActiveCards + ', TimeCode — ' + data.result.timecodeActiveRecords + '. Резервные копии созданы.');
     }).catch(function (error) {
-      els.deleteUser.textContent = ''; var failed = document.createElement('option'); failed.value = ''; failed.textContent = 'Не удалось загрузить пользователей'; els.deleteUser.appendChild(failed); showError(error);
-    });
+      if (error.message === 'merge_preview_changed') invalidateMergePreview();
+      showError(error);
+    }).finally(function () { setMergeBusy(false); });
   }
   function deleteUser() {
     var user = els.deleteUser.value.trim();
@@ -577,7 +633,7 @@
     els.confirmDeleteUser.disabled = true;
     api('delete-user', { method: 'POST', body: JSON.stringify({ user: user }) }).then(function (data) {
       var result = data.result; closeModal('deleteUserModal'); state.selectedUser = '';
-      if (state.syncUser && state.syncUser.user.toLowerCase() === user.toLowerCase()) state.syncUser = null;
+      if (state.syncUser && state.syncUser.user === user) state.syncUser = null;
       els.syncDetail.hidden = true; els.listView.hidden = false;
       loadRecords(); loadSummary(); loadTimeCodeUsers();
       toast('Пользователь удалён: Sync — ' + result.syncRecords + ', TimeCode — ' + result.timecodeRecords);
@@ -594,7 +650,7 @@
       var result = data.result;
       closeModal('renameUserModal');
       state.selectedUser = '';
-      if (state.syncUser && state.syncUser.user.toLowerCase() === oldUser.toLowerCase()) state.syncUser = null;
+      if (state.syncUser && state.syncUser.user === oldUser) state.syncUser = null;
       els.syncDetail.hidden = true; els.listView.hidden = false;
       loadRecords(); loadSummary(); loadTimeCodeUsers();
       toast('Пользователь переименован: Sync — ' + result.syncRecords + ', TimeCode — ' + result.timecodeRecords);
@@ -609,23 +665,27 @@
     localStorage.setItem('lampac-theme', theme);
   }
 
-  document.querySelectorAll('.db-tab').forEach(function (tab) { tab.addEventListener('click', function () { switchDatabase(tab.dataset.db); }); });
+  document.querySelectorAll('[data-db]').forEach(function (tab) { tab.addEventListener('click', function () { switchDatabase(tab.dataset.db); }); });
   var searchTimer;
   els.search.addEventListener('input', function () { clearTimeout(searchTimer); searchTimer = setTimeout(function () { state.query = els.search.value.trim(); state.page = 1; loadRecords(); }, 280); });
   els.userFilter.addEventListener('change', function () { state.selectedUser = els.userFilter.value; state.page = 1; loadRecords(); });
   els.pageSize.addEventListener('change', function () { state.pageSize = Number(els.pageSize.value); state.page = 1; loadRecords(); });
-  els.prev.addEventListener('click', function () { if (state.page > 1) { state.page--; loadRecords(); } });
-  els.next.addEventListener('click', function () { if (state.page < state.pages) { state.page++; loadRecords(); } });
+  els.prev.addEventListener('click', function () { if (state.page > 1) { state.page--; loadRecords(true); } });
+  els.next.addEventListener('click', function () { if (state.page < state.pages) { state.page++; loadRecords(true); } });
   $('refreshBtn').addEventListener('click', function () { loadRecords(); loadSummary(); if (state.database === 'timecode') loadTimeCodeUsers(); });
   $('backupAllBtn').addEventListener('click', function () { createBackup('all'); });
   $('restoreBtn').addEventListener('click', openRestore);
   document.querySelectorAll('[data-restore-db]').forEach(function (tab) { tab.addEventListener('click', function () { restoreDatabase = tab.dataset.restoreDb; document.querySelectorAll('[data-restore-db]').forEach(function (item) { item.classList.toggle('active', item === tab); }); loadBackups(); }); });
   $('renameUserBtn').addEventListener('click', openRenameUser);
   els.confirmRenameUser.addEventListener('click', renameUser);
+  $('mergeUsersBtn').addEventListener('click', openMergeUsers);
+  $('previewMergeUsersBtn').addEventListener('click', previewMergeUsers);
+  $('confirmMergeUsersBtn').addEventListener('click', mergeUsers);
+  ['mergeFirstUser', 'mergeSecondUser'].forEach(function (id) { $(id).addEventListener('change', invalidateMergePreview); });
+  $('mergeNewUser').addEventListener('input', invalidateMergePreview);
   $('deleteUserBtn').addEventListener('click', openDeleteUser);
   els.confirmDeleteUser.addEventListener('click', deleteUser);
   $('backToUsers').addEventListener('click', function () { els.syncDetail.hidden = true; els.listView.hidden = false; state.syncUser = null; loadRecords(); loadSummary(); });
-  $('rawSyncBtn').addEventListener('click', function () { if (state.syncUser) openRecord(state.syncUser.id, 'sync'); });
   $('refreshSyncBtn').addEventListener('click', function () { if (state.syncUser) openSyncUser(state.syncUser.id, true); });
   els.syncSearch.addEventListener('input', function () { state.syncQuery = els.syncSearch.value.trim(); state.syncPage = 1; renderSyncItems(); });
   els.syncCategory.addEventListener('change', function () { state.syncCategory = els.syncCategory.value; state.syncPage = 1; renderSyncItems(); });

@@ -43,16 +43,19 @@ public class ModInit : IModuleLoaded
         if (!html.Contains("href=\"/database-editor\"", StringComparison.OrdinalIgnoreCase))
         {
             const string activeLink = "<a href=\"/weblog\" aria-current=\"page\">Weblog</a>";
-            const string databaseLink = activeLink + "\n        <a href=\"/database-editor\">Базы</a>";
+            const string telemetryLink = "<a href=\"/telemetry\">Telemetry</a>";
+            const string databaseLink = "<a href=\"/database-editor\">Databases</a>";
 
             if (html.Contains(activeLink, StringComparison.Ordinal))
-                html = html.Replace(activeLink, databaseLink, StringComparison.Ordinal);
+                html = html.Replace(activeLink, activeLink + "\n        " + databaseLink, StringComparison.Ordinal);
+            else if (html.Contains(telemetryLink, StringComparison.Ordinal))
+                html = html.Replace(telemetryLink, databaseLink + "\n        " + telemetryLink, StringComparison.Ordinal);
             else
             {
                 const string navEnd = "</nav>";
                 int navIndex = html.IndexOf(navEnd, StringComparison.OrdinalIgnoreCase);
                 if (navIndex >= 0)
-                    html = html.Insert(navIndex, "<a href=\"/database-editor\">Базы</a>\n      ");
+                    html = html.Insert(navIndex, databaseLink + "\n      ");
             }
         }
 

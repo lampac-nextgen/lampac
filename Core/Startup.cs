@@ -221,7 +221,9 @@ public class Startup
         services.Configure<CookiePolicyOptions>(options =>
         {
             options.CheckConsentNeeded = context => true;
-            options.MinimumSameSitePolicy = SameSiteMode.None;
+            options.HttpOnly = Microsoft.AspNetCore.CookiePolicy.HttpOnlyPolicy.Always;
+            options.Secure = CookieSecurePolicy.SameAsRequest;
+            options.MinimumSameSitePolicy = SameSiteMode.Lax;
         });
 
         if (init.listen.compression)
@@ -619,6 +621,7 @@ public class Startup
         app.UseForwardedHeaders(forwarded);
         #endregion
 
+        app.UseCookiePolicy();
         app.UseBaseMod();
         app.UseModHeaders();
         app.UseRequestInfo();

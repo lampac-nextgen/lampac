@@ -1,0 +1,267 @@
+# Declarative label taxonomy. Synced by .github/workflows/sync-labels.yml
+# Do not delete-other: keep delete-other-labels false in the workflow.
+
+- name: "bug"
+  color: "d73a4a"
+  description: "Something isn't working"
+
+- name: "enhancement"
+  color: "a2eeef"
+  description: "New feature or request"
+
+- name: "documentation"
+  color: "0075ca"
+  description: "Improvements or additions to documentation"
+
+- name: "question"
+  color: "d876e3"
+  description: "Further information is requested"
+
+- name: "duplicate"
+  color: "cfd3d7"
+  description: "This issue or pull request already exists"
+
+- name: "invalid"
+  color: "e4e669"
+  description: "This doesn't seem right"
+
+- name: "wontfix"
+  color: "ffffff"
+  description: "This will not be worked on"
+
+- name: "good first issue"
+  color: "7057ff"
+  description: "Good for newcomers"
+
+- name: "help wanted"
+  color: "008672"
+  description: "Extra attention is needed"
+
+- name: "security"
+  color: "B60205"
+  description: "Security-related issue or fix"
+
+- name: "breaking"
+  color: "FF6F00"
+  description: "Breaking change; needs migration notes"
+
+- name: "pinned"
+  color: "0E8A16"
+  description: "Exempt from stale bot"
+
+- name: "Stale"
+  color: "ededed"
+  description: "Marked stale due to inactivity"
+
+- name: "dependencies"
+  color: "0366d6"
+  description: "Pull requests that update a dependency file"
+
+- name: ".NET"
+  color: "7121c6"
+  description: "Pull requests that update .NET code"
+
+- name: "javascript"
+  color: "168700"
+  description: "Pull requests that update javascript code"
+
+- name: "github_actions"
+  color: "000000"
+  description: "Pull requests that update GitHub Actions code"
+
+- name: "docker"
+  color: "2496ED"
+  description: "Docker image or compose related"
+
+- name: "core:Core"
+  color: "5319E7"
+  description: "Platform: Core/"
+
+- name: "core:Shared"
+  color: "5319E7"
+  description: "Platform: Shared/"
+
+- name: "core:Online"
+  color: "5319E7"
+  description: "Platform: root Online/ engine"
+
+- name: "core:SISI"
+  color: "5319E7"
+  description: "Platform: SISI/ adult host"
+
+- name: "module:AdminPanel"
+  color: "1D76DB"
+  description: "Modules/AdminPanel/"
+
+- name: "module:Adult"
+  color: "1D76DB"
+  description: "Modules/Adult/"
+
+- name: "module:Analytics"
+  color: "1D76DB"
+  description: "Modules/Analytics/"
+
+- name: "module:Catalog"
+  color: "1D76DB"
+  description: "Modules/Catalog/"
+
+- name: "module:Community"
+  color: "1D76DB"
+  description: "Modules/Community/"
+
+- name: "module:DLNA"
+  color: "1D76DB"
+  description: "Modules/DLNA/"
+
+- name: "module:DatabaseEditor"
+  color: "1D76DB"
+  description: "Modules/DatabaseEditor/"
+
+- name: "module:ExternalBind"
+  color: "1D76DB"
+  description: "Modules/ExternalBind/"
+
+- name: "module:ForkPlayerXML"
+  color: "1D76DB"
+  description: "Modules/ForkPlayerXML/"
+
+- name: "module:GStreamer"
+  color: "1D76DB"
+  description: "Modules/GStreamer/"
+
+- name: "module:HealthCheck"
+  color: "1D76DB"
+  description: "Modules/HealthCheck/"
+
+- name: "module:JacRed"
+  color: "1D76DB"
+  description: "Modules/JacRed/"
+
+- name: "module:Kit"
+  color: "1D76DB"
+  description: "Modules/Kit/"
+
+- name: "module:LampaWeb"
+  color: "1D76DB"
+  description: "Modules/LampaWeb/"
+
+- name: "module:LampacApk"
+  color: "1D76DB"
+  description: "Modules/LampacApk/"
+
+- name: "module:LogUserRequest-Lite"
+  color: "1D76DB"
+  description: "Modules/LogUserRequest-Lite/"
+
+- name: "module:MsxNative"
+  color: "1D76DB"
+  description: "Modules/MsxNative/"
+
+- name: "module:Music"
+  color: "1D76DB"
+  description: "Modules/Music/"
+
+- name: "module:NextHUB"
+  color: "1D76DB"
+  description: "Modules/NextHUB/"
+
+- name: "module:Online"
+  color: "1D76DB"
+  description: "Modules/Online/"
+
+- name: "module:OnlineAnime"
+  color: "1D76DB"
+  description: "Modules/OnlineAnime/"
+
+- name: "module:OnlineENG"
+  color: "1D76DB"
+  description: "Modules/OnlineENG/"
+
+- name: "module:OnlineGEO"
+  color: "1D76DB"
+  description: "Modules/OnlineGEO/"
+
+- name: "module:OnlinePaid"
+  color: "1D76DB"
+  description: "Modules/OnlinePaid/"
+
+- name: "module:OnlineRUS"
+  color: "1D76DB"
+  description: "Modules/OnlineRUS/"
+
+- name: "module:OnlineUKR"
+  color: "1D76DB"
+  description: "Modules/OnlineUKR/"
+
+- name: "module:PidTor"
+  color: "1D76DB"
+  description: "Modules/PidTor/"
+
+- name: "module:Potok"
+  color: "1D76DB"
+  description: "Modules/Potok/"
+
+- name: "module:Proxy"
+  color: "1D76DB"
+  description: "Modules/Proxy/"
+
+- name: "module:Sync"
+  color: "1D76DB"
+  description: "Modules/Sync/"
+
+- name: "module:Telemetry"
+  color: "1D76DB"
+  description: "Modules/Telemetry/"
+
+- name: "module:Tg-notify.bot"
+  color: "1D76DB"
+  description: "Modules/Tg-notify.bot/"
+
+- name: "module:TorrServer"
+  color: "1D76DB"
+  description: "Modules/TorrServer/"
+
+- name: "module:Tracks"
+  color: "1D76DB"
+  description: "Modules/Tracks/"
+
+- name: "module:Transcoding"
+  color: "1D76DB"
+  description: "Modules/Transcoding/"
+
+- name: "module:WatchTogether"
+  color: "1D76DB"
+  description: "Modules/WatchTogether/"
+
+- name: "module:WebLog"
+  color: "1D76DB"
+  description: "Modules/WebLog/"
+
+- name: "module:QRAuth"
+  color: "0052CC"
+  description: "Modules/Community/QRAuth"
+
+- name: "module:OidcAuth"
+  color: "0052CC"
+  description: "Modules/Community/OidcAuth"
+
+- name: "module:TelegramAuth"
+  color: "0052CC"
+  description: "Modules/Community/TelegramAuth"
+
+- name: "meta:ci"
+  color: "BFDADC"
+  description: "CI, workflows, Dependabot, labels"
+
+- name: "meta:docs"
+  color: "BFDADC"
+  description: "docs/, site/, top-level markdown"
+
+- name: "meta:install"
+  color: "BFDADC"
+  description: "install.sh, Docker, ansible, charts"
+
+- name: "meta:config"
+  color: "BFDADC"
+  description: "config/ and examples/"
+

@@ -290,8 +290,8 @@ public class Staticache
     {
         var hash = Fnv1a.Empty;
 
-        Fnv1a.Append(ref hash, httpContext.Request.Scheme);
-        Fnv1a.Append(ref hash, httpContext.Request.Host.Value);
+        // key on the advertised address: cached scripts embed CoreInit.Host() as {localhost}
+        Fnv1a.Append(ref hash, CoreInit.Host(httpContext));
         Fnv1a.Append(ref hash, httpContext.Request.Path.Value);
 
         if (httpContext.Request.Query.TryGetValue("rjson", out StringValues rjson) && rjson.Count > 0)

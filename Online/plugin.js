@@ -648,6 +648,13 @@
     };
     this.display = function (videos) {
       var _this5 = this;
+      if (videos.length > 1 && videos.every(function (video) {
+        return video.season > 0 && video.episode > 0;
+      })) {
+        videos = videos.slice().sort(function (a, b) {
+          return a.season - b.season || a.episode - b.episode;
+        });
+      }
       this.draw(videos, {
         onEnter: function onEnter(item, html) {
           _this5.getFileUrl(

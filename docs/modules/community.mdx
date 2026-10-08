@@ -1,11 +1,15 @@
 ---
 title: "Community: Telegram-авторизация в Lampac"
 sidebarTitle: "Community"
-description: "Обзор модулей TelegramAuth и TelegramAuthBot: вход в Lampac через Telegram вместо пароля."
-keywords: ["TelegramAuth", "TelegramAuthBot", "Lampac Telegram", "accsdb"]
+description: "Обзор модулей TelegramAuth, TelegramAuthBot и QRAuth: вход в Lampac через Telegram вместо пароля."
+keywords: ["TelegramAuth", "TelegramAuthBot", "QRAuth", "Lampac Telegram", "accsdb"]
 ---
 
-Папка `Modules/Community/` содержит два подмодуля. Вместе они заменяют стандартную модалку пароля/CUB на полноэкранный Telegram-гейт.
+Папка `Modules/Community/` содержит модули входа в Lampac через Telegram. Есть два независимых варианта: связка TelegramAuth + TelegramAuthBot и самостоятельный модуль QRAuth.
+
+## TelegramAuth и TelegramAuthBot
+
+Связка из двух подмодулей. Вместе они заменяют стандартную модалку пароля/CUB на полноэкранный Telegram-гейт.
 
 <Note>
   Оба модуля по умолчанию находятся в `BaseModule.SkipModules` и имеют `"enable": false` в `manifest.json`.
@@ -20,7 +24,7 @@ keywords: ["TelegramAuth", "TelegramAuthBot", "Lampac Telegram", "accsdb"]
   </Card>
 </Columns>
 
-## Включить оба модуля
+### Включить оба модуля
 
 <Steps>
   <Step title="Скопируйте секции в init.conf">
@@ -44,4 +48,12 @@ API-таблицы: [справочник Telegram](/api/telegram). Уведом
 
 ## QRAuth
 
-В той же папке лежит отдельный модуль `QRAuth`: экран входа с QR-кодом и собственным Telegram-ботом. Он не зависит от TelegramAuth и TelegramAuthBot. Подробнее: [QRAuth](/modules/qr-auth).
+Самостоятельная альтернатива связке выше. Не зависит от TelegramAuth и TelegramAuthBot, работает поверх `accsdb` и общего `users.json`.
+
+<Card title="QRAuth" href="/modules/qr-auth" icon="qr-code" horizontal>
+  Экран входа с QR-кодом и фоном из постеров, собственный Telegram-бот: вход на ТВ без пароля, заявки на доступ, бан и разбан из Telegram
+</Card>
+
+<Note>
+  QRAuth выключен по умолчанию: `"enable": false` в `manifest.json`. Не включайте его вместе с Telegram-гейтом (`LampaWeb.telegramAuthGate`): гейт подменяет `deny.js`, и экран QRAuth не показывается.
+</Note>

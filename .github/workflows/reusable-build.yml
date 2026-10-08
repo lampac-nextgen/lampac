@@ -39,7 +39,7 @@ jobs:
     name: Build Lampac NextGen
     permissions:
       contents: read
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Determine checkout ref
         id: checkout_ref
@@ -60,7 +60,7 @@ jobs:
           echo "Checking out ref: $REF"
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           ref: ${{ steps.checkout_ref.outputs.ref }}
 
@@ -86,7 +86,7 @@ jobs:
             --verbosity minimal
 
       - name: Upload artifact Lampac NextGen
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: lampac-nextgen
           path: publish/

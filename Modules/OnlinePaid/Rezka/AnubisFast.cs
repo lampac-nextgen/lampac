@@ -20,6 +20,20 @@ static class AnubisFast
 
     public readonly record struct Challenge(string Json, string Id, string UserAgent);
 
+
+    public static string GetVerificationCookieName(CookieContainer cookies, Uri siteUri, string challengeId)
+    {
+        const string name = "techaro.lol-anubis-cookie-verification";
+
+        foreach (Cookie cookie in cookies.GetCookies(siteUri))
+        {
+            if (cookie.Value == challengeId && cookie.Name.StartsWith(name + "-", StringComparison.Ordinal))
+                return cookie.Name;
+        }
+
+        return name;
+    }
+
     public static bool TryParseChallenge(string html, out Challenge result)
     {
         result = default;
