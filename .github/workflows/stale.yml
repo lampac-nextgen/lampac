@@ -13,6 +13,7 @@ permissions:
 jobs:
   stale:
     name: Mark and close stale issues
+    if: github.repository == 'lampac-nextgen/lampac'
     runs-on: ubuntu-26.04
     steps:
       - uses: actions/stale@v11.0.0

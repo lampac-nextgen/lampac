@@ -24,6 +24,7 @@ permissions:
 jobs:
   create-release:
     name: Create tag and release
+    if: github.repository == 'lampac-nextgen/lampac'
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout

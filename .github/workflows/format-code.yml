@@ -12,6 +12,7 @@ permissions:
 jobs:
   format-code:
     name: Format code
+    if: github.repository == 'lampac-nextgen/lampac'
     runs-on: ubuntu-26.04
     steps:
       - name: Checkout

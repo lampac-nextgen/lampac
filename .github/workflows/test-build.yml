@@ -10,10 +10,7 @@ on:
       - main
 
 permissions:
-  contents: write
-  actions: read
-  packages: read
-  id-token: write
+  contents: read
 
 jobs:
   test-build:

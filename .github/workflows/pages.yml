@@ -19,6 +19,7 @@ concurrency:
 
 jobs:
   deploy:
+    if: github.repository == 'lampac-nextgen/lampac'
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}

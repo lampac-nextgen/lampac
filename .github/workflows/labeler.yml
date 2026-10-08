@@ -11,6 +11,8 @@ permissions:
 jobs:
   label:
     name: Label PR by paths
+    # pull_request_target + base token: never checkout PR head.
+    if: github.repository == 'lampac-nextgen/lampac'
     runs-on: ubuntu-26.04
     steps:
       - name: Label
