@@ -1,6 +1,9 @@
 # Exclude everything except source trees needed for `dotnet publish`
 **
 
+# NuGet Central Package Management (root) — required for versionless PackageReference
+!Directory.Packages.props
+
 !config/
 !config/**
 !Core/
