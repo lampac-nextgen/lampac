@@ -74,7 +74,7 @@ function lampacDoramaSections() {
       url: lampacDoramaDiscoverUrl({ sort_by: 'popularity.desc' })
     },
     {
-      title: 'Последнее добавление',
+      title: 'Последние добавления',
       url: lampacDoramaDiscoverUrl({ sort_by: 'first_air_date.desc', 'first_air_date.lte': lampacDoramaDate(0) })
     },
     {

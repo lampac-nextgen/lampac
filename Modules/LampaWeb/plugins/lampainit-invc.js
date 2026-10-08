@@ -1,5 +1,7 @@
 // //////////////
-// Переименуйте файл lampainit-invc.js в lampainit-invc.my.js
+// Не правьте этот файл на месте: обновление Lampac его перезапишет.
+// Скопируйте его в plugins/override/lampainit-invc.js рядом с Core.dll
+// (в Docker: /lampac/plugins/override/lampainit-invc.js) и правьте копию.
 // //////////////
 
 

@@ -114,6 +114,32 @@ public class DatabaseEditorApiController : BaseController
     }
 
     [HttpGet]
+    [Route("/database-editor/api/user-areas")]
+    public async Task<ActionResult> UserAreas()
+    {
+        try { return Json(new { success = true, users = await DatabaseStore.GetUserAreasAsync() }); }
+        catch (Exception ex) { return KnownOrUnexpected(ex, "user-areas"); }
+    }
+
+    [HttpPost]
+    [Route("/database-editor/api/merge-users/preview")]
+    public async Task<ActionResult> PreviewMergeUsers([FromBody] MergeUsersRequest request)
+    {
+        if (!IsEditorRequest()) return BadRequest(new { success = false, error = "invalid_editor_request" });
+        try { return Json(new { success = true, result = await DatabaseStore.PreviewMergeUsersAsync(request) }); }
+        catch (Exception ex) { return KnownOrUnexpected(ex, "merge-users-preview"); }
+    }
+
+    [HttpPost]
+    [Route("/database-editor/api/merge-users")]
+    public async Task<ActionResult> MergeUsers([FromBody] MergeUsersRequest request)
+    {
+        if (!IsEditorRequest()) return BadRequest(new { success = false, error = "invalid_editor_request" });
+        try { return Json(new { success = true, result = await DatabaseStore.MergeUsersAsync(request) }); }
+        catch (Exception ex) { return KnownOrUnexpected(ex, "merge-users"); }
+    }
+
+    [HttpGet]
     [Route("/database-editor/api/sync-user")]
     public async Task<ActionResult> SyncUser(long id)
     {

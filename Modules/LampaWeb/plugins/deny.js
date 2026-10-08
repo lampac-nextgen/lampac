@@ -77,7 +77,7 @@ function addDevice(message) {
 					  pwait.style.fontSize = "xx-large";
 					  pwait.style.marginTop = "2em";
 					  pwait.style.padding = "2em";
-					  pwait.innerHTML = 'Сохраните ваш персональный пароль <span style="color: red;">'+result.uid+'</span> для будущих авторизаций на текущем устройстве, а так же для авторизации на других устройствах, все ваши закладки и синхронизация между устройствами происходит через персональный пароль <span style="color: red;">'+result.uid+'</span><br><br><br><br>После сохранения пароля в надежном месте <b style="color: cadetblue;">перезагрузите страницу/приложение</b>';
+					  pwait.innerHTML = 'Сохраните ваш персональный пароль <span style="color: red;">'+result.uid+'</span> для будущих авторизаций на текущем устройстве, а также для авторизации на других устройствах. Все ваши закладки и синхронизация между устройствами происходят через персональный пароль <span style="color: red;">'+result.uid+'</span><br><br><br><br>После сохранения пароля в надёжном месте <b style="color: cadetblue;">перезагрузите страницу/приложение</b>';
                   document.body.appendChild(pwait);
                 } else {
                   Lampa.Storage.set('lampac_unic_id', code);

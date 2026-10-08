@@ -264,6 +264,7 @@
                   "modules/community",
                   "modules/telegram-auth",
                   "modules/telegram-auth-bot",
+                  "modules/qr-auth",
                   "modules/tg-notify",
                   "modules/kit",
                   "modules/external-bind",

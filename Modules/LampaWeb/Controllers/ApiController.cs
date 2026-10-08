@@ -178,7 +178,7 @@ public class ApiController : BaseController
         var bulder = new StringBuilder();
         bulder = bulder.Append(file);
 
-        if (ModInit.conf.initPlugins.cubProxy)
+        if (ModInit.conf.initPlugins.cubProxy && LampaPluginBuilder.ModuleLoaded("CubProxy"))
         {
             bulder = bulder.Replace("protocol + mirror + '/api/checker'", $"'{host}/cub/api/checker'");
 
@@ -749,7 +749,7 @@ public class ApiController : BaseController
 
             sb = sb.Replace("{ major: 0, minor: 0 }", $"{{major: 2, minor: 1}}");
 
-            if (ModInit.conf.initPlugins.jacred)
+            if (ModInit.conf.initPlugins.jacred && LampaPluginBuilder.ModuleLoaded("JacRed"))
                 sb = sb.Replace("{jachost}", Regex.Replace(host, "^https?://", ""));
             else
                 sb = sb.Replace("{jachost}", "jac.red");
@@ -878,7 +878,7 @@ public class ApiController : BaseController
             sb.Append(privateinit)
               .Replace("{country}", requestInfo.Country ?? string.Empty)
               .Replace("{localhost}", host)
-              .Replace("{jachost}", ModInit.conf.initPlugins.jacred ? Regex.Replace(host, "^https?://", "") : "jac.red");
+              .Replace("{jachost}", ModInit.conf.initPlugins.jacred && LampaPluginBuilder.ModuleLoaded("JacRed") ? Regex.Replace(host, "^https?://", "") : "jac.red");
 
             return ContentTo(sb, "application/javascript; charset=utf-8");
         }

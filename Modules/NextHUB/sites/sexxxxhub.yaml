@@ -50,7 +50,8 @@ list:
   uri: latest-updates/{page}/
 
 search:
-  uri: search/{search}/{page}/
+  firstpage: "search/{search}/"
+  uri: "search/?mode=async&function=get_block&block_id=list_videos_videos_list_search_result&q={search}&from_videos={page}"
 
 contentParse:
   nodes: //div[@class='item th']

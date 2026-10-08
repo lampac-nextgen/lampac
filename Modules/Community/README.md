@@ -12,6 +12,7 @@
 |--------|------|
 | [TelegramAuth](TelegramAuth/README.md) | Хранилище пользователей и устройств, HTTP API `/tg/auth/...`, синхронизация UID в accsdb при `TelegramAuth.enable` |
 | [TelegramAuthBot](TelegramAuthBot/README.md) | Telegram-бот (long polling): привязка UID, устройства, админ-команды |
+| [QRAuth](QRAuth/README.md) | Самостоятельная альтернатива паре выше: экран входа с QR-кодом (`plugins/override/deny.js`) и свой Telegram-бот, который выдаёт доступ через accsdb. Включается `"enable": true` в `manifest.json`; конфиг — секции `TelegramBot` и `DenyPage` ([пример](QRAuth/init.merge.example.json)) |
 
 **Типовой поток:** клиент получает UID → пользователь открывает бота (`/start <uid>` или отправляет UID) → бот вызывает `POST /tg/auth/bind/complete` → клиент опрашивает `GET /tg/auth/status?uid=...` → после успеха Lampac видит UID в корневом `users.json` (если включены TelegramAuth + accsdb).
 

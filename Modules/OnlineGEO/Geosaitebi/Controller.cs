@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Threading.Tasks;
 using System.Web;
 using Shared;
@@ -33,9 +34,11 @@ public class GeosaitebiController : BaseOnlineController
 
         rhubSearchFallback:
 
-            var cache = await InvokeCacheResult<EmbedModel>($"geosaitebi:search:{searchTitle}:{year}", TimeSpan.FromHours(4), async e =>
+            // В кэше только данные сайта, без host: host свой у каждого клиента
+            // (http://ip:9118 или https://домен за прокси) и подставляется ниже.
+            var cache = await InvokeCacheResult<List<SearchItem>>($"geosaitebi:search:v2:{searchTitle}:{year}", TimeSpan.FromHours(4), async e =>
             {
-                var similar = new SimilarTpl();
+                var results = new List<SearchItem>();
 
                 await httpHydra.GetSpan($"{init.host}/index.php?do=search&subaction=search&search_start=0&full_search=0&story={HttpUtility.UrlEncode(searchTitle)}", search =>
                 {
@@ -48,19 +51,19 @@ public class GeosaitebiController : BaseOnlineController
                         if (string.IsNullOrEmpty(href) || string.IsNullOrEmpty(name))
                             continue;
 
-                        similar.Append(
-                            name,
-                            Rx.Match(row, "<span class=\"w-v-d-2\">([0-9]+)</span>") ?? string.Empty,
-                            string.Empty,
-                            $"{host}/lite/geosaitebi?title={HttpUtility.UrlEncode(name ?? title)}&original_title={HttpUtility.UrlEncode(original_title)}&year={year}&serial={serial}&href={HttpUtility.UrlEncode(href)}"
-                        );
+                        results.Add(new SearchItem()
+                        {
+                            name = name,
+                            year = Rx.Match(row, "<span class=\"w-v-d-2\">([0-9]+)</span>") ?? string.Empty,
+                            href = href
+                        });
                     }
                 });
 
-                if (similar.Length == 0)
+                if (results.Count == 0)
                     return e.Fail("search", refresh_proxy: true);
 
-                return e.Success(new EmbedModel() { similar = similar });
+                return e.Success(results);
             });
 
             if (IsRhubFallback(cache))
@@ -70,7 +73,21 @@ public class GeosaitebiController : BaseOnlineController
                 return OnError(cache.ErrorMsg);
 
             if (string.IsNullOrWhiteSpace(href))
-                return ContentTpl(cache.Value.similar);
+            {
+                var stpl = new SimilarTpl(cache.Value.Count);
+
+                foreach (var item in cache.Value)
+                {
+                    stpl.Append(
+                        item.name,
+                        item.year,
+                        string.Empty,
+                        $"{host}/lite/geosaitebi?title={HttpUtility.UrlEncode(item.name ?? title)}&original_title={HttpUtility.UrlEncode(original_title)}&year={year}&serial={serial}&href={HttpUtility.UrlEncode(item.href)}"
+                    );
+                }
+
+                return ContentTpl(stpl);
+            }
         }
         #endregion
 

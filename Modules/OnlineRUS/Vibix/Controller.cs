@@ -61,37 +61,15 @@ public class VibixController : BaseOnlineController
 
             foreach (var movie in cache.Value)
             {
-                if (movie.voices == null)
-                {
-                    movie.voices = new Dictionary<string, List<StreamQualityDto>>();
+                // Ссылки содержат host текущего запроса, поэтому собираются заново
+                // и не пишутся в movie: объект лежит в общем кэше, и следующий клиент
+                // (другой адрес или схема) получил бы чужой host.
+                var voices = BuildMovieVoices(movie.file);
 
-                    foreach (Match qualityMatch in Regex.Matches(movie.file, @"\[(?<q>480|720|1080)p\](?<items>.*?)(?=,\[(?:480|720|1080)p\]|$)", RegexOptions.Singleline))
-                    {
-                        string items = qualityMatch.Groups["items"].Value;
-
-                        foreach (Match voiceMatch in Regex.Matches(items, @"\{(?<voice>[^}]+)\}(?<file>https?://[^,\t\[\;{ ]+)", RegexOptions.Singleline))
-                        {
-                            string movieVoice = voiceMatch.Groups["voice"].Value;
-                            string file = voiceMatch.Groups["file"].Value;
-
-                            if (!movie.voices.TryGetValue(movieVoice, out var streams))
-                            {
-                                streams = new List<StreamQualityDto>();
-                                movie.voices[movieVoice] = streams;
-                            }
-
-                            streams.Insert(0, new StreamQualityDto(
-                                $"{host}/lite/vibix/video.m3u8?id={EncryptQuery(file)}",
-                                qualityMatch.Groups["q"].Value + "p"
-                            ));
-                        }
-                    }
-                }
-
-                if (movie.voices.Count == 0)
+                if (voices.Count == 0)
                     continue;
 
-                foreach (var v in movie.voices)
+                foreach (var v in voices)
                 {
                     if (v.Value.Count > 0)
                     {
@@ -137,10 +115,14 @@ public class VibixController : BaseOnlineController
             else
             {
                 var season = cache.Value.FirstOrDefault(i => i.title?.EndsWith($" {s}") == true);
+
+                // Копии, а не элементы кэша: PrepareEpisode записывает в серию ссылки
+                // с host текущего запроса, в кэше они достались бы следующему клиенту.
                 var episodes = season?.folder?
                     .Where(i => i != null)
                     .OrderBy(i => SortNumber(i.title))
                     .ThenBy(i => i.title, StringComparer.OrdinalIgnoreCase)
+                    .Select(i => new Item { title = i.title, folder = i.folder, file = i.file })
                     .ToList();
 
                 if (episodes == null || episodes.Count == 0)
@@ -277,6 +259,39 @@ public class VibixController : BaseOnlineController
         m3u8 = Regex.Replace(m3u8, "(https://[^\n\r]+)", u => HostStreamProxy(u.Value, headers));
 
         return Content(m3u8, "application/vnd.apple.mpegurl");
+    }
+    #endregion
+
+    #region MovieVoices
+    Dictionary<string, List<StreamQualityDto>> BuildMovieVoices(string file)
+    {
+        var voices = new Dictionary<string, List<StreamQualityDto>>();
+
+        if (string.IsNullOrWhiteSpace(file))
+            return voices;
+
+        foreach (Match qualityMatch in Regex.Matches(file, @"\[(?<q>480|720|1080)p\](?<items>.*?)(?=,\[(?:480|720|1080)p\]|$)", RegexOptions.Singleline))
+        {
+            string items = qualityMatch.Groups["items"].Value;
+
+            foreach (Match voiceMatch in Regex.Matches(items, @"\{(?<voice>[^}]+)\}(?<file>https?://[^,\t\[\;{ ]+)", RegexOptions.Singleline))
+            {
+                string movieVoice = voiceMatch.Groups["voice"].Value;
+
+                if (!voices.TryGetValue(movieVoice, out var streams))
+                {
+                    streams = new List<StreamQualityDto>();
+                    voices[movieVoice] = streams;
+                }
+
+                streams.Insert(0, new StreamQualityDto(
+                    $"{host}/lite/vibix/video.m3u8?id={EncryptQuery(voiceMatch.Groups["file"].Value)}",
+                    qualityMatch.Groups["q"].Value + "p"
+                ));
+            }
+        }
+
+        return voices;
     }
     #endregion
 

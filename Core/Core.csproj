@@ -70,7 +70,9 @@
       Exclude="..\Modules\**\bin\**;..\Modules\**\obj\**;..\Modules\**\Properties\**"
       CopyToPublishDirectory="Always" Visible="false"
       TargetPath="module\%(RecursiveDir)%(Filename)%(Extension)" />
-    <None Include="..\Modules\GStreamer\gst-libs\win-x86_64\bin\**\*" CopyToPublishDirectory="Always" Visible="false" TargetPath="module\GStreamer\gst-libs\win-x86_64\bin\%(RecursiveDir)%(Filename)%(Extension)" />
+    <None Include="..\Modules\GStreamer\gst-libs\win-x86_64\bin\**\*"
+      CopyToPublishDirectory="Always" Visible="false"
+      TargetPath="module\GStreamer\gst-libs\win-x86_64\bin\%(RecursiveDir)%(Filename)%(Extension)" />
     <None Include="..\TestModules\**\*"
       Exclude="..\TestModules\**\bin\**;..\TestModules\**\obj\**;..\TestModules\**\Properties\**"
       CopyToPublishDirectory="Always" Visible="false"
@@ -88,6 +90,44 @@
       CopyToPublishDirectory="Always" Visible="false"
       TargetPath="%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
+
+  <!-- Build info for GET /version?type=build. GITHUB_* come from the Actions environment
+  (or Docker build args); runs after Source Link so the local git remote is known. -->
+  <Target Name="AddBuildInfoMetadata" BeforeTargets="GetAssemblyAttributes">
+    <PropertyGroup>
+      <BuildRef Condition="'$(BuildRef)' == ''">$(GITHUB_REF)</BuildRef>
+      <BuildRepository Condition="'$(BuildRepository)' == '' and '$(GITHUB_REPOSITORY)' != ''">$(GITHUB_SERVER_URL)/$(GITHUB_REPOSITORY)</BuildRepository>
+      <BuildRepository Condition="'$(BuildRepository)' == ''">$(PrivateRepositoryUrl)</BuildRepository>
+      <BuildRunUrl Condition="'$(GITHUB_RUN_ID)' != ''">$(GITHUB_SERVER_URL)/$(GITHUB_REPOSITORY)/actions/runs/$(GITHUB_RUN_ID)</BuildRunUrl>
+    </PropertyGroup>
+    <!-- Local git state: no .git (Docker context, source zip) leaves these empty. -->
+    <Exec Command="git rev-parse --abbrev-ref HEAD" Condition="'$(BuildRef)' == ''" ConsoleToMSBuild="true"
+      IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GitBranch" />
+      <Output TaskParameter="ExitCode" PropertyName="_GitBranchExit" />
+    </Exec>
+    <Exec Command="git status --porcelain" ConsoleToMSBuild="true"
+      IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
+      <Output TaskParameter="ConsoleOutput" PropertyName="_GitStatus" />
+      <Output TaskParameter="ExitCode" PropertyName="_GitStatusExit" />
+    </Exec>
+    <PropertyGroup>
+      <BuildRef Condition="'$(BuildRef)' == '' and '$(_GitBranchExit)' == '0' and '$(_GitBranch)' != 'HEAD'">refs/heads/$(_GitBranch)</BuildRef>
+      <BuildDirty Condition="'$(_GitStatusExit)' == '0' and '$(_GitStatus)' == ''">false</BuildDirty>
+      <BuildDirty Condition="'$(_GitStatusExit)' == '0' and '$(_GitStatus)' != ''">true</BuildDirty>
+    </PropertyGroup>
+    <ItemGroup>
+      <AssemblyMetadata Include="BuildDirty" Value="$(BuildDirty)" />
+      <AssemblyMetadata Include="BuildOs" Value="$([System.Runtime.InteropServices.RuntimeInformation]::OSDescription)" />
+      <AssemblyMetadata Include="BuildArch" Value="$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)" />
+      <AssemblyMetadata Include="BuildRef" Value="$(BuildRef)" />
+      <AssemblyMetadata Include="BuildRepository" Value="$(BuildRepository)" />
+      <AssemblyMetadata Include="BuildRunUrl" Value="$(BuildRunUrl)" />
+      <AssemblyMetadata Include="BuildDate" Value="$([System.DateTime]::UtcNow.ToString('o'))" />
+      <AssemblyMetadata Include="BuildConfiguration" Value="$(Configuration)" />
+      <AssemblyMetadata Include="BuildSdk" Value="$(NETCoreSdkVersion)" />
+    </ItemGroup>
+  </Target>
 
   <!-- Targets -->
   <Target Name="LayoutManagedReferencesInRuntimeFolder" AfterTargets="Publish"

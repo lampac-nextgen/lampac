@@ -1,0 +1,7 @@
+{
+  "enable": false,
+  "dynamic": true,
+  "references": [
+    "references/"
+  ]
+}

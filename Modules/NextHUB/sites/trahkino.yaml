@@ -85,9 +85,8 @@ view:
   bindingToIP: true
   related: true
   viewsource: true
-  eval: |
-    {include:kt_player.eval}
-    return decode();
+  regexMatch:
+    pattern: "video_url: .(https://[^\x27\"]+)"
 
 #view:
 #  abortMedia: false

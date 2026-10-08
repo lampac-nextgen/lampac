@@ -1,0 +1,24 @@
+{
+  "OidcAuth": {
+    "enable": true,
+    "overrideDeny": true,
+    "name": "Authentik",
+    "authority": "https://auth.example.com/application/o/lampac/",
+    "publicUrl": "https://lampac.example.com",
+    "clientId": "GENERATE_IN_AUTHENTIK",
+    "clientSecret": "",
+    "scopes": "openid profile email",
+    "defaultGroup": 0,
+    "defaultExpiresDays": 0,
+    "unlinkedLog": true,
+    "limit_map": [
+      {
+        "pattern": "^/oidc/",
+        "map": {
+          "limit": 10,
+          "second": 1
+        }
+      }
+    ]
+  }
+}

@@ -1,11 +1,11 @@
 ---
 title: "Reverse proxy и HTTPS"
 sidebarTitle: "Reverse proxy"
-description: "Разместите Lampac за Nginx: HTTPS, реальный IP клиента, WebSocket, SSE, streaming и безопасный доступ к административным маршрутам."
-keywords: ["Lampac Nginx", "reverse proxy", "HTTPS", "WebSocket", "X-Forwarded-For", "KnownProxies"]
+description: "Разместите Lampac за Nginx или Caddy: HTTPS-ссылки в ответах, реальный IP клиента, WebSocket, SSE, streaming и безопасный доступ к административным маршрутам."
+keywords: ["Lampac Nginx", "Lampac Caddy", "reverse proxy", "HTTPS", "mixed content", "xscheme", "listen.scheme", "WebSocket", "X-Forwarded-For", "X-Forwarded-Proto", "KnownProxies"]
 ---
 
-Reverse proxy завершает TLS, передаёт Lampac реальный IP клиента и отдельно настраивает длительные WebSocket, SSE и media-соединения.
+Reverse proxy завершает TLS, передаёт Lampac реальный IP клиента и схему `https` для ссылок в ответах, а также отдельно настраивает длительные WebSocket, SSE и media-соединения.
 
 <Warning>
   После публикации в интернет включите WAF и accsdb. Ограничьте `/adminpanel`, `/database-editor` и `/weblog` по IP или VPN.
@@ -34,6 +34,7 @@ server {
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header xscheme $scheme;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
   }
@@ -44,6 +45,7 @@ server {
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header xscheme $scheme;
     proxy_set_header Upgrade $http_upgrade;
     proxy_set_header Connection $connection_upgrade;
     proxy_buffering off;
@@ -56,11 +58,52 @@ server {
     proxy_set_header Host $host;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
     proxy_set_header X-Forwarded-Proto $scheme;
+    proxy_set_header xscheme $scheme;
     proxy_buffering off;
     proxy_read_timeout 1h;
   }
 }
 ```
+
+Задавайте `xscheme` в каждом `location` вместе с остальными `proxy_set_header`. Зачем он нужен, описано в разделе «HTTPS-ссылки в ответах» ниже.
+
+## Минимальная конфигурация Caddy
+
+Caddy по умолчанию передаёт исходный `Host` и добавляет `X-Forwarded-For` и `X-Forwarded-Proto`. Заголовок `xscheme` добавьте явно:
+
+```text Caddyfile
+lampac.example.com {
+  reverse_proxy 127.0.0.1:9118 {
+    header_up xscheme https
+  }
+}
+```
+
+## HTTPS-ссылки в ответах
+
+Lampac вписывает свой адрес в ответы: скрипты плагинов (`/lampainit.js`, `/online.js`), списки `/sisi` и `/lite/...`, ссылки `/proxy/`. Адрес собирается заново на каждый запрос:
+
+| Часть адреса | Откуда берётся, по убыванию приоритета |
+| --- | --- |
+| Схема | заголовок `xscheme` → `listen.scheme` → схема запроса |
+| Хост | `listen.host`, иначе заголовок `Host` запроса |
+
+Схема запроса становится `https`, если доверенный proxy прислал `X-Forwarded-Proto: https`. Доверенными считаются loopback-адреса и сети из `KnownProxies`. При `"frontend": "cloudflare"` в разделе `listen` Lampac также принимает `X-Forwarded-Proto` с адресов Cloudflare. `X-Forwarded-Host` Lampac не читает, поэтому передавайте исходный `Host`.
+
+<Warning>
+  `config/example.init.conf` задаёт `"scheme": "http"` в разделе `listen`. С этой настройкой `X-Forwarded-Proto` на ссылки не влияет. Страница открывается по HTTPS, а ссылки внутри остаются `http://`. Браузер блокирует их как mixed content: плагины и видео не загружаются.
+</Warning>
+
+Выберите один из вариантов:
+
+- Передавайте заголовок `xscheme`. Он перекрывает `listen.scheme`. Примеры для Nginx и Caddy выше уже это делают.
+- Уберите `scheme` из раздела `listen`. Тогда Lampac берёт схему из запроса: через proxy — из `X-Forwarded-Proto`, при прямом обращении к порту `9118` — `http`.
+
+Не задавайте `"scheme": "https"`, если к Lampac обращаются и напрямую, например телевизор в локальной сети. `listen.scheme` меняет только ссылки. Порт `9118` по-прежнему принимает только HTTP, и ссылки вида `https://…:9118` не откроются.
+
+<Note>
+  Скрипты плагинов (`/lampainit.js`, `/online.js`, `/on.js`, `/sisi.js`) Lampac кэширует до 20 минут. После того как вы добавили `xscheme`, старые `http://`-ссылки в них могут приходить до конца этого срока.
+</Note>
 
 ## Доверенный proxy
 
@@ -95,6 +138,9 @@ server {
 curl -I https://lampac.example.com/online.js
 curl -s https://lampac.example.com/api/myip
 curl -N https://lampac.example.com/lifeevents
+curl -s https://lampac.example.com/online.js | grep -c 'http://lampac.example.com'
 ```
+
+Последняя команда должна вывести `0`: в скрипте нет ссылок на ваш домен по `http://`.
 
 WebSocket проверьте клиентом, который умеет отправлять Upgrade, например `websocat`.

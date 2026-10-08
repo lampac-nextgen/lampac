@@ -1,12 +1,12 @@
-using Shared.Models.Templates;
-
 namespace AsiaGe;
 
-public class EmbedModel
+public class SearchItem
 {
-    public bool IsEmpty { get; set; }
+    public string name { get; set; }
 
-    public SimilarTpl similar { get; set; }
+    public string year { get; set; }
+
+    public string href { get; set; }
 }
 
 public class SerialModel

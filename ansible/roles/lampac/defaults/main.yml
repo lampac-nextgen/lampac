@@ -113,6 +113,8 @@ lampac_rsync_excludes:
   - database/
   - wwwroot/
   - plugins/override/
+  - module/NextHUB/override/
+  - module/Catalog/override/
   - notifications_date.txt
   - excludes.conf
   - version.txt

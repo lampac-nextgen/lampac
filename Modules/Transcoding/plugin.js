@@ -311,7 +311,7 @@
 		
         log('intercept mkv playback', e.data.url);
 
-        showWait('Получение списка аудио дорожек...');
+        showWait('Получение списка аудиодорожек...');
 
         requestFfprobe(resolveMediaUrl(e.data), function (info) {
             hideWait();

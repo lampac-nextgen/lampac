@@ -50,7 +50,10 @@ public class KinotochkaController : BaseOnlineController
                 #region Сезоны
             rhubFallback:
 
-                var cache = await InvokeCacheResult<List<Season>>($"kinotochka:seasons:{title}", TimeSpan.FromHours(4), textJson: true, onget: async e =>
+                // В кэше Season.url — адрес страницы сезона на сайте, без host: host свой
+                // у каждого клиента (http://ip:9118 или https://домен за прокси),
+                // ссылка на сезон собирается ниже, при выдаче.
+                var cache = await InvokeCacheResult<List<Season>>($"kinotochka:seasons:v2:{title}", TimeSpan.FromHours(4), textJson: true, onget: async e =>
                 {
                     List<Season> links = null;
 
@@ -71,7 +74,7 @@ public class KinotochkaController : BaseOnlineController
                                 links.Add(new Season()
                                 {
                                     name = $"{sname} сезон",
-                                    url = $"{host}/lite/kinotochka?title={HttpUtility.UrlEncode(title)}&serial={serial}&s={sname}&newsuri={HttpUtility.UrlEncode(url)}",
+                                    url = url,
                                     season = sname
                                 });
                             }
@@ -107,7 +110,7 @@ public class KinotochkaController : BaseOnlineController
                                     links.Add(new Season()
                                     {
                                         name = gname[2].Value.ToLower(),
-                                        url = $"{host}/lite/kinotochka?title={HttpUtility.UrlEncode(title)}&serial={serial}&s={gname[3].Value}&newsuri={HttpUtility.UrlEncode(uri)}",
+                                        url = uri,
                                         season = gname[3].Value
                                     });
                                 }
@@ -133,7 +136,7 @@ public class KinotochkaController : BaseOnlineController
                     {
                         tpl.Append(
                             l.name,
-                            l.url,
+                            $"{host}/lite/kinotochka?title={HttpUtility.UrlEncode(title)}&serial={serial}&s={l.season}&newsuri={HttpUtility.UrlEncode(l.url)}",
                             l.season
                         );
                     }

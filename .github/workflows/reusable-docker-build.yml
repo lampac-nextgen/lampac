@@ -101,7 +101,7 @@ on:
 
 jobs:
   build-docker:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       actions: read
       contents: write
@@ -116,10 +116,13 @@ jobs:
       tags: ${{ steps.meta.outputs.tags }}
       digest: ${{ steps.build.outputs.digest }}
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@v7.0.1
         with:
           ref: ${{ inputs.checkout_ref != '' && inputs.checkout_ref || github.ref }}
           fetch-depth: 0
+
+      - id: git
+        run: echo "sha=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
 
       - name: Login to GitHub Container Registry
         if: ${{ inputs.push }}
@@ -173,6 +176,11 @@ jobs:
           annotations: ${{ steps.meta.outputs.annotations }}
           build-args: |
             LAMPAC_VERSION=${{ inputs.version != '' && inputs.version || 'dev' }}
+            GIT_COMMIT=${{ steps.git.outputs.sha }}
+            GITHUB_SERVER_URL=${{ github.server_url }}
+            GITHUB_REPOSITORY=${{ github.repository }}
+            GITHUB_REF=${{ inputs.checkout_ref != '' && inputs.checkout_ref || github.ref }}
+            GITHUB_RUN_ID=${{ github.run_id }}
           # NOTE: GHA cache is increase build time, so we disable it for now
           # cache-from: type=gha
           # cache-to: type=gha,mode=max
@@ -180,14 +188,14 @@ jobs:
           provenance: ${{ inputs.provenance }}
 
       - if: ${{ inputs.generate_syft_sbom && inputs.push }}
-        uses: anchore/sbom-action@v0.24.2
+        uses: anchore/sbom-action@v0.24.3
         with:
           image: ${{ env.GHCR_IMAGE }}@${{ steps.build.outputs.digest }}
           format: ${{ inputs.syft_format }}
           output-file: sbom.${{ inputs.syft_format == 'spdx-json' && 'spdx.json' || 'json' }}
 
       - if: ${{ inputs.generate_syft_sbom && inputs.push }}
-        uses: actions/upload-artifact@v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: sbom-${{ github.sha }}
           path: sbom.${{ inputs.syft_format == 'spdx-json' && 'spdx.json' || 'json' }}

@@ -116,7 +116,7 @@ keywords: ["init.conf", "init.yaml", "Lampac конфигурация", "гор�
 | --- | --- | --- | --- |
 | `ip` | string | `"any"` | Интерфейс: `"any"` (все адреса), `"broadcast"` или конкретный IP вроде `"0.0.0.0"` / `"127.0.0.1"` |
 | `port` | int | `9118` | TCP-порт сервера |
-| `scheme` | string | `"http"` | Протокол: `http` или `https` |
+| `scheme` | string | не задан | Схема (`http` или `https`) в ссылках, которые Lampac вписывает в ответы. TLS не включает. Если не задан, берётся схема запроса. За HTTPS-proxy см. [reverse proxy](/deployment/reverse-proxy) |
 | `version` | bool | `true` | Добавлять заголовок с версией сервера |
 | `ResponseCancelAfter` | int | `10` | Таймаут ответа в секундах |
 

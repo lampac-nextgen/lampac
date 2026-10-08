@@ -109,6 +109,7 @@ public sealed class DatabaseRecord
     public string poster { get; set; }
     public string year { get; set; }
     public string mediaType { get; set; }
+    public string source { get; set; }
     public int? season { get; set; }
     public int? episode { get; set; }
     public double? position { get; set; }
@@ -123,6 +124,7 @@ public sealed class SyncUserItem
     public string poster { get; set; }
     public string year { get; set; }
     public string mediaType { get; set; }
+    public string source { get; set; }
     public List<string> categories { get; set; }
     public int order { get; set; }
     public Dictionary<string, int> categoryOrder { get; set; }
@@ -184,7 +186,7 @@ public sealed class DatabaseEditorBusyException : Exception
     public DatabaseEditorBusyException(string message) : base(message) { }
 }
 
-static class DatabaseStore
+static partial class DatabaseStore
 {
     const int MaxDataBytes = 8 * 1024 * 1024;
     const int MaxKeyLength = 512;
@@ -214,38 +216,14 @@ static class DatabaseStore
         public string table;
         public string semaphore;
         public bool timecode;
-
-        /// <summary>Колонка, по которой сортируем и берём MAX.</summary>
-        public string updatedColumn = "updated";
-
-        /// <summary>Как показать её строкой: у TimeCode это мс, а не ISO-текст.</summary>
-        public Func<string, string> updatedText = expression => expression;
     }
 
-    /// <summary>
-    /// TimeCode хранит таймкод типизированными колонками, а редактор правит road-объект Lampa —
-    /// тот же контракт, что у легаси `/timecode/all`. Собираем его на стороне SQLite.
-    /// </summary>
-    const string TimeCodeRoad = "json_object('duration', duration, 'time', position, 'percent', percent, 'profile', profile, 'updated', watched_at)";
-
-    static string TimeCodeStamp(string expression) => $"strftime('%Y-%m-%dT%H:%M:%SZ', {expression} / 1000, 'unixepoch')";
-
-    /// <summary>Обратная операция к <see cref="TimeCodeRoad"/>: road из редактора → колонки.</summary>
-    const string TimeCodeColumns = "position, duration, percent, profile, watched_at";
-
-    const string TimeCodeValues =
-        "COALESCE(json_extract(@data, '$.time'), 0), " +
-        "COALESCE(json_extract(@data, '$.duration'), 0), " +
-        "COALESCE(json_extract(@data, '$.percent'), 0), " +
-        "COALESCE(json_extract(@data, '$.profile'), 0), " +
-        "COALESCE(json_extract(@data, '$.updated'), 0)";
-
-    const string TimeCodeAssignments =
-        "position = COALESCE(json_extract(@data, '$.time'), 0), " +
-        "duration = COALESCE(json_extract(@data, '$.duration'), 0), " +
-        "percent = COALESCE(json_extract(@data, '$.percent'), 0), " +
-        "profile = COALESCE(json_extract(@data, '$.profile'), 0), " +
-        "watched_at = COALESCE(json_extract(@data, '$.updated'), 0)";
+    // The web editor still exchanges Lampa's road JSON; TimeCode now stores its fields in columns.
+    const string TimeCodeRoad = "json_patch(COALESCE(extra, '{}'), json_object('duration', duration, 'time', position, 'percent', percent, 'profile', profile, 'updated', watched_at, 'id', identity))";
+    const string TimeCodeStamp = "strftime('%Y-%m-%dT%H:%M:%SZ', updated_at / 1000, 'unixepoch')";
+    const string TimeCodeFields = "identity, position, duration, percent, profile, watched_at, extra, deleted";
+    const string TimeCodeValues = "NULLIF(json_extract(@data, '$.id'), ''), COALESCE(json_extract(@data, '$.time'), 0), COALESCE(json_extract(@data, '$.duration'), 0), COALESCE(json_extract(@data, '$.percent'), 0), COALESCE(json_extract(@data, '$.profile'), 0), MAX(@now, COALESCE(json_extract(@data, '$.updated'), 0)), NULLIF(json_remove(@data, '$.id', '$.hash', '$.time', '$.duration', '$.percent', '$.profile', '$.updated'), '{}'), 0";
+    const string TimeCodeAssignments = "identity = COALESCE(NULLIF(json_extract(@data, '$.id'), ''), identity), position = COALESCE(json_extract(@data, '$.time'), 0), duration = COALESCE(json_extract(@data, '$.duration'), 0), percent = COALESCE(json_extract(@data, '$.percent'), 0), profile = COALESCE(json_extract(@data, '$.profile'), 0), watched_at = MAX(@now, COALESCE(json_extract(@data, '$.updated'), 0), watched_at + 1), extra = NULLIF(json_remove(@data, '$.id', '$.hash', '$.time', '$.duration', '$.percent', '$.profile', '$.updated'), '{}'), deleted = 0";
 
     sealed class MediaMetadata
     {
@@ -253,6 +231,7 @@ static class DatabaseStore
         public string poster;
         public string year;
         public string mediaType;
+        public string source;
         public List<string> hashTitles;
         public int seasons;
         public int episodes;
@@ -274,9 +253,7 @@ static class DatabaseStore
         path = Path.Combine("database", "TimeCode.sql"),
         table = "timecodes",
         semaphore = "TimeCode",
-        timecode = true,
-        updatedColumn = "updated_at",
-        updatedText = TimeCodeStamp
+        timecode = true
     };
 
     public static async Task<List<DatabaseSummary>> GetSummaryAsync()
@@ -292,7 +269,9 @@ static class DatabaseStore
         DatabaseSpec spec = GetSpec(database);
         await using var connection = await OpenAsync(spec);
         await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT user, COUNT(*) FROM {spec.table} WHERE user IS NOT NULL AND TRIM(user) <> '' GROUP BY user COLLATE NOCASE ORDER BY user COLLATE NOCASE;";
+        command.CommandText = $"SELECT user, COUNT(*) FROM {spec.table} WHERE user IS NOT NULL AND TRIM(user) <> '' AND " +
+            (spec.timecode ? "deleted = 0" : "categories <> '{}'") +
+            " GROUP BY user ORDER BY user COLLATE NOCASE, user;";
 
         var users = new List<DatabaseUserOption>();
         await using var reader = await command.ExecuteReaderAsync();
@@ -307,6 +286,60 @@ static class DatabaseStore
         return users;
     }
 
+    static async Task<RecordsPage> GetSyncUsersPageAsync(string query, int page, int pageSize, string user)
+    {
+        await using var connection = await OpenAsync(Sync);
+        var conditions = new List<string> { "categories <> '{}'" };
+        string search = null;
+        if (!string.IsNullOrEmpty(query))
+        {
+            search = "%" + query.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
+            conditions.Add("(user LIKE @search ESCAPE '\\' COLLATE NOCASE OR card_id LIKE @search ESCAPE '\\' COLLATE NOCASE OR card LIKE @search ESCAPE '\\' COLLATE NOCASE)");
+        }
+        if (!string.IsNullOrEmpty(user))
+            conditions.Add("user = @user");
+        string grouped = " FROM bookmarks WHERE " + string.Join(" AND ", conditions) + " GROUP BY user";
+        void AddParameters(SqliteCommand command)
+        {
+            if (search != null) command.Parameters.AddWithValue("@search", search);
+            if (!string.IsNullOrEmpty(user)) command.Parameters.AddWithValue("@user", user);
+        }
+
+        long total;
+        await using (var count = connection.CreateCommand())
+        {
+            count.CommandText = "SELECT COUNT(*) FROM (SELECT user" + grouped + ");";
+            AddParameters(count);
+            total = Convert.ToInt64(await count.ExecuteScalarAsync());
+        }
+        int pages = Math.Max(1, (int)Math.Ceiling(total / (double)pageSize));
+        page = Math.Min(page, pages);
+        var records = new List<DatabaseRecord>(pageSize);
+        await using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "SELECT MIN(Id), user, " +
+                "(SELECT COUNT(*) FROM bookmarks AS all_rows WHERE all_rows.user = bookmarks.user AND all_rows.categories <> '{}'), " +
+                "(SELECT MAX(updated_at) FROM bookmarks AS all_rows WHERE all_rows.user = bookmarks.user AND all_rows.categories <> '{}')" +
+                grouped + " ORDER BY 4 DESC LIMIT @limit OFFSET @offset;";
+            AddParameters(command);
+            command.Parameters.AddWithValue("@limit", pageSize);
+            command.Parameters.AddWithValue("@offset", (page - 1) * pageSize);
+            await using var reader = await command.ExecuteReaderAsync();
+            while (await reader.ReadAsync())
+            {
+                long stamp = reader.IsDBNull(3) ? 0 : reader.GetInt64(3);
+                records.Add(new DatabaseRecord
+                {
+                    id = reader.GetInt64(0),
+                    user = ReadString(reader, 1),
+                    dataLength = reader.GetInt64(2),
+                    updated = stamp > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(stamp).UtcDateTime.ToString("O") : null
+                });
+            }
+        }
+        return new RecordsPage { database = Sync.key, page = page, pageSize = pageSize, total = total, pages = pages, records = records };
+    }
+
     public static async Task<RecordsPage> GetRecordsAsync(string database, string query, int page, int pageSize, string user = null)
     {
         DatabaseSpec spec = GetSpec(database);
@@ -318,6 +351,9 @@ static class DatabaseStore
         user = (user ?? string.Empty).Trim();
         if (user.Length > MaxKeyLength)
             throw new DatabaseEditorValidationException("key_too_long");
+
+        if (!spec.timecode)
+            return await GetSyncUsersPageAsync(query, page, pageSize, user);
 
         await using var connection = await OpenAsync(spec);
         string where = BuildWhere(spec, query, user, out string searchValue, out string selectedUser);
@@ -337,9 +373,7 @@ static class DatabaseStore
 
         await using (var command = connection.CreateCommand())
         {
-            command.CommandText = spec.timecode
-                ? $"SELECT Id, user, card, item, length({TimeCodeRoad}), {TimeCodeRoad}, {spec.updatedText(spec.updatedColumn)} FROM {spec.table}{where} ORDER BY {spec.updatedColumn} DESC, Id DESC LIMIT @limit OFFSET @offset;"
-                : $"SELECT Id, user, length(data), substr(data, 1, 420), {spec.updatedText(spec.updatedColumn)} FROM {spec.table}{where} ORDER BY {spec.updatedColumn} DESC, Id DESC LIMIT @limit OFFSET @offset;";
+            command.CommandText = $"SELECT Id, user, card, item, length({TimeCodeRoad}), {TimeCodeRoad}, {TimeCodeStamp} FROM {spec.table}{where} ORDER BY updated_at DESC, Id DESC LIMIT @limit OFFSET @offset;";
             AddFilters(command, searchValue, selectedUser);
             command.Parameters.AddWithValue("@limit", pageSize);
             command.Parameters.AddWithValue("@offset", offset);
@@ -366,7 +400,10 @@ static class DatabaseStore
                 record.preview = BuildPreview(dataValue);
                 record.updated = ReadString(reader, index);
                 if (spec.timecode)
+                {
                     ReadPlaybackData(record, dataValue);
+                    ReadEpisodeIdentity(record, dataValue);
+                }
                 records.Add(record);
             }
         }
@@ -390,12 +427,12 @@ static class DatabaseStore
         DatabaseSpec spec = GetSpec(database);
         if (id <= 0)
             throw new DatabaseEditorValidationException("invalid_id");
+        if (!spec.timecode)
+            throw new DatabaseEditorValidationException("sync_raw_editor_unavailable");
 
         await using var connection = await OpenAsync(spec);
         await using var command = connection.CreateCommand();
-        command.CommandText = spec.timecode
-            ? $"SELECT Id, user, card, item, {TimeCodeRoad}, {spec.updatedText(spec.updatedColumn)} FROM {spec.table} WHERE Id = @id LIMIT 1;"
-            : $"SELECT Id, user, data, {spec.updatedText(spec.updatedColumn)} FROM {spec.table} WHERE Id = @id LIMIT 1;";
+        command.CommandText = $"SELECT Id, user, card, item, {TimeCodeRoad}, {TimeCodeStamp} FROM {spec.table} WHERE Id = @id LIMIT 1;";
         command.Parameters.AddWithValue("@id", id);
 
         await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow);
@@ -427,16 +464,64 @@ static class DatabaseStore
             throw new DatabaseEditorValidationException("invalid_id");
 
         await using var connection = await OpenAsync(Sync);
-        await using var command = connection.CreateCommand();
-        command.CommandText = "SELECT Id, user, data, updated FROM bookmarks WHERE Id = @id LIMIT 1;";
-        command.Parameters.AddWithValue("@id", id);
-
-        await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow);
-        if (!await reader.ReadAsync())
+        string user;
+        await using (var lookup = connection.CreateCommand())
+        {
+            lookup.CommandText = "SELECT user FROM bookmarks WHERE Id = @id LIMIT 1;";
+            lookup.Parameters.AddWithValue("@id", id);
+            user = Convert.ToString(await lookup.ExecuteScalarAsync());
+        }
+        if (string.IsNullOrEmpty(user))
             return null;
 
-        string data = ReadString(reader, 2);
-        var details = BuildSyncUserDetails(reader.GetInt64(0), ReadString(reader, 1), ReadString(reader, 3), data);
+        var details = new SyncUserDetails { id = id, user = user, items = new List<SyncUserItem>() };
+        var categoryOrder = new Dictionary<string, List<(SyncUserItem item, long at)>>(StringComparer.Ordinal);
+        long newest = 0;
+        await using var command = connection.CreateCommand();
+        command.CommandText = "SELECT card_id, card, categories, updated_at FROM bookmarks WHERE user = @user AND categories <> '{}' ORDER BY updated_at DESC;";
+        command.Parameters.AddWithValue("@user", user);
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+        {
+            string cardId = ReadString(reader, 0);
+            JsonObject categories = ParseRoot(ReadString(reader, 2));
+            if (categories == null || categories.Count == 0)
+                continue;
+            JsonObject card = ParseRoot(ReadString(reader, 1));
+            MediaMetadata media = ReadMediaMetadata(card);
+            var item = new SyncUserItem
+            {
+                cardId = cardId,
+                title = FirstNotEmpty(media.title, "Карточка #" + cardId),
+                poster = media.poster,
+                year = media.year,
+                mediaType = media.mediaType,
+                source = media.source,
+                categories = new List<string>(),
+                categoryOrder = new Dictionary<string, int>(StringComparer.Ordinal),
+                order = details.items.Count
+            };
+            foreach (string category in SyncEditorCategories)
+            {
+                if (categories[category] == null)
+                    continue;
+                item.categories.Add(category);
+                if (!categoryOrder.TryGetValue(category, out var list))
+                    categoryOrder[category] = list = new List<(SyncUserItem, long)>();
+                long.TryParse(NodeText(categories[category]), out long at);
+                list.Add((item, at));
+            }
+            details.items.Add(item);
+            newest = Math.Max(newest, reader.GetInt64(3));
+        }
+        foreach (var pair in categoryOrder)
+        {
+            pair.Value.Sort((left, right) => right.at.CompareTo(left.at));
+            for (int index = 0; index < pair.Value.Count; index++)
+                pair.Value[index].item.categoryOrder[pair.Key] = index;
+        }
+        details.total = details.items.Count;
+        details.updated = newest > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(newest).UtcDateTime.ToString("O") : null;
         return details;
     }
 
@@ -444,49 +529,22 @@ static class DatabaseStore
     {
         if (request == null || request.recordId <= 0)
             throw new DatabaseEditorValidationException("invalid_id");
-
         string cardId = ValidateKey(request.cardId, "card_required");
-        var selected = new HashSet<string>(request.categories ?? Array.Empty<string>(), StringComparer.OrdinalIgnoreCase);
+        var selected = new HashSet<string>(request.categories ?? Array.Empty<string>(), StringComparer.Ordinal);
         foreach (string category in selected)
-        {
             if (Array.IndexOf(SyncEditorCategories, category) < 0)
                 throw new DatabaseEditorValidationException("unknown_category");
-        }
-
-        int selectedStatuses = 0;
+        int statuses = 0;
         foreach (string category in SyncStatusCategories)
-        {
-            if (selected.Contains(category))
-                selectedStatuses++;
-        }
-        if (selectedStatuses > 1)
+            if (selected.Contains(category)) statuses++;
+        if (statuses > 1)
             throw new DatabaseEditorValidationException("multiple_statuses");
 
-        await UpdateSyncJsonAsync(request.recordId, root =>
-        {
-            JsonObject card = FindSyncCard(root, cardId);
-            if (card == null)
-                throw new DatabaseEditorValidationException("card_not_found");
-
-            foreach (string category in SyncCategories)
-            {
-                JsonArray array = EnsureArray(root, category);
-                bool isSelected = selected.Contains(category);
-                bool isPresent = ContainsCardId(array, cardId);
-                if (isSelected && !isPresent)
-                    array.Insert(0, CreateCardIdNode(cardId));
-                else if (!isSelected && isPresent)
-                    RemoveCardId(array, cardId);
-            }
-        });
-
-        Serilog.Log.Information("DatabaseEditor updated Sync card {CardId} in record {RecordId}", cardId, request.recordId);
+        await UpdateSyncItemAsync(request.recordId, cardId, selected, removeAll: false);
+        Serilog.Log.Information("DatabaseEditor updated Sync card {CardId} in user record {RecordId}", cardId, request.recordId);
         var result = new List<string>();
         foreach (string category in SyncEditorCategories)
-        {
-            if (selected.Contains(category))
-                result.Add(category);
-        }
+            if (selected.Contains(category)) result.Add(category);
         return result;
     }
 
@@ -494,33 +552,103 @@ static class DatabaseStore
     {
         if (request == null || request.recordId <= 0)
             throw new DatabaseEditorValidationException("invalid_id");
-
         string cardId = ValidateKey(request.cardId, "card_required");
-        bool removed = false;
-        await UpdateSyncJsonAsync(request.recordId, root =>
+        bool changed = await UpdateSyncItemAsync(request.recordId, cardId, new HashSet<string>(StringComparer.Ordinal), removeAll: true);
+        if (changed)
+            Serilog.Log.Information("DatabaseEditor removed Sync card {CardId} from user record {RecordId}", cardId, request.recordId);
+        return changed;
+    }
+
+    static async Task<bool> UpdateSyncItemAsync(long recordId, string cardId, HashSet<string> selected, bool removeAll)
+    {
+        await using var connection = await OpenAsync(Sync);
+        string user;
+        await using (var lookup = connection.CreateCommand())
         {
-            if (root["card"] is JsonArray cards)
+            lookup.CommandText = "SELECT user FROM bookmarks WHERE Id = @id LIMIT 1;";
+            lookup.Parameters.AddWithValue("@id", recordId);
+            user = Convert.ToString(await lookup.ExecuteScalarAsync());
+        }
+        if (string.IsNullOrEmpty(user))
+            throw new DatabaseEditorValidationException("record_not_found");
+
+        var locks = await WriteLocks.AcquireAsync("Sync", "Sync:" + user);
+        try
+        {
+            using var transaction = connection.BeginTransaction();
+            long rowId = 0;
+            JsonObject previous = null;
+            await using (var lookup = connection.CreateCommand())
             {
-                for (int index = cards.Count - 1; index >= 0; index--)
+                lookup.Transaction = transaction;
+                lookup.CommandText = "SELECT Id, categories FROM bookmarks WHERE user = @user AND card_id = @cardId LIMIT 1;";
+                lookup.Parameters.AddWithValue("@user", user);
+                lookup.Parameters.AddWithValue("@cardId", cardId);
+                await using var reader = await lookup.ExecuteReaderAsync();
+                if (await reader.ReadAsync())
                 {
-                    if (cards[index] is JsonObject card && string.Equals(NodeText(card["id"]), cardId, StringComparison.Ordinal))
-                    {
-                        cards.RemoveAt(index);
-                        removed = true;
-                    }
+                    rowId = reader.GetInt64(0);
+                    previous = ParseRoot(ReadString(reader, 1));
                 }
             }
+            if (rowId == 0)
+                throw new DatabaseEditorValidationException("card_not_found");
+            previous ??= new JsonObject();
+            if (removeAll && previous.Count == 0)
+                return false;
 
+            long stamp;
+            await using (var cursor = connection.CreateCommand())
+            {
+                cursor.Transaction = transaction;
+                cursor.CommandText = "SELECT MAX(COALESCE(updated_at, 0), COALESCE(changed_at, 0)) FROM bookmarks WHERE user = @user ORDER BY 1 DESC LIMIT 1;";
+                cursor.Parameters.AddWithValue("@user", user);
+                long last = Convert.ToInt64(await cursor.ExecuteScalarAsync());
+                stamp = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), last + 1);
+            }
+            // Lampa may rank a category at updated_at + list length, so its top can be ahead of the delta cursor.
+            await using (var cursor = connection.CreateCommand())
+            {
+                cursor.Transaction = transaction;
+                cursor.CommandText = "SELECT MAX(CAST(j.value AS INTEGER)) FROM bookmarks AS b, json_each(b.categories) AS j WHERE b.user = @user;";
+                cursor.Parameters.AddWithValue("@user", user);
+                object top = await cursor.ExecuteScalarAsync();
+                if (top != null && top != DBNull.Value)
+                    stamp = Math.Max(stamp, Convert.ToInt64(top) + 1);
+            }
+            var next = new JsonObject();
+            if (!removeAll)
+            {
+                foreach (var pair in previous)
+                    if (Array.IndexOf(SyncEditorCategories, pair.Key) < 0)
+                        next[pair.Key] = pair.Value?.DeepClone();
+            }
             foreach (string category in SyncCategories)
             {
-                if (root[category] is JsonArray array)
-                    removed |= RemoveCardId(array, cardId);
+                if (!selected.Contains(category))
+                    continue;
+                if (previous[category] != null)
+                    next[category] = previous[category].DeepClone();
+                else
+                    next[category] = stamp;
             }
-        });
-
-        if (removed)
-            Serilog.Log.Information("DatabaseEditor deleted Sync card {CardId} from record {RecordId}", cardId, request.recordId);
-        return removed;
+            string categories = next.ToJsonString();
+            if (categories == previous.ToJsonString())
+                return false;
+            await using var save = connection.CreateCommand();
+            save.Transaction = transaction;
+            save.CommandText = "UPDATE bookmarks SET categories = @categories, changed_at = @stamp, updated_at = @stamp WHERE Id = @id;";
+            save.Parameters.AddWithValue("@categories", categories);
+            save.Parameters.AddWithValue("@stamp", stamp);
+            save.Parameters.AddWithValue("@id", rowId);
+            await save.ExecuteNonQueryAsync();
+            transaction.Commit();
+            return true;
+        }
+        finally
+        {
+            locks.Dispose();
+        }
     }
 
     public static async Task<DatabaseRecord> SaveAsync(SaveRecordRequest request)
@@ -529,54 +657,61 @@ static class DatabaseStore
             throw new DatabaseEditorValidationException("request_required");
 
         DatabaseSpec spec = GetSpec(request.database);
+        if (!spec.timecode)
+            throw new DatabaseEditorValidationException("sync_raw_editor_unavailable");
         string user = ValidateKey(request.user, "user_required");
-        string card = spec.timecode ? ValidateKey(request.card, "card_required") : null;
-        string item = spec.timecode ? ValidateKey(request.item, "item_required") : null;
+        string card = ValidateKey(request.card, "card_required");
+        string item = string.IsNullOrWhiteSpace(request.item) ? null : ValidateKey(request.item, "item_required");
         string data = NormalizeJson(request.data);
+        ValidateTimeCodeData(data);
         long id = request.id.GetValueOrDefault();
         if (id < 0)
             throw new DatabaseEditorValidationException("invalid_id");
+        using (var json = JsonDocument.Parse(data))
+        {
+            bool hasIdentity = json.RootElement.TryGetProperty("id", out JsonElement identity) &&
+                identity.ValueKind == JsonValueKind.String && !string.IsNullOrWhiteSpace(identity.GetString());
+            if (item == null && !hasIdentity)
+                throw new DatabaseEditorValidationException("item_or_identity_required");
+        }
 
-        var semaphore = new SemaphorManager(spec.semaphore, TimeSpan.FromSeconds(20));
-        bool acquired = await semaphore.WaitAsync();
-        if (!acquired)
-            throw new DatabaseEditorBusyException("database_busy");
+        string previousUser = user;
+        if (id > 0)
+        {
+            await using var lookupConnection = await OpenAsync(spec);
+            await using var lookup = lookupConnection.CreateCommand();
+            lookup.CommandText = "SELECT user FROM timecodes WHERE Id = @id;";
+            lookup.Parameters.AddWithValue("@id", id);
+            previousUser = Convert.ToString(await lookup.ExecuteScalarAsync());
+            if (string.IsNullOrEmpty(previousUser))
+                throw new DatabaseEditorValidationException("record_not_found");
+        }
+        var locks = await WriteLocks.AcquireAsync(spec.semaphore, spec.semaphore + ":" + previousUser, spec.semaphore + ":" + user);
 
         try
         {
             await using var connection = await OpenAsync(spec);
             using var transaction = connection.BeginTransaction();
-            string updated = DateTime.UtcNow.ToString("O");
-
-            // Правка из админки обязана поднять курсор выше всех строк пользователя, иначе
-            // клиенты её не увидят: дельты они спрашивают по `updated_at > since`.
-            string stamp = $"MAX(strftime('%s', 'now') * 1000, (SELECT COALESCE(MAX(updated_at), 0) + 1 FROM {spec.table} WHERE user = @user))";
+            string stamp = $"MAX(@now, (SELECT COALESCE(MAX(updated_at), 0) + 1 FROM {spec.table} WHERE user = @user))";
 
             await using var command = connection.CreateCommand();
             command.Transaction = transaction;
             if (id == 0)
             {
-                command.CommandText = spec.timecode
-                    ? $"INSERT INTO {spec.table} (user, card, item, {TimeCodeColumns}, updated_at) VALUES (@user, @card, @item, {TimeCodeValues}, {stamp}); SELECT last_insert_rowid();"
-                    : $"INSERT INTO {spec.table} (user, data, updated) VALUES (@user, @data, @updated); SELECT last_insert_rowid();";
+                command.CommandText = $"INSERT INTO {spec.table} (user, card, item, {TimeCodeFields}, updated_at) VALUES (@user, @card, @item, {TimeCodeValues}, {stamp}); SELECT last_insert_rowid();";
             }
             else
             {
-                command.CommandText = spec.timecode
-                    ? $"UPDATE {spec.table} SET user = @user, card = @card, item = @item, {TimeCodeAssignments}, updated_at = {stamp} WHERE Id = @id;"
-                    : $"UPDATE {spec.table} SET user = @user, data = @data, updated = @updated WHERE Id = @id;";
+                command.CommandText = $"UPDATE {spec.table} SET user = @user, card = @card, item = @item, {TimeCodeAssignments}, updated_at = {stamp} WHERE Id = @id;";
                 command.Parameters.AddWithValue("@id", id);
             }
 
             command.Parameters.AddWithValue("@user", user);
-            if (spec.timecode)
-            {
-                command.Parameters.AddWithValue("@card", card);
-                command.Parameters.AddWithValue("@item", item);
-            }
+            command.Parameters.AddWithValue("@card", card);
+            command.Parameters.AddWithValue("@item", (object)item ?? DBNull.Value);
             command.Parameters.AddWithValue("@data", data);
-            if (!spec.timecode)
-                command.Parameters.AddWithValue("@updated", updated);
+            command.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
+            // The JSON editor is the only direct record writer. It must advance the same cursor as /timecode/changelog.
 
             if (id == 0)
                 id = Convert.ToInt64(await command.ExecuteScalarAsync());
@@ -592,7 +727,7 @@ static class DatabaseStore
         }
         finally
         {
-            semaphore.Release();
+            locks.Dispose();
         }
 
         return await GetRecordAsync(spec.key, id);
@@ -603,26 +738,42 @@ static class DatabaseStore
         DatabaseSpec spec = GetSpec(database);
         if (id <= 0)
             throw new DatabaseEditorValidationException("invalid_id");
+        if (!spec.timecode)
+            throw new DatabaseEditorValidationException("sync_raw_editor_unavailable");
 
-        var semaphore = new SemaphorManager(spec.semaphore, TimeSpan.FromSeconds(20));
-        bool acquired = await semaphore.WaitAsync();
-        if (!acquired)
-            throw new DatabaseEditorBusyException("database_busy");
+        await using var connection = await OpenAsync(spec);
+        string user;
+        await using (var lookup = connection.CreateCommand())
+        {
+            lookup.CommandText = "SELECT user FROM timecodes WHERE Id = @id LIMIT 1;";
+            lookup.Parameters.AddWithValue("@id", id);
+            user = Convert.ToString(await lookup.ExecuteScalarAsync());
+        }
+        if (string.IsNullOrEmpty(user))
+            return false;
+
+        var locks = await WriteLocks.AcquireAsync(spec.semaphore, spec.semaphore + ":" + user);
 
         try
         {
-            await using var connection = await OpenAsync(spec);
+            using var transaction = connection.BeginTransaction();
             await using var command = connection.CreateCommand();
-            command.CommandText = $"DELETE FROM {spec.table} WHERE Id = @id;";
+            command.Transaction = transaction;
+            command.CommandText = "UPDATE timecodes SET deleted = 1, position = 0, percent = 0, watched_at = MAX(@now, watched_at + 1), updated_at = " +
+                "MAX(@now, (SELECT COALESCE(MAX(updated_at), 0) + 1 FROM timecodes WHERE user = @user)) " +
+                "WHERE Id = @id AND user = @user AND deleted = 0;";
             command.Parameters.AddWithValue("@id", id);
+            command.Parameters.AddWithValue("@user", user);
+            command.Parameters.AddWithValue("@now", DateTimeOffset.UtcNow.ToUnixTimeMilliseconds());
             bool deleted = await command.ExecuteNonQueryAsync() > 0;
+            transaction.Commit();
             if (deleted)
                 Serilog.Log.Information("DatabaseEditor deleted {Database} record {RecordId}", spec.key, id);
             return deleted;
         }
         finally
         {
-            semaphore.Release();
+            locks.Dispose();
         }
     }
 
@@ -638,19 +789,9 @@ static class DatabaseStore
         if (!File.Exists(Sync.path) || !File.Exists(TimeCode.path))
             throw new DatabaseEditorValidationException("database_not_found");
 
-        var syncSemaphore = new SemaphorManager(Sync.semaphore, TimeSpan.FromSeconds(20));
-        var timecodeSemaphore = new SemaphorManager(TimeCode.semaphore, TimeSpan.FromSeconds(20));
-        bool syncAcquired = await syncSemaphore.WaitAsync();
-        if (!syncAcquired)
-            throw new DatabaseEditorBusyException("database_busy");
-
-        bool timecodeAcquired = false;
+        var locks = await WriteLocks.AcquireAsync("Sync", "Sync:" + oldUser, "Sync:" + newUser, "TimeCode", "TimeCode:" + oldUser, "TimeCode:" + newUser);
         try
         {
-            timecodeAcquired = await timecodeSemaphore.WaitAsync();
-            if (!timecodeAcquired)
-                throw new DatabaseEditorBusyException("database_busy");
-
             await using var connection = await OpenAsync(TimeCode, pooling: false);
             await using (var attach = connection.CreateCommand())
             {
@@ -684,9 +825,7 @@ static class DatabaseStore
         }
         finally
         {
-            if (timecodeAcquired)
-                timecodeSemaphore.Release();
-            syncSemaphore.Release();
+            locks.Dispose();
         }
     }
 
@@ -694,7 +833,7 @@ static class DatabaseStore
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = $"SELECT 1 FROM {table} WHERE user = @newUser COLLATE NOCASE AND user <> @oldUser COLLATE NOCASE LIMIT 1;";
+        command.CommandText = $"SELECT 1 FROM {table} WHERE user = @newUser COLLATE NOCASE AND user <> @oldUser LIMIT 1;";
         command.Parameters.AddWithValue("@oldUser", oldUser);
         command.Parameters.AddWithValue("@newUser", newUser);
         if (await command.ExecuteScalarAsync() != null)
@@ -705,7 +844,7 @@ static class DatabaseStore
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = $"UPDATE {table} SET user = @newUser WHERE user = @oldUser COLLATE NOCASE;";
+        command.CommandText = $"UPDATE {table} SET user = @newUser WHERE user = @oldUser;";
         command.Parameters.AddWithValue("@oldUser", oldUser);
         command.Parameters.AddWithValue("@newUser", newUser);
         return await command.ExecuteNonQueryAsync();
@@ -720,19 +859,9 @@ static class DatabaseStore
         if (!File.Exists(Sync.path) || !File.Exists(TimeCode.path))
             throw new DatabaseEditorValidationException("database_not_found");
 
-        var syncSemaphore = new SemaphorManager(Sync.semaphore, TimeSpan.FromSeconds(20));
-        var timecodeSemaphore = new SemaphorManager(TimeCode.semaphore, TimeSpan.FromSeconds(20));
-        bool syncAcquired = await syncSemaphore.WaitAsync();
-        if (!syncAcquired)
-            throw new DatabaseEditorBusyException("database_busy");
-
-        bool timecodeAcquired = false;
+        var locks = await WriteLocks.AcquireAsync("Sync", "Sync:" + user, "TimeCode", "TimeCode:" + user);
         try
         {
-            timecodeAcquired = await timecodeSemaphore.WaitAsync();
-            if (!timecodeAcquired)
-                throw new DatabaseEditorBusyException("database_busy");
-
             await using var connection = await OpenAsync(TimeCode, pooling: false);
             await using (var attach = connection.CreateCommand())
             {
@@ -753,9 +882,7 @@ static class DatabaseStore
         }
         finally
         {
-            if (timecodeAcquired)
-                timecodeSemaphore.Release();
-            syncSemaphore.Release();
+            locks.Dispose();
         }
     }
 
@@ -763,7 +890,7 @@ static class DatabaseStore
     {
         await using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText = $"DELETE FROM {table} WHERE user = @user COLLATE NOCASE;";
+        command.CommandText = $"DELETE FROM {table} WHERE user = @user;";
         command.Parameters.AddWithValue("@user", user);
         return await command.ExecuteNonQueryAsync();
     }
@@ -771,10 +898,7 @@ static class DatabaseStore
     public static async Task<string> BackupAsync(string database)
     {
         DatabaseSpec spec = GetSpec(database);
-        var semaphore = new SemaphorManager(spec.semaphore, TimeSpan.FromSeconds(20));
-        bool acquired = await semaphore.WaitAsync();
-        if (!acquired)
-            throw new DatabaseEditorBusyException("database_busy");
+        var locks = await WriteLocks.AcquireAsync(spec.semaphore);
 
         try
         {
@@ -800,7 +924,7 @@ static class DatabaseStore
         }
         finally
         {
-            semaphore.Release();
+            locks.Dispose();
         }
     }
 
@@ -858,10 +982,7 @@ static class DatabaseStore
         if (!sourcePath.StartsWith(directory + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) || !File.Exists(sourcePath))
             throw new DatabaseEditorValidationException("backup_not_found");
 
-        var semaphore = new SemaphorManager(spec.semaphore, TimeSpan.FromSeconds(20));
-        bool acquired = await semaphore.WaitAsync();
-        if (!acquired)
-            throw new DatabaseEditorBusyException("database_busy");
+        var locks = await WriteLocks.AcquireAsync(spec.semaphore);
 
         try
         {
@@ -887,7 +1008,7 @@ static class DatabaseStore
         }
         finally
         {
-            semaphore.Release();
+            locks.Dispose();
         }
     }
 
@@ -908,6 +1029,7 @@ static class DatabaseStore
             schema.Parameters.AddWithValue("@table", spec.table);
             if (await schema.ExecuteScalarAsync() == null)
                 throw new DatabaseEditorValidationException("backup_schema_mismatch");
+            await ValidateSchemaAsync(spec, connection, "backup_schema_mismatch");
         }
         catch (SqliteException)
         {
@@ -957,25 +1079,17 @@ static class DatabaseStore
             placeholders.Add(parameter);
             command.Parameters.AddWithValue(parameter, user);
         }
-        command.CommandText = $"SELECT user, data FROM bookmarks WHERE user IN ({string.Join(",", placeholders)});";
+        command.CommandText = $"SELECT user, card_id, card FROM bookmarks WHERE user IN ({string.Join(",", placeholders)}) AND categories <> '{{}}';";
 
         await using var reader = await command.ExecuteReaderAsync();
         while (await reader.ReadAsync())
         {
             string user = ReadString(reader, 0);
-            JsonObject root = ParseRoot(ReadString(reader, 1));
-            if (root?["card"] is not JsonArray cards)
+            string cardId = ReadString(reader, 1);
+            JsonObject card = ParseRoot(ReadString(reader, 2));
+            if (string.IsNullOrEmpty(cardId) || card == null)
                 continue;
-
-            foreach (JsonNode node in cards)
-            {
-                if (node is not JsonObject card)
-                    continue;
-                string cardId = NodeText(card["id"]);
-                if (string.IsNullOrEmpty(cardId))
-                    continue;
-                metadata[MediaKey(user, cardId)] = ReadMediaMetadata(card);
-            }
+            metadata[MediaKey(user, cardId)] = ReadMediaMetadata(card);
         }
 
         foreach (DatabaseRecord record in records)
@@ -990,9 +1104,11 @@ static class DatabaseStore
             record.title = media.title;
             record.poster = media.poster;
             record.year = media.year;
+            record.source = media.source;
             if (string.IsNullOrEmpty(record.mediaType))
                 record.mediaType = media.mediaType;
             if (string.Equals(record.mediaType, "tv", StringComparison.OrdinalIgnoreCase) &&
+                record.season == null && record.episode == null &&
                 TryFindEpisode(media, record.item, out int season, out int episode))
             {
                 record.season = season;
@@ -1001,132 +1117,18 @@ static class DatabaseStore
         }
     }
 
-    static SyncUserDetails BuildSyncUserDetails(long id, string user, string updated, string data)
-    {
-        JsonObject root = ParseRoot(data);
-        var categoryMap = new Dictionary<string, HashSet<string>>(StringComparer.Ordinal);
-        var categoryOrderMap = new Dictionary<string, Dictionary<string, int>>(StringComparer.Ordinal);
-        var allCategoryIds = new List<string>();
-
-        foreach (string category in SyncCategories)
-        {
-            var ids = new HashSet<string>(StringComparer.Ordinal);
-            var positions = new Dictionary<string, int>(StringComparer.Ordinal);
-            if (root?[category] is JsonArray array)
-            {
-                foreach (JsonNode node in array)
-                {
-                    string cardId = NodeText(node);
-                    if (!string.IsNullOrEmpty(cardId) && ids.Add(cardId))
-                    {
-                        positions[cardId] = positions.Count;
-                        allCategoryIds.Add(cardId);
-                    }
-                }
-            }
-            categoryMap[category] = ids;
-            categoryOrderMap[category] = positions;
-        }
-
-        var items = new List<SyncUserItem>();
-        var seen = new HashSet<string>(StringComparer.Ordinal);
-        if (root?["card"] is JsonArray cards)
-        {
-            foreach (JsonNode node in cards)
-            {
-                if (node is not JsonObject card)
-                    continue;
-                string cardId = NodeText(card["id"]);
-                if (string.IsNullOrEmpty(cardId) || !seen.Add(cardId))
-                    continue;
-                MediaMetadata media = ReadMediaMetadata(card);
-                items.Add(new SyncUserItem
-                {
-                    cardId = cardId,
-                    title = media.title,
-                    poster = media.poster,
-                    year = media.year,
-                    mediaType = media.mediaType,
-                    categories = CategoriesFor(cardId, categoryMap),
-                    order = items.Count,
-                    categoryOrder = CategoryOrderFor(cardId, categoryOrderMap)
-                });
-            }
-        }
-
-        foreach (string cardId in allCategoryIds)
-        {
-            if (!seen.Add(cardId))
-                continue;
-            items.Add(new SyncUserItem
-            {
-                cardId = cardId,
-                title = "Карточка #" + cardId,
-                categories = CategoriesFor(cardId, categoryMap),
-                order = items.Count,
-                categoryOrder = CategoryOrderFor(cardId, categoryOrderMap)
-            });
-        }
-
-        return new SyncUserDetails
-        {
-            id = id,
-            user = user,
-            updated = updated,
-            total = items.Count,
-            items = items
-        };
-    }
-
-    static async Task UpdateSyncJsonAsync(long recordId, Action<JsonObject> update)
-    {
-        var semaphore = new SemaphorManager(Sync.semaphore, TimeSpan.FromSeconds(20));
-        bool acquired = await semaphore.WaitAsync();
-        if (!acquired)
-            throw new DatabaseEditorBusyException("database_busy");
-
-        try
-        {
-            await using var connection = await OpenAsync(Sync);
-            using var transaction = connection.BeginTransaction();
-            string data;
-            await using (var select = connection.CreateCommand())
-            {
-                select.Transaction = transaction;
-                select.CommandText = "SELECT data FROM bookmarks WHERE Id = @id LIMIT 1;";
-                select.Parameters.AddWithValue("@id", recordId);
-                data = Convert.ToString(await select.ExecuteScalarAsync());
-            }
-            if (string.IsNullOrEmpty(data))
-                throw new DatabaseEditorValidationException("record_not_found");
-
-            JsonObject root = ParseRoot(data) ?? throw new DatabaseEditorValidationException("invalid_json");
-            update(root);
-            string updatedData = root.ToJsonString(new JsonSerializerOptions { WriteIndented = false });
-            if (Encoding.UTF8.GetByteCount(updatedData) > MaxDataBytes)
-                throw new DatabaseEditorValidationException("data_too_large");
-
-            await using var save = connection.CreateCommand();
-            save.Transaction = transaction;
-            save.CommandText = "UPDATE bookmarks SET data = @data, updated = @updated WHERE Id = @id;";
-            save.Parameters.AddWithValue("@data", updatedData);
-            save.Parameters.AddWithValue("@updated", DateTime.UtcNow.ToString("O"));
-            save.Parameters.AddWithValue("@id", recordId);
-            if (await save.ExecuteNonQueryAsync() == 0)
-                throw new DatabaseEditorValidationException("record_not_found");
-            transaction.Commit();
-        }
-        finally
-        {
-            semaphore.Release();
-        }
-    }
-
     static MediaMetadata ReadMediaMetadata(JsonObject card)
     {
         string mediaType = NodeText(card?["media_type"]);
         if (string.IsNullOrEmpty(mediaType))
-            mediaType = card?["name"] != null && card?["title"] == null ? "tv" : "movie";
+        {
+            bool hasTvMetadata =
+                card?["first_air_date"] != null ||
+                card?["number_of_seasons"] != null ||
+                card?["number_of_episodes"] != null ||
+                card?["seasons"] != null;
+            mediaType = hasTvMetadata || card?["name"] != null && card?["title"] == null ? "tv" : "movie";
+        }
 
         string date = FirstNotEmpty(NodeText(card?["release_date"]), NodeText(card?["first_air_date"]));
         return new MediaMetadata
@@ -1135,6 +1137,7 @@ static class DatabaseStore
             poster = FirstNotEmpty(NodeText(card?["img"]), NodeText(card?["poster_path"])),
             year = !string.IsNullOrEmpty(date) && date.Length >= 4 ? date.Substring(0, 4) : date,
             mediaType = mediaType,
+            source = FirstNotEmpty(NodeText(card?["source"]), NodeText(card?["displayname"])),
             hashTitles = DistinctValues(
                 NodeText(card?["original_name"]),
                 NodeText(card?["original_title"]),
@@ -1231,80 +1234,6 @@ static class DatabaseStore
             : 0;
     }
 
-    static List<string> CategoriesFor(string cardId, Dictionary<string, HashSet<string>> categoryMap)
-    {
-        var result = new List<string>();
-        foreach (string category in SyncEditorCategories)
-        {
-            if (categoryMap[category].Contains(cardId))
-                result.Add(category);
-        }
-        return result;
-    }
-
-    static Dictionary<string, int> CategoryOrderFor(string cardId, Dictionary<string, Dictionary<string, int>> categoryOrderMap)
-    {
-        var result = new Dictionary<string, int>(StringComparer.Ordinal);
-        foreach (string category in SyncEditorCategories)
-        {
-            if (categoryOrderMap[category].TryGetValue(cardId, out int position))
-                result[category] = position;
-        }
-        return result;
-    }
-
-    static JsonObject FindSyncCard(JsonObject root, string cardId)
-    {
-        if (root?["card"] is not JsonArray cards)
-            return null;
-        foreach (JsonNode node in cards)
-        {
-            if (node is JsonObject card && string.Equals(NodeText(card["id"]), cardId, StringComparison.Ordinal))
-                return card;
-        }
-        return null;
-    }
-
-    static JsonArray EnsureArray(JsonObject root, string name)
-    {
-        if (root[name] is JsonArray array)
-            return array;
-        array = new JsonArray();
-        root[name] = array;
-        return array;
-    }
-
-    static bool RemoveCardId(JsonArray array, string cardId)
-    {
-        bool removed = false;
-        for (int index = array.Count - 1; index >= 0; index--)
-        {
-            if (string.Equals(NodeText(array[index]), cardId, StringComparison.Ordinal))
-            {
-                array.RemoveAt(index);
-                removed = true;
-            }
-        }
-        return removed;
-    }
-
-    static bool ContainsCardId(JsonArray array, string cardId)
-    {
-        foreach (JsonNode node in array)
-        {
-            if (string.Equals(NodeText(node), cardId, StringComparison.Ordinal))
-                return true;
-        }
-        return false;
-    }
-
-    static JsonNode CreateCardIdNode(string cardId)
-    {
-        if (long.TryParse(cardId, out long numericId))
-            return JsonValue.Create(numericId);
-        return JsonValue.Create(cardId);
-    }
-
     static JsonObject ParseRoot(string data)
     {
         if (string.IsNullOrWhiteSpace(data))
@@ -1373,6 +1302,27 @@ static class DatabaseStore
         catch (JsonException) { }
     }
 
+    static void ReadEpisodeIdentity(DatabaseRecord record, string data)
+    {
+        JsonObject road = ParseRoot(data);
+        string identity = NodeText(road?["id"]);
+        if (string.IsNullOrEmpty(identity) || !identity.StartsWith("tv-", StringComparison.OrdinalIgnoreCase))
+            return;
+        int seasonMarker = identity.LastIndexOf("-s", StringComparison.OrdinalIgnoreCase);
+        if (seasonMarker < 0)
+            return;
+        int episodeMarker = identity.IndexOf('e', seasonMarker + 2);
+        if (episodeMarker < 0)
+            return;
+        if (int.TryParse(identity.Substring(seasonMarker + 2, episodeMarker - seasonMarker - 2), out int season) &&
+            int.TryParse(identity.Substring(episodeMarker + 1), out int episode))
+        {
+            record.mediaType = "tv";
+            record.season = season;
+            record.episode = episode;
+        }
+    }
+
     static double? ReadDouble(JsonElement root, string name)
     {
         if (!root.TryGetProperty(name, out JsonElement value))
@@ -1400,12 +1350,15 @@ static class DatabaseStore
 
         await using var connection = await OpenAsync(spec);
         await using var command = connection.CreateCommand();
-        command.CommandText = $"SELECT COUNT(*), {spec.updatedText($"MAX({spec.updatedColumn})")} FROM {spec.table};";
+        command.CommandText = spec.timecode
+            ? "SELECT COUNT(*), MAX(updated_at) FROM timecodes WHERE deleted = 0;"
+            : "SELECT COUNT(*), MAX(updated_at) FROM bookmarks WHERE categories <> '{}';";
         await using var reader = await command.ExecuteReaderAsync(CommandBehavior.SingleRow);
         if (await reader.ReadAsync())
         {
             summary.records = reader.GetInt64(0);
-            summary.updated = ReadString(reader, 1);
+            long stamp = reader.IsDBNull(1) ? 0 : reader.GetInt64(1);
+            summary.updated = stamp > 0 ? DateTimeOffset.FromUnixTimeMilliseconds(stamp).UtcDateTime.ToString("O") : null;
         }
 
         return summary;
@@ -1434,8 +1387,88 @@ static class DatabaseStore
             Pooling = pooling
         };
         var connection = new SqliteConnection(builder.ToString());
-        await connection.OpenAsync();
-        return connection;
+        try
+        {
+            await connection.OpenAsync();
+            await ValidateSchemaAsync(spec, connection, "unsupported_database_schema");
+            return connection;
+        }
+        catch
+        {
+            await connection.DisposeAsync();
+            throw;
+        }
+    }
+
+    // Sync's legacy routes still use the global key; v2 routes use the user's key.
+    // Acquire all keys in a stable order, including both sides when moving a record.
+    sealed class WriteLocks : IDisposable
+    {
+        readonly List<SemaphorManager> acquired = new();
+
+        public static async Task<WriteLocks> AcquireAsync(params string[] keys)
+        {
+            var scope = new WriteLocks();
+            var ordered = new SortedSet<string>(keys, StringComparer.Ordinal);
+            try
+            {
+                foreach (string key in ordered)
+                {
+                    var semaphore = new SemaphorManager(key, TimeSpan.FromSeconds(20));
+                    if (!await semaphore.WaitAsync())
+                        throw new DatabaseEditorBusyException("database_busy");
+                    scope.acquired.Add(semaphore);
+                }
+                return scope;
+            }
+            catch
+            {
+                scope.Dispose();
+                throw;
+            }
+        }
+
+        public void Dispose()
+        {
+            for (int index = acquired.Count - 1; index >= 0; index--)
+                acquired[index].Release();
+            acquired.Clear();
+        }
+    }
+
+    static async Task ValidateSchemaAsync(DatabaseSpec spec, SqliteConnection connection, string error)
+    {
+        var required = new HashSet<string>(spec.timecode
+            ? new[] { "Id", "user", "card", "item", "identity", "position", "duration", "percent", "profile", "watched_at", "updated_at", "extra", "deleted" }
+            : new[] { "Id", "user", "card_id", "card", "categories", "changed_at", "updated_at" }, StringComparer.OrdinalIgnoreCase);
+        await using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({spec.table});";
+        await using var reader = await command.ExecuteReaderAsync();
+        while (await reader.ReadAsync())
+            required.Remove(reader.GetString(1));
+        if (required.Count != 0)
+            throw new DatabaseEditorValidationException(error);
+    }
+
+    static void ValidateTimeCodeData(string data)
+    {
+        using var document = JsonDocument.Parse(data);
+        JsonElement road = document.RootElement;
+        foreach (string field in new[] { "time", "duration", "percent" })
+        {
+            if (road.TryGetProperty(field, out var value) &&
+                (value.ValueKind != JsonValueKind.Number || !value.TryGetDouble(out double number) || !double.IsFinite(number) || number < 0))
+                throw new DatabaseEditorValidationException("invalid_timecode_data");
+        }
+        foreach (string field in new[] { "profile", "updated" })
+        {
+            if (road.TryGetProperty(field, out var value) &&
+                (value.ValueKind != JsonValueKind.Number || !value.TryGetInt64(out long number) || number < 0))
+                throw new DatabaseEditorValidationException("invalid_timecode_data");
+        }
+        if (road.TryGetProperty("id", out var identity) && identity.ValueKind != JsonValueKind.Null &&
+            (identity.ValueKind != JsonValueKind.String || identity.GetString().Length > MaxKeyLength))
+            throw new DatabaseEditorValidationException("invalid_timecode_data");
     }
 
     static string BuildWhere(DatabaseSpec spec, string query, string user, out string searchValue, out string selectedUser)
@@ -1449,13 +1482,15 @@ static class DatabaseStore
         {
             searchValue = "%" + query.Replace("\\", "\\\\").Replace("%", "\\%").Replace("_", "\\_") + "%";
             clauses.Add(spec.timecode
-                ? "(CAST(Id AS TEXT) LIKE @search ESCAPE '\\' OR user LIKE @search ESCAPE '\\' COLLATE NOCASE OR identity LIKE @search ESCAPE '\\' COLLATE NOCASE OR card LIKE @search ESCAPE '\\' COLLATE NOCASE OR item LIKE @search ESCAPE '\\' COLLATE NOCASE)"
-                : "(CAST(Id AS TEXT) LIKE @search ESCAPE '\\' OR user LIKE @search ESCAPE '\\' COLLATE NOCASE OR data LIKE @search ESCAPE '\\' COLLATE NOCASE)");
+                ? "(CAST(Id AS TEXT) LIKE @search ESCAPE '\\' OR user LIKE @search ESCAPE '\\' COLLATE NOCASE OR identity LIKE @search ESCAPE '\\' COLLATE NOCASE OR card LIKE @search ESCAPE '\\' COLLATE NOCASE OR item LIKE @search ESCAPE '\\' COLLATE NOCASE OR extra LIKE @search ESCAPE '\\' COLLATE NOCASE)"
+                : "(CAST(Id AS TEXT) LIKE @search ESCAPE '\\' OR user LIKE @search ESCAPE '\\' COLLATE NOCASE OR card_id LIKE @search ESCAPE '\\' COLLATE NOCASE OR card LIKE @search ESCAPE '\\' COLLATE NOCASE)");
         }
 
         selectedUser = string.IsNullOrEmpty(user) ? null : user;
         if (selectedUser != null)
-            clauses.Add("user = @selectedUser COLLATE NOCASE");
+            clauses.Add("user = @selectedUser");
+
+        clauses.Add(spec.timecode ? "deleted = 0" : "categories <> '{}'");
 
         return clauses.Count == 0 ? string.Empty : " WHERE " + string.Join(" AND ", clauses);
     }

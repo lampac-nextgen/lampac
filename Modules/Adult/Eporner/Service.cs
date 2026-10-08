@@ -177,8 +177,8 @@ public static class EpornerTo
                     submenu = new List<MenuItem>(5)
                     {
                         new("Новинки", $"{url}?search={encodesearch}"),
-                        new("Топ просмотра", $"{url}?sort=most-viewed&search={encodesearch}"),
-                        new("Топ рейтинга", $"{url}?sort=top-rated&search={encodesearch}"),
+                        new("Топ по просмотрам", $"{url}?sort=most-viewed&search={encodesearch}"),
+                        new("Топ по рейтингу", $"{url}?sort=top-rated&search={encodesearch}"),
                         new("Длинные ролики", $"{url}?sort=longest&search={encodesearch}"),
                         new("Короткие ролики", $"{url}?sort=shortest&search={encodesearch}")
                     }
@@ -212,8 +212,8 @@ public static class EpornerTo
                 submenu = new List<MenuItem>(5)
                 {
                     new("Новинки", url),
-                    new("Топ просмотра", $"{url}?sort=most-viewed"),
-                    new("Топ рейтинга", $"{url}?sort=top-rated"),
+                    new("Топ по просмотрам", $"{url}?sort=most-viewed"),
+                    new("Топ по рейтингу", $"{url}?sort=top-rated"),
                     new("Длинные ролики", $"{url}?sort=longest"),
                     new("Короткие ролики", $"{url}?sort=shortest")
                 }

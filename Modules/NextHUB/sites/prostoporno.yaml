@@ -102,7 +102,8 @@ list:
   uri: "{page}/"
 
 search:
-  uri: albums/search/{search}/{page}/
+  uri: search/{search}/
+  total_pages: 1
 
 contentParse:
   nodes: //div[@class='thumb']

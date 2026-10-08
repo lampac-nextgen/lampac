@@ -13,7 +13,7 @@ keywords: ["ASP.NET Core middleware", "Lampac pipeline", "WAF", "accsdb", "rever
 
 <Steps>
   <Step title="ForwardedHeaders">
-    Обработка заголовков от reverse proxy (`X-Forwarded-For`, `X-Forwarded-Proto`, `X-Forwarded-Host`). Корректирует схему, хост и IP клиента.
+    Обработка заголовков от reverse proxy (`X-Forwarded-For`, `X-Forwarded-Proto`) с loopback-адресов и из сетей `KnownProxies`. Корректирует IP клиента и схему запроса. `X-Forwarded-Host` не обрабатывается: хост берётся из `Host`.
   </Step>
   <Step title="BaseMod">
     Базовая модификация запроса: установка культуры, обработка служебных заголовков, подготовка контекста для последующих middleware.

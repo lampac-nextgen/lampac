@@ -44,7 +44,7 @@ namespace TelegramBot.Controllers
             if (!ModInit.IsRunning)
                 return Json(new { success = false, msg = "bot_not_running" });
 
-            var uid = requestInfo.user_uid;
+            var uid = ModInit.ResolveUid(requestInfo.user_uid, Request.Query["uid"].ToString());
             if (string.IsNullOrEmpty(uid))
                 return Json(new { success = false, msg = "no_uid" });
 
@@ -75,7 +75,7 @@ namespace TelegramBot.Controllers
             if (!ModInit.IsRunning)
                 return Json(new { success = false, msg = "bot_not_running" });
 
-            var uid = requestInfo.user_uid;
+            var uid = ModInit.ResolveUid(requestInfo.user_uid, Request.Query["uid"].ToString());
             if (string.IsNullOrEmpty(uid))
                 return Json(new { success = false, msg = "no_uid" });
 
@@ -89,7 +89,7 @@ namespace TelegramBot.Controllers
         [Route("/api/tg/status")]
         public ActionResult Status(int tmdb_id)
         {
-            var uid = requestInfo.user_uid;
+            var uid = ModInit.ResolveUid(requestInfo.user_uid, Request.Query["uid"].ToString());
             if (string.IsNullOrEmpty(uid))
                 return Json(new { success = false, msg = "no_uid" });
 
@@ -121,7 +121,7 @@ namespace TelegramBot.Controllers
         [Route("/api/tg/subscriptions")]
         public ActionResult Subscriptions()
         {
-            var uid = requestInfo.user_uid;
+            var uid = ModInit.ResolveUid(requestInfo.user_uid, Request.Query["uid"].ToString());
             if (string.IsNullOrEmpty(uid))
                 return Json(new { success = false, msg = "no_uid" });
 

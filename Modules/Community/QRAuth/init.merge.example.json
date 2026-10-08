@@ -1,0 +1,21 @@
+{
+  "QRAuthBot": {
+    "enable": true,
+    "bot_token": "PASTE_YOUR_TELEGRAM_BOT_TOKEN_HERE",
+    "users_file_path": "users.json",
+    "log_path": "tgbot.log",
+    "admin_ids": []
+  },
+  "DenyPage": {
+    "tg_target": "@YourBot",
+    "show_qr": true,
+    "page_title": "",
+    "page_subtitle": "",
+    "step1_text": "",
+    "step2_text": "",
+    "qr_subcaption": "",
+    "tg_button_text": "",
+    "poster_wall": true,
+    "poster_source": "trending"
+  }
+}

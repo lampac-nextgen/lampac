@@ -602,15 +602,15 @@ manage_packages() {
   # Создаем временный файл для хранения списка upgradable-пакетов
   local upgradable_list=$(mktemp)
   # Получаем список пакетов, которые можно обновить.
-  # grep отсекает заголовок и предупреждения.
-  apt list --upgradable 2>/dev/null | grep -v "Listing..." > "$upgradable_list"
+  # sed отсекает заголовок и предупреждения.
+  apt list --upgradable 2>/dev/null | sed '/^Listing/d' > "$upgradable_list"
 
   # Проходим по каждому пакету из аргументов
   for pkg in "${packages[@]}"; do
     # Проверяем, установлен ли пакет
     if dpkg-query -W -f='${Status}' "$pkg" 2>/dev/null | grep -q "install ok installed"; then
       # Пакет установлен. Проверим, есть ли он в списке на обновление.
-      if grep -E "^$pkg/" "$upgradable_list" &>/dev/null; then
+      if [ -s "$upgradable_list" ] && grep -E "^$pkg/" "$upgradable_list" &>/dev/null; then
         packages_to_upgrade+=("$pkg")
       fi
     else
@@ -779,6 +779,10 @@ build_rsync_excludes() {
     # Пользовательские плагины и состояние
     "plugins/override/"
     "notifications_date.txt"
+
+    # Пользовательские переопределения сайтов NextHUB и Catalog ({site}.yaml, _.yaml)
+    "module/NextHUB/override/"
+    "module/Catalog/override/"
 
     # Файл с пользовательскими дополнительными исключениями
     "excludes.conf"

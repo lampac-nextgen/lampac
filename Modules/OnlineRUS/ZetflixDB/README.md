@@ -1,6 +1,6 @@
 # ZetflixDB
 
-Онлайн-слой **ZetflixDB**: второй базовый URL (`54243ba5.obrut.show` в шаблоне), основной хост в коде пустой — уточняйте в **`init.conf`**.
+Онлайн-слой **ZetflixDB**: строит embed-URL плеера obrut.show (тот же, что встраивает zet-flix.online) и перенаправляет в **`lite/videodb`**. Загрузку и разбор страницы, манифесты и прокси потока выполняет модуль **VideoDB** со своими настройками.
 
 ## Интерфейс
 
@@ -22,18 +22,22 @@
 
 Секция в `init.conf`: **`ZetflixDB`** (`OnlinesSettings`).
 
-По умолчанию: **`displayindex = 515`**.
+По умолчанию: **`apihost = "https://54243ba5.obrut.show"`**, **`displayindex = 515`**. Основной хост пустой.
+
+Embed-URL: **`{apihost}/embed/AO/kinopoisk/{kp}/`**, где **`{kp}`** — base64 от kinopoisk_id без **`=`**, записанный задом наперёд (`1045479` → `QO3QTN0ATM`). Через **`init.conf`** меняется только **`apihost`**.
+
+Заголовки, cookie антибота (**`wd_approval`**, вручную или автоматически через **`cdp`**) и таймаут задаются в секции **`VideoDB`**, см. [README VideoDB](../VideoDB/README.md#антибот-obrutshow).
 
 ## Подпись качества
 
-**`OnlineApiQuality`**: при **`e.balanser == "zetflixdb"`** → **` ~ 2160p`**.
+**`OnlineApiQuality`**: при **`e.balanser == "zetflixdb"`** → **`~ 2160p`**.
 
 ## HTTP
 
 | Маршрут | Назначение |
 |---------|------------|
-| **`lite/zetflixdb`** | Основная выдача. |
+| **`lite/zetflixdb`** | Редирект в **`lite/videodb?uri=...`**. |
 
 ## Файлы
 
-**`ModInit.cs`**, **`Controller.cs`**, **`OnlineApi.cs`**, **`Model.cs`**.
+**`ModInit.cs`**, **`Controller.cs`**.

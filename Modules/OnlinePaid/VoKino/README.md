@@ -16,13 +16,14 @@
 
 ## Конфигурация
 
-Секция в `init.conf`: **`VoKino`** (`ModuleConf`). Хост API по умолчанию в коде — **`http://api.vokino.org`** (в комментариях также упоминаются **`api.vokino.pro`** и др.). Задайте **`token`** и флаги **`online.*`** в JSON.
+Секция в `init.conf`: **`VoKino`** (`ModuleConf`). Хост API по умолчанию в коде — **`http://api.vokino.org`** (в комментариях также упоминаются **`api.vokino.pro`** и др.). Задайте **`token`** в JSON.
 
-По умолчанию в **`updateConf`**: **`displayindex = 300`**, **`streamproxy = false`**, **`rchstreamproxy = web`**, **`rhub_safety = false`**.
+По умолчанию в **`updateConf`**: **`displayindex = 300`**, **`streamproxy = false`**, **`rchstreamproxy = web`**, **`rhub_safety = false`** .НО, приоритет у настроек из init.conf (streamproxy_balancers) и если прописать там "streamproxy_balancers": {"videobase": true} то streamproxy включется для данного источника.
+Можно прописать как **`token`** так и **`"tokens": ["lampac_, "lampac_]`**
 
 ## Подпись качества
 
-**`OnlineApiQuality`**: для **`vokino`**, **`vokino-alloha`**, **`vokino-filmix`** → **` ~ 2160p`**; для **`vokino-vibix`**, **`vokino-monframe`**, **`vokino-remux`**, **`vokino-ashdi`**, **`vokino-hdvb`** → **` ~ 1080p`**.
+**`OnlineApiQuality`**: для **`vokino`**, **`vokino-alloha`**, **`vokino-filmix`** → **` ~ 2160p`**; для **`vokino-vibix`**, **`vokino-monframe`**, **`vokino-remux`**, **`vokino-ashdi`**, **`vokino-hdvb`** → **` ~ 1080p`** .
 
 ## HTTP
 

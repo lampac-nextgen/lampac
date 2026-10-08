@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <meta name="theme-color" content="#0c0e12" id="metaTheme">
-  <title>Базы — Lampac</title>
+  <title>Databases — Lampac</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
@@ -13,17 +13,17 @@
 <body>
   <div class="app">
     <header class="topbar">
-      <a class="topbar-logo" href="/database-editor">
+      <div class="topbar-logo">
         <svg width="28" height="28" viewBox="0 0 28 28" fill="none" aria-hidden="true">
           <rect x="2" y="2" width="24" height="24" rx="6" stroke="currentColor" stroke-width="1.5"/>
           <rect x="7" y="16" width="3" height="6" rx="1" fill="var(--accent)"/>
           <rect x="12.5" y="11" width="3" height="11" rx="1" fill="var(--accent)" opacity=".7"/>
           <rect x="18" y="6" width="3" height="16" rx="1" fill="var(--accent)" opacity=".45"/>
         </svg>
-        Lampac <span>Базы</span>
-      </a>
+        Lampac <span>Databases</span>
+      </div>
       <div class="topbar-divider"></div>
-      <nav class="topbar-app-nav" aria-label="Разделы Lampac"><a href="/adminpanel">Admin</a><a href="/stats">Stats</a><a href="/weblog">Weblog</a><a href="/telemetry">Telemetry</a><a href="/database-editor" aria-current="page">Базы</a></nav>
+      <nav class="topbar-app-nav" aria-label="Разделы Lampac"><a href="/adminpanel">Admin</a><a href="/stats">Stats</a><a href="/weblog">Weblog</a><a href="/database-editor" aria-current="page">Databases</a><a href="/telemetry">Telemetry</a></nav>
       <div class="topbar-spacer"></div>
       <button class="icon-btn theme-btn" id="themeBtn" title="Переключить тему" aria-label="Переключить тему">
         <svg class="theme-icon theme-icon-moon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -35,7 +35,7 @@
       <section id="listView">
         <div class="hero">
           <div><h1>Редактор TimeCode и Sync</h1><p>Пользователи, карточки, позиции просмотра и безопасные копии SQLite.</p></div>
-          <div class="hero-actions"><button class="btn" id="backupAllBtn">⇩ <span>Backup TimeCode + Sync</span></button><button class="btn" id="restoreBtn">↥ <span>Восстановить</span></button><button class="btn" id="renameUserBtn">Переименовать пользователя</button><button class="btn danger" id="deleteUserBtn">Удалить пользователя</button></div>
+          <div class="hero-actions"><button class="btn" id="backupAllBtn">⇩ <span>Backup TimeCode + Sync</span></button><button class="btn" id="restoreBtn">↥ <span>Восстановить</span></button><button class="btn" id="renameUserBtn">Переименовать пользователя</button><button class="btn" id="mergeUsersBtn">Объединить пользователей</button><button class="btn danger" id="deleteUserBtn">Удалить пользователя</button></div>
         </div>
 
         <section class="summary" id="summary"></section>
@@ -62,7 +62,7 @@
         <div class="detail-head">
           <button class="btn" id="backToUsers">← Пользователи</button>
           <div class="detail-identity"><div class="eyebrow">Sync-пользователь</div><h1 id="syncUserName">—</h1><div class="muted" id="syncUserMeta">—</div></div>
-          <div class="detail-actions"><button class="btn" id="rawSyncBtn">JSON целиком</button><button class="btn" id="refreshSyncBtn">↻ Обновить</button></div>
+          <div class="detail-actions"><button class="btn" id="refreshSyncBtn">↻ Обновить</button></div>
         </div>
         <div class="detail-toolbar">
           <div class="search"><span>⌕</span><input id="syncSearch" type="search" placeholder="Название или ID карточки…" autocomplete="off"></div>
@@ -73,6 +73,7 @@
         <div class="empty sync-empty" id="syncEmpty"><div><div class="empty-icon">□</div><strong>Карточек не найдено</strong></div></div>
         <div class="detail-pager"><button class="btn" id="syncPrev">← Назад</button><span id="syncPageLabel">1 / 1</span><button class="btn" id="syncNext">Вперёд →</button></div>
       </section>
+
     </main>
   </div>
 
@@ -82,7 +83,7 @@
       <div class="modal-body"><div class="form-grid">
         <div class="field full"><label for="userField">Пользователь</label><input id="userField" maxlength="512" autocomplete="off"></div>
         <div class="field timecode-field"><label for="cardField">Карточка</label><input id="cardField" maxlength="512" autocomplete="off"></div>
-        <div class="field timecode-field"><label for="itemField">Элемент / hash</label><input id="itemField" maxlength="512" autocomplete="off"></div>
+        <div class="field timecode-field"><label for="itemField">Элемент / hash (можно оставить пустым при id в JSON)</label><input id="itemField" maxlength="512" autocomplete="off"></div>
         <div class="field full"><div class="json-tools"><label for="dataField">JSON-данные</label><button class="btn small" type="button" id="formatBtn">Форматировать</button><span class="json-status" id="jsonStatus"></span></div><textarea id="dataField" spellcheck="false"></textarea></div>
       </div></div>
       <div class="modal-foot"><button class="btn danger" id="deleteRecordBtn">Удалить</button><button class="btn" data-close="recordModal">Отмена</button><button class="btn primary" id="saveRecordBtn">Сохранить</button></div>
@@ -121,6 +122,21 @@
         <p class="modal-hint field full">Будут безвозвратно удалены все закладки Sync и все позиции TimeCode выбранного пользователя.</p>
       </div></div>
       <div class="modal-foot"><button class="btn" data-close="deleteUserModal">Отмена</button><button class="btn danger" id="confirmDeleteUserBtn">Удалить пользователя</button></div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop" id="mergeUsersModal" role="dialog" aria-modal="true" aria-labelledby="mergeUsersTitle">
+    <div class="modal modal-compact">
+      <div class="modal-head"><span class="modal-title" id="mergeUsersTitle">Объединить пользователей</span><button class="icon-btn modal-close" data-close="mergeUsersModal">×</button></div>
+      <div class="modal-body"><div class="form-grid">
+        <div class="field full"><label for="mergeFirstUser">Первый пользователь</label><select class="select" id="mergeFirstUser"></select></div>
+        <div class="field full"><label for="mergeSecondUser">Второй пользователь</label><select class="select" id="mergeSecondUser"></select></div>
+        <div class="field full"><label for="mergeNewUser">Итоговое имя (необязательно)</label><input id="mergeNewUser" maxlength="512" autocomplete="off" placeholder="Оставить имя второго пользователя"></div>
+        <p class="modal-hint field full">Карточки и категории Sync складываются. Для совпадающих таймкодов сохраняется последняя изменённая активная запись; среди статусов карточки — самый свежий. Новое имя должно быть свободным либо совпадать с именем одного из выбранных пользователей.</p>
+        <p class="modal-hint field full">Перед объединением выйдите из исходных пользователей на всех устройствах и затем используйте итоговое имя в Lampa. Учётные записи и настройки AccsDB отдельно не переименовываются. Перед изменениями автоматически сохраняются обе базы.</p>
+        <div class="merge-preview field full" id="mergePreview" role="status" aria-live="polite" hidden></div>
+      </div></div>
+      <div class="modal-foot"><button class="btn" data-close="mergeUsersModal">Отмена</button><button class="btn" id="previewMergeUsersBtn">Проверить результат</button><button class="btn primary" id="confirmMergeUsersBtn" disabled>Объединить</button></div>
     </div>
   </div>
 

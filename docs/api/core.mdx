@@ -13,7 +13,8 @@ Lampac NextGen предоставляет набор базовых HTTP- и Web
 | --- | --- | --- | --- |
 | `GET` | `/version` | Redirect при `listen.version`; не JSON health check | Нет |
 | `GET` | `/version?type=hash` | MD5-хеш `Shared.dll` | Нет |
-| `GET` | `/version?type=name` | Имя сборки (`Helikopter`) | Нет |
+| `GET` | `/version?type=name` | Имя сборки (`Lord of Rings`) | Нет |
+| `GET` | `/version?type=build` | JSON: имя, версия (git-тег), коммит, наличие незакоммиченных изменений (`dirty`), ref, репозиторий, ОС и архитектура сборочной машины, ссылка на CI-сборку, дата и SDK сборки, Docker, хеш `Shared.dll`, runtime | Нет |
 | `GET` | `/nws-client-es5.js`, `/js/nws-client-es5.js` | Клиент NativeWebSocket | Нет |
 | `GET` | `/api/headers` | Заголовки текущего запроса | Нет |
 | `GET` | `/api/geo` | GeoIP-локация IP-адреса | Нет |

@@ -9,7 +9,7 @@
 
 [![GitHub release (latest SemVer)](https://img.shields.io/github/v/release/lampac-nextgen/lampac?label=version)](https://github.com/lampac-nextgen/lampac/releases)
 [![GitHub tag (latest SemVer pre-release)](https://img.shields.io/github/v/tag/lampac-nextgen/lampac?include_prereleases&label=pre-release)](https://github.com/lampac-nextgen/lampac/tags)
-[![License: MIT](https://img.shields.io/github/license/lampac-nextgen/lampac)](LICENSE)
+[![License: AGPL v3](https://img.shields.io/github/license/lampac-nextgen/lampac)](LICENSE)
 [![.NET 10](https://img.shields.io/badge/.NET-10.0-512BD4?logo=dotnet)](https://dotnet.microsoft.com/)
 [![Docker — GHCR image](https://img.shields.io/badge/ghcr.io-lampac--nextgen%2Flampac-2496ED?logo=github)](https://github.com/lampac-nextgen/lampac/pkgs/container/lampac)
 [![GitHub Repo stars](https://img.shields.io/github/stars/lampac-nextgen/lampac?style=flat&logo=github)](https://github.com/lampac-nextgen/lampac/stargazers)
@@ -45,6 +45,7 @@
 - **TmdbProxy** — локальный кеш TMDB API
 - **LampaWeb** — хостинг Lampa UI (авто-обновление с GitHub), виджеты Samsung Tizen (`/samsung.wgt`) и LG webOS (`/lg.ipk`)
 - **Tg-notify.bot** — Telegram-уведомления о новых сериях и озвучках, плагин `/tg-notify.js`
+- **QRAuth** — экран входа с QR-кодом и Telegram-бот для выдачи доступа (accsdb), `Modules/Community/QRAuth`
 - **WebLog** — отладка HTTP и Playwright-трафика в реальном времени
 - **Playwright** — автоматизация Chromium/Firefox для обхода JS-защит
 - **RCH** — WebSocket-реле для клиентов за NAT (`/nws`)
@@ -260,6 +261,7 @@ journalctl -u lampac -f
 | `users.json`, `passwd`, `current.conf`, `database/` | Пользовательские данные |
 | `wwwroot/` | Пользовательская статика и кеш Lampa UI |
 | `plugins/override/` | Переопределения плагинов |
+| `module/NextHUB/override/`, `module/Catalog/override/` | Переопределения сайтов NextHUB и Catalog |
 | `notifications_date.txt` | Состояние уведомлений |
 | `excludes.conf` | Файл дополнительных исключений |
 | `version.txt` | Файл хранения установленной версии |
@@ -463,6 +465,7 @@ cd publish && dotnet Core.dll
 │  │  OnlineUKR · OnlineGEO  — по одному проекту на провайдера │  │
 │  │  Modules/Adult/* — платформы 18+                          │  │
 │  │  Modules/Community/* — TelegramAuth, TelegramAuthBot      │  │
+│  │  Modules/Community/QRAuth — вход по QR через Telegram     │  │
 │  │  Modules/Tg-notify.bot — уведомления о сериях/озвучках    │  │
 │  └───────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
@@ -553,7 +556,7 @@ lampac/
 │   ├── AdminPanel/             # Веб-админка (manifest: enable: false)
 │   ├── Adult/                  # Платформы 18+ (15 источников)
 │   ├── Catalog/                # Каталог сайтов (YAML)
-│   ├── Community/              # TelegramAuth, TelegramAuthBot
+│   ├── Community/              # TelegramAuth, TelegramAuthBot, QRAuth
 │   ├── DLNA/                   # DLNA/UPnP медиасервер
 │   ├── ForkPlayerXML/          # ForkPlayer: /fxml
 │   ├── GStreamer/              # HLS/fMP4 транскодинг (/gst/*)
@@ -613,6 +616,7 @@ lampac/
 | [Modules/Community/README.md](Modules/Community/README.md) | Telegram-авторизация, клиент Lampa, API |
 | [Modules/Community/TelegramAuth/README.md](Modules/Community/TelegramAuth/README.md) | HTTP API `/tg/auth/…`, accsdb, хранилище |
 | [Modules/Community/TelegramAuthBot/README.md](Modules/Community/TelegramAuthBot/README.md) | Long polling-бот, команды, конфиг |
+| [Modules/Community/QRAuth/README.md](Modules/Community/QRAuth/README.md) | Экран входа с QR (`deny.js`), Telegram-бот, фон из постеров, конфиг |
 | [Modules/GStreamer/README.md](Modules/GStreamer/README.md) | Серверный транскодинг, `gst` в init.conf, `/gst.js` |
 | [Modules/LampacApk/README.md](Modules/LampacApk/README.md) | Генерация Android APK под адрес текущего сервера, подпись и кеш |
 | [Modules/LampaWeb/README.md](Modules/LampaWeb/README.md) | Lampa UI, виджеты Tizen/webOS, `lampainit.js` |
@@ -621,3 +625,14 @@ lampac/
 | [charts/lampac/README.md](charts/lampac/README.md) | Helm-чарт для Kubernetes (`ghcr.io/lampac-nextgen/lampac`) |
 
 ---
+
+## Contributing / Security
+
+- How to open issues and PRs: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Vulnerability reports (private only): [SECURITY.md](SECURITY.md)
+
+## Лицензия
+
+Copyright (c) 2026 lampac-nextgen
+
+AGPL-3.0. См. файл [LICENSE](LICENSE) для подробностей.

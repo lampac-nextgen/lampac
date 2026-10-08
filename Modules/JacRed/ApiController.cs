@@ -113,12 +113,15 @@ namespace JacRed.Controllers
 
                     await Task.WhenAll(t1, t2);
 
-                    torrents = mergeTorrents(t1.Result, t2.Result);
+                    torrents = t1.Result == null && t2.Result.Count == 0 ? null : mergeTorrents(t1.Result, t2.Result);
                 }
                 else
                 {
                     torrents = await WebApi.Indexers(query, title, title_original, year, is_serial, category);
                 }
+
+                if (torrents == null)
+                    return StatusCode(502);
                 #endregion
             }
             else if (ModInit.conf.typesearch == "jackett")
@@ -231,12 +234,15 @@ namespace JacRed.Controllers
 
                     await Task.WhenAll(t1, t2);
 
-                    torrents = mergeTorrents(t1.Result, t2.Result);
+                    torrents = t1.Result == null && t2.Result.Count == 0 ? null : mergeTorrents(t1.Result, t2.Result);
                 }
                 else
                 {
                     torrents = await WebApi.Api(search);
                 }
+
+                if (torrents == null)
+                    return StatusCode(502);
                 #endregion
             }
             else if (ModInit.conf.typesearch == "jackett")
