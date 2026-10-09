@@ -138,6 +138,13 @@ public static class KitInvoke
     {
         return name.Contains("eval", StringComparison.OrdinalIgnoreCase)
             || name.Equals("route", StringComparison.OrdinalIgnoreCase)
-            || name.Equals("view", StringComparison.OrdinalIgnoreCase);
+            || name.Equals("view", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("contentParse", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("content", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("list", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("search", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("model", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("menu", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("card_parse", StringComparison.OrdinalIgnoreCase);
     }
 }
