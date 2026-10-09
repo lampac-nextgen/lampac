@@ -34,7 +34,7 @@ HTTP API и файловое хранилище для привязки **UID у
 
 Поле **`accs`** в записи пользователя в **`data_dir`/users.json** задаёт группу, бан, `params` (в т.ч. `telegram_id`) и т.д.; срок в accsdb берётся из **`ExpiresAt`** или **`accsdb.shared_daytime`** / 365 дней. Подробная логика: [`Services/AccsdbUidSync.cs`](Services/AccsdbUidSync.cs).
 
-**Регистрация:** при выключенном `auto_provision_users` запись с таким `telegramId` уже должна быть в **`data_dir`/users.json`. При включённом — может создаваться автоматически (см. таблицу конфига). Ожидание модерации: **`RegistrationPending`** + при создании часто **`Disabled`**. Подтверждение: `POST /tg/auth/admin/user/pending` или бот.
+**Регистрация:** при выключенном `auto_provision_users` запись с таким `telegramId` уже должна быть в **`data_dir`/users.json`. При включённом — может создаваться автоматически (см. таблицу конфига). Ожидание модерации: **`RegistrationPending`** + при создании часто **`Disabled`**. Подтверждение:`POST /tg/auth/admin/user/pending` или бот.
 
 **`owner_telegram_ids`:** при старте модуля создаются/обновляются как **admin** в **`data_dir`/users.json**.
 
@@ -45,7 +45,7 @@ HTTP API и файловое хранилище для привязки **UID у
 ## Конфигурация
 
 | Поле | Описание |
-|------|----------|
+| ------ | ---------- |
 | `enable` | `true` — accsdb + синхронизация UID + применение **`limit_map`** к WAF. `false` (по умолчанию) — только API/хранилище. |
 | `data_dir` | Каталог данных (по умолчанию `database/tgauth`). |
 | `legacy_import_path` | База для `POST /tg/auth/import`. |
@@ -74,7 +74,7 @@ HTTP API и файловое хранилище для привязки **UID у
 ## Хранилище (`data_dir`)
 
 | Файл | Содержимое |
-|------|------------|
+| ------ | ------------ |
 | `users.json` | Пользователи Telegram, устройства, опционально **`accs`**. |
 | `admins.json` | Служебно (legacy-импорт). |
 | `user_langs.json` | `telegramId → язык`. |
