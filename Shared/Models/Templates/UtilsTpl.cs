@@ -22,6 +22,15 @@ public static class UtilsTpl
             }
         }
     }
+
+    // Drop comment terminators so <!--quality--> cannot break out into markup.
+    public static string HtmlComment(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return string.Empty;
+
+        return value.Replace("--", "", StringComparison.Ordinal).Replace(">", "", StringComparison.Ordinal);
+    }
     #endregion
 
     #region WriteJson

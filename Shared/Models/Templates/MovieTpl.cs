@@ -148,20 +148,14 @@ public class MovieTpl : ITplResult
                     UtilsTpl.HtmlEncode(i.voiceOrQuality, html);
                     html.Append("</div></div>");
 
-                    if (!string.IsNullOrEmpty(i.quality))
+                    string q = UtilsTpl.HtmlComment(i.quality);
+                    if (q.Length > 0)
                     {
-                        if (i.quality.EndsWith("p"))
-                        {
-                            html.Append("<!--");
-                            html.Append(i.quality);
-                            html.Append("-->");
-                        }
-                        else
-                        {
-                            html.Append("<!--");
-                            html.Append(i.quality);
-                            html.Append("p-->");
-                        }
+                        html.Append("<!--");
+                        html.Append(q);
+                        if (!q.EndsWith('p'))
+                            html.Append('p');
+                        html.Append("-->");
                     }
 
                     firstjson = false;

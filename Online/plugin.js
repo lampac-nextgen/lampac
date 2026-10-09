@@ -21,6 +21,10 @@
 
   {rch_websoket}
 
+  function escapeHtml(text) {
+    return $('<div></div>').text(text == null ? '' : text).html();
+  }
+
   function account(url) {
     url = url + '';
     if (url.indexOf('account_email=') == -1) {
@@ -899,13 +903,17 @@
         var year = (
           (elem.start_date || elem.year || object.movie.release_date || object.movie.first_air_date || '') + ''
         ).slice(0, 4);
-        if (year) info.push(year);
-        if (elem.details) info.push(elem.details);
+        if (year) info.push(escapeHtml(year));
+        if (elem.details) info.push(escapeHtml(elem.details));
         var name = elem.title || elem.text;
         elem.title = name;
         elem.time = elem.time || '';
         elem.info = info.join('<span class="online-prestige-split">●</span>');
-        var item = Lampa.Template.get('lampac_prestige_folder', elem);
+        var item = Lampa.Template.get('lampac_prestige_folder', {
+          title: escapeHtml(name),
+          time: elem.time,
+          info: elem.info
+        });
         if (elem.img) {
           var image = $('<img style="height: 7em; width: 7em; border-radius: 0.3em;"/>');
           item.find('.online-prestige__folder').empty().append(image);
@@ -1109,7 +1117,7 @@
         if (watched.season) line.push(Lampa.Lang.translate('torrent_serial_season') + ' ' + watched.season);
         if (watched.episode) line.push(Lampa.Lang.translate('torrent_serial_episode') + ' ' + watched.episode);
         line.forEach(function (n) {
-          body.append('<span>' + n + '</span>');
+          body.append('<span>' + escapeHtml(n) + '</span>');
         });
       } else body.append('<span>' + Lampa.Lang.translate('lampac_no_watch_history') + '</span>');
     };
@@ -1194,19 +1202,24 @@
                   true
                 )
               );
-            if (episode.air_date && fully) info.push(Lampa.Utils.parseTime(episode.air_date).full);
+            if (episode.air_date && fully) info.push(escapeHtml(Lampa.Utils.parseTime(episode.air_date).full));
           } else if (object.movie.release_date && fully) {
-            info.push(Lampa.Utils.parseTime(object.movie.release_date).full);
+            info.push(escapeHtml(Lampa.Utils.parseTime(object.movie.release_date).full));
           }
-          if (!serial && object.movie.tagline && element.info.length < 30) info.push(object.movie.tagline);
-          if (element.info) info.push(element.info);
+          if (!serial && object.movie.tagline && element.info.length < 30) info.push(escapeHtml(object.movie.tagline));
+          if (element.info) info.push(escapeHtml(element.info));
           if (info.length)
             element.info = info
               .map(function (i) {
                 return '<span>' + i + '</span>';
               })
               .join('<span class="online-prestige-split">●</span>');
-          var html = Lampa.Template.get('lampac_prestige_full', element);
+          var html = Lampa.Template.get('lampac_prestige_full', {
+            title: escapeHtml(element.title),
+            time: element.time,
+            info: element.info,
+            quality: escapeHtml(element.quality)
+          });
           var loader = html.find('.online-prestige__loader');
           var image = html.find('.online-prestige__img');
           if (object.balanser) image.hide();
@@ -1341,7 +1354,7 @@
                   true
                 )
               );
-            if (episode.air_date) info.push(Lampa.Utils.parseTime(episode.air_date).full);
+            if (episode.air_date) info.push(escapeHtml(Lampa.Utils.parseTime(episode.air_date).full));
             var air = new Date((episode.air_date + '').replace(/-/g, '/'));
             var now = Date.now();
             var day = Math.round((air.getTime() - now) / (24 * 60 * 60 * 1000));
@@ -1355,8 +1368,8 @@
                   })
                   .join('<span class="online-prestige-split">●</span>')
                 : '',
-              title: episode.name,
-              quality: day > 0 ? txt : ''
+              title: escapeHtml(episode.name),
+              quality: escapeHtml(day > 0 ? txt : '')
             });
             var loader = html.find('.online-prestige__loader');
             var image = html.find('.online-prestige__img');

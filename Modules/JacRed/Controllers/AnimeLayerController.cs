@@ -25,13 +25,17 @@ namespace JacRed.Controllers
             if (!jackett.Animelayer.enable || ModInit.conf.disableJackett)
                 return Content("disable");
 
+            if (!TryTrackerPath(jackett.Animelayer.host, url, out string path))
+                return Content("error");
+
             string cookie = await getCookie();
             if (string.IsNullOrEmpty(cookie))
                 return Content("cookie == null");
 
             var proxyManager = new ProxyManager("animelayer", jackett.Animelayer);
+            string host = jackett.Animelayer.host.TrimEnd('/');
 
-            byte[] _t = await Http.Download($"{url}download/", proxy: proxyManager.Get(), cookie: cookie, referer: jackett.Animelayer.host);
+            byte[] _t = await Http.Download($"{host}/{path}/download/", proxy: proxyManager.Get(), cookie: cookie, referer: jackett.Animelayer.host);
             if (_t != null && BencodeTo.Magnet(_t) != null)
                 return File(_t, "application/x-bittorrent");
 
@@ -220,5 +224,29 @@ namespace JacRed.Controllers
             return null;
         }
         #endregion
+
+        static bool TryTrackerPath(string trackerHost, string url, out string path)
+        {
+            path = null;
+            if (string.IsNullOrWhiteSpace(url) || !Uri.TryCreate(trackerHost, UriKind.Absolute, out Uri tracker))
+                return false;
+
+            if (Uri.TryCreate(url, UriKind.Absolute, out Uri abs))
+            {
+                if ((abs.Scheme != Uri.UriSchemeHttp && abs.Scheme != Uri.UriSchemeHttps) ||
+                    !abs.IdnHost.Equals(tracker.IdnHost, StringComparison.OrdinalIgnoreCase))
+                    return false;
+
+                path = abs.AbsolutePath.Trim('/');
+            }
+            else
+            {
+                path = url.Trim().Trim('/');
+                if (path.Contains("://") || path.StartsWith("//") || path.Contains('\\'))
+                    return false;
+            }
+
+            return path.Length > 0 && !path.Contains("..");
+        }
     }
 }

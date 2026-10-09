@@ -178,7 +178,7 @@ public class BookmarkController : BaseController
                         {
                             Directory.CreateDirectory($"wwwroot/bookmarks/img/{uid.Substring(0, 2)}");
 
-                            bool success = await Http.DownloadFile(img, $"wwwroot/{pimg}", timeoutSeconds: 10);
+                            bool success = await Http.DownloadFile(img, $"wwwroot/{pimg}", timeoutSeconds: 10, maxBytes: 5 * 1024 * 1024);
                             if (success)
                                 newimage = pimg;
                         }
@@ -189,7 +189,7 @@ public class BookmarkController : BaseController
                 #region download preview
                 if (ModInit.conf.bookmarks.savepreview)
                 {
-                    if (data.preview != null)
+                    if (data.preview != null && data.preview.StartsWith("http"))
                     {
                         string path = $"bookmarks/preview/{uid.Substring(0, 2)}/{uid.Substring(2)}.{(data.preview.Contains(".webm") ? "webm" : "mp4")}";
 
@@ -201,7 +201,7 @@ public class BookmarkController : BaseController
                         {
                             Directory.CreateDirectory($"wwwroot/bookmarks/preview/{uid.Substring(0, 2)}");
 
-                            bool success = await Http.DownloadFile(data.preview, $"wwwroot/{path}", timeoutSeconds: 10);
+                            bool success = await Http.DownloadFile(data.preview, $"wwwroot/{path}", timeoutSeconds: 10, maxBytes: 5 * 1024 * 1024);
                             if (success)
                                 data.preview = path;
                         }
