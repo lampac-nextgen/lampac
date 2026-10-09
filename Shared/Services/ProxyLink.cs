@@ -210,11 +210,11 @@ public class ProxyLink : IProxyLink
         {
             var aesinst = AesPool.Instance;
 
-            int paddedLen = aesinst.Aes.GetCiphertextLengthCbc(json.Length, PaddingMode.PKCS7);
+            int sealedLen = aesinst.Aes.GetCiphertextLengthCbc(json.Length, PaddingMode.PKCS7) + AesInstance.BlockSize;
 
             BufferBytePool destBuf = null;
-            if (paddedLen > AesInstance.ByteSize)
-                destBuf = new BufferBytePool(paddedLen);
+            if (sealedLen > AesInstance.ByteSize)
+                destBuf = new BufferBytePool(sealedLen);
 
             try
             {
@@ -222,11 +222,7 @@ public class ProxyLink : IProxyLink
                     ? destBuf.Span
                     : aesinst.ByteBuffer;
 
-                int cipherLen = aesinst.Aes.EncryptCbc(
-                    json,
-                    aesinst.Aes.IV, // iv (16 байт)
-                    dest,
-                    PaddingMode.PKCS7);
+                int cipherLen = AesPool.Seal(aesinst.Aes, json, dest);
 
                 if (cipherLen <= 0)
                     return "Error Serialize Payload: cipherLen";
@@ -391,11 +387,7 @@ public class ProxyLink : IProxyLink
                             ? destBuf.Span
                             : aesinst.DestBuffer;
 
-                        int plainLen = aesinst.Aes.DecryptCbc(
-                            cipher.Slice(0, cipherLen),
-                            aesinst.Aes.IV,
-                            dest,
-                            PaddingMode.PKCS7);
+                        int plainLen = AesPool.Open(aesinst.Aes, cipher.Slice(0, cipherLen), dest);
 
                         if (plainLen <= 0)
                             return null;

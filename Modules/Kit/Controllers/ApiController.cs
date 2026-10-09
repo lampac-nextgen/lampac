@@ -28,6 +28,8 @@ namespace KitMod.Controllers
             }
         }
 
+        const int maxKitJsonChars = 4 * 1024 * 1024;
+
         static bool IsValidateOnlyRequest(string validateOnly) =>
             validateOnly == "1" || string.Equals(validateOnly, "true", StringComparison.OrdinalIgnoreCase);
 
@@ -60,6 +62,12 @@ namespace KitMod.Controllers
 
             if (!string.IsNullOrEmpty(json))
             {
+                if (json.Length > maxKitJsonChars)
+                {
+                    HttpContext.Response.StatusCode = 413;
+                    return Content("{\"success\":false,\"msg\":\"max_size\"}", "application/json; charset=utf-8");
+                }
+
                 if (IsValidateOnlyRequest(validateOnly))
                 {
                     try
