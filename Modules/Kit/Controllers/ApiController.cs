@@ -7,6 +7,7 @@ using Shared.Services;
 using Shared.Services.Utilities;
 using System;
 using System.IO;
+using System.Net;
 using IO = System.IO;
 
 namespace KitMod.Controllers
@@ -97,7 +98,7 @@ namespace KitMod.Controllers
                 string raw = IO.File.Exists(filePath) ? CryptoKit.ReadFile(aesGcmKey, filePath) : null;
                 string conf = FormatKitConfForEditor(raw);
 
-                return Content(html.Replace("{conf}", conf), "text/html; charset=utf-8");
+                return Content(html.Replace("{conf}", WebUtility.HtmlEncode(conf)), "text/html; charset=utf-8");
             }
         }
     }

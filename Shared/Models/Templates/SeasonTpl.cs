@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Shared.Models.Templates;
@@ -123,30 +124,36 @@ public class SeasonTpl : ITplResult
 
         html.Append("<div class=\"videos__line\">");
 
-        if (!string.IsNullOrEmpty(quality))
+        string q = UtilsTpl.HtmlComment(quality);
+        if (q.Length > 0)
         {
             html.Append("<!--q:");
-            html.Append(quality);
+            html.Append(q);
             html.Append("-->");
         }
 
-        foreach (var i in data)
+        using (var utf8Buf = new BufferWriterPool<byte>(BufferWriterPoolType.Small))
         {
-            html.Append("<div class=\"videos__item videos__season selector ");
-            if (firstjson)
-                html.Append("focused");
+            using (var jsonWriter = new Utf8JsonWriter(utf8Buf, UtilsTpl.jsonWriterOptions))
+            {
+                foreach (var i in data)
+                {
+                    html.Append("<div class=\"videos__item videos__season selector ");
+                    if (firstjson)
+                        html.Append("focused");
+                    html.Append("\" ");
 
-            html.Append("\" data-json='{\"method\":\"link\",\"url\":\"");
-            html.Append(i.url);
-            html.Append("\"}'>");
+                    html.Append("data-json='");
+                    UtilsTpl.WriteJson(html, utf8Buf, jsonWriter, i, SeasonJsonContext.Default.SeasonDto);
+                    html.Append("'>");
 
-            html.Append("<div class=\"videos__season-layers\"></div><div class=\"videos__item-imgbox videos__season-imgbox\"><div class=\"videos__item-title videos__season-title\">");
+                    html.Append("<div class=\"videos__season-layers\"></div><div class=\"videos__item-imgbox videos__season-imgbox\"><div class=\"videos__item-title videos__season-title\">");
+                    UtilsTpl.HtmlEncode(i.name, html);
+                    html.Append("</div></div></div>");
 
-            UtilsTpl.HtmlEncode(i.name, html);
-
-            html.Append("</div></div></div>");
-
-            firstjson = false;
+                    firstjson = false;
+                }
+            }
         }
 
         html.Append("</div>");
