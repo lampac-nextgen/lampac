@@ -1783,18 +1783,13 @@ namespace SeriesNotify
             return !string.IsNullOrEmpty(uid);
         }
 
-        // Плагин передаёт account_email и uid устройства, сервер выбирает account_email. У кого бот
-        // привязан по uid устройства (прежний плагин слал только его), подписки не должны пропасть:
-        // если под основным id привязки нет, а под uid устройства есть — берём его.
+        // Primary identity only. Query uid is a fallback when the caller has no uid, never a cross-account switch.
         public static string ResolveUid(string uid, string deviceUid)
         {
-            if (string.IsNullOrEmpty(deviceUid) || deviceUid == uid)
+            if (!string.IsNullOrEmpty(uid))
                 return uid;
 
-            if (Users.Values.Any(u => u.lampac_uid == uid))
-                return uid;
-
-            return Users.Values.Any(u => u.lampac_uid == deviceUid) ? deviceUid : uid;
+            return deviceUid;
         }
         #endregion
 

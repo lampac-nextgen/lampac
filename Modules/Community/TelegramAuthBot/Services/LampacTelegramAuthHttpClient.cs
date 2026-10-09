@@ -70,7 +70,9 @@ namespace TelegramAuthBot.Services
         {
             var payload = new { telegramId, uid };
             using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-            using var resp = await _http.PostAsync("tg/auth/device/unbind", content, ct).ConfigureAwait(false);
+            using var req = new HttpRequestMessage(HttpMethod.Post, "tg/auth/device/unbind") { Content = content };
+            AddMutationsSecret(req);
+            using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
             var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
                 return false;
@@ -82,7 +84,9 @@ namespace TelegramAuthBot.Services
         {
             var payload = new { telegramId, uid };
             using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
-            using var resp = await _http.PostAsync("tg/auth/device/reactivate", content, ct).ConfigureAwait(false);
+            using var req = new HttpRequestMessage(HttpMethod.Post, "tg/auth/device/reactivate") { Content = content };
+            AddMutationsSecret(req);
+            using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
             var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             return resp.IsSuccessStatusCode ? (true, body) : (false, body);
         }

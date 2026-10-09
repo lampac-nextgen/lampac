@@ -51,7 +51,7 @@ HTTP API и файловое хранилище для привязки **UID у
 | `legacy_import_path` | База для `POST /tg/auth/import`. |
 | `enable_import` / `enable_cleanup` | Разрешить импорт / `POST /tg/auth/devices/cleanup`. |
 | `max_active_devices_per_user` | Лимит активных устройств для `user`; `0` → **5**. Для `admin` не применяется. |
-| `mutations_api_secret` | Заголовок **`X-TelegramAuth-Mutations-Secret`** (совпадает с ботом). Пусто → `bind/complete` без заголовка; мутации админа из бота без cookie — невозможны. |
+| `mutations_api_secret` | Заголовок **`X-TelegramAuth-Mutations-Secret`** (совпадает с ботом). Пусто → `bind/complete`, unbind и reactivate только с cookie root; мутации из бота без секрета невозможны. |
 | `owner_telegram_ids` | Владельцы → admin при старте. |
 | `auto_provision_users` | Создавать пользователя при bind неизвестного `telegramId`. |
 | `auto_provision_role` | Роль новой записи (`admin` через auto-provision недоступен → `user`). |
@@ -83,9 +83,7 @@ HTTP API и файловое хранилище для привязки **UID у
 
 ## HTTP API (префикс `/tg/auth`)
 
-Маршруты анонимны в смысле cookie-сессии Lampac; админские мутации требуют cookie **`accspasswd`** (root) **или** заголовок **`X-TelegramAuth-Mutations-Secret`** при **непустом** `mutations_api_secret`. Если секрет пуст — заголовок не принимается, для мутаций остаётся только cookie.
-
-**`POST /tg/auth/bind/complete`:** секрет обязателен только если `mutations_api_secret` не пустой.
+Маршруты анонимны в смысле cookie-сессии Lampac. `bind/complete`, `device/unbind`, `device/reactivate` и админские мутации требуют cookie **`accspasswd`** (root) **или** заголовок **`X-TelegramAuth-Mutations-Secret`** при **непустом** `mutations_api_secret`. Если секрет пуст — заголовок не принимается, остаётся только cookie.
 
 ### Чтение / статус
 
@@ -102,8 +100,8 @@ HTTP API и файловое хранилище для привязки **UID у
 - `POST /tg/auth/bind/start` — `{ "uid" }`.
 - `POST /tg/auth/bind/complete` — `{ "uid", "telegramId", "username?", "deviceName?" }`.
 - `POST /tg/auth/device/name` — `{ "uid", "name?" }` (плагин Lampa после успешного статуса).
-- `POST /tg/auth/device/unbind` — `{ "telegramId", "uid" }` (без секрета мутаций).
-- `POST /tg/auth/device/reactivate` — `{ "telegramId", "uid" }` (403 если pending/disabled).
+- `POST /tg/auth/device/unbind` — `{ "telegramId", "uid" }` (секрет мутаций или cookie root).
+- `POST /tg/auth/device/reactivate` — `{ "telegramId", "uid" }` (секрет мутаций или cookie root; 403 если pending/disabled).
 
 ### Административные
 

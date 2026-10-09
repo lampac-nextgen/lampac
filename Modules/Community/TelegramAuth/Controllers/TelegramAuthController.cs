@@ -80,7 +80,7 @@ namespace TelegramAuth.Controllers
         [Route("/tg/auth/bind/complete")]
         public ActionResult BindComplete([FromBody] BindCompleteRequest? request)
         {
-            if (HasConfiguredMutationsSecret() && !HasMutationAccess())
+            if (!HasMutationAccess())
                 return MutationUnauthorized();
 
             if (request == null || string.IsNullOrWhiteSpace(request.Uid) || string.IsNullOrWhiteSpace(request.TelegramId))
@@ -360,6 +360,9 @@ namespace TelegramAuth.Controllers
             if (request == null || string.IsNullOrWhiteSpace(request.Uid) || string.IsNullOrWhiteSpace(request.TelegramId))
                 return JsonError(400, "telegramId and uid are required");
 
+            if (!HasMutationAccess())
+                return MutationUnauthorized();
+
             var outcome = store.TryUnbindDevice(request.TelegramId.Trim(), request.Uid.Trim());
             if (outcome == TelegramAuthStore.UnbindDeviceOutcome.UserNotFound)
                 return JsonError(404, "user not found");
@@ -376,6 +379,9 @@ namespace TelegramAuth.Controllers
         {
             if (request == null || string.IsNullOrWhiteSpace(request.TelegramId) || string.IsNullOrWhiteSpace(request.Uid))
                 return JsonError(400, "telegramId and uid are required");
+
+            if (!HasMutationAccess())
+                return MutationUnauthorized();
 
             var outcome = store.TryReactivateDevice(request.TelegramId.Trim(), request.Uid.Trim());
             if (outcome == TelegramAuthStore.ReactivateDeviceOutcome.UserNotFound)
@@ -457,9 +463,6 @@ namespace TelegramAuth.Controllers
                 return JsonError(500, "import failed", ex.Message);
             }
         }
-
-        bool HasConfiguredMutationsSecret() =>
-            !string.IsNullOrEmpty(ModInit.conf.mutations_api_secret?.Trim());
 
         bool HasMutationAccess()
         {
