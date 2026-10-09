@@ -389,7 +389,7 @@
                 },
                 onBack: function () { Lampa.Controller.toggle('content'); }
             });
-        }, function () { Lampa.Noty.show('Модуль TelegramBot недоступен'); });
+        }, function () { Lampa.Noty.show('Модуль SeriesNotify недоступен'); });
     }
 
     // =============================================

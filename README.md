@@ -44,7 +44,7 @@
 - **TimeCode** — сохранение позиции воспроизведения
 - **TmdbProxy** — локальный кеш TMDB API
 - **LampaWeb** — хостинг Lampa UI (авто-обновление с GitHub), виджеты Samsung Tizen (`/samsung.wgt`) и LG webOS (`/lg.ipk`)
-- **Tg-notify.bot** — Telegram-уведомления о новых сериях и озвучках, плагин `/tg-notify.js`
+- **SeriesNotify** — Telegram-уведомления о новых сериях и озвучках, плагин `/tg-notify.js`
 - **QRAuth** — экран входа с QR-кодом и Telegram-бот для выдачи доступа (accsdb), `Modules/Community/QRAuth`
 - **WebLog** — отладка HTTP и Playwright-трафика в реальном времени
 - **Playwright** — автоматизация Chromium/Firefox для обхода JS-защит
@@ -466,7 +466,7 @@ cd publish && dotnet Core.dll
 │  │  Modules/Adult/* — платформы 18+                          │  │
 │  │  Modules/Community/* — TelegramAuth, TelegramAuthBot      │  │
 │  │  Modules/Community/QRAuth — вход по QR через Telegram     │  │
-│  │  Modules/Tg-notify.bot — уведомления о сериях/озвучках    │  │
+│  │  Modules/SeriesNotify — уведомления о сериях/озвучках     │  │
 │  └───────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────┘
 ```
@@ -577,7 +577,7 @@ lampac/
 │   ├── Proxy/                  # CubProxy, TmdbProxy, CacheMedia, CorsMedia, Corseu, ProxyLimiter
 │   ├── Sync/                   # Sync, SyncEvents, Storage, TimeCode
 │   ├── TorrServer/             # Управление TorrServer
-│   ├── Tg-notify.bot/          # Telegram-уведомления о сериях/озвучках
+│   ├── SeriesNotify/           # Telegram-уведомления о сериях/озвучках
 │   ├── Tracks/                 # Субтитры и дорожки (FFprobe)
 │   ├── Transcoding/            # FFmpeg транскодинг
 │   ├── WatchTogether/          # Синхронный просмотр
@@ -620,11 +620,16 @@ lampac/
 | [Modules/GStreamer/README.md](Modules/GStreamer/README.md) | Серверный транскодинг, `gst` в init.conf, `/gst.js` |
 | [Modules/LampacApk/README.md](Modules/LampacApk/README.md) | Генерация Android APK под адрес текущего сервера, подпись и кеш |
 | [Modules/LampaWeb/README.md](Modules/LampaWeb/README.md) | Lampa UI, виджеты Tizen/webOS, `lampainit.js` |
-| [Modules/Tg-notify.bot/README.md](Modules/Tg-notify.bot/README.md) | Telegram-подписки на серии/озвучки, `/api/tg/*` |
+| [Modules/SeriesNotify/README.md](Modules/SeriesNotify/README.md) | Telegram-подписки на серии/озвучки, `/api/tg/*` |
 | [Modules/ExternalBind/README.md](Modules/ExternalBind/README.md) | Привязка Lite/Online, флаг локального IP |
 | [charts/lampac/README.md](charts/lampac/README.md) | Helm-чарт для Kubernetes (`ghcr.io/lampac-nextgen/lampac`) |
 
 ---
+
+## Contributing / Security
+
+- How to open issues and PRs: [CONTRIBUTING.md](CONTRIBUTING.md)
+- Vulnerability reports (private only): [SECURITY.md](SECURITY.md)
 
 ## Лицензия
 

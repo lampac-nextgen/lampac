@@ -1,8 +1,8 @@
 using Shared.Models.Module;
 
-namespace TelegramBot.Models
+namespace SeriesNotify.Models
 {
-    public class TelegramBotConf : ModuleBaseConf
+    public class SeriesNotifyConf : ModuleBaseConf
     {
         public bool enable { get; set; } = true;
 

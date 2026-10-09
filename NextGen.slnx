@@ -49,7 +49,7 @@
     <Project Path="Modules/Community/QRAuth/QRAuth.csproj" />
     <Project Path="Modules/Community/TelegramAuth/TelegramAuth.csproj" />
     <Project Path="Modules/Community/TelegramAuthBot/TelegramAuthBot.csproj" />
-    <Project Path="Modules/Tg-notify.bot/Tg-notify.bot.csproj" />
+    <Project Path="Modules/SeriesNotify/SeriesNotify.csproj" />
   </Folder>
   <Folder Name="/Modules/ForkPlayerXML/">
     <Project Path="Modules/ForkPlayerXML/ForkXML.csproj" />

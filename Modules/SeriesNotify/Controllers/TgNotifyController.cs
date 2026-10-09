@@ -5,7 +5,7 @@ using Shared;
 using System.IO;
 using System.Threading.Tasks;
 
-namespace TelegramBot.Controllers
+namespace SeriesNotify.Controllers
 {
     public class TgNotifyController : BaseController
     {
@@ -18,8 +18,9 @@ namespace TelegramBot.Controllers
             string file = null;
             foreach (var p in new[]
             {
-                "module/Tg-notify.bot/tg-notify.js",
-                "module/Community/Tg-notify.bot/tg-notify.js",
+                "module/SeriesNotify/tg-notify.js",
+                "mods/SeriesNotify/tg-notify.js",
+                "module/Tg-notify.bot/tg-notify.js", // legacy folder name
                 "mods/TelegramBot/tg-notify.js",
                 "module/TelegramBot/tg-notify.js",
                 "plugins/tg-notify.js",

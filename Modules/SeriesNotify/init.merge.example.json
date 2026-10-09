@@ -1,5 +1,5 @@
 {
-  "TelegramBot": {
+  "SeriesNotify": {
     "enable": true,
     "bot_token": "ВАШ_ТОКЕН_ОТ_BOTFATHER",
     "tmdb_api_key": "ВАШ_КЛЮЧ_TMDB",
