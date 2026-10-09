@@ -1464,43 +1464,81 @@ public static class Http
     #endregion
 
     #region DownloadFile
-    async public static Task<bool> DownloadFile(string url, string path, int timeoutSeconds = 20, IReadOnlyList<HeadersModel> headers = null, WebProxy proxy = null)
+    async public static Task<bool> DownloadFile(string url, string path, int timeoutSeconds = 20, IReadOnlyList<HeadersModel> headers = null, WebProxy proxy = null, long? maxBytes = null)
     {
+        if (!SafeHttpUrl.IsSafe(url))
+            return false;
+
+        var handler = HandlerOrNull(url, proxy);
+        if (handler != null)
+            handler.AllowAutoRedirect = false;
+
         var client = FriendlyHttp.MessageClient(
             "base",
-            HandlerOrNull(url, proxy),
-            out bool disposeHttpClient
+            handler,
+            out bool disposeHttpClient,
+            allowAutoRedirect: false
         );
 
         try
         {
-            using (var req = new HttpRequestMessage(HttpMethod.Get, url)
-            {
-                Version = HttpVersion.Version11
-            })
-            {
-                DefaultRequestHeaders(url, req, null, null, headers, true);
+            string current = url;
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(Math.Max(20, timeoutSeconds)));
 
-                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(Math.Max(20, timeoutSeconds))))
+            for (int hop = 0; hop < 5; hop++)
+            {
+                if (!SafeHttpUrl.IsSafe(current))
+                    return false;
+
+                using var req = new HttpRequestMessage(HttpMethod.Get, current)
                 {
-                    using (HttpResponseMessage response = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false))
+                    Version = HttpVersion.Version11
+                };
+
+                DefaultRequestHeaders(current, req, null, null, headers, true);
+
+                using HttpResponseMessage response = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false);
+
+                int code = (int)response.StatusCode;
+                if (code is 301 or 302 or 303 or 307 or 308)
+                {
+                    if (response.Headers.Location == null)
+                        return false;
+
+                    current = new Uri(new Uri(current), response.Headers.Location).AbsoluteUri;
+                    continue;
+                }
+
+                if (response.StatusCode != HttpStatusCode.OK)
+                    return false;
+
+                if (maxBytes != null && response.Content.Headers.ContentLength > maxBytes)
+                    return false;
+
+                await using var stream = await response.Content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false);
+                await using var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, PoolInvk.bufferSize, options: FileOptions.Asynchronous);
+
+                var buffer = new byte[81920];
+                long total = 0;
+                while (true)
+                {
+                    int read = await stream.ReadAsync(buffer, cts.Token).ConfigureAwait(false);
+                    if (read == 0)
+                        return true;
+
+                    total += read;
+                    if (maxBytes != null && total > maxBytes.Value)
                     {
-                        if (response.StatusCode != HttpStatusCode.OK)
-                            return false;
-
-                        HttpContent content = response.Content;
-
-                        await using (var stream = await content.ReadAsStreamAsync(cts.Token).ConfigureAwait(false))
-                        {
-                            await using (var fileStream = new FileStream(path, FileMode.Create, FileAccess.Write, FileShare.None, PoolInvk.bufferSize, options: FileOptions.Asynchronous))
-                            {
-                                await stream.CopyToAsync(fileStream, cts.Token).ConfigureAwait(false);
-                                return true;
-                            }
-                        }
+                        await fileStream.DisposeAsync().ConfigureAwait(false);
+                        File.Delete(path);
+                        return false;
                     }
+
+                    await fileStream.WriteAsync(buffer.AsMemory(0, read), cts.Token).ConfigureAwait(false);
                 }
             }
+
+            return false;
         }
         catch
         {
