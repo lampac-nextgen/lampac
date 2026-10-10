@@ -100,7 +100,7 @@ public class KinoPubInvoke
     #endregion
 
     #region Tpl
-    public ITplResult Tpl(RootObject root, string filetype, string title, string original_title, int postid, short s = -1, int t = -1, string codec = null, VastConf vast = null, bool rjson = false)
+    public ITplResult Tpl(RootObject root, string filetype, string title, string original_title, int postid, short s = -1, int t = -1, string codec = null, string lang = null, VastConf vast = null, bool rjson = false)
     {
         if (root == null)
             return default;
@@ -155,7 +155,7 @@ public class KinoPubInvoke
                         streamquality: streamquality,
                         subtitles: subtitles,
                         subtitles_call: subtitles_call,
-                        voice_name: a.codec,
+                        voice_name: WithFileDetails(a.codec, root.item.videos[0].files),
                         vast: vast
                     );
                 }
@@ -199,7 +199,7 @@ public class KinoPubInvoke
                             mtpl.Append(
                                 v.files[0].quality,
                                 onstreamfile(v.files[0].url.hls4, null),
-                                voice_name: voicename,
+                                voice_name: WithFileDetails(voicename, v.files),
                                 vast: vast
                             );
                         }
@@ -239,7 +239,7 @@ public class KinoPubInvoke
                                 first.link,
                                 subtitles: subtitles,
                                 subtitles_call: subtitles_call,
-                                voice_name: voicename,
+                                voice_name: WithFileDetails(voicename, v.files),
                                 streamquality: streamquality,
                                 vast: vast
                             );
@@ -315,17 +315,20 @@ public class KinoPubInvoke
                         {
                             t = (int)idt;
                             codec = a.codec;
+                            lang = a.lang;
                         }
 
-                        if (!hash.Contains($"{voice}:{a.codec}"))
+                        if (!hash.Contains($"{voice}:{a.codec}:{a.lang}"))
                         {
-                            hash.Add($"{voice}:{a.codec}");
+                            hash.Add($"{voice}:{a.codec}:{a.lang}");
 
                             string link = host + $"lite/kinopub?rjson={rjson}&postid={postid}&title={enc_title}&original_title={enc_original_title}&s={s}&t={idt}&codec={a.codec}";
-                            bool active = t == idt && (codec == null || codec == a.codec);
+                            if (!string.IsNullOrEmpty(a.lang))
+                                link += $"&lang={HttpUtility.UrlEncode(a.lang)}";
+                            bool active = t == idt && (codec == null || codec == a.codec) && (string.IsNullOrEmpty(lang) || lang == a.lang);
 
                             vtpl.Append(
-                                $"{voice} ({a.codec})",
+                                $"{voice} ({a.codec}{(string.IsNullOrEmpty(a.lang) ? "" : ", " + a.lang)})",
                                 active,
                                 link
                             );
@@ -339,7 +342,7 @@ public class KinoPubInvoke
                     foreach (var episode in root.item.seasons.First(i => i.number == s).episodes)
                     {
                         int voice_index = -1;
-                        if (t == 1)
+                        if (t == 1 && string.IsNullOrEmpty(lang))
                         {
                             voice_index = t;
                         }
@@ -347,12 +350,11 @@ public class KinoPubInvoke
                         {
                             foreach (var a in episode.audios)
                             {
-                                int? idt = a?.author?.id;
+                                int? idt = a?.author?.id ?? a?.type?.id;
                                 if (idt == null)
-                                    idt = a?.type?.id;
+                                    idt = a.lang == "eng" ? 6 : 1;
 
-                                if ((idt != null && t == (int)idt && (codec == null || codec == a.codec)) ||
-                                    (t == 6 && a.lang == "eng"))
+                                if (t == (int)idt && (codec == null || codec == a.codec) && (string.IsNullOrEmpty(lang) || lang == a.lang))
                                 {
                                     voice_index = a!.index;
                                     break;
@@ -400,6 +402,7 @@ public class KinoPubInvoke
                                 streamquality: streamquality,
                                 subtitles: subtitles,
                                 subtitles_call: subtitles_call,
+                                voice_name: FileDetails(episode.files),
                                 vast: vast
                             );
                         }
@@ -444,7 +447,7 @@ public class KinoPubInvoke
                                 episode.number,
                                 onstreamfile(episode.files[0].url.hls4,
                                 null),
-                                voice_name: voicename,
+                                voice_name: WithFileDetails(voicename, episode.files),
                                 vast: vast
                             );
                         }
@@ -491,7 +494,7 @@ public class KinoPubInvoke
                                     first.link,
                                     subtitles: subtitles,
                                     subtitles_call: subtitles_call,
-                                    voice_name: voicename,
+                                    voice_name: WithFileDetails(voicename, episode.files),
                                     streamquality: streamquality,
                                     vast: vast
                                 );
@@ -507,4 +510,24 @@ public class KinoPubInvoke
         }
     }
     #endregion
+
+    static string FileDetails(File[] files)
+    {
+        var f = files != null && files.Length > 0 ? files[0] : null;
+        if (f == null)
+            return string.Empty;
+
+        string r = string.IsNullOrEmpty(f.codec) ? string.Empty : f.codec;
+        if (f.w > 0 && f.h > 0)
+            r = r.Length == 0 ? $"{f.w}x{f.h}" : $"{r} · {f.w}x{f.h}";
+        return r;
+    }
+
+    static string WithFileDetails(string prefix, File[] files)
+    {
+        string d = FileDetails(files);
+        if (d.Length == 0)
+            return prefix ?? string.Empty;
+        return string.IsNullOrEmpty(prefix) ? d : $"{prefix} · {d}";
+    }
 }
