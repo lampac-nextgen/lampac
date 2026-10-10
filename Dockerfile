@@ -78,8 +78,9 @@ RUN case "$BUILDARCH" in \
     && rm /tmp/ffmpeg.tar.xz \
     && touch /out/lampac/isdocker
 
-# Runner — OS/arch of the published image (amd64 vs arm64)
-FROM debian:13-slim AS runner
+# Runner — OS/arch of the published image (amd64 vs arm64).
+# forky, not trixie: GStreamer ≥ 1.28.5 (matroskademux 32MB block + SA-2026-0065).
+FROM debian:forky-slim AS runner
 
 ARG TARGETARCH
 
@@ -113,7 +114,7 @@ RUN apt-get update \
     imagemagick \
     libgstreamer-plugins-base1.0-0 \
     libgstreamer1.0-0 \
-    libicu76 \
+    libicu78 \
     libjpeg-dev \
     libnspr4 \
     libpng-dev \
