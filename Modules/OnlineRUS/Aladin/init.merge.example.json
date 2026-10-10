@@ -1,0 +1,14 @@
+{
+  "Aladin": {
+    "enable": true,
+    "displayname": "Aladin",
+    "displayindex": 512,
+    "token": "22c8122334d050de1bfc97bd08aa5e",
+    "linkhost": "https://scalp-as.stloadi.live",
+    "apihost": "https://apbugall.org/v2",
+    "m4s": true,
+    "reserve": true,
+    "spider": true,
+    "httpversion": 2
+  }
+}

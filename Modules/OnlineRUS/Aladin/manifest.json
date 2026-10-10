@@ -2,6 +2,9 @@
   "enable": true,
   "dynamic": true,
   "tree": [
+    "AladinBorth.cs",
+    "AladinGuard.cs",
+    "AladinWsSession.cs",
     "Controller.cs",
     "Model.cs",
     "ModInit.cs",

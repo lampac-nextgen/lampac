@@ -2557,6 +2557,7 @@
         'animevost',
         'animebesst',
         'alloha',
+        'aladin',
         'mirage',
         'phantom',
         'animelib',

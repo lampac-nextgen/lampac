@@ -8,7 +8,7 @@ using Shared.Services;
 using System.Collections.Generic;
 using Shared;
 
-namespace Alloha;
+namespace Aladin;
 
 public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
 {
@@ -26,13 +26,13 @@ public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
     {
         return new List<ModuleOnlineSpiderItem>()
         {
-            new(conf, "alloha-search")
+            new(conf, "aladin-search")
         };
     }
 
     public void Loaded(InitspaceModel baseconf)
     {
-        CoreInit.conf.online.with_search.Add("alloha");
+        CoreInit.conf.online.with_search.Add("aladin");
 
         updateConf();
         EventListener.UpdateInitFile += updateConf;
@@ -47,12 +47,14 @@ public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
 
     void updateConf()
     {
-        conf = ModuleInvoke.Init("Alloha", new ModuleConf("Alloha", "https://apbugall.org/v2", "https://torso-as.stloadi.live", "", "", true, true)
+        conf = ModuleInvoke.Init("Aladin", new ModuleConf("Aladin", "https://apbugall.org/v2", "https://scalp-as.stloadi.live", "22c8122334d050de1bfc97bd08aa5e", "", false, true)
         {
-            displayindex = 325,
+            enable = true,
+            displayindex = 512,
             httpversion = 2,
             rch_access = "apk,cors,web",
             stream_access = "apk,cors,web",
+            streamproxy = true,
             reserve = true
         });
     }
@@ -61,7 +63,7 @@ public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
     {
         bool m4s = conf.m4s;
 
-        if (e.balanser == "alloha" && e.kitconf != null && e.kitconf.TryGetValue("Alloha", out JToken kit))
+        if (e.balanser == "aladin" && e.kitconf != null && e.kitconf.TryGetValue("Aladin", out JToken kit))
         {
             if (kit["m4s"] != null)
                 m4s = kit.Value<bool>("m4s");
@@ -69,7 +71,7 @@ public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
 
         return e.balanser switch
         {
-            "alloha" => (m4s ? " ~ 2160p" : " ~ 1080p"),
+            "aladin" => (m4s ? " ~ 2160p" : " ~ 1080p"),
             _ => null
         };
     }
