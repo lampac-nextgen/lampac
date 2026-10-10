@@ -178,6 +178,10 @@ public class ApiController : BaseController
         var bulder = new StringBuilder();
         bulder = bulder.Append(file);
 
+        // Prowlarr magnet-only results may omit downloadUrl.
+        bulder = bulder.Replace("MagnetUri: e.downloadUrl,",
+            "MagnetUri: e.downloadUrl || (typeof e.guid === 'string' && e.guid.indexOf('magnet:?') === 0 ? e.guid : e.magnetUrl),");
+
         if (ModInit.conf.initPlugins.cubProxy && LampaPluginBuilder.ModuleLoaded("CubProxy"))
         {
             bulder = bulder.Replace("protocol + mirror + '/api/checker'", $"'{host}/cub/api/checker'");
