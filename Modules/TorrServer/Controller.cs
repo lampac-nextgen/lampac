@@ -182,23 +182,35 @@ public class TorrServerController : BaseController
     async public Task TorAPI(AccsUser user = null)
     {
         string rawPath = HttpContext.Request.Path.Value ?? "";
-        if (rawPath.Equals("/ts/shutdown", StringComparison.OrdinalIgnoreCase)
-            || rawPath.StartsWith("/ts/shutdown/", StringComparison.OrdinalIgnoreCase))
+        string pathRequest = Regex.Replace(Regex.Replace(rawPath, "^/ts", "", RegexOptions.IgnoreCase), "[^a-zA-Z0-9\\./]", "");
+
+        foreach (string segment in pathRequest.Split('/', StringSplitOptions.RemoveEmptyEntries))
+        {
+            if (segment.Trim('.').Length == 0)
+            {
+                HttpContext.Response.StatusCode = 404;
+                return;
+            }
+        }
+
+        string servUri = $"http://{CoreInit.conf.listen.localhost}:{ModInit.conf.tsport}{pathRequest}{HttpContext.Request.QueryString.Value}";
+        string absPath = Regex.Replace(new Uri(servUri).AbsolutePath, "/{2,}", "/").TrimEnd('/', '.');
+        if (absPath.Length == 0)
+            absPath = "/";
+
+        if (absPath.Equals("/shutdown", StringComparison.OrdinalIgnoreCase)
+            || absPath.StartsWith("/shutdown/", StringComparison.OrdinalIgnoreCase))
         {
             HttpContext.Response.StatusCode = 404;
             return;
         }
-
-        string pathRequest = Regex.Replace(rawPath, "^/ts", "");
-
-        string servUri = $"http://{CoreInit.conf.listen.localhost}:{ModInit.conf.tsport}{Regex.Replace(pathRequest, "[^a-zA-Z0-9\\./]", "") + HttpContext.Request.QueryString.Value}";
 
         using (var ctsHttp = CancellationTokenSource.CreateLinkedTokenSource(HttpContext.RequestAborted))
         {
             ctsHttp.CancelAfter(TimeSpan.FromSeconds(5));
 
             #region settings
-            if (pathRequest.StartsWith("/settings"))
+            if (absPath.StartsWith("/settings", StringComparison.OrdinalIgnoreCase))
             {
                 if (HttpContext.Request.Method != "POST")
                 {
@@ -235,7 +247,7 @@ public class TorrServerController : BaseController
             #endregion
 
             #region playlist
-            if (pathRequest.StartsWith("/stream/") && HttpContext.Request.QueryString.Value.Contains("&m3u"))
+            if (absPath.StartsWith("/stream/", StringComparison.OrdinalIgnoreCase) && HttpContext.Request.QueryString.Value.Contains("&m3u"))
             {
                 string m3u = await httpClient.GetStringAsync(servUri, ctsHttp.Token).ConfigureAwait(false);
                 HttpContext.Response.ContentType = "audio/x-mpegurl; charset=utf-8";
