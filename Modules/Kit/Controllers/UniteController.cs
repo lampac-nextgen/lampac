@@ -31,10 +31,10 @@ namespace KitMod.Controllers
 
             string html = System.IO.File.ReadAllText($"{ModInit.folder_mod}/html/unite.html");
 
-            html = html.Replace("{content}", $@"Добавьте плагин на устройство которое хотите привязать
+            html = html.Replace("{content}", $@"Добавьте плагин на устройство, которое хотите привязать
 <br><br>
 1. Ссылка действительна 20 минут<br>
-2. После привязки устройства, ссылку можно удалить из списка расширений <br>
+2. После привязки устройства ссылку можно удалить из списка расширений <br>
 <br><br>
 <b>Ваша ссылка (плагин):</b>
 <br>

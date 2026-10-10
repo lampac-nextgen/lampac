@@ -1,0 +1,165 @@
+name: Bug report
+description: Something broken in Lampac NextGen (module, install, Docker, playback…).
+title: "<Component>: short description"
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        RU or EN is fine. Good reports name the **component**, give **version + install type**, and include **steps or a curl/log** that reproduce the issue.
+
+        Labels match the filesystem: `core:*` (platform), `module:*` (`Modules/<Name>/`), `meta:*` (CI/docs/install).
+        Put the specific balancer/site in the **title** (e.g. `Kinogo: …`, `GStreamer: …`).
+
+        See also [CONTRIBUTING.md](https://github.com/lampac-nextgen/lampac/blob/main/CONTRIBUTING.md) and [SECURITY.md](https://github.com/lampac-nextgen/lampac/blob/main/SECURITY.md).
+
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      description: Exact label name (auto-applied on submit). Pick the closest Modules/ or core path.
+      options:
+        - core:Core
+        - core:Shared
+        - core:Online
+        - core:SISI
+        - module:AdminPanel
+        - module:Adult
+        - module:Analytics
+        - module:Catalog
+        - module:Community
+        - module:DLNA
+        - module:DatabaseEditor
+        - module:ExternalBind
+        - module:ForkPlayerXML
+        - module:GStreamer
+        - module:HealthCheck
+        - module:JacRed
+        - module:Kit
+        - module:LampaWeb
+        - module:LampacApk
+        - module:LogUserRequest-Lite
+        - module:MsxNative
+        - module:Music
+        - module:NextHUB
+        - module:Online
+        - module:OnlineAnime
+        - module:OnlineENG
+        - module:OnlineGEO
+        - module:OnlinePaid
+        - module:OnlineRUS
+        - module:OnlineUKR
+        - module:PidTor
+        - module:Potok
+        - module:Proxy
+        - module:Sync
+        - module:Telemetry
+        - module:SeriesNotify
+        - module:TorrServer
+        - module:Tracks
+        - module:Transcoding
+        - module:WatchTogether
+        - module:WebLog
+        - module:QRAuth
+        - module:OidcAuth
+        - module:TelegramAuth
+        - meta:install
+        - meta:ci
+        - meta:docs
+        - meta:config
+        - Other / unknown
+    validations:
+      required: true
+
+  - type: input
+    id: module
+    attributes:
+      label: Module / path (if known)
+      description: e.g. `Modules/OnlineRUS/Kinogo`, `Modules/GStreamer`, `install.sh`
+      placeholder: Modules/...
+
+  - type: input
+    id: version
+    attributes:
+      label: Lampac version
+      description: Tag, image digest, or `git rev-parse --short HEAD`
+      placeholder: 1.61.1 / ghcr.io/lampac-nextgen/lampac:1.61.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install
+    attributes:
+      label: Install type
+      options:
+        - Docker (official image)
+        - Native install.sh (Linux)
+        - Windows
+        - umbrel / other package
+        - Built from source
+    validations:
+      required: true
+
+  - type: input
+    id: platform
+    attributes:
+      label: OS / arch
+      placeholder: linux/amd64, linux/arm64, Windows 11, …
+
+  - type: input
+    id: client
+    attributes:
+      label: Client
+      description: Where you see the symptom
+      placeholder: Lampa Android TV / WebOS / browser / curl
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: What happens
+      description: Observed behavior. One clear paragraph is enough.
+      placeholder: e.g. `/lite/events` returns 500 when id and original_language=ja are both set.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected
+      placeholder: What should happen instead.
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps, or a minimal `curl` against `/lite/...` / `/gst/...`.
+      placeholder: |
+        1. …
+        2. …
+        ```bash
+        curl -s "http://HOST:9118/lite/..."
+        ```
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs / response
+      description: Relevant server log lines, HTTP status/body, or screenshot. Redact tokens and passwords.
+      render: text
+
+  - type: textarea
+    id: config
+    attributes:
+      label: Relevant config (optional)
+      description: Minimal `init.conf` / env snippet. Remove secrets (`token`, `apikey`, passwords).
+      render: json
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Extra context (optional)
+      description: Workarounds tried, related PRs, upstream links.

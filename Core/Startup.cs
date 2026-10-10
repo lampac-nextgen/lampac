@@ -19,6 +19,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http;
 using Newtonsoft.Json;
 using Shared;
+using Shared.Models.Base;
 using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Entrys;
@@ -221,7 +222,9 @@ public class Startup
         services.Configure<CookiePolicyOptions>(options =>
         {
             options.CheckConsentNeeded = context => true;
-            options.MinimumSameSitePolicy = SameSiteMode.None;
+            options.HttpOnly = Microsoft.AspNetCore.CookiePolicy.HttpOnlyPolicy.Always;
+            options.Secure = CookieSecurePolicy.SameAsRequest;
+            options.MinimumSameSitePolicy = SameSiteMode.Lax;
         });
 
         if (init.listen.compression)
@@ -619,6 +622,7 @@ public class Startup
         app.UseForwardedHeaders(forwarded);
         #endregion
 
+        app.UseCookiePolicy();
         app.UseBaseMod();
         app.UseModHeaders();
         app.UseRequestInfo();
@@ -692,7 +696,20 @@ public class Startup
             {
                 ServeUnknownFileTypes = midd.unknownStaticFiles,
                 DefaultContentType = "application/octet-stream",
-                ContentTypeProvider = contentTypeProvider
+                ContentTypeProvider = contentTypeProvider,
+                OnPrepareResponse = static ctx =>
+                {
+                    var path = ctx.Context.Request.Path.Value;
+                    if (path == null || !path.StartsWith("/bookmarks/", StringComparison.OrdinalIgnoreCase))
+                        return;
+
+                    if (!CoreInit.conf.accsdb.enable || BookmarkStaticAllowed(ctx.Context))
+                        return;
+
+                    ctx.Context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    ctx.Context.Response.ContentLength = 0;
+                    ctx.Context.Response.Body = Stream.Null;
+                }
             });
         }
         #endregion
@@ -923,4 +940,29 @@ public class Startup
         }
     }
     #endregion
+
+    static bool BookmarkStaticAllowed(HttpContext httpContext)
+    {
+        var requestInfo = httpContext.Features.Get<RequestModel>();
+        if (requestInfo == null)
+            return false;
+
+        if (requestInfo.IsLocalRequest || requestInfo.IsAnonymousRequest)
+            return true;
+
+        var accsdb = CoreInit.conf.accsdb;
+        string path = httpContext.Request.Path.Value ?? string.Empty;
+
+        if (!string.IsNullOrEmpty(accsdb.whitepattern) && Regex.IsMatch(path, accsdb.whitepattern, RegexOptions.IgnoreCase))
+            return true;
+
+        if (requestInfo.user_uid != null && accsdb.white_uids != null && accsdb.white_uids.Contains(requestInfo.user_uid))
+            return true;
+
+        var user = requestInfo.user;
+        if (user?.bypass_accsdb == true)
+            return true;
+
+        return user != null && !user.ban && DateTime.Now <= user.expires;
+    }
 }

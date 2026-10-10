@@ -40,7 +40,7 @@ namespace QRAuth.Services
             catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested) { }
             catch (Exception ex)
             {
-                _logger.LogCritical(ex, "[TelegramBot] Fatal error");
+                _logger.LogCritical(ex, "[QRAuthBot] Fatal error");
                 throw;
             }
         }
@@ -51,12 +51,12 @@ namespace QRAuth.Services
 
             if (!conf.enable || string.IsNullOrWhiteSpace(conf.bot_token))
             {
-                _logger.LogInformation("[TelegramBot] Отключён (enable=false или пустой bot_token).");
+                _logger.LogInformation("[QRAuthBot] Отключён (enable=false или пустой bot_token).");
                 return;
             }
 
             FileLog.Configure(Path.GetFullPath(conf.log_path));
-            FileLog.Write("[TelegramBot] Запуск...");
+            FileLog.Write("[QRAuthBot] Запуск...");
 
             var repo = new UsersRepository(Path.GetFullPath(conf.users_file_path), _loggerFactory.CreateLogger<UsersRepository>());
             var session = new BotSession(repo);
@@ -65,12 +65,12 @@ namespace QRAuth.Services
             try
             {
                 var me = await bot.GetMe(ct).ConfigureAwait(false);
-                _logger.LogInformation("[TelegramBot] @{Username} запущен.", me.Username);
+                _logger.LogInformation("[QRAuthBot] @{Username} запущен.", me.Username);
             }
             catch (Exception ex)
             {
-                _logger.LogError(ex, "[TelegramBot] GetMe не удался");
-                FileLog.Write("[TelegramBot] GetMe не удался", ex);
+                _logger.LogError(ex, "[QRAuthBot] GetMe не удался");
+                FileLog.Write("[QRAuthBot] GetMe не удался", ex);
                 return;
             }
 
@@ -83,7 +83,7 @@ namespace QRAuth.Services
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[TelegramBot] DeleteWebhook warning");
+                _logger.LogWarning(ex, "[QRAuthBot] DeleteWebhook warning");
             }
 
             // Just /start in the menu for everyone, admin included — /users stays reachable
@@ -98,7 +98,7 @@ namespace QRAuth.Services
             }
             catch (Exception ex)
             {
-                _logger.LogWarning(ex, "[TelegramBot] SetMyCommands warning");
+                _logger.LogWarning(ex, "[QRAuthBot] SetMyCommands warning");
             }
 
             // a chat-scoped command list (set for admins by an older build) outranks the
@@ -112,11 +112,11 @@ namespace QRAuth.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogWarning(ex, "[TelegramBot] DeleteMyCommands (admin scope) warning, adminId={AdminId}", adminId);
+                    _logger.LogWarning(ex, "[QRAuthBot] DeleteMyCommands (admin scope) warning, adminId={AdminId}", adminId);
                 }
             }
 
-            _logger.LogInformation("[TelegramBot] Long polling запущен (limit={Limit}, timeout={Timeout}s).",
+            _logger.LogInformation("[QRAuthBot] Long polling запущен (limit={Limit}, timeout={Timeout}s).",
                 GetUpdatesLimit, GetUpdatesTimeoutSeconds);
 
             int? offset = null;
@@ -142,16 +142,16 @@ namespace QRAuth.Services
                     // — its admin_ids / users.json / pending requests differ, which shows up
                     // as "Недоступно." for a real admin, lost QR auto-login, grants written to
                     // the wrong users.json. Not fixable from here: one token = one instance.
-                    _logger.LogError("[TelegramBot] 409 Conflict: этот bot_token опрашивает ещё один процесс. Оставьте токен только на одном сервере.");
-                    FileLog.Write("[TelegramBot] 409 Conflict: этот bot_token опрашивает ещё один процесс (второй Lampac с тем же init.conf?). Кнопки будут срабатывать через раз — оставьте токен только на одном сервере.");
+                    _logger.LogError("[QRAuthBot] 409 Conflict: этот bot_token опрашивает ещё один процесс. Оставьте токен только на одном сервере.");
+                    FileLog.Write("[QRAuthBot] 409 Conflict: этот bot_token опрашивает ещё один процесс (второй Lampac с тем же init.conf?). Кнопки будут срабатывать через раз — оставьте токен только на одном сервере.");
                     try { await Task.Delay(ErrorDelay, ct).ConfigureAwait(false); }
                     catch (OperationCanceledException) { break; }
                     continue;
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "[TelegramBot] GetUpdates error");
-                    FileLog.Write("[TelegramBot] GetUpdates error", ex);
+                    _logger.LogError(ex, "[QRAuthBot] GetUpdates error");
+                    FileLog.Write("[QRAuthBot] GetUpdates error", ex);
                     try { await Task.Delay(ErrorDelay, ct).ConfigureAwait(false); }
                     catch (OperationCanceledException) { break; }
                     continue;
@@ -167,8 +167,8 @@ namespace QRAuth.Services
                     catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
                     catch (Exception ex)
                     {
-                        _logger.LogError(ex, "[TelegramBot] HandleUpdate error (UpdateId={UpdateId})", update.Id);
-                        FileLog.Write($"[TelegramBot] HandleUpdate error (UpdateId={update.Id})", ex);
+                        _logger.LogError(ex, "[QRAuthBot] HandleUpdate error (UpdateId={UpdateId})", update.Id);
+                        FileLog.Write($"[QRAuthBot] HandleUpdate error (UpdateId={update.Id})", ex);
                     }
                 }
             }

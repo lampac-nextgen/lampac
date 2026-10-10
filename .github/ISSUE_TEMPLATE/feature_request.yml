@@ -1,0 +1,100 @@
+name: Feature request
+description: Propose a new capability or improvement (not a bug).
+title: "feat: short description"
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        RU or EN is fine. Explain the **problem** first, then the proposal.
+        For usage questions use [Discussions](https://github.com/lampac-nextgen/lampac/discussions).
+
+        Area values match filesystem labels (`core:*` / `module:*` / `meta:*`).
+        See [CONTRIBUTING.md](https://github.com/lampac-nextgen/lampac/blob/main/CONTRIBUTING.md).
+
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      description: Exact label name (auto-applied on submit).
+      options:
+        - core:Core
+        - core:Shared
+        - core:Online
+        - core:SISI
+        - module:AdminPanel
+        - module:Adult
+        - module:Analytics
+        - module:Catalog
+        - module:Community
+        - module:DLNA
+        - module:DatabaseEditor
+        - module:ExternalBind
+        - module:ForkPlayerXML
+        - module:GStreamer
+        - module:HealthCheck
+        - module:JacRed
+        - module:Kit
+        - module:LampaWeb
+        - module:LampacApk
+        - module:LogUserRequest-Lite
+        - module:MsxNative
+        - module:Music
+        - module:NextHUB
+        - module:Online
+        - module:OnlineAnime
+        - module:OnlineENG
+        - module:OnlineGEO
+        - module:OnlinePaid
+        - module:OnlineRUS
+        - module:OnlineUKR
+        - module:PidTor
+        - module:Potok
+        - module:Proxy
+        - module:Sync
+        - module:Telemetry
+        - module:SeriesNotify
+        - module:TorrServer
+        - module:Tracks
+        - module:Transcoding
+        - module:WatchTogether
+        - module:WebLog
+        - module:QRAuth
+        - module:OidcAuth
+        - module:TelegramAuth
+        - meta:install
+        - meta:ci
+        - meta:docs
+        - meta:config
+        - Other / unknown
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem / motivation
+      description: What is painful or missing today? Who hits it?
+      placeholder: e.g. install.sh --update has no backup or health check, so a bad release leaves the service down.
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Concrete behavior you want. Sketch API/config/UI if relevant.
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered (optional)
+      description: Workarounds, other designs, or why those are worse.
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Extra context (optional)
+      description: Screenshots, links, related issues/PRs.

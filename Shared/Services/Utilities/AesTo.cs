@@ -31,11 +31,11 @@ public static class AesTo
                 if (!Encoding.UTF8.TryGetBytes(plainText, cipher, out int writtenPlain) || writtenPlain == 0)
                     return string.Empty;
 
-                int paddedLen = aesinst.Aes.GetCiphertextLengthCbc(plainText.Length, PaddingMode.PKCS7);
+                int sealedLen = aesinst.Aes.GetCiphertextLengthCbc(writtenPlain, PaddingMode.PKCS7) + AesInstance.BlockSize;
 
                 BufferBytePool destBuf = null;
-                if (paddedLen > AesInstance.ByteSize)
-                    destBuf = new BufferBytePool(paddedLen);
+                if (sealedLen > AesInstance.ByteSize)
+                    destBuf = new BufferBytePool(sealedLen);
 
                 try
                 {
@@ -43,12 +43,7 @@ public static class AesTo
                         ? destBuf.Span
                         : aesinst.DestBuffer;
 
-                    // ВАЖНО: iv вторым параметром, destination третьим
-                    int cipherLen = aesinst.Aes.EncryptCbc(
-                        cipher.Slice(0, writtenPlain),
-                        aesinst.Aes.IV,  // iv (16 байт)
-                        dest,    // destination
-                        PaddingMode.PKCS7);
+                    int cipherLen = AesPool.Seal(aesinst.Aes, cipher.Slice(0, writtenPlain), dest);
 
                     if (cipherLen <= 0)
                         return string.Empty;
@@ -127,12 +122,7 @@ public static class AesTo
                         ? destBuf.Span
                         : aesinst.DestBuffer;
 
-                    // ВАЖНО: iv вторым параметром, destination третьим
-                    int plainLen = aesinst.Aes.DecryptCbc(
-                        cipher.Slice(0, cipherLen),
-                        aesinst.Aes.IV,  // iv (16 байт)
-                        dest,    // destination
-                        PaddingMode.PKCS7);
+                    int plainLen = AesPool.Open(aesinst.Aes, cipher.Slice(0, cipherLen), dest);
 
                     if (plainLen <= 0)
                         return null;

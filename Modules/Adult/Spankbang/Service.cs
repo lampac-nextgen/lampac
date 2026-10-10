@@ -127,7 +127,7 @@ public static class SpankbangTo
                 submenu = new List<MenuItem>(3)
                 {
                     new("Новое", $"{host}/sbg"),
-                    new("Трендовое", $"{host}/sbg?sort=trending_videos"),
+                    new("В тренде", $"{host}/sbg?sort=trending_videos"),
                     new("Популярное", $"{host}/sbg?sort=most_popular")
                 }
             }

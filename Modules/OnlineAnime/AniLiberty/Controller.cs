@@ -136,18 +136,10 @@ public class AniLibertyController : BaseOnlineController
             {
                 var episodes = cache.Value.episodes;
                 var etpl = new EpisodeTpl(episodes.Length);
+                string season = GetSeason(cache.Value);
 
                 foreach (var episode in episodes)
                 {
-                    string alias = cache.Value.alias ?? "";
-                    string season = Regex.Match(alias, "-([0-9]+)(nd|th)").Groups[1].Value;
-                    if (string.IsNullOrEmpty(season))
-                    {
-                        season = Regex.Match(alias, "season-([0-9]+)").Groups[1].Value;
-                        if (string.IsNullOrEmpty(season))
-                            season = "1";
-                    }
-
                     string number = episode.ordinal;
 
                     string name = episode.name;
@@ -185,5 +177,37 @@ public class AniLibertyController : BaseOnlineController
             });
             #endregion
         }
+    }
+
+    static string GetSeason(Release release)
+    {
+        string alias = release.alias ?? string.Empty;
+        Match match = Regex.Match(alias, @"(?:^|-)(?:season-)?([0-9]{1,2})(?:st|nd|rd|th)(?:-|$)|(?:^|-)season-([0-9]{1,2})(?:-|$)", RegexOptions.IgnoreCase);
+        if (match.Success)
+            return match.Groups[1].Success ? match.Groups[1].Value : match.Groups[2].Value;
+
+        foreach (string name in new[] { release.name?.main, release.name?.english })
+        {
+            if (string.IsNullOrWhiteSpace(name))
+                continue;
+
+            match = Regex.Match(name, @"\b(?:сезон|season)\s*([0-9]{1,2})\b|\b([0-9]{1,2})\s*(?:сезон|season)\b", RegexOptions.IgnoreCase);
+            if (match.Success)
+                return match.Groups.Cast<Group>().Skip(1).First(g => g.Success).Value;
+        }
+
+        // A bare number in one title can be part of the title itself. Use it only
+        // when the other title confirms the same installment with a Roman numeral.
+        Match numeric = Regex.Match(release.name?.main ?? string.Empty, @"\s([0-9]{1,2})(?=\s*(?::|$))");
+        Match roman = Regex.Match(release.name?.english ?? string.Empty, @"\b(II|III|IV|V|VI|VII|VIII|IX|X)\b(?=\s*(?::|$))");
+        if (numeric.Success && roman.Success)
+        {
+            string[] romans = { "I", "II", "III", "IV", "V", "VI", "VII", "VIII", "IX", "X" };
+            int romanSeason = Array.IndexOf(romans, roman.Groups[1].Value) + 1;
+            if (int.TryParse(numeric.Groups[1].Value, out int numericSeason) && numericSeason == romanSeason)
+                return numericSeason.ToString();
+        }
+
+        return "1";
     }
 }

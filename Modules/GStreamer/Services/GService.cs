@@ -75,12 +75,8 @@ public static class GService
 
                 sourceUrl = Regex.Replace(sourceUrl, "/stream/[^\\?]+", "/stream");
 
-                if (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri) ||
-                    (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
-                    string.IsNullOrEmpty(uri.Host))
-                {
+                if (!SafeHttpUrl.IsSafe(sourceUrl) || !Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri))
                     return new(null, "Uri");
-                }
 
                 string probeKey = $"ProbeInfo:{uri.AbsoluteUri}";
 
@@ -104,7 +100,7 @@ public static class GService
                 else
                     sourceUrl = requestUri.AbsoluteUri;
 
-                if (string.IsNullOrEmpty(sourceUrl))
+                if (!SafeHttpUrl.IsSafe(sourceUrl))
                     return new(null, "sourceUrl");
                 #endregion
 
@@ -274,12 +270,8 @@ public static class GService
 
         sourceUrl = Regex.Replace(sourceUrl, "/stream/[^\\?]+", "/stream");
 
-        if (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri) ||
-            (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
-            string.IsNullOrEmpty(uri.Host))
-        {
+        if (!SafeHttpUrl.IsSafe(sourceUrl) || !Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri))
             return new(null, "Uri");
-        }
 
         sourceUrl = uri.AbsoluteUri;
         string probeKey = $"ProbeInfo:{sourceUrl}";

@@ -19,25 +19,27 @@ namespace QRAuth.Services
     /// who are NOT authorized yet, and Lampac's accsdb middleware blocks /tmdb/* for them —
     /// so instead of opening the whole TMDB proxy via whitepattern, this module fetches
     /// posters itself through the same /tmdb proxy as a local request (lcrqpasswd header
-    /// passes accsdb), caches them on disk and serves only those files from
-    /// /tgbot/qr/poster/{n} (let through by ModInit.AllowQrRoutes).
+    /// passes accsdb), caches them on disk, renders them into pre-tilted wall images and
+    /// serves only those from /tgbot/qr/wall (let through by ModInit.AllowQrRoutes).
     /// TVs only ever talk to this server, never to TMDB directly (blocked in some regions).
     /// </summary>
     public static class PosterWall
     {
         public const int MaxPosters = 30;
-        // w342: the 4K wall needs ~370px tiles (w185 showed pixels on 2K/4K screens). TVs
-        // and desktops get the pre-rendered wall, so these files only reach phones (tile
-        // fallback), which are sharper with w342 anyway. Part of the cache key (meta.txt),
-        // so a size change refetches the set instead of serving the old files.
-        const string Size = "w342";
-        // "v2" = pre-dimmed, 1080p + 4K, glass. Old wall files are simply ignored and the
-        // set's wall is rebuilt in place (the fresh-set path builds a missing wall).
+        // w500: the walls use 370px tiles — w342 had to be upscaled into them and the
+        // wall looked pixelated; w500 is downscaled instead. The files are only wall
+        // sources, never served to the page. Part of the cache key (meta.txt), so a size
+        // change refetches the set instead of serving the old files.
+        const string Size = "w500";
+        // "v2" = pre-dimmed, 1080p + 4K, glass; "-m" = portrait wall for phones. Old wall
+        // files are simply ignored and the set's walls are rebuilt in place (the fresh-set
+        // path builds missing walls).
         const string WallFile = "wall-v2.jpg", Wall4kFile = "wall-v2-4k.jpg",
-                     LqipFile = "wall-v2-lqip.jpg", GlassFile = "wall-v2-glass.jpg";
+                     LqipFile = "wall-v2-lqip.jpg", GlassFile = "wall-v2-glass.jpg",
+                     PortraitFile = "wall-v2-sq.jpg", LqipPortraitFile = "wall-v2-sq-lqip.jpg";
         const double Dim = 0.55;
-        static string? _lqip, _glass;
-        static long _lqipVersion, _glassVersion;
+        static string? _lqip, _glass, _lqipPortrait;
+        static long _lqipVersion, _glassVersion, _lqipPortraitVersion;
         static bool _wallFailed;
         static readonly TimeSpan MaxAge = TimeSpan.FromHours(24);
 
@@ -79,7 +81,7 @@ namespace QRAuth.Services
         public static string State { get; private set; } = "pending";
 
         /// <summary>Pre-rendered wall (wall.jpg) of the current set, or null if it couldn't be
-        /// built (NetVips off/unavailable) — the page then falls back to per-poster tiles.</summary>
+        /// built (NetVips off/unavailable) — the page then keeps its plain dark background.</summary>
         public static string? WallPath(bool uhd = false)
         {
             if (Count == 0) return null;
@@ -108,12 +110,17 @@ namespace QRAuth.Services
             return cached;
         }
 
-        public static string? FilePath(int n)
+        /// <summary>Square wall for phones (≤700px wide, either orientation), or null if not built.</summary>
+        public static string? PortraitPath()
         {
-            if (n < 0 || n >= Count) return null;
-            string path = Path.Combine(Dir, n + ".jpg");
+            if (Count == 0) return null;
+            string path = Path.Combine(Dir, PortraitFile);
             return File.Exists(path) ? path : null;
         }
+
+        /// <summary>Portrait counterpart of <see cref="WallLqipBase64"/> (~1KB).</summary>
+        public static string? PortraitLqipBase64() =>
+            PortraitPath() == null ? null : Inline(LqipPortraitFile, ref _lqipPortrait, ref _lqipPortraitVersion);
 
         /// <summary>Cheap startup hook: picks up the set already on disk (meta.txt) without
         /// waiting for the first RefreshAsync (15s after load). Without it the deny.js
@@ -151,7 +158,7 @@ namespace QRAuth.Services
                 var age = DateTimeOffset.UtcNow - DateTimeOffset.FromUnixTimeSeconds(Version);
                 if (Count > 0 && age < MaxAge && File.Exists(MetaPath) && File.ReadAllText(MetaPath).EndsWith(";" + Key(source)))
                 {
-                    if (!_wallFailed && !File.Exists(Path.Combine(Dir, WallFile)))
+                    if (!_wallFailed && (!File.Exists(Path.Combine(Dir, WallFile)) || !File.Exists(Path.Combine(Dir, PortraitFile))))
                         await Task.Run(() => BuildWall(Dir, Count));
                     State = "ok";
                     return;
@@ -270,6 +277,15 @@ namespace QRAuth.Services
         // the whole frame. The CSS wall's rotateX perspective is not reproduced (flat tilt).
         const int TileW = 370, TileH = 556, Gap = 16, Across = 12, Down = 6, Radius = 20;
         const int OutW = 3840, OutH = 2160;
+        // Phone wall: a 2532x2532 square, so the same file covers the phone in both
+        // orientations without upscaling — portrait 1170x2532 and landscape 2532x1170 (iPhone-
+        // class at dpr 3) are both cover-crops of it. The page picks the wall once on open, so
+        // a phone rotated afterwards keeps it; the old 1170x2532 portrait wall had to be
+        // blown up ~2x for landscape and looked empty/washed out at the sides. 8 x 6 tiles →
+        // 3072x3416; rotated by 7° a centred 2532x2532 crop needs ≥2822x2822 of grid, so it's
+        // still fully covered. Same tile size as the 4K wall: ~3 posters across a portrait
+        // phone, like the old 4-per-row CSS tiles.
+        const int AcrossM = 8, DownM = 6, OutWM = 2532, OutHM = 2532;
         // Glass = the buttons' backdrop-filter: blur(.73em) saturate(1.6) brightness(1.3).
         // .73em of the button font is 1.41% of the viewport width at any size (Lampa's body
         // font = innerWidth/84.17, x1.25 #dpc-l, x1.3 .dpc-b), so sigma = 1.41% of width.
@@ -278,15 +294,17 @@ namespace QRAuth.Services
         static readonly double[] Bg = { 10, 10, 11 }; // #0a0a0b, the page base colour
 
         /// <summary>
-        /// Renders all posters of a set into one flat JPEG (wall.jpg) with NetVips, which
-        /// Lampac already ships for its image proxy. TVs choked on the live wall (30
-        /// requests + decodes, 72 tiles on a 3D-transformed layer); one pre-tilted
-        /// background image is a single request, a single decode and no compositing work.
-        /// Pre-dimmed ×.55 (the tile fallback gets that dim from #dpc-shade instead). Failure is non-fatal: no wall.jpg → the page uses the tiles.
+        /// Renders all posters of a set into flat JPEGs with NetVips, which Lampac already
+        /// ships for its image proxy: a landscape wall (4K + 1080p) for TVs/desktops and a
+        /// portrait one for phones. One pre-tilted background image is a single request, a
+        /// single decode and no compositing work — the old per-poster CSS wall (30 requests,
+        /// 72 tiles on a 3D-transformed layer) choked TVs. Pre-dimmed ×.55. Failure is
+        /// non-fatal: no wall files → the page keeps its plain dark background.
         /// </summary>
         static void BuildWall(string dir, int count)
         {
             string output = Path.Combine(dir, WallFile);
+            string outPortrait = Path.Combine(dir, PortraitFile);
             try
             {
                 if (CoreInit.conf.imagelibrary != "NetVips" || count == 0)
@@ -297,6 +315,9 @@ namespace QRAuth.Services
                 var rnd = new Random();
                 var shuffled = Enumerable.Range(0, count).OrderBy(_ => rnd.Next()).ToList();
                 var order = Enumerable.Range(0, Across * Down).Select(i => shuffled[i % count]).ToList();
+                // Portrait starts mid-shuffle so the phone wall doesn't open with the same
+                // posters as the top-left of the landscape one.
+                var orderM = Enumerable.Range(0, AcrossM * DownM).Select(i => shuffled[(i + count / 2) % count]).ToList();
 
                 // Rounded-corner mask (the CSS tiles have border-radius .45em ≈ 10px).
                 using var mask = (VImage.Black(TileW, TileH) + 255).Cast(VEnums.BandFormat.Uchar).Mutate(m =>
@@ -307,43 +328,62 @@ namespace QRAuth.Services
                         m.DrawCircle(new[] { 255.0 }, cx, cy, Radius, fill: true);
                 });
 
-                var tiles = new List<VImage>();
+                var cache = new Dictionary<int, VImage>();
                 try
                 {
-                    var cache = new Dictionary<int, VImage>();
-                    foreach (int n in order.Take(Across * Down))
+                    VImage Tile(int n)
                     {
-                        if (!cache.TryGetValue(n, out var tile))
+                        if (cache.TryGetValue(n, out var tile))
+                            return tile;
+
+                        var steps = new List<VImage>();
+                        try
                         {
-                            var steps = new List<VImage>();
-                            try
-                            {
-                                var img = VImage.Thumbnail(Path.Combine(dir, n + ".jpg"), TileW, height: TileH, crop: VEnums.Interesting.Centre);
-                                steps.Add(img);
-                                if (img.HasAlpha()) steps.Add(img = img.Flatten(Bg));
-                                if (img.Bands < 3) steps.Add(img = img.Colourspace(VEnums.Interpretation.Srgb));
-                                if (img.Width != TileW || img.Height != TileH) steps.Add(img = img.Embed(0, 0, TileW, TileH, background: Bg));
-                                // Rounded corners: poster where mask=255, page base colour where 0.
-                                tile = (img * mask / 255 + (255 - mask) * Bg[0] / 255).Cast(VEnums.BandFormat.Uchar);
-                            }
-                            finally
-                            {
-                                foreach (var st in steps) st.Dispose();
-                            }
-                            cache[n] = tile;
-                            tiles.Add(tile);
+                            var img = VImage.Thumbnail(Path.Combine(dir, n + ".jpg"), TileW, height: TileH, crop: VEnums.Interesting.Centre);
+                            steps.Add(img);
+                            if (img.HasAlpha()) steps.Add(img = img.Flatten(Bg));
+                            if (img.Bands < 3) steps.Add(img = img.Colourspace(VEnums.Interpretation.Srgb));
+                            if (img.Width != TileW || img.Height != TileH) steps.Add(img = img.Embed(0, 0, TileW, TileH, background: Bg));
+                            // Rounded corners: poster where mask=255, page base colour where 0.
+                            tile = (img * mask / 255 + (255 - mask) * Bg[0] / 255).Cast(VEnums.BandFormat.Uchar);
                         }
+                        finally
+                        {
+                            foreach (var st in steps) st.Dispose();
+                        }
+                        cache[n] = tile;
+                        return tile;
                     }
 
-                    using var grid = VImage.Arrayjoin(order.Take(Across * Down).Select(n => cache[n]).ToArray(), across: Across, shim: Gap, background: Bg);
-                    using var rotated = grid.Similarity(angle: -7.0, background: Bg);
-                    using var frame = rotated.Crop((rotated.Width - OutW) / 2, (rotated.Height - OutH) / 2, OutW, OutH);
+                    // bicubic: the default bilinear visibly softened the poster edges
+                    using var bicubic = NetVips.Interpolate.NewFromName("bicubic");
 
-                    // Dim baked in (×.55 — what filter:brightness(.55) / the .45 black layer did in
-                    // CSS): the page then skips that layer in wall mode, and darker pixels
-                    // compress much better — q60 dimmed is ~200KB vs ~355KB for q72 undimmed. The
-                    // shade on top hides any q60 artefacts.
-                    using var dimmed = (frame * Dim).Cast(VEnums.BandFormat.Uchar);
+                    // Tilted grid, centre-cropped and dimmed. Dim baked in (×.55 — what the .45
+                    // black layer did in CSS): darker pixels compress much better. q60 with
+                    // 4:2:0 chroma showed blocking/banding in the dark areas on TVs, hence
+                    // higher q and no chroma subsampling in Save().
+                    VImage Render(List<int> cells, int across, int outW, int outH)
+                    {
+                        using var grid = VImage.Arrayjoin(cells.Select(Tile).ToArray(), across: across, shim: Gap, background: Bg);
+                        using var rotated = grid.Similarity(angle: -7.0, interpolate: bicubic, background: Bg);
+                        using var frame = rotated.Crop((rotated.Width - outW) / 2, (rotated.Height - outH) / 2, outW, outH);
+                        return (frame * Dim).Cast(VEnums.BandFormat.Uchar);
+                    }
+
+                    void Save(VImage img, string path, int q)
+                    {
+                        img.Jpegsave(path + ".tmp", q: q, optimizeCoding: true, interlace: true, subsampleMode: VEnums.ForeignSubsample.Off, keep: VEnums.ForeignKeep.None);
+                        File.Move(path + ".tmp", path, true);
+                    }
+
+                    using (var portrait = Render(orderM, AcrossM, OutWM, OutHM))
+                    {
+                        using var lqipM = portrait.ThumbnailImage(48, height: 48);
+                        lqipM.Jpegsave(Path.Combine(dir, LqipPortraitFile), q: 50, keep: VEnums.ForeignKeep.None);
+                        Save(portrait, outPortrait, 82);
+                    }
+
+                    using var dimmed = Render(order, Across, OutW, OutH);
                     using var hd = dimmed.Resize(0.5);
                     using var lqip = hd.ThumbnailImage(64, height: 36);
                     lqip.Jpegsave(Path.Combine(dir, LqipFile), q: 50, keep: VEnums.ForeignKeep.None);
@@ -364,20 +404,17 @@ namespace QRAuth.Services
                     glass.Jpegsave(Path.Combine(dir, GlassFile), q: 75, keep: VEnums.ForeignKeep.None);
 
                     string out4k = Path.Combine(dir, Wall4kFile);
-                    dimmed.Jpegsave(out4k + ".tmp", q: 60, optimizeCoding: true, interlace: true, keep: VEnums.ForeignKeep.None);
-                    File.Move(out4k + ".tmp", out4k, true);
+                    Save(dimmed, out4k, 78);
 
                     // 1080p last: its existence is what WallPath() checks, so the page never
                     // sees a half-built set.
-                    string tmpOut = output + ".tmp";
-                    hd.Jpegsave(tmpOut, q: 60, optimizeCoding: true, interlace: true, keep: VEnums.ForeignKeep.None);
-                    File.Move(tmpOut, output, true);
+                    Save(hd, output, 85);
                     _wallFailed = false;
-                    FileLog.Write($"[PosterWall] стена собрана: 1080p {new FileInfo(output).Length / 1024} KB, 4K {new FileInfo(out4k).Length / 1024} KB");
+                    FileLog.Write($"[PosterWall] стена собрана: 1080p {new FileInfo(output).Length / 1024} KB, 4K {new FileInfo(out4k).Length / 1024} KB, телефон {new FileInfo(outPortrait).Length / 1024} KB");
                 }
                 finally
                 {
-                    foreach (var t in tiles) t.Dispose();
+                    foreach (var t in cache.Values) t.Dispose();
                 }
             }
             catch (Exception ex)
@@ -385,8 +422,9 @@ namespace QRAuth.Services
                 // DllNotFoundException / TypeInitializationException when libvips' native
                 // part is missing for this platform, or a broken poster file.
                 _wallFailed = true;
-                FileLog.Write("[PosterWall] wall.jpg не собран, страница покажет плитки", ex);
+                FileLog.Write("[PosterWall] стена не собрана, страница останется без фона", ex);
                 try { if (File.Exists(output)) File.Delete(output); } catch { }
+                try { if (File.Exists(outPortrait)) File.Delete(outPortrait); } catch { }
             }
         }
 

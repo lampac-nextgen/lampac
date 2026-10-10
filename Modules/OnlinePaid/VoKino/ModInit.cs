@@ -40,7 +40,7 @@ public class ModInit : IModuleLoaded, IModuleOnlineAsync
                 return i;
             });
 
-            if (myinit.enable && !string.IsNullOrEmpty(myinit.token))
+            if (myinit.enable && myinit.HasToken())
             {
                 void SendOnline(JObject view)
                 {
@@ -63,14 +63,26 @@ public class ModInit : IModuleLoaded, IModuleOnlineAsync
                     if (on.vokino && (view == null || view.ContainsKey("Vokino")))
                         send("VoKino");
 
+                    if (on.videobase && (view == null || view.ContainsKey("VideoBase") || view.ContainsKey("Videobase")))
+                        send("VideoBase");
+
                     if (on.filmix && (view == null || view.ContainsKey("Filmix")))
                         send("Filmix");
+
+                    if (on.zetflix && (view == null || view.ContainsKey("Zetflix")))
+                        send("Zetflix");
+
+                    if (on.mango && (view == null || view.ContainsKey("Mango")))
+                        send("Mango");
 
                     if (on.alloha && (view == null || view.ContainsKey("Alloha")))
                         send("Alloha");
 
                     if (on.vibix && (view == null || view.ContainsKey("Vibix")))
                         send("Vibix");
+
+                    if (on.coconut && (view == null || view.ContainsKey("Coconut")))
+                        send("Coconut");
 
                     if (on.monframe && (view == null || view.ContainsKey("MonFrame")))
                         send("MonFrame");
@@ -85,24 +97,10 @@ public class ModInit : IModuleLoaded, IModuleOnlineAsync
                         send("HDVB");
                 }
 
-                async ValueTask vkino()
+                ValueTask vkino()
                 {
-                    if (myinit.rhub || !CoreInit.conf.online.checkOnlineSearch)
-                    {
-                        SendOnline(null);
-                    }
-                    else
-                    {
-                        if (!memoryCache.TryGetValue($"vokino:view:{vid}", out JObject view))
-                        {
-                            view = await Http.Get<JObject>($"{myinit.host}/v2/view/{vid}?token={myinit.token}", timeoutSeconds: 4);
-                            if (view != null)
-                                memoryCache.Set($"vokino:view:{vid}", view, TimeSpan.FromMinutes(180));
-                        }
-
-                        if (view != null && view.ContainsKey("online") && view["online"] is JObject onlineObj)
-                            SendOnline(onlineObj);
-                    }
+                    SendOnline(null);
+                    return ValueTask.CompletedTask;
                 }
 
                 if (CoreInit.conf.accsdb.enable)
@@ -141,10 +139,6 @@ public class ModInit : IModuleLoaded, IModuleOnlineAsync
 
     void updateConf()
     {
-        /// <summary>
-        /// api.vokino.org
-        /// api.vokino.pro
-        /// </summary>
         conf = ModuleInvoke.Init("VoKino", new ModuleConf("VoKino", "http://api.vokino.org")
         {
             displayindex = 300,
@@ -159,6 +153,7 @@ public class ModInit : IModuleLoaded, IModuleOnlineAsync
         switch (e.balanser)
         {
             case "vokino":
+            case "vokino-videobase":
             case "vokino-alloha":
             case "vokino-filmix":
                 return " ~ 2160p";
@@ -166,8 +161,12 @@ public class ModInit : IModuleLoaded, IModuleOnlineAsync
             case "vokino-monframe":
             case "vokino-remux":
             case "vokino-ashdi":
+            case "vokino-zetflix":
             case "vokino-hdvb":
+            case "vokino-coconut":
                 return " ~ 1080p";
+            case "vokino-mango":
+                return " ~ 720p";
         }
 
         return null;

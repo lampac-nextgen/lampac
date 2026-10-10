@@ -126,7 +126,7 @@
             setTimeout(() => {
                 Lampa.Player.close();
 
-                Lampa.Loading.start(function () { }, 'Получение списка аудио дорожек...');
+                Lampa.Loading.start(function () { }, 'Получение списка аудиодорожек...');
 
                 var src = e.data.url.replace(/&(preload|stat|m3u)/g, '&play');
 

@@ -12,6 +12,10 @@ public class SearchModel
 
 public class PlaylistItem
 {
+    public string id { get; set; }
+
+    public string data { get; set; }
+
     public string title { get; set; }
 
     public string file { get; set; }

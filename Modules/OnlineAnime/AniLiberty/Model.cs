@@ -40,5 +40,7 @@ public class Release
 {
     public string alias { get; set; }
 
+    public Name name { get; set; }
+
     public Episode[] episodes { get; set; }
 }
