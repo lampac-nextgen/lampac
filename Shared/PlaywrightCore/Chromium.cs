@@ -193,16 +193,11 @@ public class Chromium : PlaywrightBase, IDisposable
                 var kpc = await browser.NewContextAsync(baseContextOptions);
                 await kpc.NewPageAsync();
 
-                try
-                {
-                    _ = keepopen_context.CloseAsync().ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    Log.Error(ex, "CatchId={CatchId}", "id_0fjttjws");
-                }
-
+                var old = keepopen_context;
                 keepopen_context = kpc;
+                _ = Task.Delay(TimeSpan.FromSeconds(20))
+                    .ContinueWith(t => old?.CloseAsync())
+                    .ConfigureAwait(false);
             }
 
             if (pages_keepopen.Count > 0 && pages_keepopen.Count > init.context.min)
