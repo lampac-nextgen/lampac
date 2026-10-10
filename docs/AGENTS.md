@@ -1,5 +1,7 @@
 # Documentation project instructions
 
+Repo-wide agent routing is the root [AGENTS.md](../AGENTS.md). Role cards and theses live in `.agents/`. This file applies only while editing the Mintlify site in `docs/` and does not route agents.
+
 ## About this project
 
 - This is the Russian documentation site for [Lampac NextGen](https://github.com/lampac-nextgen/lampac).

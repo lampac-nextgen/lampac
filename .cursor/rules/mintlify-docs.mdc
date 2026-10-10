@@ -11,7 +11,7 @@ alwaysApply: false
 - Every MDX page must have `title`, `sidebarTitle`, `description`, and useful `keywords`.
 - Use root-relative internal links without the `/docs/` prefix and without `.mdx`.
 - Keep `docs.json`, `.mintignore`, and `AGENTS.md` in `docs/`. Add every new page to `docs.json`; preserve existing slugs or add a redirect from `/docs/...`.
-- Load Mintlify skills from `.agents/skills/` (`mintlify`, `mintlify-docs`, `mintlify-api`) and MCP servers from `.cursor/mcp.json`.
+- Load Mintlify skills from `.agents/skills/`: `mintlify`, and `mintlify-api` for API pages. `mintlify-docs` is a byte-identical copy kept for `skills-lock.json`; do not follow it separately. MCP servers are in `.cursor/mcp.json`.
 - Use Mintlify components only when they improve scanning: `Steps` for procedures, `Tabs`/`CodeGroup` for alternatives, callouts for risk, and `ParamField`/`ResponseField` for API contracts.
 - Give every code fence a language and keep examples runnable against port `9118`.
 - Never publish real tokens, passwords, provider credentials, private hosts, or user data.

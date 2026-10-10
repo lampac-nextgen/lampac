@@ -94,9 +94,9 @@ lampac/
 │   └── WebLog/                 # Отладочный лог HTTP/Playwright
 ├── TestModules/                # Примеры модулей → mods/ при publish
 ├── config/
-│   ├── base.conf               # Дефолтные значения
-│   ├── example.init.conf       # Пример конфига (JSON)
-│   └── example.init.yaml       # Пример конфига (YAML)
+│   ├── base.conf               # Поставляемые переопределения поверх CoreInit
+│   ├── example.init.conf       # Шаблон, не рабочий конфиг (JSON)
+│   └── example.init.yaml       # Шаблон, не рабочий конфиг (YAML)
 ├── docker-compose.yaml         # Production (порт 9118)
 ├── docker-compose.dev.yaml     # Dev (порт 29118)
 ├── charts/lampac/              # Helm-чарт для Kubernetes
@@ -111,6 +111,19 @@ lampac/
 <Note>
   Решение содержит более 128 проектов, включая отдельный проект на каждого провайдера контента в группах `OnlineRUS`, `OnlinePaid`, `OnlineAnime`, `OnlineENG`, `OnlineUKR` и `OnlineGEO`.
 </Note>
+
+## Слои конфигурации
+
+Значение берётся из первого подходящего слоя. Не подставляйте дефолт из шаблона.
+
+1. `Shared/CoreInit.cs` — значение, если ключа нет.
+2. `config/base.conf` — переопределение, которое поставляется с деревом.
+3. `init.conf` или `init.yaml` в рабочей директории процесса.
+4. `enable` в `manifest.json` модуля — компилировать и загружать модуль или нет.
+
+`config/example.init.conf` и `config/example.init.yaml` — только шаблоны.
+
+Маршрутизация агентов описана в корневом `AGENTS.md` и в `.agents/references/theses.md`. Эта страница описывает продукт.
 
 ## Дополнительные разделы
 
