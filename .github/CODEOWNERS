@@ -34,7 +34,7 @@
 /Modules/Proxy/ @lampac-nextgen/lampac
 /Modules/Music/ @lampac-nextgen/lampac
 /Modules/Community/ @lampac-nextgen/lampac
-/Modules/Tg-notify.bot/ @lampac-nextgen/lampac
+/Modules/SeriesNotify/ @lampac-nextgen/lampac
 /Modules/OnlineRUS/ @lampac-nextgen/lampac
 /Modules/OnlineENG/ @lampac-nextgen/lampac
 /Modules/OnlinePaid/ @lampac-nextgen/lampac

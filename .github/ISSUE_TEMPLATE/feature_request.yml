@@ -53,7 +53,7 @@ body:
         - module:Proxy
         - module:Sync
         - module:Telemetry
-        - module:Tg-notify.bot
+        - module:SeriesNotify
         - module:TorrServer
         - module:Tracks
         - module:Transcoding

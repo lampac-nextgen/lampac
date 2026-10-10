@@ -17,7 +17,7 @@ namespace Core.Controllers;
 public class ApiController : BaseController
 {
     #region Version / Headers / geo / myip
-    const string versionName = "Lord of Rings";
+    const string versionName = "LOTR: The Fellowship of the Ring";
     static readonly string versionHash = CrypTo.md5File("Shared.dll");
     static readonly string buildInfo = System.Text.Json.JsonSerializer.Serialize(GetBuildInfo());
 
@@ -68,7 +68,7 @@ public class ApiController : BaseController
             if (type == "build")
                 return Content(buildInfo, "application/json; charset=utf-8");
 
-            return Redirect("https://youtu.be/7lwJOxN_gXc");
+            return Redirect("https://youtu.be/N4xV2RIlMi4?si=ldpuG-KlRPfZKz_m");
         }
 
         return StatusCode(404);

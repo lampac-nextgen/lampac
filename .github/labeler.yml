@@ -175,10 +175,10 @@
       - any-glob-to-any-file:
           - "Modules/Telemetry/**"
 
-"module:Tg-notify.bot":
+"module:SeriesNotify":
   - changed-files:
       - any-glob-to-any-file:
-          - "Modules/Tg-notify.bot/**"
+          - "Modules/SeriesNotify/**"
 
 "module:TorrServer":
   - changed-files:

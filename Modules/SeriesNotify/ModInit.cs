@@ -14,18 +14,18 @@ using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Interfaces;
 using Shared.Services;
-using TelegramBot.Models;
+using SeriesNotify.Models;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
 using Telegram.Bot.Types.ReplyMarkups;
 
-namespace TelegramBot
+namespace SeriesNotify
 {
     public class ModInit : IModuleLoaded
     {
         #region Static data
-        public static TelegramBotConf Config { get; private set; } = new();
+        public static SeriesNotifyConf Config { get; private set; } = new();
         public static ConcurrentDictionary<long, TgUser> Users { get; private set; } = new();
         public static ConcurrentDictionary<string, List<Subscription>> Subs { get; private set; } = new();
         public static TelegramBotClient Bot { get; private set; }
@@ -120,13 +120,13 @@ namespace TelegramBot
 
             if (!Config.enable)
             {
-                Console.WriteLine("\n\t[TelegramBot] Модуль отключён (TelegramBot.enable=false в init.conf)\n");
+                Console.WriteLine("\n\t[SeriesNotify] Модуль отключён (SeriesNotify.enable=false в init.conf)\n");
                 return;
             }
 
             if (string.IsNullOrWhiteSpace(Config.bot_token) || Config.bot_token == "YOUR_BOT_TOKEN")
             {
-                Console.WriteLine("\n\t[TelegramBot] Установите bot_token в секции \"TelegramBot\" файла init.conf\n");
+                Console.WriteLine("\n\t[SeriesNotify] Установите bot_token в секции \"SeriesNotify\" файла init.conf\n");
                 return;
             }
 
@@ -140,7 +140,7 @@ namespace TelegramBot
                     Bot = new TelegramBotClient(Config.bot_token, cancellationToken: cts.Token);
                     var me = await Bot.GetMe();
                     IsRunning = true;
-                    Console.WriteLine($"\n\t[TelegramBot] @{me.Username} запущен!\n");
+                    Console.WriteLine($"\n\t[SeriesNotify] @{me.Username} запущен!\n");
 
                     // Устанавливаем команды в меню бота
                     try
@@ -152,48 +152,50 @@ namespace TelegramBot
                             new BotCommand { Command = "help", Description = "📖 Помощь" },
                             new BotCommand { Command = "unlink", Description = "🔓 Отвязать аккаунт" }
                         });
-                        Console.WriteLine("[TelegramBot] Bot commands set");
+                        Console.WriteLine("[SeriesNotify] Bot commands set");
                     }
-                    catch (Exception ex) { Console.WriteLine($"[TelegramBot] SetMyCommands error: {ex.Message}"); }
+                    catch (Exception ex) { Console.WriteLine($"[SeriesNotify] SetMyCommands error: {ex.Message}"); }
 
                     checkTimer = new Timer(async _ =>
                     {
                         try { await CheckAll(); }
-                        catch (Exception ex) { Console.WriteLine($"[TelegramBot] Timer error: {ex.Message}"); }
+                        catch (Exception ex) { Console.WriteLine($"[SeriesNotify] Timer error: {ex.Message}"); }
                     }, null, TimeSpan.FromMinutes(2), TimeSpan.FromMinutes(Config.check_interval_minutes));
 
-                    Console.WriteLine("[TelegramBot] Starting polling loop...");
+                    Console.WriteLine("[SeriesNotify] Starting polling loop...");
                     await HandleUpdates(cts.Token);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[TelegramBot] Fatal: {ex}\n");
+                    Console.WriteLine($"[SeriesNotify] Fatal: {ex}\n");
                     IsRunning = false;
                 }
             });
         }
 
+        static SeriesNotifyConf DefaultConf() => new()
+        {
+            enable = true,
+            bot_token = "YOUR_BOT_TOKEN",
+            tmdb_api_key = "",
+            trakt_client_id = "",
+            lampac_host = "http://127.0.0.1:9118",
+            lampac_token = "",
+            check_interval_minutes = 60,
+            tmdb_lang = "ru-RU",
+            data_dir = "database/tgnotify"
+        };
+
         void UpdateConfFromInit()
         {
-            Config = ModuleInvoke.Init("TelegramBot", new TelegramBotConf
-            {
-                enable = true,
-                bot_token = "YOUR_BOT_TOKEN",
-                tmdb_api_key = "",
-                trakt_client_id = "",
-                lampac_host = "http://127.0.0.1:9118",
-                lampac_token = "",
-                check_interval_minutes = 60,
-                tmdb_lang = "ru-RU",
-                data_dir = "database/tgnotify"
-            });
+            Config = ModuleInvoke.Init("SeriesNotify", DefaultConf());
         }
 
         #region Telegram polling
         static async Task HandleUpdates(CancellationToken ct)
         {
             int offset = 0;
-            Console.WriteLine("[TelegramBot] HandleUpdates started");
+            Console.WriteLine("[SeriesNotify] HandleUpdates started");
             while (!ct.IsCancellationRequested)
             {
                 try
@@ -206,19 +208,19 @@ namespace TelegramBot
                         {
                             if (update.Message?.Text != null)
                             {
-                                Console.WriteLine($"[TelegramBot] Msg: {update.Message.Text}");
+                                Console.WriteLine($"[SeriesNotify] Msg: {update.Message.Text}");
                                 await HandleMessage(update.Message);
                             }
                             else if (update.CallbackQuery != null)
                                 await HandleCallback(update.CallbackQuery);
                         }
-                        catch (Exception ex) { Console.WriteLine($"[TelegramBot] Handle error: {ex}"); }
+                        catch (Exception ex) { Console.WriteLine($"[SeriesNotify] Handle error: {ex}"); }
                     }
                 }
                 catch (TaskCanceledException) { break; }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[TelegramBot] Poll error: {ex.Message}");
+                    Console.WriteLine($"[SeriesNotify] Poll error: {ex.Message}");
                     await Task.Delay(5000, ct);
                 }
             }
@@ -251,7 +253,7 @@ namespace TelegramBot
             else if (text == "/list" || text == "📋 Подписки") await ShowSubscriptions(chatId);
             else if (text == "/check" || text == "🔍 Проверить")
             {
-                Console.WriteLine($"[TelegramBot] /check from {chatId}");
+                Console.WriteLine($"[SeriesNotify] /check from {chatId}");
                 // Запускаем в фоне чтобы не блокировать polling
                 _ = Task.Run(async () =>
                 {
@@ -260,7 +262,7 @@ namespace TelegramBot
                         await Bot.SendMessage(chatId, "🔍 Проверяю...");
                         await CheckAll(chatId);
                     }
-                    catch (Exception ex) { Console.WriteLine($"[TelegramBot] /check error: {ex}"); }
+                    catch (Exception ex) { Console.WriteLine($"[SeriesNotify] /check error: {ex}"); }
                 });
             }
             else if (text == "/help" || text == "📖 Помощь")
@@ -331,7 +333,7 @@ namespace TelegramBot
         #region Проверка — главная
         public static async Task CheckAll(long? onlyChatId = null)
         {
-            Console.WriteLine($"[TelegramBot] CheckAll started, onlyChatId={onlyChatId}");
+            Console.WriteLine($"[SeriesNotify] CheckAll started, onlyChatId={onlyChatId}");
             var allSubs = Subs.SelectMany(kvp => kvp.Value).ToList();
             if (onlyChatId.HasValue) allSubs = allSubs.Where(s => s.chat_id == onlyChatId.Value).ToList();
 
@@ -362,7 +364,7 @@ namespace TelegramBot
                     // Если сезон сменился — обнуляем счётчик озвучек
                     if (sub.last_season > prevSeason && sub.last_voice_episode > 0)
                     {
-                        Console.WriteLine($"[TelegramBot] Season changed {prevSeason}→{sub.last_season} for {sub.title}, resetting voice episode {sub.last_voice_episode}→0");
+                        Console.WriteLine($"[SeriesNotify] Season changed {prevSeason}→{sub.last_season} for {sub.title}, resetting voice episode {sub.last_voice_episode}→0");
                         sub.last_voice_episode = 0;
                     }
 
@@ -408,21 +410,21 @@ namespace TelegramBot
                                         await Bot.SendMessage(sub.chat_id, msg, parseMode: ParseMode.Markdown);
                                     notified++;
                                 }
-                                catch (Exception ex) { Console.WriteLine($"[TelegramBot] Send voice error: {ex.Message}"); }
+                                catch (Exception ex) { Console.WriteLine($"[SeriesNotify] Send voice error: {ex.Message}"); }
                             }
 
                             sub.last_voice_episode = voiceEps;
-                            Console.WriteLine($"[TelegramBot] Voice update: {sub.title} {sub.voice} now E{voiceEps}");
+                            Console.WriteLine($"[SeriesNotify] Voice update: {sub.title} {sub.voice} now E{voiceEps}");
                         }
                     }
 
                     await Task.Delay(500);
                 }
-                catch (Exception ex) { Console.WriteLine($"[TelegramBot] Check error {sub.tmdb_id}: {ex.Message}"); }
+                catch (Exception ex) { Console.WriteLine($"[SeriesNotify] Check error {sub.tmdb_id}: {ex.Message}"); }
             }
 
             SaveSubscriptions();
-            Console.WriteLine($"[TelegramBot] CheckAll done, notified={notified}");
+            Console.WriteLine($"[SeriesNotify] CheckAll done, notified={notified}");
 
             if (onlyChatId.HasValue && Bot != null)
                 await Bot.SendMessage(onlyChatId.Value, notified > 0 ? $"✅ Уведомлений: {notified}" : "Новых серий/озвучек не найдено.");
@@ -448,7 +450,7 @@ namespace TelegramBot
                 else
                     await Bot.SendMessage(sub.chat_id, message, parseMode: ParseMode.Markdown);
             }
-            catch (Exception ex) { Console.WriteLine($"[TelegramBot] Send error: {ex.Message}"); }
+            catch (Exception ex) { Console.WriteLine($"[SeriesNotify] Send error: {ex.Message}"); }
         }
         #endregion
 
@@ -476,12 +478,12 @@ namespace TelegramBot
                         return episodes; // Trakt нашёл шоу — верим только ему, даже если 0 новых серий
 
                     // Trakt не нашёл шоу — fallback на TMDB
-                    Console.WriteLine($"[TelegramBot] Trakt: show {sub.tmdb_id} not found, using TMDB");
+                    Console.WriteLine($"[SeriesNotify] Trakt: show {sub.tmdb_id} not found, using TMDB");
                     return await CheckViaTmdb(sub);
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"[TelegramBot] Trakt error for {sub.tmdb_id}: {ex.Message}, using TMDB");
+                    Console.WriteLine($"[SeriesNotify] Trakt error for {sub.tmdb_id}: {ex.Message}, using TMDB");
                     try { return await CheckViaTmdb(sub); } catch { }
                     return new List<EpisodeInfo>();
                 }
@@ -500,18 +502,18 @@ namespace TelegramBot
             searchReq.Headers.Add("trakt-api-version", "2");
             var searchResp = await http.SendAsync(searchReq);
 
-            Console.WriteLine($"[TelegramBot] Trakt search tmdb/{sub.tmdb_id}: status={searchResp.StatusCode}");
+            Console.WriteLine($"[SeriesNotify] Trakt search tmdb/{sub.tmdb_id}: status={searchResp.StatusCode}");
 
             if (!searchResp.IsSuccessStatusCode)
             {
-                Console.WriteLine($"[TelegramBot] Trakt search failed: {await searchResp.Content.ReadAsStringAsync()}");
+                Console.WriteLine($"[SeriesNotify] Trakt search failed: {await searchResp.Content.ReadAsStringAsync()}");
                 return (false, result);
             }
 
             var searchBody = await searchResp.Content.ReadAsStringAsync();
             var searchData = JArray.Parse(searchBody);
 
-            Console.WriteLine($"[TelegramBot] Trakt search results: {searchData.Count} items");
+            Console.WriteLine($"[SeriesNotify] Trakt search results: {searchData.Count} items");
 
             if (searchData.Count == 0) return (false, result);
 
@@ -520,7 +522,7 @@ namespace TelegramBot
             var traktId = searchData[0]?["show"]?["ids"]?.Value<string>("trakt");
             var showId = traktSlug ?? traktId;
 
-            Console.WriteLine($"[TelegramBot] Trakt found: {showName}, slug={traktSlug}, id={traktId}, using={showId}");
+            Console.WriteLine($"[SeriesNotify] Trakt found: {showName}, slug={traktSlug}, id={traktId}, using={showId}");
 
             if (string.IsNullOrEmpty(showId)) return (false, result);
 
@@ -657,7 +659,7 @@ namespace TelegramBot
                 var token = !string.IsNullOrEmpty(Config.lampac_token) ? $"&token={Config.lampac_token}" : "";
                 var url = $"{Config.lampac_host}/lite/mirage?rjson=true&s={sub.last_season}&t={sub.mirage_voice_id}&orid={sub.mirage_orid}{token}";
 
-                Console.WriteLine($"[TelegramBot] Mirage check: {sub.title} voice={sub.voice} s={sub.last_season} t={sub.mirage_voice_id}");
+                Console.WriteLine($"[SeriesNotify] Mirage check: {sub.title} voice={sub.voice} s={sub.last_season} t={sub.mirage_voice_id}");
 
                 var body = await httpFast.GetStringAsync(url);
                 if (string.IsNullOrEmpty(body) || body == "null") return sub.last_voice_episode;
@@ -682,12 +684,12 @@ namespace TelegramBot
                         if (int.TryParse(m.Groups[1].Value, out var ep) && ep > maxEp) maxEp = ep;
                 }
 
-                Console.WriteLine($"[TelegramBot] Mirage result: {sub.title} voice={sub.voice} episodes={maxEp} (was {sub.last_voice_episode})");
+                Console.WriteLine($"[SeriesNotify] Mirage result: {sub.title} voice={sub.voice} episodes={maxEp} (was {sub.last_voice_episode})");
                 return maxEp;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[TelegramBot] Mirage error: {ex.Message}");
+                Console.WriteLine($"[SeriesNotify] Mirage error: {ex.Message}");
                 return sub.last_voice_episode;
             }
         }
@@ -735,7 +737,7 @@ namespace TelegramBot
                             result.Add(new VoiceInfo { id = tid, name = m.Groups[2].Value.Trim(), source = "mirage" });
                 }
             }
-            catch (Exception ex) { Console.WriteLine($"[TelegramBot] GetMirageVoices error: {ex.Message}"); }
+            catch (Exception ex) { Console.WriteLine($"[SeriesNotify] GetMirageVoices error: {ex.Message}"); }
 
             if (result.Count > 0) SetCache(cacheKey, result);
             return result;
@@ -781,7 +783,7 @@ namespace TelegramBot
                     simple = Regex.Replace(simple, @"\s+", " ").Trim();
                     if (simple.Length >= 3 && !simple.Equals(title, StringComparison.OrdinalIgnoreCase))
                     {
-                        Console.WriteLine($"[TelegramBot] Mirage fallback simplified: '{title}' -> '{simple}'");
+                        Console.WriteLine($"[SeriesNotify] Mirage fallback simplified: '{title}' -> '{simple}'");
                         url = $"{Config.lampac_host}/lite/mirage-search?rjson=true&title={Uri.EscapeDataString(simple)}&year={year}{token}";
                         body = await TryGet(url);
                     }
@@ -840,9 +842,9 @@ namespace TelegramBot
                     }).ToList();
                 }
 
-                Console.WriteLine($"[TelegramBot] SearchMirage: '{title}' year={year} -> {result.Count} results, best: {result.FirstOrDefault()?.title} ({result.FirstOrDefault()?.year})");
+                Console.WriteLine($"[SeriesNotify] SearchMirage: '{title}' year={year} -> {result.Count} results, best: {result.FirstOrDefault()?.title} ({result.FirstOrDefault()?.year})");
             }
-            catch (Exception ex) { Console.WriteLine($"[TelegramBot] SearchMirage error: {ex.Message}"); }
+            catch (Exception ex) { Console.WriteLine($"[SeriesNotify] SearchMirage error: {ex.Message}"); }
 
             if (result.Count > 0) SetCache(cacheKey, result);
             return result;
@@ -889,11 +891,11 @@ namespace TelegramBot
                     if (score > bestScore) { bestScore = score; bestOrid = oridMatch.Groups[1].Value; }
                 }
 
-                Console.WriteLine($"[TelegramBot] SearchCollaps: '{title}' year={year} -> orid={bestOrid}");
+                Console.WriteLine($"[SeriesNotify] SearchCollaps: '{title}' year={year} -> orid={bestOrid}");
                 if (!string.IsNullOrEmpty(bestOrid)) SetCache(cacheKey, bestOrid);
                 return bestOrid;
             }
-            catch (Exception ex) { Console.WriteLine($"[TelegramBot] SearchCollaps error: {ex.Message}"); return null; }
+            catch (Exception ex) { Console.WriteLine($"[SeriesNotify] SearchCollaps error: {ex.Message}"); return null; }
         }
 
         public static async Task<List<VoiceInfo>> GetCollapsVoices(string collapsOrid, int season)
@@ -929,7 +931,7 @@ namespace TelegramBot
                     }
                 }
             }
-            catch (Exception ex) { Console.WriteLine($"[TelegramBot] GetCollapsVoices error: {ex.Message}"); }
+            catch (Exception ex) { Console.WriteLine($"[SeriesNotify] GetCollapsVoices error: {ex.Message}"); }
 
             if (result.Count > 0) SetCache(cacheKey, result);
             return result;
@@ -947,7 +949,7 @@ namespace TelegramBot
                 if (!string.IsNullOrEmpty(orid))
                 {
                     sub.collaps_orid = orid;
-                    Console.WriteLine($"[TelegramBot] Collaps auto-found orid={orid} for {sub.title}");
+                    Console.WriteLine($"[SeriesNotify] Collaps auto-found orid={orid} for {sub.title}");
                 }
                 else return sub.last_voice_episode;
             }
@@ -957,7 +959,7 @@ namespace TelegramBot
                 var token = !string.IsNullOrEmpty(Config.lampac_token) ? $"&token={Config.lampac_token}" : "";
                 var url = $"{Config.lampac_host}/lite/collaps?rjson=true&orid={orid}&s={sub.last_season}{token}";
 
-                Console.WriteLine($"[TelegramBot] Collaps check: {sub.title} voice={sub.voice} s={sub.last_season}");
+                Console.WriteLine($"[SeriesNotify] Collaps check: {sub.title} voice={sub.voice} s={sub.last_season}");
 
                 var body = await httpFast.GetStringAsync(url);
                 if (string.IsNullOrEmpty(body) || body == "null") return sub.last_voice_episode;
@@ -975,12 +977,12 @@ namespace TelegramBot
                         maxEp = epNum;
                 }
 
-                Console.WriteLine($"[TelegramBot] Collaps result: {sub.title} voice={sub.voice} episodes={maxEp} (was {sub.last_voice_episode})");
+                Console.WriteLine($"[SeriesNotify] Collaps result: {sub.title} voice={sub.voice} episodes={maxEp} (was {sub.last_voice_episode})");
                 return maxEp;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[TelegramBot] Collaps check error: {ex.Message}");
+                Console.WriteLine($"[SeriesNotify] Collaps check error: {ex.Message}");
                 return sub.last_voice_episode;
             }
         }
@@ -1012,12 +1014,12 @@ namespace TelegramBot
                         if (int.TryParse(kpStr, out var kp) && kp > 0)
                         {
                             sub.kp_id = kp;
-                            Console.WriteLine($"[TelegramBot] KP resolved via externalids: {sub.title} -> kp={kp}");
+                            Console.WriteLine($"[SeriesNotify] KP resolved via externalids: {sub.title} -> kp={kp}");
                             return kp;
                         }
                     }
                 }
-                catch (Exception ex) { Console.WriteLine($"[TelegramBot] externalids error: {ex.Message}"); }
+                catch (Exception ex) { Console.WriteLine($"[SeriesNotify] externalids error: {ex.Message}"); }
             }
 
             // 2) Поиск по названию через kinopoiskapiunofficial.tech (нужен ключ kp_api_key)
@@ -1033,19 +1035,19 @@ namespace TelegramBot
                     var firstAir = show.Value<string>("first_air_date") ?? "";
                     if (firstAir.Length >= 4) int.TryParse(firstAir.Substring(0, 4), out year);
                 }
-                catch (Exception ex) { Console.WriteLine($"[TelegramBot] GetKpId TMDB info error: {ex.Message}"); }
+                catch (Exception ex) { Console.WriteLine($"[SeriesNotify] GetKpId TMDB info error: {ex.Message}"); }
 
                 var kp = await SearchKpByTitle(sub.title, year, originalTitle);
                 if (kp > 0)
                 {
                     sub.kp_id = kp;
-                    Console.WriteLine($"[TelegramBot] KP resolved via search: {sub.title} -> kp={kp}");
+                    Console.WriteLine($"[SeriesNotify] KP resolved via search: {sub.title} -> kp={kp}");
                     return kp;
                 }
             }
 
             sub.kp_id = -1; // пометка «не нашли», чтобы не пытаться каждый раз
-            Console.WriteLine($"[TelegramBot] KP NOT resolved: {sub.title} (tmdb={sub.tmdb_id})");
+            Console.WriteLine($"[SeriesNotify] KP NOT resolved: {sub.title} (tmdb={sub.tmdb_id})");
             return 0;
         }
 
@@ -1124,13 +1126,13 @@ namespace TelegramBot
                            : exactSeries != 0 ? exactSeries
                            : exactAny; // 0, если имя нигде не совпало → VideoHub пропустится
 
-                Console.WriteLine($"[TelegramBot] SearchKpByTitle: '{title}' (orig='{originalTitle}') year={year} -> kp={result}");
+                Console.WriteLine($"[SeriesNotify] SearchKpByTitle: '{title}' (orig='{originalTitle}') year={year} -> kp={result}");
                 SetCache(cacheKey, result.ToString());
                 return result;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[TelegramBot] SearchKpByTitle error: {ex.Message}");
+                Console.WriteLine($"[SeriesNotify] SearchKpByTitle error: {ex.Message}");
                 return 0;
             }
         }
@@ -1164,7 +1166,7 @@ namespace TelegramBot
 
                 SetCache(cacheKey, result);
             }
-            catch (Exception ex) { Console.WriteLine($"[TelegramBot] GetVideoHubVoices error: {ex.Message}"); }
+            catch (Exception ex) { Console.WriteLine($"[SeriesNotify] GetVideoHubVoices error: {ex.Message}"); }
 
             return result;
         }
@@ -1184,7 +1186,7 @@ namespace TelegramBot
                 var tParam = !string.IsNullOrEmpty(sub.voice) ? $"&t={Uri.EscapeDataString(sub.voice)}" : "";
                 var url = $"{Config.lampac_host}/lite/cdnvideohub?rjson=true&kinopoisk_id={kpId}&s={sub.last_season}{tParam}{token}";
 
-                Console.WriteLine($"[TelegramBot] VideoHub check: {sub.title} voice={sub.voice} kp={kpId} s={sub.last_season}");
+                Console.WriteLine($"[SeriesNotify] VideoHub check: {sub.title} voice={sub.voice} kp={kpId} s={sub.last_season}");
 
                 var body = await httpFast.GetStringAsync(url);
                 if (string.IsNullOrEmpty(body) || body == "null") return sub.last_voice_episode;
@@ -1200,12 +1202,12 @@ namespace TelegramBot
                     if (epNum > maxEp) maxEp = epNum;
                 }
 
-                Console.WriteLine($"[TelegramBot] VideoHub result: {sub.title} voice={sub.voice} episodes={maxEp} (was {sub.last_voice_episode})");
+                Console.WriteLine($"[SeriesNotify] VideoHub result: {sub.title} voice={sub.voice} episodes={maxEp} (was {sub.last_voice_episode})");
                 return maxEp;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[TelegramBot] VideoHub check error: {ex.Message}");
+                Console.WriteLine($"[SeriesNotify] VideoHub check error: {ex.Message}");
                 return sub.last_voice_episode;
             }
         }
@@ -1243,9 +1245,9 @@ namespace TelegramBot
                         result.Add(new VoiceInfo { id = tid, name = name, source = "rhs" });
                     }
 
-                Console.WriteLine($"[TelegramBot] GetRHSVoices: '{title}' s{season} -> {result.Count} voices");
+                Console.WriteLine($"[SeriesNotify] GetRHSVoices: '{title}' s{season} -> {result.Count} voices");
             }
-            catch (Exception ex) { Console.WriteLine($"[TelegramBot] GetRHSVoices error: {ex.Message}"); }
+            catch (Exception ex) { Console.WriteLine($"[SeriesNotify] GetRHSVoices error: {ex.Message}"); }
 
             if (result.Count > 0) SetCache(cacheKey, result);
             return result;
@@ -1261,7 +1263,7 @@ namespace TelegramBot
                 var token = !string.IsNullOrEmpty(Config.lampac_token) ? $"&token={Config.lampac_token}" : "";
                 var voiceUrl = $"{Config.lampac_host}/lite/redheadsound?rjson=true&title={Uri.EscapeDataString(sub.title)}&year=0&s={sub.last_season}{token}";
 
-                Console.WriteLine($"[TelegramBot] RHS check: {sub.title} voice={sub.voice} s={sub.last_season}");
+                Console.WriteLine($"[SeriesNotify] RHS check: {sub.title} voice={sub.voice} s={sub.last_season}");
 
                 var voiceBody = await httpFast.GetStringAsync(voiceUrl);
                 if (string.IsNullOrEmpty(voiceBody) || voiceBody == "null") return sub.last_voice_episode;
@@ -1300,7 +1302,7 @@ namespace TelegramBot
                         }
                         if (maxEp > 0)
                         {
-                            Console.WriteLine($"[TelegramBot] RHS result (details): {sub.title} voice={sub.voice} episodes={maxEp} (was {sub.last_voice_episode})");
+                            Console.WriteLine($"[SeriesNotify] RHS result (details): {sub.title} voice={sub.voice} episodes={maxEp} (was {sub.last_voice_episode})");
                             return maxEp;
                         }
                     }
@@ -1323,12 +1325,12 @@ namespace TelegramBot
                     if (e > max) max = e;
                 }
 
-                Console.WriteLine($"[TelegramBot] RHS result: {sub.title} voice={sub.voice} t={rhsVoiceId} episodes={max} (was {sub.last_voice_episode})");
+                Console.WriteLine($"[SeriesNotify] RHS result: {sub.title} voice={sub.voice} t={rhsVoiceId} episodes={max} (was {sub.last_voice_episode})");
                 return max;
             }
             catch (Exception ex)
             {
-                Console.WriteLine($"[TelegramBot] RHS check error: {ex.Message}");
+                Console.WriteLine($"[SeriesNotify] RHS check error: {ex.Message}");
                 return sub.last_voice_episode;
             }
         }
@@ -1448,7 +1450,7 @@ namespace TelegramBot
             var cached = GetCache<object>(cacheKey);
             if (cached != null)
             {
-                Console.WriteLine($"[TelegramBot] GetVoices cache hit: {title}");
+                Console.WriteLine($"[SeriesNotify] GetVoices cache hit: {title}");
                 return cached;
             }
 
@@ -1489,7 +1491,7 @@ namespace TelegramBot
                         if (ns > 0) actualSeason = ns;
                     }
 
-                    Console.WriteLine($"[TelegramBot] TMDB info: {tmdbName} / {tmdbOriginal}, season={actualSeason}");
+                    Console.WriteLine($"[SeriesNotify] TMDB info: {tmdbName} / {tmdbOriginal}, season={actualSeason}");
 
                     // Собираем все уникальные названия для поиска
                     // Порядок: Lampa title, TMDB name (ru), TMDB original_name
@@ -1499,12 +1501,12 @@ namespace TelegramBot
                     if (!string.IsNullOrEmpty(tmdbOriginal) && !allTitles.Any(t => t.Equals(tmdbOriginal, StringComparison.OrdinalIgnoreCase)))
                         allTitles.Add(tmdbOriginal);
                 }
-                catch (Exception ex) { Console.WriteLine($"[TelegramBot] TMDB info error: {ex.Message}"); }
+                catch (Exception ex) { Console.WriteLine($"[SeriesNotify] TMDB info error: {ex.Message}"); }
             }
 
             // Список названий для поиска
             var titles = allTitles.Count > 0 ? allTitles : new List<string> { title };
-            Console.WriteLine($"[TelegramBot] GetVoices titles: [{string.Join(", ", titles)}] season={actualSeason}");
+            Console.WriteLine($"[SeriesNotify] GetVoices titles: [{string.Join(", ", titles)}] season={actualSeason}");
 
             string mirageOrid = "";
             string collapsOrid = "";
@@ -1552,11 +1554,11 @@ namespace TelegramBot
                     var vhubVoices = await GetVideoHubVoices(vhubKp, actualSeason);
                     foreach (var v in vhubVoices)
                         if (!existingNames.Contains(v.name)) { allVoices.Add(v); existingNames.Add(v.name); }
-                    Console.WriteLine($"[TelegramBot] GetVoices VideoHub: kp={vhubKp} voices={vhubVoices.Count}");
+                    Console.WriteLine($"[SeriesNotify] GetVoices VideoHub: kp={vhubKp} voices={vhubVoices.Count}");
                 }
             }
 
-            Console.WriteLine($"[TelegramBot] GetVoices: {title} ({year}) s{actualSeason} — mirage:{mirageOrid} collaps:{collapsOrid} rhs:{rhsVoices.Count} voices:{allVoices.Count}");
+            Console.WriteLine($"[SeriesNotify] GetVoices: {title} ({year}) s{actualSeason} — mirage:{mirageOrid} collaps:{collapsOrid} rhs:{rhsVoices.Count} voices:{allVoices.Count}");
 
             var result = (object)new { success = true, voices = allVoices, orid = mirageOrid, collaps_orid = collapsOrid, kp_id = vhubKp, season = actualSeason };
             if (allVoices.Count > 0) SetCache(cacheKey, result);
@@ -1587,7 +1589,7 @@ namespace TelegramBot
                 {
                     // среди совпавших по году — предпочесть совпадение названия с любым из искомых
                     var best = byYear.OrderByDescending(r => TitleScore(r.title, titles)).First();
-                    Console.WriteLine($"[TelegramBot] SearchMirageMulti: matched by year={year} -> {best.title} orid={best.orid}");
+                    Console.WriteLine($"[SeriesNotify] SearchMirageMulti: matched by year={year} -> {best.title} orid={best.orid}");
                     return (best.orid, best.title);
                 }
             }
@@ -1681,25 +1683,25 @@ namespace TelegramBot
                                     if (lastAired != null)
                                     {
                                         var result = lastAired.Value<int>("number");
-                                        Console.WriteLine($"[TelegramBot] Trakt current season for tmdb {tmdbId}: {result} (total seasons: {seasons.Count})");
+                                        Console.WriteLine($"[SeriesNotify] Trakt current season for tmdb {tmdbId}: {result} (total seasons: {seasons.Count})");
                                         return result;
                                     }
                                     else
                                     {
-                                        Console.WriteLine($"[TelegramBot] Trakt: no aired seasons found for tmdb {tmdbId}");
+                                        Console.WriteLine($"[SeriesNotify] Trakt: no aired seasons found for tmdb {tmdbId}");
                                     }
                                 }
                             }
                         }
                     }
                 }
-                catch (Exception ex) { Console.WriteLine($"[TelegramBot] GetCurrentSeason Trakt error: {ex.Message}"); }
+                catch (Exception ex) { Console.WriteLine($"[SeriesNotify] GetCurrentSeason Trakt error: {ex.Message}"); }
             }
 
             // Fallback — TMDB: проверяем каждый сезон на наличие вышедших эпизодов
             try
             {
-                Console.WriteLine($"[TelegramBot] GetCurrentSeason TMDB fallback for {tmdbId}");
+                Console.WriteLine($"[SeriesNotify] GetCurrentSeason TMDB fallback for {tmdbId}");
                 var show = JObject.Parse(await http.GetStringAsync(
                     $"https://api.themoviedb.org/3/tv/{tmdbId}?api_key={Config.tmdb_api_key}&language={Config.tmdb_lang}"));
 
@@ -1718,7 +1720,7 @@ namespace TelegramBot
                         if (!string.IsNullOrEmpty(airDate) && DateTime.TryParse(airDate, out var dt) && dt.Date <= DateTime.UtcNow.Date)
                             bestSeason = sNum;
                     }
-                    Console.WriteLine($"[TelegramBot] TMDB current season for {tmdbId}: {bestSeason}");
+                    Console.WriteLine($"[SeriesNotify] TMDB current season for {tmdbId}: {bestSeason}");
                     return bestSeason;
                 }
 

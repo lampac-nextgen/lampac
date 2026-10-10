@@ -1,8 +1,8 @@
-# Tg-notify.bot
+# SeriesNotify
 
-Фоновый **Telegram-бот уведомлений о новых сериях и озвучках** (long polling). Пользователь подписывается на сериал прямо из карточки Lampa, а бот сам отслеживает выход новых эпизодов и появление выбранной озвучки и шлёт уведомление в Telegram с обложкой, номером серии и описанием из TMDB.
+Telegram-уведомления о новых сериях и озвучках (long polling). Пользователь подписывается на сериал прямо из карточки Lampa, а бот сам отслеживает выход новых эпизодов и появление выбранной озвучки и шлёт уведомление в Telegram с обложкой, номером серии и описанием из TMDB.
 
-Проект: **`Modules/Tg-notify.bot/`**. C#-namespace модуля — `TelegramBot`.
+Проект: **`Modules/SeriesNotify/`**. Assembly, namespace и секция `init.conf` — **`SeriesNotify`**.
 
 Бот объединяет три подсистемы:
 
@@ -14,19 +14,21 @@
 
 ## Включение
 
-1. В шаблоне [`config/base.conf`](../../../config/base.conf) при необходимости проверьте, что **`TelegramBot`** не попал в **`BaseModule.SkipModules`** (если попал — уберите имя из списка, иначе модуль не загрузится).
+1. Уберите **`SeriesNotify`** из **`BaseModule.SkipModules`** в `init.conf` (в [`config/base.conf`](../../../config/base.conf) модуль в SkipModules по умолчанию).
 2. [`manifest.json`](manifest.json): выставьте **`"enable": true`** (в репозитории по умолчанию `false`).
-3. `init.conf`: добавьте секцию **`TelegramBot`**. Пример — [`init.merge.example.json`](init.merge.example.json).
+3. `init.conf`: добавьте секцию **`SeriesNotify`**. Пример — [`init.merge.example.json`](init.merge.example.json).
 4. Перезапустите сервис: `systemctl restart lampac` (или имя вашего systemd-юнита).
 
 При `enable: true` и пустом `bot_token` long polling **не стартует** — в лог пишется предупреждение.
+
+> **Совместимость с другими Telegram-модулями.** У каждого long-polling бота (`SeriesNotify`, `QRAuthBot`, `TelegramAuthBot`) должен быть **свой** `bot_token`. Не включайте QRAuth и TelegramAuth* одновременно без понимания общего `users.json` / accsdb.
 
 ---
 
 ## Конфигурация (секция `init.conf`)
 
 ```json
-"TelegramBot": {
+"SeriesNotify": {
   "enable": true,
   "bot_token": "ТОКЕН_ОТ_BOTFATHER",
   "tmdb_api_key": "ВАШ_КЛЮЧ_TMDB",
@@ -67,13 +69,13 @@
 ## Структура модуля
 
 ```
-Tg-notify.bot/
+SeriesNotify/
 ├── manifest.json              # dynamic:true, references+tree
-├── Tg-notify.bot.csproj       # только для локальной сборки; на сервере не используется
+├── SeriesNotify.csproj        # только для локальной сборки; на сервере не используется
 ├── init.merge.example.json    # пример секции init.conf
 ├── ModInit.cs                 # ядро: polling, трекинг серий, парсеры озвучек, HTTP API
 ├── Models/
-│   └── TelegramBotConf.cs     # конфиг (наследует ModuleBaseConf)
+│   └── SeriesNotifyConf.cs    # конфиг (наследует ModuleBaseConf)
 ├── Controllers/
 │   └── TgNotifyController.cs   # HTTP API + раздача tg-notify.js
 ├── references/

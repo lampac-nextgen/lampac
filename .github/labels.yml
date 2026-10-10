@@ -213,9 +213,9 @@
   color: "1D76DB"
   description: "Modules/Telemetry/"
 
-- name: "module:Tg-notify.bot"
+- name: "module:SeriesNotify"
   color: "1D76DB"
-  description: "Modules/Tg-notify.bot/"
+  description: "Modules/SeriesNotify/"
 
 - name: "module:TorrServer"
   color: "1D76DB"

@@ -2,7 +2,7 @@ using System;
 
 namespace QRAuth.Models
 {
-    public class TelegramBotConf
+    public class QRAuthBotConf
     {
         public bool enable { get; set; } = true;
 
