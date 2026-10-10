@@ -53,7 +53,13 @@ public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
             httpversion = 2,
             rch_access = "apk,cors,web",
             stream_access = "apk,cors,web",
-            reserve = true
+            reserve = false,
+            headers_stream = new Dictionary<string, string>
+            {
+                ["Origin"] = "https://scalp-as.stloadi.live",
+                ["Referer"] = "https://scalp-as.stloadi.live/",
+                ["User-Agent"] = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+            }
         });
     }
 

@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Http;
+using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Primitives;
 using Shared;
 using Shared.Models.Base;
@@ -109,11 +109,11 @@ public partial class ProxyAPI
                     ["accept-language"] = "ru-RU,ru;q=0.9,uk-UA;q=0.8,uk;q=0.7,en-US;q=0.6,en;q=0.5"
                 };
 
-                foreach (var h in headers)
-                    addHeaders[h.name] = h.val;
-
                 foreach (var h in Http.defaultFullHeaders)
                     addHeaders[h.Key] = h.Value;
+
+                foreach (var h in headers)
+                    addHeaders[h.name] = h.val;
 
                 var normalizeHeaders = Http.NormalizeHeaders(addHeaders);
                 BucketHeaders.AddOrUpdate(H1, HeadersModel.Init(normalizeHeaders));
