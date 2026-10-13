@@ -11,7 +11,7 @@
     <PackageVersion Include="GirCore.GstBase-1.0" Version="0.8.1" />
     <PackageVersion Include="HtmlAgilityPack" Version="1.13.0" />
     <PackageVersion Include="HtmlKit" Version="1.3.0" />
-    <PackageVersion Include="Jint" Version="4.16.4" />
+    <PackageVersion Include="Jint" Version="4.17.0" />
     <PackageVersion Include="MaxMind.GeoIP2" Version="6.1.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.9.0" />
@@ -29,7 +29,7 @@
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.13" />
     <PackageVersion Include="System.Management" Version="10.0.12" />
-    <PackageVersion Include="Telegram.Bot" Version="22.10.3.2" />
+    <PackageVersion Include="Telegram.Bot" Version="22.10.3.3" />
     <PackageVersion Include="YamlDotNet" Version="18.1.0" />
     <PackageVersion Include="YoutubeExplode" Version="6.6.2" />
   </ItemGroup>
