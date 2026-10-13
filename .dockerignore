@@ -3,6 +3,9 @@
 
 # NuGet Central Package Management (root) — required for versionless PackageReference
 !Directory.Packages.props
+# GitInfo package reference and the version targets Core publish depends on
+!Directory.Build.props
+!Directory.Build.targets
 
 !config/
 !config/**
