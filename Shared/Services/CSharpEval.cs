@@ -244,6 +244,9 @@ public static class CSharpEval
                 }
                 #endregion
 
+                // Same product version as Shared.dll. The module cache key already includes that file hash.
+                syntaxTree.Add(ModuleVersionSyntax());
+
                 var compilation = CSharpCompilation.Create(mod.name, syntaxTree, references: appReferences, options: new CSharpCompilationOptions(OutputKind.DynamicallyLinkedLibrary));
 
                 using (var ms = PoolInvk.msm.GetStream())
@@ -280,5 +283,26 @@ public static class CSharpEval
             return default;
         }
     }
+
+    /// <summary>
+    /// Assembly attributes copied from Shared so a module compiled at startup reports the same version.
+    /// </summary>
+    static SyntaxTree ModuleVersionSyntax()
+    {
+        var asm = typeof(CSharpEval).Assembly;
+        string informational = asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "";
+        string fileVersion = asm.GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version ?? "0.0.0.0";
+        string assemblyVersion = asm.GetName().Version?.ToString() ?? "0.0.0.0";
+
+        string src =
+            "[assembly: System.Reflection.AssemblyVersionAttribute(\"" + Escape(assemblyVersion) + "\")]\n" +
+            "[assembly: System.Reflection.AssemblyFileVersionAttribute(\"" + Escape(fileVersion) + "\")]\n" +
+            "[assembly: System.Reflection.AssemblyInformationalVersionAttribute(\"" + Escape(informational) + "\")]\n";
+
+        return CSharpSyntaxTree.ParseText(src, new CSharpParseOptions(LanguageVersion.Latest));
+    }
+
+    static string Escape(string value) =>
+        (value ?? "").Replace("\\", "\\\\").Replace("\"", "\\\"").Replace("\r", "").Replace("\n", "");
     #endregion
 }

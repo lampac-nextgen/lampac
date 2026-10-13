@@ -25,10 +25,12 @@ WORKDIR /build
 
 COPY . .
 
+# git is required by GitInfo even when .git is excluded; version then falls back to ARGs.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    git \
     libicu76 \
     xz-utils \
     && rm -rf /var/lib/apt/lists/*
@@ -61,7 +63,7 @@ RUN case "$BUILDARCH" in \
     && tar -oxzf /tmp/dotnet-sdk.tar.gz -C /out/usr/share/dotnet \
     && rm /tmp/dotnet-sdk.tar.gz \
     # Build the application
-    && DOTNET_CLI_TELEMETRY_OPTOUT=1 /out/usr/share/dotnet/dotnet publish --configuration Release --runtime "$RID" --output /out/lampac -p:PlaywrightPlatform="$RID" -p:InformationalVersion="$LAMPAC_VERSION" -p:SourceRevisionId="$GIT_COMMIT" Core/Core.csproj \
+    && DOTNET_CLI_TELEMETRY_OPTOUT=1 /out/usr/share/dotnet/dotnet publish --configuration Release --runtime "$RID" --output /out/lampac -p:PlaywrightPlatform="$RID" -p:LAMPAC_VERSION="$LAMPAC_VERSION" -p:SourceRevisionId="$GIT_COMMIT" -p:BuildRef="$GITHUB_REF" -p:GITHUB_SERVER_URL="$GITHUB_SERVER_URL" -p:GITHUB_REPOSITORY="$GITHUB_REPOSITORY" -p:GITHUB_REF="$GITHUB_REF" -p:GITHUB_RUN_ID="$GITHUB_RUN_ID" Core/Core.csproj \
     # Replace SDK with ASP.NET Core runtime for the final image
     && rm -rf /out/usr/share/dotnet \
     && mkdir -p /out/usr/share/dotnet \

@@ -1,6 +1,8 @@
 <Project>
   <PropertyGroup>
     <ManagePackageVersionsCentrally>true</ManagePackageVersionsCentrally>
+    <!-- PackageVersion below also overrides transitive restores, not only direct PackageReference. -->
+    <CentralPackageTransitivePinningEnabled>true</CentralPackageTransitivePinningEnabled>
   </PropertyGroup>
   <ItemGroup>
     <PackageVersion Include="BencodeNET" Version="5.0.0" />
@@ -9,12 +11,18 @@
     <PackageVersion Include="GirCore.Gst-1.0" Version="0.8.1" />
     <PackageVersion Include="GirCore.GstApp-1.0" Version="0.8.1" />
     <PackageVersion Include="GirCore.GstBase-1.0" Version="0.8.1" />
+    <PackageVersion Include="GitInfo" Version="3.6.0" />
     <PackageVersion Include="HtmlAgilityPack" Version="1.13.0" />
     <PackageVersion Include="HtmlKit" Version="1.3.0" />
     <PackageVersion Include="Jint" Version="4.17.0" />
     <PackageVersion Include="MaxMind.GeoIP2" Version="6.1.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.9.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.9.0" />
+    <!-- EF Core Design restores these at 5.0.0, which demands CSharp/Common = 5.0.0. Pin to the
+    CSharp line. -->
+    <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Workspaces" Version="5.9.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.Common" Version="5.9.0" />
+    <PackageVersion Include="Microsoft.CodeAnalysis.Workspaces.MSBuild" Version="5.9.0" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore" Version="10.0.12" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.12" />
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.12" />

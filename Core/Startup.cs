@@ -316,7 +316,8 @@ public class Startup
                         var mod = new RootModule
                         {
                             assembly = Assembly.LoadFile(Path.Combine(Environment.CurrentDirectory, path)),
-                            name = Path.GetFileName(path)
+                            name = Path.GetFileName(path),
+                            hash = CrypTo.md5File(path)
                         };
 
                         CoreInit.modules.Add(mod);
@@ -416,7 +417,8 @@ public class Startup
                         throw new Exception();
                     }
 
-                    cacheModuePaths.Add(Fnv1a.Base64Url(build.sumhash));
+                    mod.hash = Fnv1a.Base64Url(build.sumhash);
+                    cacheModuePaths.Add(mod.hash);
                     Console.WriteLine($"compilation {mod.name}");
 
                     mod.assembly = build.assembly;
@@ -837,6 +839,7 @@ public class Startup
                             foreach (var part in parts)
                                 mvcBuilder.PartManager.ApplicationParts.Remove(part);
 
+                            mod.hash = Fnv1a.Base64Url(build.sumhash);
                             mod.assembly = build.assembly;
                             mod.assemblyLoadContext = build.alc;
 

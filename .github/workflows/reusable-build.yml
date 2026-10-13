@@ -63,6 +63,7 @@ jobs:
         uses: actions/checkout@v7.0.1
         with:
           ref: ${{ steps.checkout_ref.outputs.ref }}
+          fetch-depth: 0
 
       - name: Setup .NET
         uses: actions/setup-dotnet@v6.0.0
@@ -75,14 +76,10 @@ jobs:
       - name: Publish Lampac NextGen
         run: |
           set -euo pipefail
-          REF="${{ steps.checkout_ref.outputs.ref }}"
-          VERSION=dev
-          [[ "$REF" == refs/tags/* ]] && VERSION="${REF#refs/tags/}"
           dotnet publish ${{ inputs.project_file }} \
             --configuration Release \
             --output publish \
-            -p:InformationalVersion="$VERSION" \
-            -p:BuildRef="$REF" \
+            -p:BuildRef="${{ steps.checkout_ref.outputs.ref }}" \
             --verbosity minimal
 
       - name: Upload artifact Lampac NextGen
