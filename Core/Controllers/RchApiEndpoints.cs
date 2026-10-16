@@ -35,6 +35,15 @@ public static class RchApiEndpoints
             .AllowAnonymous();
     }
 
+    static bool IsExpectedClient(HttpContext context, RchClient.rchIdEntry rchHub)
+    {
+        if (string.IsNullOrEmpty(rchHub.expectedIp))
+            return true;
+
+        var requestInfo = context.Features.Get<RequestModel>();
+        return requestInfo != null && requestInfo.IP == rchHub.expectedIp;
+    }
+
     static async Task<IResult> WriteResult(HttpContext context, [FromQuery] string id)
     {
         if (string.IsNullOrEmpty(id))
@@ -44,6 +53,9 @@ public static class RchApiEndpoints
             return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
 
         if (!RchClient.rchIds.TryGetValue(id, out var rchHub))
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+        if (!IsExpectedClient(context, rchHub))
             return Results.StatusCode(StatusCodes.Status403Forbidden);
 
         try
@@ -80,6 +92,9 @@ public static class RchApiEndpoints
             return Results.StatusCode(StatusCodes.Status413PayloadTooLarge);
 
         if (!RchClient.rchIds.TryGetValue(id, out var rchHub))
+            return Results.StatusCode(StatusCodes.Status403Forbidden);
+
+        if (!IsExpectedClient(context, rchHub))
             return Results.StatusCode(StatusCodes.Status403Forbidden);
 
         try

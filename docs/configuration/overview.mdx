@@ -85,8 +85,10 @@ keywords: ["init.conf", "init.yaml", "Lampac конфигурация", "гор�
   },
 
   // Remote Client Hub: WebSocket-реле
+  // Дефолты кода (CoreInit): enable true, autoReconnect false
   "rch": {
-    "enable": false,
+    "enable": true,
+    "autoReconnect": false,
     "requiredConnected": 1
   },
 
@@ -196,18 +198,23 @@ Playwright используется для автоматизации брауз
 
 ## RCH (Remote Client Hub)
 
-RCH — WebSocket-реле для клиентов, находящихся за NAT. Позволяет устройствам подключаться к серверу без проброса портов.
+RCH — WebSocket-реле для клиентов за NAT: сервер просит подключённый клиент сходить на URL и вернуть ответ. Дефолты кода в `Shared/CoreInit.cs`: `enable: true`, `autoReconnect: false`. Удалённый `eval` в клиенте не поддерживается. Шаблон — `config/example.init.*`.
 
 ```json
 {
   "rch": {
-    "enable": false,
+    "enable": true,
+    "autoReconnect": false,
     "requiredConnected": 1
   }
 }
 ```
 
-Результаты принимаются через `POST /rch/result` и `/rch/gzresult`, состояние проверяется на `/rch/check/connected`. NativeWebSocket при `BaseModule.nws` доступен по `/nws`.
+| Ключ | Назначение |
+| --- | --- |
+| `autoReconnect` | Если `true`, запрос может привязаться к клиенту по `nws_id` без совпадения IP (удобно при смене сети). По умолчанию `false`. |
+
+`POST /rch/result` и `/rch/gzresult` принимают тело только с IP, совпадающим с ожидаемым клиентом. Состояние — `/rch/check/connected`. NativeWebSocket при `BaseModule.nws` — `/nws`.
 
 ## Настройка провайдеров
 

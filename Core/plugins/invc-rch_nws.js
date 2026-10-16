@@ -122,12 +122,8 @@ window.rch_nws[hostkey].Registry = function RchRegistry(client, startConnection)
         }
       }
 
-      if (url == 'eval') {
-        console.log('RCH', url, data);
-        result(eval(data));
-      } else if (url == 'evalrun') {
-        console.log('RCH', url, data);
-        eval(data);
+      if (url == 'eval' || url == 'evalrun') {
+        result('');
       } else if (url == 'ping') {
         result('pong');
       } else {

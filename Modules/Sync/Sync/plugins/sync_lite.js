@@ -129,9 +129,9 @@
 					timeout: 1000 * 5
 				  });
 				}
-				if (url == 'eval')
-				  result(eval(data));
-				else {
+				if (url == 'eval' || url == 'evalrun') {
+				  result('');
+				} else {
 				  network["native"](url, result, function() {
 					result('');
 				  }, data, {

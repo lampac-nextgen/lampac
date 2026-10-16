@@ -69,7 +69,7 @@ public class RchClient
 
     public static readonly ConcurrentDictionary<string, clientEntry> clients = new();
 
-    public record class rchIdEntry(MemoryStream ms, TaskCompletionSource<string> tcs, CancellationToken ct);
+    public record class rchIdEntry(MemoryStream ms, TaskCompletionSource<string> tcs, CancellationToken ct, string expectedIp, string expectedConnectionId);
 
     public static readonly ConcurrentDictionary<string, rchIdEntry> rchIds = new();
 
@@ -175,56 +175,6 @@ public class RchClient
         enableRhub = false;
     }
 
-
-    #region Eval
-    public void EvalRun(string data)
-    {
-        _ = SendHub("evalrun", data, waiting: false).ConfigureAwait(false);
-    }
-
-    public Task<string> Eval(string data)
-        => SendHub("eval", data);
-
-    async public Task<T> Eval<T>(string data, bool IgnoreDeserializeObject = false)
-    {
-        try
-        {
-            T result = default;
-
-            await SendHub("eval", data, useDefaultHeaders: false, msAction: ms =>
-            {
-                try
-                {
-                    using (var streamReader = new JsonStreamReaderPool(ms, Encoding.UTF8, leaveOpen: true))
-                    {
-                        using (var jsonReader = new JsonTextReader(streamReader)
-                        {
-                            ArrayPool = NewtonsoftPool.Array
-                        })
-                        {
-                            var serializer = IgnoreDeserializeObject
-                                ? Newtonsoft.Json.JsonSerializer.Create(newtonsoftIgnoreErrorsSettings)
-                                : Newtonsoft.Json.JsonSerializer.CreateDefault();
-
-                            result = serializer.Deserialize<T>(jsonReader);
-                        }
-                    }
-                }
-                catch (Exception ex)
-                {
-                    if (logEnable)
-                        Log.Error(ex, "CatchId={CatchId}", "id_3c999oy2");
-                }
-            }).ConfigureAwait(false);
-
-            return result;
-        }
-        catch
-        {
-            return default;
-        }
-    }
-    #endregion
 
     #region Headers
     async public Task<(JObject headers, string currentUrl, string body)> Headers(string url, string data, IReadOnlyList<HeadersModel> headers = null, bool useDefaultHeaders = true)
@@ -387,6 +337,9 @@ public class RchClient
         if (Nws == null)
             return null;
 
+        if (url == "eval" || url == "evalrun")
+            return null;
+
         var clientInfo = SocketClient();
         connectionId = clientInfo.connectionId;
 
@@ -413,7 +366,9 @@ public class RchClient
             var rchHub = new rchIdEntry(
                 ms,
                 new TaskCompletionSource<string>(TaskCreationOptions.RunContinuationsAsynchronously),
-                cts.Token
+                cts.Token,
+                clientInfo.data?.ip,
+                connectionId
             );
 
             rchIds[rchId] = rchHub;

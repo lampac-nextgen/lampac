@@ -218,17 +218,17 @@ curl -s "http://localhost:9118/api/geo?ip=8.8.8.8"
 
 ## RCH-реле (Remote Client Hub)
 
-Модуль RCH позволяет клиентам за NAT обмениваться данными через WebSocket-реле на сервере.
+RCH — WebSocket-реле: сервер шлёт задачу подключённому клиенту, клиент возвращает результат. По умолчанию (`CoreInit`) включён `enable`, выключен `autoReconnect`. Remote `eval` удалён. Подробности ключей — в [конфигурации](/configuration/overview#rch-remote-client-hub).
 
 <Steps>
   <Step title="Включите RCH">
-    Установите `"rch": { "enable": true, "requiredConnected": 1 }` в `init.conf`.
+    В `init.conf` задайте `"rch": { "enable": true }`. Для обязательного клиента добавьте `"requiredConnected": true`.
   </Step>
   <Step title="Отправьте результат">
-    Используйте `POST /rch/result?id=<id>` для записи результата до 10 МБ или `POST /rch/gzresult?id=<id>` для сжатых данных.
+    `POST /rch/result?id=<id>` или `POST /rch/gzresult?id=<id>` (до 10 МБ). Запись принимается только с IP ожидаемого RCH-клиента.
   </Step>
   <Step title="Проверьте соединение">
-    Вызовите `GET /rch/check/connected`; для NativeWebSocket используйте `ws://<host>:9118/nws`, если endpoint включён конфигурацией.
+    `GET /rch/check/connected`; WebSocket — `ws://<host>:9118/nws`, если endpoint включён конфигурацией.
   </Step>
 </Steps>
 

@@ -420,7 +420,9 @@ public class NativeWebSocket : INws
                             {
                                 if (CoreInit.conf.rch.enable && ws.rch)
                                 {
-                                    if (RchClient.rchIds.TryGetValue(rmsg.resultId, out var rchHub))
+                                    if (RchClient.rchIds.TryGetValue(rmsg.resultId, out var rchHub) &&
+                                        (string.IsNullOrEmpty(rchHub.expectedConnectionId) || rchHub.expectedConnectionId == connection.ConnectionId) &&
+                                        (string.IsNullOrEmpty(rchHub.expectedIp) || rchHub.expectedIp == connection.Ip))
                                         rchHub.tcs.TrySetResult(rmsg.resultValue ?? string.Empty);
                                 }
                             }

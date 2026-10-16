@@ -369,7 +369,7 @@ public class CoreInit
     public RchConf rch = new RchConf()
     {
         enable = true,
-        autoReconnect = true
+        autoReconnect = false
     };
 
     public GCConf GC { get; set; } = new GCConf()
