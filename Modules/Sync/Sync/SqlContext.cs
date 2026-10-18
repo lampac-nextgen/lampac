@@ -87,6 +87,9 @@ public class SqlContext : DbContext
     /// известных пользователей, и при совпадении побеждает самый длинный: это и есть тот, чьи
     /// данные на самом деле. Неразобранное не трогаем — лучше оставить как есть, чем увести
     /// чужое.
+    ///
+    /// Новая область к этому моменту может уже существовать: клиенты писали в неё, пока старая
+    /// оставалась непереименованной. Тогда области сливаются, а не пропускаются.
     /// </summary>
     static void MigrateProfileAreas(SqlContext db)
     {
@@ -94,7 +97,6 @@ public class SqlContext : DbContext
         if (known.Count == 0)
             return;
 
-        var existing = new HashSet<string>(StringComparer.Ordinal);
         var legacy = new List<string>();
 
         using (var connection = new SqliteConnection(_connection))
@@ -109,10 +111,7 @@ public class SqlContext : DbContext
                 if (reader.IsDBNull(0))
                     continue;
 
-                string user = reader.GetString(0);
-                existing.Add(user);
-                if (user.Contains('_'))
-                    legacy.Add(user);
+                legacy.Add(reader.GetString(0));
             }
         }
 
@@ -123,21 +122,47 @@ public class SqlContext : DbContext
             if (!DataArea.TrySplitLegacy(user, known, out string target))
                 continue;
 
-            // Область с новым именем уже есть — сливать две истории молча нельзя.
-            if (existing.Contains(target))
-            {
-                Serilog.Log.Warning(
-                    "{Module} data area {Legacy} not renamed: {Target} already exists", "Sync", user, target);
-                continue;
-            }
-
-            db.Database.ExecuteSqlRaw("UPDATE bookmarks SET user = {0} WHERE user = {1};", target, user);
-            existing.Add(target);
+            MergeArea(db, user, target);
             renamed++;
         }
 
         if (renamed > 0)
             Serilog.Log.Information("{Module} renamed {Count} profile data area(s)", "Sync", renamed);
+    }
+
+    /// <summary>
+    /// Старая область вливается в новую. Совпавшая карточка: категории объединяются, при
+    /// расхождении побеждает новая область; её надгробие тоже побеждает — оно свежее. Перенесённым
+    /// строкам курсор выдаётся выше текущего, иначе клиент, уже дошедший до него, их не увидит.
+    /// </summary>
+    static void MergeArea(SqlContext db, string legacy, string target)
+    {
+        using var transaction = db.Database.BeginTransaction();
+
+        long last = db.bookmarks.Where(i => i.user == target).Max(i => (long?)i.updated_at) ?? 0;
+        long stamp = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), last + 1);
+
+        // Id уникален, поэтому stamp + Id даёт каждой строке свою метку.
+        db.Database.ExecuteSqlRaw("""
+            UPDATE bookmarks AS t
+            SET categories = json_patch(o.categories, t.categories),
+                card = coalesce(t.card, o.card),
+                updated_at = {2} + t.Id
+            FROM bookmarks AS o
+            WHERE t.user = {1} AND o.user = {0} AND o.card_id = t.card_id
+              AND t.categories <> '{{}}'
+              AND (json_patch(o.categories, t.categories) <> t.categories OR (t.card IS NULL AND o.card IS NOT NULL));
+            """, legacy, target, stamp);
+
+        db.Database.ExecuteSqlRaw(
+            "DELETE FROM bookmarks WHERE user = {0} AND card_id IN (SELECT card_id FROM bookmarks WHERE user = {1});",
+            legacy, target);
+
+        db.Database.ExecuteSqlRaw(
+            "UPDATE bookmarks SET user = {1}, updated_at = {2} + Id WHERE user = {0};",
+            legacy, target, stamp);
+
+        transaction.Commit();
     }
     #endregion
 
