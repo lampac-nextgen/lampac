@@ -46,13 +46,16 @@ public class ModInit : IModuleLoaded, IModuleOnline, IModuleOnlineSpider
 
     void updateConf()
     {
-        conf = ModuleInvoke.Init("LordFilm", new ModuleConf("LordFilm", "https://gv.lordfilm5.pro", streamproxy: true)
+        conf = ModuleInvoke.Init("LordFilm", new ModuleConf("LordFilm", "https://gw.lordfilm5.pro", streamproxy: true)
         {
             displayindex = 575,
             httpversion = 2,
             rch_access = "apk,cors,web",
             stream_access = "apk,cors,web"
         });
+
+        // Хост из init.conf — только точка входа: если сайт редиректит на другое
+        // зеркало (gw, we и т.д.), LordFilmSession сам переключится и решит челлендж там.
     }
 
     string onlineApiQuality(EventOnlineApiQuality e)
