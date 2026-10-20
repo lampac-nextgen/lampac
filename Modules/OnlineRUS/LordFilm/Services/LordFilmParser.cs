@@ -6,10 +6,6 @@ using System.Text.RegularExpressions;
 
 namespace LordFilm;
 
-/// <summary>
-/// Разбор HTML сайта lordfilm и плеера nextembed.ws.
-/// Класс не зависит от Shared, поэтому его легко тестировать отдельно.
-/// </summary>
 public static class LordFilmParser
 {
     static readonly JsonSerializerOptions json = new()
@@ -448,6 +444,96 @@ public static class LordFilmParser
             int pos = lang.Groups[1].Index;
             return tag.Substring(0, pos) + friendly + tag.Substring(pos + lang.Groups[1].Length);
         });
+    }
+
+    /// <summary>
+    /// Максимальное качество из HLS master.m3u8 (RESOLUTION=WxH) или DASH .mpd (width="W").
+    /// Возвращает подпись 2160p/1440p/1080p/720p/480p/360p/240p или null.
+    /// </summary>
+    public static string MaxQuality(string manifest, bool mpd)
+    {
+        if (string.IsNullOrEmpty(manifest))
+            return null;
+
+        int width = 0;
+        string pattern = mpd
+            ? "<Representation\\b[^>]*\\bwidth=\"([0-9]+)\""
+            : "RESOLUTION=([0-9]+)x[0-9]+";
+
+        foreach (Match m in Regex.Matches(manifest, pattern, RegexOptions.IgnoreCase))
+        {
+            if (int.TryParse(m.Groups[1].Value, out int w) && w > width)
+                width = w;
+        }
+
+        if (width <= 0)
+            return null;
+
+        if (width >= 3500) return "2160p";
+        if (width >= 2400) return "1440p";
+        if (width >= 1800) return "1080p";
+        if (width >= 1200) return "720p";
+        if (width >= 800) return "480p";
+        if (width >= 600) return "360p";
+        return "240p";
+    }
+
+    /// <summary>
+    /// Оставляет в HLS только выбранную дорожку озвучки (<c>TYPE=AUDIO, NAME=voice</c>).
+    /// Если дорожка не найдена, возвращает master без изменений.
+    /// </summary>
+    public static string SelectHlsAudio(string master, string voice)
+    {
+        if (string.IsNullOrEmpty(master) || string.IsNullOrEmpty(voice))
+            return master;
+
+        if (!Regex.IsMatch(master, $"#EXT-X-MEDIA:(?=[^\\r\\n]*TYPE=AUDIO)(?=[^\\r\\n]*NAME=\"{Regex.Escape(voice)}\")[^\\r\\n]*", RegexOptions.IgnoreCase))
+            return master;
+
+        return Regex.Replace(master, "#EXT-X-MEDIA:[^\\r\\n]*", m =>
+        {
+            if (!Regex.IsMatch(m.Value, "TYPE=AUDIO", RegexOptions.IgnoreCase))
+                return m.Value;
+
+            var name = Regex.Match(m.Value, "NAME=\"([^\"]*)\"", RegexOptions.IgnoreCase);
+            if (!name.Success)
+                return m.Value;
+
+            if (name.Groups[1].Value != voice)
+                return string.Empty;
+
+            string line = Regex.Replace(m.Value, "DEFAULT=(YES|NO)", "DEFAULT=YES", RegexOptions.IgnoreCase);
+            line = Regex.Replace(line, "AUTOSELECT=(YES|NO)", "AUTOSELECT=YES", RegexOptions.IgnoreCase);
+            return line;
+        });
+    }
+
+    /// <summary>
+    /// Оставляет в DASH только выбранную аудиодорожку
+    /// (<c>AdaptationSet contentType="audio", lang=voice</c>).
+    /// Если дорожка не найдена, возвращает mpd без изменений.
+    /// </summary>
+    public static string SelectDashAudio(string mpd, string voice)
+    {
+        if (string.IsNullOrEmpty(mpd) || string.IsNullOrEmpty(voice))
+            return mpd;
+
+        if (!Regex.IsMatch(mpd, $"<AdaptationSet\\b(?=[^>]*contentType=\"audio\")(?=[^>]*lang=\"{Regex.Escape(voice)}\")[^>]*>", RegexOptions.IgnoreCase))
+            return mpd;
+
+        return Regex.Replace(mpd, "<AdaptationSet\\b[^>]*>.*?</AdaptationSet>", m =>
+        {
+            string tag = m.Value;
+
+            if (!Regex.IsMatch(tag, "contentType=\"audio\"", RegexOptions.IgnoreCase))
+                return tag;
+
+            var lang = Regex.Match(tag, "lang=\"([^\"]*)\"", RegexOptions.IgnoreCase);
+            if (!lang.Success)
+                return tag;
+
+            return lang.Groups[1].Value == voice ? tag : string.Empty;
+        }, RegexOptions.Singleline);
     }
     #endregion
 
