@@ -16,7 +16,7 @@ public class ModuleConf : BaseSettings, ICloneable
     }
 
 
-    /// <summary>true — отдавать DASH (до 1080p), false — HLS (~530p).</summary>
+    /// <summary>true — отдавать DASH (до 1080p), false — HLS (~640p).</summary>
     public bool dash { get; set; }
 
     /// <summary>true — показывать и HLS, и DASH отдельными пунктами.</summary>
