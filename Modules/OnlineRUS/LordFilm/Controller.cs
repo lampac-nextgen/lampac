@@ -6,6 +6,7 @@ using Shared.Models.Base;
 using Shared.Models.Templates;
 using Shared.Services;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text.RegularExpressions;
@@ -18,6 +19,7 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
 {
     static LordFilmSession session;
     static readonly object sessionLock = new object();
+    static readonly ConcurrentDictionary<string, (string label, DateTimeOffset ex)> qualityCache = new();
 
     public LordFilmController() : base(ModInit.conf)
     {
@@ -51,7 +53,7 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
 
     [HttpGet, Staticache(manually: true)]
     [Route("lite/lordfilm")]
-    async public Task<ActionResult> Index(string title, string original_title, string uri = null, short serial = 0, short year = 0, short s = -1, bool rjson = false, bool similar = false)
+    async public Task<ActionResult> Index(string title, string original_title, string uri = null, short serial = 0, short year = 0, short s = -1, bool rjson = false, bool similar = false, string voice = null)
     {
         if (string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(uri))
             return OnError();
@@ -97,7 +99,14 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
             return e.Success(md);
         });
 
-        return ContentTpl(cache, () => Tpl(cache.Value, title, original_title, uri, serial, year, s, rjson));
+        // Качество (720p/1080p) берём из master.m3u8 / .mpd. При both: true качество уже
+        // приходит отдельными пунктами HLS/DASH, поэтому лишний запрос не нужен.
+        string qualityLabel = null;
+
+        if (!init.both && cache.IsSuccess && cache.Value != null && (cache.Value.movie != null || s >= 1))
+            qualityLabel = await GetQualityLabel(cache.Value, uri, s);
+
+        return ContentTpl(cache, () => Tpl(cache.Value, title, original_title, uri, serial, year, s, rjson, qualityLabel, voice));
     }
 
 
@@ -133,7 +142,7 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
 
     [HttpGet, AllowAnonymous]
     [Route("lite/lordfilm/video.m3u8")]
-    async public Task<ActionResult> Video(string uri, string names = null)
+    async public Task<ActionResult> Video(string uri, string names = null, string voice = null)
     {
         if (await IsRequestBlocked(rch: false))
             return badInitMsg;
@@ -149,6 +158,9 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
         if (!string.IsNullOrEmpty(names))
             master = LordFilmParser.RenameAudio(master, names);
 
+        // Выбранная в Lampa озвучка оставляет в мастере только эту аудиодорожку
+        master = LordFilmParser.SelectHlsAudio(master, voice);
+
         // CDN отдаёт сегменты только тому IP, который запросил master, поэтому весь плейлист
         // (и вложенные m3u8) обязан идти через прокси Lampac — принудительно, независимо от streamproxy
         master = LordFilmParser.ProxyUrls(master, u => HostStreamProxy(u, force_streamproxy: true));
@@ -159,7 +171,7 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
 
     [HttpGet, AllowAnonymous]
     [Route("lite/lordfilm/video.mpd")]
-    async public Task<ActionResult> VideoDash(string uri, string names = null)
+    async public Task<ActionResult> VideoDash(string uri, string names = null, string voice = null)
     {
         if (await IsRequestBlocked(rch: false))
             return badInitMsg;
@@ -174,6 +186,9 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
         // Технические языки дорожек (rus0, ukr4, eng6) заменяем на названия озвучек
         if (!string.IsNullOrEmpty(names))
             mpd = LordFilmParser.RenameDashAudio(mpd, names);
+
+        // Выбранная в Lampa озвучка оставляет в MPD только эту аудиодорожку
+        mpd = LordFilmParser.SelectDashAudio(mpd, voice);
 
         // Сегменты CDN привязаны к IP сервера: <BaseURL> переводим на /proxy-dash/ (аналог ProxyAPI.Dash),
         // иначе плеер пойдёт в CDN напрямую со своего IP и получит 410
@@ -206,18 +221,37 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
         return stpl;
     }
 
-    ITplResult Tpl(EmbedModel md, string title, string original_title, string uri, short serial, short year, short s, bool rjson)
+    ITplResult Tpl(EmbedModel md, string title, string original_title, string uri, short serial, short year, short s, bool rjson, string qualityLabel = null, string voice = null)
     {
         if (md == null)
             return null;
 
+        string enc_uri = HttpUtility.UrlEncode(uri);
+        string enc_title = HttpUtility.UrlEncode(title);
+        string enc_original_title = HttpUtility.UrlEncode(original_title);
+
+        string page_url(string voice_name)
+            => $"{host}/lite/lordfilm?rjson={rjson}&uri={enc_uri}&title={enc_title}&original_title={enc_original_title}&serial={serial}&year={year}&s={s}&voice={HttpUtility.UrlEncode(voice_name)}";
+
         if (md.movie != null)
         {
             #region Фильм
-            var mtpl = new MovieTpl(title, original_title, 1);
+            var voices = VoiceNames(md.movie.audio, md.movie.voicename);
 
-            foreach (var st in Streams(md.movie.voicename, md.movie.hls, md.movie.dash, md.movie.audio))
-                mtpl.Append(st.label, st.link, subtitles: Subtitles(md.movie.cc), vast: init.vast);
+            if (voices.Count == 0)
+                voices.Add("По умолчанию");
+
+            string selected = string.IsNullOrEmpty(voice) || !voices.Contains(voice) ? voices[0] : voice;
+
+            var vtpl = new VoiceTpl(voices.Count);
+
+            foreach (var item in voices)
+                vtpl.Append(item, item == selected, page_url(item));
+
+            var mtpl = new MovieTpl(title, original_title, vtpl, 1);
+
+            foreach (var st in Streams(md.movie.voicename, md.movie.hls, md.movie.dash, md.movie.audio, voice))
+                mtpl.Append(st.label, st.link, subtitles: Subtitles(md.movie.cc), voice_name: selected, quality: qualityLabel, vast: init.vast);
 
             return mtpl.IsEmpty ? null : mtpl;
             #endregion
@@ -225,10 +259,6 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
 
         if (md.seasons == null || md.seasons.Length == 0)
             return null;
-
-        string enc_uri = HttpUtility.UrlEncode(uri);
-        string enc_title = HttpUtility.UrlEncode(title);
-        string enc_original_title = HttpUtility.UrlEncode(original_title);
 
         if (s == -1)
         {
@@ -255,11 +285,35 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
             if (season?.episodes == null)
                 return null;
 
-            var etpl = new EpisodeTpl(season.episodes.Count);
+            var voices = new List<string>();
+            var seenVoices = new HashSet<string>();
+
+            // Lampa для сериалов берёт voice_name из VoiceTpl (.videos__button), а не из details,
+            // поэтому без этого блока в «Озвучках» было «Неизвестно».
+            foreach (var episode in season.episodes)
+            {
+                foreach (var item in VoiceNames(episode.audio, episode.voicename))
+                {
+                    if (seenVoices.Add(item))
+                        voices.Add(item);
+                }
+            }
+
+            if (voices.Count == 0)
+                voices.Add("По умолчанию");
+
+            string selected = string.IsNullOrEmpty(voice) || !voices.Contains(voice) ? voices[0] : voice;
+
+            var vtpl = new VoiceTpl(voices.Count);
+
+            foreach (var item in voices)
+                vtpl.Append(item, item == selected, page_url(item));
+
+            var etpl = new EpisodeTpl(vtpl, season.episodes.Count);
 
             foreach (var episode in season.episodes)
             {
-                var streams = Streams(episode.voicename, episode.hls, episode.dash, episode.audio);
+                var streams = Streams(episode.voicename, episode.hls, episode.dash, episode.audio, voice);
 
                 if (streams.Count == 0)
                     continue;
@@ -274,15 +328,21 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
                     foreach (var st in streams)
                         quality.Append(st.link, st.label);
                 }
+                else if (!string.IsNullOrEmpty(qualityLabel))
+                {
+                    quality = new StreamQualityTpl(1);
+                    quality.Append(streams[0].link, qualityLabel);
+                }
 
                 etpl.Append(
-                    episode.voicename ?? "По умолчанию",
+                    $"{episode.episode} серия",
                     title ?? original_title,
                     s,
                     episode.episode,
                     streams[0].link,
                     streamquality: quality,
                     subtitles: Subtitles(episode.cc),
+                    voice_name: selected,
                     vast: init.vast
                 );
             }
@@ -295,17 +355,17 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
 
     #region Helpers
     /// <summary>Варианты потока (HLS и/или DASH) с учётом init.conf: dash / both.</summary>
-    List<(string label, string link)> Streams(string voicename, string hls, string dash, List<string> audio)
+    List<(string label, string link)> Streams(string voicename, string hls, string dash, List<string> audio, string voice = null)
     {
         var list = new List<(string label, string link)>();
 
         if (init.both)
         {
             if (!string.IsNullOrEmpty(hls))
-                list.Add(("HLS", StreamUrl(hls, audio, "m3u8")));
+                list.Add(("HLS", StreamUrl(hls, audio, "m3u8", voice)));
 
             if (!string.IsNullOrEmpty(dash))
-                list.Add(("DASH 1080p", StreamUrl(dash, audio, "mpd")));
+                list.Add(("DASH 1080p", StreamUrl(dash, audio, "mpd", voice)));
 
             return list;
         }
@@ -318,17 +378,93 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
         if (!string.IsNullOrEmpty(stream))
         {
             bool mpd = stream.Contains(".mpd", StringComparison.OrdinalIgnoreCase);
-            list.Add((voicename ?? "По умолчанию", StreamUrl(stream, audio, mpd ? "mpd" : "m3u8")));
+            list.Add((voicename ?? "По умолчанию", StreamUrl(stream, audio, mpd ? "mpd" : "m3u8", voice)));
         }
 
         return list;
+    }
+
+    static List<string> VoiceNames(List<string> audio, string voicename)
+    {
+        if (audio != null && audio.Count > 0)
+            return audio;
+
+        if (string.IsNullOrEmpty(voicename))
+            return new List<string>();
+
+        return voicename.Split(new[] { ", " }, StringSplitOptions.RemoveEmptyEntries)
+                        .Select(i => i.Trim())
+                        .Where(i => i.Length > 0)
+                        .ToList();
+    }
+
+    /// <summary>
+    /// Максимальное качество выбранного потока (HLS master.m3u8 или DASH .mpd).
+    /// Результат кэшируется в памяти на час по странице/сезону, поэтому master скачивается один раз.
+    /// </summary>
+    async Task<string> GetQualityLabel(EmbedModel md, string uri, short s)
+    {
+        string cacheKey = $"{uri}:{s}:{init.dash}";
+
+        if (qualityCache.TryGetValue(cacheKey, out var cached) && cached.ex > DateTimeOffset.Now)
+            return cached.label;
+
+        string stream = null;
+
+        if (md.movie != null)
+        {
+            stream = init.dash ? (md.movie.dash ?? md.movie.hls) : md.movie.hls;
+        }
+        else
+        {
+            var season = md.seasons?.FirstOrDefault(i => i.season == s);
+            var episode = season?.episodes?.FirstOrDefault(i => !string.IsNullOrEmpty(init.dash ? (i.dash ?? i.hls) : i.hls));
+
+            if (episode != null)
+                stream = init.dash ? (episode.dash ?? episode.hls) : episode.hls;
+        }
+
+        if (string.IsNullOrEmpty(stream))
+            return null;
+
+        bool mpd = stream.Contains(".mpd", StringComparison.OrdinalIgnoreCase);
+        string manifest = null;
+
+        try
+        {
+            manifest = await Session().Fetch(stream);
+        }
+        catch
+        {
+            // качество не критично: без него карточка просто останется без плашки
+        }
+
+        string label = LordFilmParser.MaxQuality(manifest, mpd);
+
+        if (!string.IsNullOrEmpty(label))
+        {
+            if (qualityCache.Count > 256)
+            {
+                var now = DateTimeOffset.Now;
+
+                foreach (var item in qualityCache)
+                {
+                    if (item.Value.ex <= now)
+                        qualityCache.TryRemove(item.Key, out _);
+                }
+            }
+
+            qualityCache[cacheKey] = (label, DateTimeOffset.Now.AddHours(1));
+        }
+
+        return label;
     }
 
     /// <summary>
     /// Ссылка на поток. HLS идёт через свой маршрут (нормальные подписи дорожек), DASH — через свой
     /// маршрут (подписи дорожек в манифесте). Суффикс <c>#.m3u8</c> / <c>#.mpd</c> — подсказка типа плееру.
     /// </summary>
-    string StreamUrl(string stream, List<string> audio, string ext)
+    string StreamUrl(string stream, List<string> audio, string ext, string voice = null)
     {
         if (string.IsNullOrEmpty(stream))
             return null;
@@ -337,11 +473,15 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
             ? $"&names={Uri.EscapeDataString(string.Join("|", audio))}"
             : string.Empty;
 
+        string voiceParam = string.IsNullOrEmpty(voice)
+            ? string.Empty
+            : $"&voice={Uri.EscapeDataString(voice)}";
+
         // accsArgs обязателен: маршрут /lite/... проходит через проверку доступа, иначе плеер получит accsdb
         if (ext == "mpd")
-            return accsArgs($"{host}/lite/lordfilm/video.mpd?uri={Uri.EscapeDataString(stream)}{names}") + "#.mpd";
+            return accsArgs($"{host}/lite/lordfilm/video.mpd?uri={Uri.EscapeDataString(stream)}{names}{voiceParam}") + "#.mpd";
 
-        return accsArgs($"{host}/lite/lordfilm/video.m3u8?uri={Uri.EscapeDataString(stream)}{names}") + "#.m3u8";
+        return accsArgs($"{host}/lite/lordfilm/video.m3u8?uri={Uri.EscapeDataString(stream)}{names}{voiceParam}") + "#.m3u8";
     }
 
     SubtitleTpl Subtitles(List<Cc> cc)
@@ -371,7 +511,7 @@ public class LordFilmController : BaseOnlineController<ModuleConf>
             return "https:" + img;
 
         if (img.StartsWith("/", StringComparison.Ordinal))
-            return init.host + img;
+            return (Session().ActiveHost ?? init.host) + img;
 
         return img;
     }
