@@ -1,0 +1,76 @@
+using GStreamer.Services;
+using System.Net;
+using System.Net.Http;
+
+await Check("http://127.0.0.1:9118/ts/stream/title?link=x", null);
+await Check("http://127.0.0.1:9118/dlna/stream?path=movie.mkv", null);
+await Check("http://127.0.0.1:9118/admin", "Uri");
+await Check("http://127.0.0.1:8090/ts/stream?link=x", "Uri");
+await Check("http://203.0.113.1/ts/stream?link=x", null); // Public URL policy unchanged.
+await Check("http://10.0.0.1/ts/stream?link=x", "Uri");
+await Check("http://127.0.0.1:9118/ts/streaming?link=x", "Uri");
+await Check("http://user:pass@127.0.0.1:9118/ts/stream", "Uri");
+await Check("file:///ts/stream", "Uri");
+Shared.CoreInit.conf.listen.host = "203.0.113.8:9118";
+await Check("http://203.0.113.8:9118/dlna/stream?path=movie.mkv", null);
+// Use a private configured host only in memory; never trust an incoming Host header.
+Shared.CoreInit.conf.listen.host = "10.0.0.8:9118";
+await Check("http://10.0.0.8:9118/dlna/stream?path=movie.mkv", null);
+await Check("http://10.0.0.8:9118/admin", "Uri");
+await Check("https://10.0.0.8:9118/dlna/stream", "Uri");
+await Check("http://10.0.0.8:9119/dlna/stream", "Uri");
+Shared.Services.Http.RedirectTo = "http://10.0.0.9/admin";
+await Check("http://127.0.0.1:9118/ts/stream?link=x", "ResponseHeaders", "sourceUrl");
+await Check("https://example.com/video.mkv", null, "sourceUrl", probeOnly: false);
+Shared.Services.Http.RedirectTo = "http://127.0.0.1:9118/dlna/stream?path=movie.mkv";
+await Check("http://127.0.0.1:9118/ts/stream?link=x", "ResponseHeaders", "sourceUrl");
+Shared.Services.Http.RedirectTo = null;
+Console.WriteLine("source URL checks passed");
+
+static async Task Check(string url, string expected, string addExpected = null, bool probeOnly = true) {
+    if (probeOnly) {
+        var result = await GService.GetProbe(url);
+        if (result.error != expected) throw new Exception($"Probe {url}: expected {expected ?? "success"}, got {result.error}");
+    }
+    GService.TryRemove(1);
+    var added = await GService.GetOrAdd(url, "test");
+    var want = addExpected ?? expected;
+    if (added.error != want) throw new Exception($"Add {url}: expected {want ?? "success"}, got {added.error}");
+}
+namespace Shared {
+    public static class CoreInit { public static App conf = new(); }
+    public class App { public Listen listen = new(); }
+    public class Listen { public string localhost = "127.0.0.1", host = null, scheme = "http"; public int port = 9118; }
+}
+namespace Shared.Services.Utilities {
+    public static class Fnv1a { public static (ulong H1, ulong H2) Hash(string s) => (1, 1); public static void Append<T>(ref (ulong H1, ulong H2) h, T v) {} }
+}
+namespace Shared.Services {
+    public static class Http {
+        public static string RedirectTo;
+        public static Task<HttpResponseMessage> ResponseHeaders(string url, int timeoutSeconds) {
+            var response = new HttpResponseMessage(RedirectTo == null ? HttpStatusCode.OK : HttpStatusCode.Found) { RequestMessage = new HttpRequestMessage(HttpMethod.Get, url), Content = new StringContent("") };
+            if (RedirectTo != null) response.Headers.Location = new Uri(RedirectTo);
+            return Task.FromResult(response);
+        }
+    }
+}
+namespace Shared.Services.Hybrid {
+    public class HybridCache { public static HybridCache Get() => new(); public bool TryGetValue<T>(string key, out T value) { value = default; return false; } public void Set<T>(string key, T value, TimeSpan time) {} }
+}
+namespace GStreamer {
+    public static class ModInit { public static Conf conf = new(); }
+    public class Conf { public Dictionary<string, Conf> conf_uids; public bool hdr_to_sdr, transcodeAVI, transcodeVP8, transcodeH264, transcodeH265, transcodeAV1, transcodeVP9; public int maxTasks, inactiveMinutes = 60; }
+}
+namespace GStreamer.Models {
+    public enum VideoTransfer { Pq, Hlg }
+    public class Track { public string Type; public bool IsHdr; public VideoTransfer VideoTransfer; }
+    public class ProbeInfo { public List<Track> Tracks = new() {new Track {Type="audio"}}; public Track Video; public bool IsAVI, IsMatroskaOrWebM=true, IsH264=true, IsH265, IsAV1, IsVP9, IsVP8; public string ContainerCapsName, ContainerName; public long DurationNs; }
+    public class CueTimeline {}
+}
+namespace GStreamer.Services {
+    public static class GSProbe { public static Task<GStreamer.Models.ProbeInfo> Get(string url) => Task.FromResult(new GStreamer.Models.ProbeInfo()); }
+    public static class HdrToneMappingBackend { public static bool IsAvailable = true; public static string UnavailableError = "hdr"; }
+    public static class MatroskaCueReader { public static Task<GStreamer.Models.CueTimeline> Read(string url, long? length, long duration) => Task.FromResult<GStreamer.Models.CueTimeline>(null); }
+    public class GStask { public GStask(GStreamer.Models.ProbeInfo p, GStreamer.Conf c, string s, ulong id, string uid, int a, long? l, GStreamer.Models.CueTimeline cue) {user_uid=uid;} public bool IsDead, IsFrozen; public string user_uid; public DateTime lastActive=DateTime.UtcNow; public void UpdateLastActive() {} public void Dispose() {} public void Frozen() {} }
+}

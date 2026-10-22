@@ -40,6 +40,7 @@ public partial class GStask
         souphttpsrc
             name={{SourceElementName}}
             location="{{sourceUrl}}"
+            automatic-redirect={{(!GService.IsInternalSource(new Uri(sourceUrl))).ToString().ToLowerInvariant()}}
             is-live=false
             keep-alive=true
             timeout=90

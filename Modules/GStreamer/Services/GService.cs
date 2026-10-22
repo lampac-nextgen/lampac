@@ -1,4 +1,5 @@
 ﻿using GStreamer.Models;
+using Shared;
 using Shared.Services;
 using Shared.Services.Hybrid;
 using Shared.Services.Utilities;
@@ -75,7 +76,7 @@ public static class GService
 
                 sourceUrl = Regex.Replace(sourceUrl, "/stream/[^\\?]+", "/stream");
 
-                if (!SafeHttpUrl.IsSafe(sourceUrl) || !Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri))
+                if (!TrySourceUri(sourceUrl, out var uri))
                     return new(null, "Uri");
 
                 string probeKey = $"ProbeInfo:{uri.AbsoluteUri}";
@@ -100,7 +101,9 @@ public static class GService
                 else
                     sourceUrl = requestUri.AbsoluteUri;
 
-                if (!SafeHttpUrl.IsSafe(sourceUrl))
+                if (IsInternalSource(uri)
+                    ? !httpHeaders.IsSuccessStatusCode || !TrySourceUri(sourceUrl, out _)
+                    : !SafeHttpUrl.IsSafe(sourceUrl))
                     return new(null, "sourceUrl");
                 #endregion
 
@@ -270,13 +273,45 @@ public static class GService
 
         sourceUrl = Regex.Replace(sourceUrl, "/stream/[^\\?]+", "/stream");
 
-        if (!SafeHttpUrl.IsSafe(sourceUrl) || !Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri))
+        if (!TrySourceUri(sourceUrl, out var uri))
             return new(null, "Uri");
 
         sourceUrl = uri.AbsoluteUri;
+        if (IsInternalSource(uri))
+        {
+            var headers = await Http.ResponseHeaders(sourceUrl, timeoutSeconds: 45).ConfigureAwait(false);
+            if (headers == null || !headers.IsSuccessStatusCode)
+                return new(null, "ResponseHeaders");
+        }
+
         string probeKey = $"ProbeInfo:{sourceUrl}";
 
         return await GetProbeInfo(probeKey, sourceUrl).ConfigureAwait(false);
+    }
+
+    static bool TrySourceUri(string sourceUrl, out Uri uri)
+    {
+        return Uri.TryCreate(sourceUrl, UriKind.Absolute, out uri) &&
+            (SafeHttpUrl.IsSafe(sourceUrl) || IsInternalSource(uri));
+    }
+
+    internal static bool IsInternalSource(Uri uri)
+    {
+        if ((uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            (uri.AbsolutePath != "/ts/stream" && uri.AbsolutePath != "/dlna/stream"))
+            return false;
+
+        var listen = CoreInit.conf.listen;
+        if (Uri.TryCreate($"http://{listen.localhost}:{listen.port}", UriKind.Absolute, out var local) &&
+            uri.Scheme == local.Scheme && uri.Authority.Equals(local.Authority, StringComparison.OrdinalIgnoreCase))
+            return true;
+
+        // Only operator configuration can trust a private advertised origin, never Request.Host.
+        return !string.IsNullOrEmpty(listen.host) &&
+            Uri.TryCreate($"{(string.IsNullOrEmpty(listen.scheme) ? uri.Scheme : listen.scheme)}://{listen.host}", UriKind.Absolute, out var configured) &&
+            uri.Scheme == configured.Scheme &&
+            uri.Authority.Equals(configured.Authority, StringComparison.OrdinalIgnoreCase);
     }
 
     static async Task<ProbeResult> GetProbeCore(string sourceUrl, string probeKey)
