@@ -1,1 +1,47 @@
+# Default owners (require_code_owner_review is enabled on main).
 * @lampac-nextgen/lampac
+
+# CI / templates / labels
+.github/ @lampac-nextgen/lampac
+
+# Platform
+/Core/ @lampac-nextgen/lampac
+/Shared/ @lampac-nextgen/lampac
+/Online/ @lampac-nextgen/lampac
+/SISI/ @lampac-nextgen/lampac
+
+# Install / packaging
+/install.sh @lampac-nextgen/lampac
+/Dockerfile @lampac-nextgen/lampac
+/docker-compose*.yml @lampac-nextgen/lampac
+/ansible/ @lampac-nextgen/lampac
+/charts/ @lampac-nextgen/lampac
+
+# Docs / site
+/docs/ @lampac-nextgen/lampac
+/site/ @lampac-nextgen/lampac
+/CONTRIBUTING.md @lampac-nextgen/lampac
+/SECURITY.md @lampac-nextgen/lampac
+
+# Hot modules
+/Modules/GStreamer/ @lampac-nextgen/lampac
+/Modules/Transcoding/ @lampac-nextgen/lampac
+/Modules/JacRed/ @lampac-nextgen/lampac
+/Modules/TorrServer/ @lampac-nextgen/lampac
+/Modules/Tracks/ @lampac-nextgen/lampac
+/Modules/DLNA/ @lampac-nextgen/lampac
+/Modules/Sync/ @lampac-nextgen/lampac
+/Modules/Proxy/ @lampac-nextgen/lampac
+/Modules/Music/ @lampac-nextgen/lampac
+/Modules/Community/ @lampac-nextgen/lampac
+/Modules/SeriesNotify/ @lampac-nextgen/lampac
+/Modules/OnlineRUS/ @lampac-nextgen/lampac
+/Modules/OnlineENG/ @lampac-nextgen/lampac
+/Modules/OnlinePaid/ @lampac-nextgen/lampac
+/Modules/OnlineAnime/ @lampac-nextgen/lampac
+/Modules/OnlineUKR/ @lampac-nextgen/lampac
+/Modules/OnlineGEO/ @lampac-nextgen/lampac
+/Modules/Adult/ @lampac-nextgen/lampac
+/Modules/NextHUB/ @lampac-nextgen/lampac
+/Modules/LampaWeb/ @lampac-nextgen/lampac
+/Modules/AdminPanel/ @lampac-nextgen/lampac

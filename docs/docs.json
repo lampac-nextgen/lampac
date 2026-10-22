@@ -55,6 +55,10 @@
   },
   "redirects": [
     {
+      "source": "/modules/tg-notify",
+      "destination": "/modules/series-notify"
+    },
+    {
       "source": "/docs",
       "destination": "/"
     },
@@ -265,7 +269,7 @@
                   "modules/telegram-auth",
                   "modules/telegram-auth-bot",
                   "modules/qr-auth",
-                  "modules/tg-notify",
+                  "modules/series-notify",
                   "modules/kit",
                   "modules/external-bind",
                   "modules/forkplayer",

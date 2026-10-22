@@ -57,7 +57,7 @@ public partial class ProxyAPI
 
         string servUri = decryptLink?.uri;
 
-        if (string.IsNullOrEmpty(servUri) || !servUri.StartsWith("http"))
+        if (!SafeProxyUri(servUri))
         {
             httpContext.Response.StatusCode = StatusCodes.Status400BadRequest;
             return;
@@ -282,9 +282,19 @@ public partial class ProxyAPI
 
                                 if ((int)response.StatusCode is 301 or 302 or 303 or 0 || response.Headers.Location != null)
                                 {
+                                    Uri location = response.Headers.Location;
+                                    if (location != null && !location.IsAbsoluteUri && request.RequestUri != null)
+                                        location = new Uri(request.RequestUri, location);
+
+                                    if (location == null || !location.IsAbsoluteUri || !SafeHttpUrl.IsSafe(location.AbsoluteUri))
+                                    {
+                                        httpContext.Response.StatusCode = StatusCodes.Status502BadGateway;
+                                        return;
+                                    }
+
                                     httpContext.Response.Redirect(
                                         ProxyLink.Encrypt(
-                                            response.Headers.Location.AbsoluteUri,
+                                            location.AbsoluteUri,
                                             decryptLink,
                                             prefix: [CoreInit.Host(httpContext), "/proxy/"]
                                         )
@@ -351,5 +361,17 @@ public partial class ProxyAPI
             if (CoreInit.conf.serilog)
                 Serilog.Log.Error(ex, "CatchId={CatchId}", "id_1wmuzgfc");
         }
+    }
+
+    static bool SafeProxyUri(string uri)
+    {
+        if (string.IsNullOrEmpty(uri))
+            return false;
+
+        int i = uri.IndexOf(" or ", StringComparison.Ordinal);
+        if (i < 0)
+            return SafeHttpUrl.IsSafe(uri);
+
+        return SafeHttpUrl.IsSafe(uri[..i].Trim()) && SafeHttpUrl.IsSafe(uri[(i + 4)..].Trim());
     }
 }

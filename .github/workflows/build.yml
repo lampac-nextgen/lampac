@@ -21,11 +21,11 @@ on:
         required: false
         type: string
 
+# PR/fork baseline: read-only. Write jobs elevate permissions below.
 permissions:
-  contents: write
+  contents: read
   actions: read
   packages: read
-  id-token: write
 
 jobs:
   extract-version:
@@ -48,6 +48,7 @@ jobs:
       retention_days: ${{ needs.extract-version.outputs.is_release == 'true' && 30 || 7 }}
     secrets: inherit
 
+  # push/attest stay false on pull_request refs; write perms only used when push is true.
   build-docker-image:
     name: Build and push Docker image
     needs: extract-version

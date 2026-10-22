@@ -51,7 +51,7 @@ namespace QRAuth.Services
                 }
                 catch (Exception ex)
                 {
-                    _logger.LogError(ex, "[TelegramBot] ReadUsers error");
+                    _logger.LogError(ex, "[QRAuthBot] ReadUsers error");
                     return new();
                 }
             }

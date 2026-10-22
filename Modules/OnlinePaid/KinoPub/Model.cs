@@ -42,6 +42,14 @@ public class File
 {
     public string quality { get; set; }
 
+    public string codec { get; set; }
+
+    public int w { get; set; }
+
+    public int h { get; set; }
+
+    public int quality_id { get; set; }
+
     public string file { get; set; }
 
     public Url url { get; set; }

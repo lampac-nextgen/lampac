@@ -1,4 +1,5 @@
-﻿using System.Reflection;
+﻿using Newtonsoft.Json;
+using System.Reflection;
 using System.Runtime.Loader;
 
 namespace Shared.Models.Module;
@@ -19,6 +20,13 @@ public class RootModule
 
     public string[] tree { get; set; }
 
+
+    /// <summary>
+    /// Set at load. Source modules: FNV cache id of Shared.dll plus the compiled sources.
+    /// A dropped dll: MD5 of that file. Not read from manifest.json.
+    /// </summary>
+    [JsonIgnore]
+    public string hash { get; set; }
 
     public Assembly assembly { get; set; }
 

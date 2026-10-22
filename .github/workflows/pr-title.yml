@@ -1,0 +1,36 @@
+name: PR title
+
+on:
+  pull_request:
+    types: [opened, edited, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  title:
+    name: Conventional title
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Check PR title
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          ACTOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          case "$ACTOR" in
+            dependabot[bot]|github-actions[bot])
+              echo "Skipping title check for bot: $ACTOR"
+              exit 0
+              ;;
+          esac
+          # type(scope)!: summary  — scope and ! optional
+          pattern='^(feat|fix|docs|chore|ci|deps|security|revert|style|test|umbrel)(\([^)]+\))?(!)?: .+'
+          if [[ "$TITLE" =~ $pattern ]]; then
+            echo "OK: $TITLE"
+            exit 0
+          fi
+          echo "::error::PR title must match conventional commits: type(scope): summary"
+          echo "Got: $TITLE"
+          echo "Example: fix(GStreamer): wait for preroll before seeking"
+          exit 1

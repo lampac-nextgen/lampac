@@ -1,0 +1,118 @@
+<Project>
+
+  <!--
+    After GitInfo's GitVersion target, before the SDK writes assembly attributes.
+    Skipped when -p:Version= was passed (LampacVersionExplicit).
+
+    AssemblyVersion       Major.0.0.0
+    FileVersion           Major.Minor.Patch.CommitsSinceTag
+    InformationalVersion  {base}+{sha}            exact tag
+                          {base}+{sha}.{branch}   commits after the tag
+                          LAMPAC_VERSION+SourceRevisionId   no .git
+
+    Final values go through CreateProperty. MSBuild keeps newlines from an
+    indented element body, and a wrapped "true" then fails the git check,
+    which stamps 0.0.0.
+  -->
+  <Target Name="LampacApplyGitVersion"
+    DependsOnTargets="GitVersion"
+    BeforeTargets="GetAssemblyVersion"
+    Condition="'$(LampacVersionExplicit)' != 'true'">
+    <PropertyGroup>
+      <_LampacSha>$(GitSha.Trim())</_LampacSha>
+      <_LampacCommit>$(GitCommit.Trim())</_LampacCommit>
+      <_LampacMajor>$(GitBaseVersionMajor)</_LampacMajor>
+      <_LampacMinor>$(GitBaseVersionMinor)</_LampacMinor>
+      <_LampacPatch>$(GitBaseVersionPatch)</_LampacPatch>
+      <_LampacCount>$(GitCommits)</_LampacCount>
+      <_LampacBranch>$([System.Text.RegularExpressions.Regex]::Replace('$(GitBranch)',
+        '[^0-9A-Za-z-]', '-'))</_LampacBranch>
+    </PropertyGroup>
+
+    <CreateProperty Value="$(_LampacSha.Trim())">
+      <Output TaskParameter="Value" PropertyName="_LampacSha" />
+    </CreateProperty>
+    <CreateProperty Value="$(_LampacCommit.Trim())">
+      <Output TaskParameter="Value" PropertyName="_LampacCommit" />
+    </CreateProperty>
+    <CreateProperty Value="$(_LampacMajor.Trim())">
+      <Output TaskParameter="Value" PropertyName="_LampacMajor" />
+    </CreateProperty>
+    <CreateProperty Value="$(_LampacMinor.Trim())">
+      <Output TaskParameter="Value" PropertyName="_LampacMinor" />
+    </CreateProperty>
+    <CreateProperty Value="$(_LampacPatch.Trim())">
+      <Output TaskParameter="Value" PropertyName="_LampacPatch" />
+    </CreateProperty>
+    <CreateProperty Value="$(_LampacCount.Trim())">
+      <Output TaskParameter="Value" PropertyName="_LampacCount" />
+    </CreateProperty>
+    <CreateProperty Value="$(_LampacBranch.Trim())">
+      <Output TaskParameter="Value" PropertyName="_LampacBranch" />
+    </CreateProperty>
+
+    <!-- 0000000 is GitInfo's placeholder when rev-parse fails. -->
+    <CreateProperty Value="true"
+      Condition="'$(_LampacSha)' != '' and '$(_LampacSha)' != '0000000' and '$(_LampacCommit)' != '0000000'">
+      <Output TaskParameter="Value" PropertyName="_LampacHasGit" />
+    </CreateProperty>
+
+    <CreateProperty Value="0" Condition="'$(_LampacMajor)' == ''">
+      <Output TaskParameter="Value" PropertyName="_LampacMajor" />
+    </CreateProperty>
+    <CreateProperty Value="0" Condition="'$(_LampacMinor)' == ''">
+      <Output TaskParameter="Value" PropertyName="_LampacMinor" />
+    </CreateProperty>
+    <CreateProperty Value="0" Condition="'$(_LampacPatch)' == ''">
+      <Output TaskParameter="Value" PropertyName="_LampacPatch" />
+    </CreateProperty>
+    <CreateProperty Value="0" Condition="'$(_LampacCount)' == ''">
+      <Output TaskParameter="Value" PropertyName="_LampacCount" />
+    </CreateProperty>
+
+    <!-- Nearest tag, not SemVer patch plus commit height. -->
+    <CreateProperty Value="$(_LampacMajor).$(_LampacMinor).$(_LampacPatch)"
+      Condition="'$(_LampacHasGit)' == 'true'">
+      <Output TaskParameter="Value" PropertyName="VersionPrefix" />
+    </CreateProperty>
+    <CreateProperty Value="$(VersionPrefix.Trim())">
+      <Output TaskParameter="Value" PropertyName="VersionPrefix" />
+    </CreateProperty>
+    <CreateProperty Value="0.0.0" Condition="'$(VersionPrefix)' == ''">
+      <Output TaskParameter="Value" PropertyName="VersionPrefix" />
+    </CreateProperty>
+
+    <PropertyGroup Condition="'$(LampacInformationalVersionExplicit)' != 'true'">
+      <_LampacInfo
+        Condition="'$(_LampacHasGit)' == 'true' and ('$(_LampacCount)' == '0' or '$(_LampacCount)' == '')">
+        $(VersionPrefix)+$(_LampacSha)</_LampacInfo>
+      <_LampacInfo
+        Condition="'$(_LampacHasGit)' == 'true' and '$(_LampacCount)' != '0' and '$(_LampacCount)' != '' and '$(_LampacBranch)' != '' and '$(_LampacBranch)' != 'HEAD'">
+        $(VersionPrefix)+$(_LampacSha).$(_LampacBranch)</_LampacInfo>
+      <_LampacInfo Condition="'$(_LampacHasGit)' == 'true' and '$(_LampacInfo)' == ''">
+        $(VersionPrefix)+$(_LampacSha)</_LampacInfo>
+      <_LampacInfo
+        Condition="'$(_LampacHasGit)' != 'true' and '$(LAMPAC_VERSION)' != '' and '$(SourceRevisionId)' != ''">
+        $(LAMPAC_VERSION)+$(SourceRevisionId)</_LampacInfo>
+      <_LampacInfo
+        Condition="'$(_LampacHasGit)' != 'true' and '$(_LampacInfo)' == '' and '$(LAMPAC_VERSION)' != ''">
+        $(LAMPAC_VERSION)</_LampacInfo>
+      <_LampacInfo Condition="'$(_LampacInfo)' == ''">$(VersionPrefix)</_LampacInfo>
+    </PropertyGroup>
+    <CreateProperty Value="$(_LampacInfo.Trim())"
+      Condition="'$(LampacInformationalVersionExplicit)' != 'true'">
+      <Output TaskParameter="Value" PropertyName="InformationalVersion" />
+    </CreateProperty>
+
+    <CreateProperty Value="$(VersionPrefix)">
+      <Output TaskParameter="Value" PropertyName="Version" />
+    </CreateProperty>
+    <CreateProperty Value="$(_LampacMajor).0.0.0">
+      <Output TaskParameter="Value" PropertyName="AssemblyVersion" />
+    </CreateProperty>
+    <CreateProperty Value="$(_LampacMajor).$(_LampacMinor).$(_LampacPatch).$(_LampacCount)">
+      <Output TaskParameter="Value" PropertyName="FileVersion" />
+    </CreateProperty>
+  </Target>
+
+</Project>

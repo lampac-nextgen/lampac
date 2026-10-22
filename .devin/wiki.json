@@ -147,11 +147,11 @@
     },
     {
       "title": "Integration Modules",
-      "purpose": "Modules/Community/TelegramAuth and TelegramAuthBot (base SkipModules, often manifest off), Tg-notify, Kit (encrypted credentials for paid providers), ExternalBind (often disabled), ForkPlayerXML, MsxNative, Potok (base SkipModules). Kit storage paths and consumption by OnlinePaid.",
+      "purpose": "Modules/Community/TelegramAuth and TelegramAuthBot (base SkipModules, often manifest off), SeriesNotify, Kit (encrypted credentials for paid providers), ExternalBind (often disabled), ForkPlayerXML, MsxNative, Potok (base SkipModules). Kit storage paths and consumption by OnlinePaid.",
       "parent": "Modules Overview",
       "page_notes": [
         {
-          "content": "User-facing guides: https://docs.lampac.dev/modules/community https://docs.lampac.dev/modules/telegram-auth https://docs.lampac.dev/modules/telegram-auth-bot https://docs.lampac.dev/modules/tg-notify https://docs.lampac.dev/modules/kit https://docs.lampac.dev/modules/external-bind https://docs.lampac.dev/modules/forkplayer https://docs.lampac.dev/modules/msx-native https://docs.lampac.dev/modules/potok"
+          "content": "User-facing guides: https://docs.lampac.dev/modules/community https://docs.lampac.dev/modules/telegram-auth https://docs.lampac.dev/modules/telegram-auth-bot https://docs.lampac.dev/modules/series-notify https://docs.lampac.dev/modules/kit https://docs.lampac.dev/modules/external-bind https://docs.lampac.dev/modules/forkplayer https://docs.lampac.dev/modules/msx-native https://docs.lampac.dev/modules/potok"
         }
       ]
     },
@@ -257,7 +257,7 @@
     },
     {
       "title": "API Proxies Admin Telegram",
-      "purpose": "Proxy module HTTP surfaces, AdminPanel /adminpanel/ (manifest off), Telegram auth/bot/notify endpoints. Source: Modules/Proxy, AdminPanel, Community, Tg-notify. Never document live tokens.",
+      "purpose": "Proxy module HTTP surfaces, AdminPanel /adminpanel/ (manifest off), Telegram auth/bot/notify endpoints. Source: Modules/Proxy, AdminPanel, Community, SeriesNotify. Never document live tokens.",
       "parent": "API Overview",
       "page_notes": [
         {

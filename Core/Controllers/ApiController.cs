@@ -17,14 +17,12 @@ namespace Core.Controllers;
 public class ApiController : BaseController
 {
     #region Version / Headers / geo / myip
-    const string versionName = "Lord of Rings";
+    const string versionName = "LOTR: The Fellowship of the Ring";
     static readonly string versionHash = CrypTo.md5File("Shared.dll");
-    static readonly string buildInfo = System.Text.Json.JsonSerializer.Serialize(GetBuildInfo());
 
     static object GetBuildInfo()
     {
         var asm = typeof(ApiController).Assembly;
-        var version = (asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion ?? "").Split('+', 2);
         string meta(string key)
         {
             string value = asm.GetCustomAttributes<AssemblyMetadataAttribute>().FirstOrDefault(a => a.Key == key)?.Value?.Trim();
@@ -34,9 +32,11 @@ public class ApiController : BaseController
         return new
         {
             name = versionName,
-            version = version[0],
-            commit = version.Length > 1 ? version[1] : null,
-            dirty = meta("BuildDirty") is string dirty ? dirty == "true" : (bool?)null,
+            version = VersionInfo.Version,
+            commit = VersionInfo.GitSha,
+            dirty = VersionInfo.HasGit
+                ? (bool?)VersionInfo.IsDirty
+                : meta("BuildDirty") is string dirty ? dirty == "true" : null,
             @ref = meta("BuildRef"),
             repository = meta("BuildRepository"),
             runUrl = meta("BuildRunUrl"),
@@ -48,9 +48,51 @@ public class ApiController : BaseController
             docker = System.IO.File.Exists("isdocker"),
             hash = versionHash,
             runtime = RuntimeInformation.FrameworkDescription,
-            rid = RuntimeInformation.RuntimeIdentifier
+            rid = RuntimeInformation.RuntimeIdentifier,
+            semVer = VersionInfo.SemVer,
+            baseTag = VersionInfo.BaseTag,
+            commits = VersionInfo.Commits,
+            gitBranch = VersionInfo.GitBranch,
+            commitDate = VersionInfo.CommitDate,
+            assemblies = new
+            {
+                core = AssemblyStamp(asm, null),
+                shared = AssemblyStamp(typeof(CoreInit).Assembly, versionHash),
+                // Built per request: modules are compiled during startup, after this type may load.
+                modules = CoreInit.modules
+                    .Where(m => m?.assembly != null)
+                    .Select(m =>
+                    {
+                        var stamp = ReadStamp(m.assembly);
+                        return new
+                        {
+                            name = string.IsNullOrEmpty(m.name) ? m.assembly.GetName().Name : m.name,
+                            informational = stamp.informational,
+                            fileVersion = stamp.fileVersion,
+                            assemblyVersion = stamp.assemblyVersion,
+                            hash = string.IsNullOrEmpty(m.hash) ? null : m.hash
+                        };
+                    })
+                    .ToArray()
+            }
         };
     }
+
+    static object AssemblyStamp(Assembly asm, string hash)
+    {
+        var stamp = ReadStamp(asm);
+        if (hash == null)
+            return new { stamp.informational, stamp.fileVersion, stamp.assemblyVersion };
+
+        return new { stamp.informational, stamp.fileVersion, stamp.assemblyVersion, hash };
+    }
+
+    static (string informational, string fileVersion, string assemblyVersion) ReadStamp(Assembly asm) =>
+    (
+        asm.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion?.Trim(),
+        asm.GetCustomAttribute<AssemblyFileVersionAttribute>()?.Version?.Trim(),
+        asm.GetName().Version?.ToString()
+    );
 
     [HttpGet]
     [AllowAnonymous]
@@ -66,9 +108,9 @@ public class ApiController : BaseController
                 return Content(versionName, "text/plain; charset=utf-8");
 
             if (type == "build")
-                return Content(buildInfo, "application/json; charset=utf-8");
+                return Content(System.Text.Json.JsonSerializer.Serialize(GetBuildInfo()), "application/json; charset=utf-8");
 
-            return Redirect("https://youtu.be/7lwJOxN_gXc");
+            return Redirect("https://youtu.be/N4xV2RIlMi4?si=ldpuG-KlRPfZKz_m");
         }
 
         return StatusCode(404);

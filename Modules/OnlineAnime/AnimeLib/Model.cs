@@ -36,9 +36,22 @@ public class EpisodeDetails
     public Player[] players { get; set; }
 }
 
+public class VideoConstants
+{
+    public VideoServer[] videoServers { get; set; }
+}
+
+public class VideoServer
+{
+    public string id { get; set; }
+    public string url { get; set; }
+}
+
 public class Player
 {
     public string player { get; set; }
+
+    public string video_domain { get; set; }
 
     public PlayerTeam team { get; set; }
 

@@ -82,7 +82,7 @@ public class ProxyImg
 
         string href = decryptLink?.uri;
 
-        if (string.IsNullOrEmpty(href) || !href.StartsWith("http"))
+        if (!SafeProxyHref(href))
         {
             httpContext.Response.StatusCode = 404;
             return;
@@ -775,6 +775,18 @@ public class ProxyImg
             return "image/webp";
 
         return contentType;
+    }
+
+    static bool SafeProxyHref(string href)
+    {
+        if (string.IsNullOrEmpty(href))
+            return false;
+
+        int i = href.IndexOf(" or ", StringComparison.Ordinal);
+        if (i < 0)
+            return SafeHttpUrl.IsSafe(href);
+
+        return SafeHttpUrl.IsSafe(href[..i].Trim()) && SafeHttpUrl.IsSafe(href[(i + 4)..].Trim());
     }
     #endregion
 }

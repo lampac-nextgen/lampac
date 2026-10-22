@@ -25,13 +25,19 @@ namespace JacRed.Controllers
             if (!jackett.Selezen.enable || ModInit.conf.disableJackett)
                 return Content("disable");
 
+            if (!Uri.TryCreate(url, UriKind.Absolute, out Uri abs) ||
+                !Uri.TryCreate(jackett.Selezen.host, UriKind.Absolute, out Uri tracker) ||
+                (abs.Scheme != Uri.UriSchemeHttp && abs.Scheme != Uri.UriSchemeHttps) ||
+                !abs.IdnHost.Equals(tracker.IdnHost, StringComparison.OrdinalIgnoreCase))
+                return Content("error");
+
             string cookie = await getCookie();
             if (string.IsNullOrEmpty(cookie))
                 return Content("cookie == null");
 
             var proxyManager = new ProxyManager("selezen", jackett.Selezen);
 
-            string html = await Http.Get(url, cookie: cookie, proxy: proxyManager.Get());
+            string html = await Http.Get(abs.AbsoluteUri, cookie: cookie, proxy: proxyManager.Get());
             string magnet = new Regex("href=\"(magnet:[^\"]+)\"").Match(html ?? string.Empty).Groups[1].Value;
 
             if (html == null)

@@ -34,6 +34,9 @@ public static class KitInvoke
             {
                 try
                 {
+                    if (IsScriptSink(prop.Name))
+                        continue;
+
                     var propertyInfo = typeof(T).GetProperty(prop.Name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
                     if (propertyInfo?.CanWrite != true)
                         continue;
@@ -129,5 +132,19 @@ public static class KitInvoke
             return func.Invoke(userconf, init, userconf.ToObject<T>());
 
         return init;
+    }
+
+    static bool IsScriptSink(string name)
+    {
+        return name.Contains("eval", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("route", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("view", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("contentParse", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("content", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("list", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("search", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("model", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("menu", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("card_parse", StringComparison.OrdinalIgnoreCase);
     }
 }

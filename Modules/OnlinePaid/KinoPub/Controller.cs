@@ -81,7 +81,7 @@ public class KinoPubController : BaseOnlineController<ModuleConf>
 
     [HttpGet, Staticache(manually: true)]
     [Route("lite/kinopub")]
-    async public Task<ActionResult> Index(string imdb_id, long kinopoisk_id, string title, string original_title, short year, byte clarification, int postid, short s = -1, int t = -1, string codec = null, bool rjson = false, bool similar = false, string source = null, string id = null)
+    async public Task<ActionResult> Index(string imdb_id, long kinopoisk_id, string title, string original_title, short year, byte clarification, int postid, short s = -1, int t = -1, string codec = null, string lang = null, bool rjson = false, bool similar = false, string source = null, string id = null)
     {
         if (await IsRequestBlocked(rch: true))
             return badInitMsg;
@@ -138,7 +138,7 @@ public class KinoPubController : BaseOnlineController<ModuleConf>
             goto rhubFallback;
 
         return ContentTpl(cache,
-            () => oninvk.Tpl(cache.Value, init.filetype, title, original_title, postid, s, t, codec, vast: init.vast, rjson: rjson)
+            () => oninvk.Tpl(cache.Value, init.filetype, title, original_title, postid, s, t, codec, lang, vast: init.vast, rjson: rjson)
         );
     }
 

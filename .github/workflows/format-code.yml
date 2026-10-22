@@ -12,10 +12,11 @@ permissions:
 jobs:
   format-code:
     name: Format code
-    runs-on: ubuntu-latest
+    if: github.repository == 'lampac-nextgen/lampac'
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           token: ${{ secrets.LAMPAC_PAT || github.token }}

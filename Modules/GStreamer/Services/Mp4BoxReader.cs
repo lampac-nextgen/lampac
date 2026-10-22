@@ -357,11 +357,8 @@ public sealed class Mp4BoxReader : IDisposable
         if (size <= 0)
             return;
 
-        if (TryProcessDeferred())
-        {
-            AppendGstBufferToDeferred(buffer, 0, size);
-            return;
-        }
+        // Caller drains TryProcessDeferred() before Push; do not stash the
+        // whole buffer here on segment-complete (that ratcheted _deferred).
 
         int sourceOffset = 0;
 
@@ -3104,6 +3101,7 @@ public sealed class Mp4BoxReader : IDisposable
     {
         _deferredStart = 0;
         Reset(_deferred);
+        _deferred.Capacity = 0;
     }
 
     void KeepDeferred(int length, int consumed)

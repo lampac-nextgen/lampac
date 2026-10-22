@@ -10,18 +10,15 @@ on:
       - main
 
 permissions:
-  contents: write
-  actions: read
-  packages: read
-  id-token: write
+  contents: read
 
 jobs:
   test-build:
     name: Test build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
 

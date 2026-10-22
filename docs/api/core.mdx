@@ -46,6 +46,132 @@ curl -fsS "http://localhost:9118/version?type=hash"
 
 Ответ имеет тип `text/plain`. Запрос `/version` без `type` при включённом `listen.version` выполняет redirect и не является JSON health endpoint.
 
+### Штамп сборки
+
+<CodeGroup>
+
+```bash cURL
+curl -fsS "http://localhost:9118/version?type=build"
+```
+
+</CodeGroup>
+
+Ответ имеет тип `application/json`. Поля ниже присутствуют в каждом ответе. `semVer`, `baseTag`, `commits`, `gitBranch` и `commitDate` равны `null`, если сборка собрана без git-метаданных.
+
+`version` зависит от состояния репозитория на момент сборки:
+
+- точный git-тег, префикс `v` снимается: `1.82.0`;
+- есть коммиты после тега: `1.82.0-next+a952733a` (8 символов SHA);
+- тега нет, ветка известна: `dev-feature-versioning+a952733a`;
+- тега и ветки нет: `dev+a952733a`;
+- репозитория нет: часть `InformationalVersion` до `+`, иначе `unknown`.
+
+<ResponseField name="name" type="string">
+  Постоянное имя сборки, то же значение, что у `type=name`.
+</ResponseField>
+
+<ResponseField name="version" type="string">
+  Строка версии по правилам выше.
+</ResponseField>
+
+<ResponseField name="commit" type="string">
+  Короткий SHA (8 символов). Без git — фрагмент `InformationalVersion` после `+`, либо `null`.
+</ResponseField>
+
+<ResponseField name="dirty" type="boolean">
+  `true`, если в рабочем дереве были незакоммиченные изменения. Без git — `null`, если метаданные сборки это не задали.
+</ResponseField>
+
+<ResponseField name="ref" type="string">
+  Git ref сборки: аргумент `BuildRef`, иначе `GITHUB_REF`, иначе `refs/heads/{ветка}`.
+</ResponseField>
+
+<ResponseField name="repository" type="string">
+  URL репозитория из GitHub Actions или из git.
+</ResponseField>
+
+<ResponseField name="runUrl" type="string">
+  Ссылка на запуск CI, если сборка задала `GITHUB_RUN_ID`.
+</ResponseField>
+
+<ResponseField name="buildDate" type="string">
+  Время сборки в UTC, ISO 8601.
+</ResponseField>
+
+<ResponseField name="configuration" type="string">
+  Конфигурация MSBuild, например `Release`.
+</ResponseField>
+
+<ResponseField name="sdk" type="string">
+  Версия .NET SDK, которым собрали проект.
+</ResponseField>
+
+<ResponseField name="buildOs" type="string">
+  ОС сборочной машины.
+</ResponseField>
+
+<ResponseField name="buildArch" type="string">
+  Архитектура сборочной машины.
+</ResponseField>
+
+<ResponseField name="docker" type="boolean">
+  `true`, если рядом с процессом лежит файл `isdocker`.
+</ResponseField>
+
+<ResponseField name="hash" type="string">
+  MD5 файла `Shared.dll`. То же значение, что у `type=hash` и у `assemblies.shared.hash`.
+</ResponseField>
+
+<ResponseField name="runtime" type="string">
+  Описание runtime, например `".NET 10.0.0"`.
+</ResponseField>
+
+<ResponseField name="rid" type="string">
+  Runtime identifier процесса, например `linux-x64`.
+</ResponseField>
+
+<ResponseField name="semVer" type="string">
+  SemVer из GitInfo: `Major.Minor.Patch` и суффикс, если он есть.
+</ResponseField>
+
+<ResponseField name="baseTag" type="string">
+  Ближайший базовый git-тег.
+</ResponseField>
+
+<ResponseField name="commits" type="string">
+  Число коммитов после `baseTag`. На точном теге это `0`. Пустая строка приходит как `null`.
+</ResponseField>
+
+<ResponseField name="gitBranch" type="string">
+  Имя ветки. Для сборки без репозитория GitInfo не подставляет `main`.
+</ResponseField>
+
+<ResponseField name="commitDate" type="string">
+  Дата коммита из GitInfo.
+</ResponseField>
+
+<ResponseField name="assemblies" type="object">
+  Штампы сборок, которые процесс реально загрузил.
+
+  <Expandable title="properties">
+    <ResponseField name="core" type="object">
+      `Core.dll`: `informational`, `fileVersion`, `assemblyVersion`.
+
+      `informational` — база версии, полный SHA и, если после тега есть коммиты, санитизированное имя ветки: `1.82.0+a952733a02ace73655a45ddd51d678bd94bf97fc.feature-versioning`. `fileVersion` — `Major.Minor.Patch` и число коммитов после тега, например `1.82.0.2`. `assemblyVersion` — `Major.0.0.0`.
+    </ResponseField>
+
+    <ResponseField name="shared" type="object">
+      Те же три поля у `Shared.dll` и `hash` — MD5 этого файла.
+    </ResponseField>
+
+    <ResponseField name="modules" type="object[]">
+      Загруженные модули. В списке нет проектов, которые Core не загрузил.
+
+      У каждого элемента: `name`, `informational`, `fileVersion`, `assemblyVersion`, `hash`. Модуль из исходников получает атрибуты версии Shared и `hash` — идентификатор кеша компиляции (FNV от MD5 `Shared.dll` и контрольных сумм `.cs`). Подкинутый `*.dll` получает `hash` — MD5 файла. Если у такого файла нет атрибутов версии, `informational` и `fileVersion` равны `null`, а `assemblyVersion` обычно `0.0.0.0`. Модуль при этом загружается.
+    </ResponseField>
+  </Expandable>
+</ResponseField>
+
 ### GeoIP-локация
 
 <CodeGroup>

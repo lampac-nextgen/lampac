@@ -78,6 +78,21 @@ internal static class HardwareVideoBackend
             """
         ),
         new(
+            "VAAPI",
+            ["videoconvert", "vah264enc"],
+            static (bitrate, keyIntMax) => $$"""
+            videoconvert !
+            video/x-raw,
+                format=NV12 !
+            vah264enc
+                name=video_encoder
+                bitrate={{bitrate}}
+                key-int-max={{keyIntMax}}
+                b-frames=0
+                rate-control=cbr !
+            """
+        ),
+        new(
             "Direct3D12",
             ["videoconvert", "d3d12h264enc"],
             static (bitrate, keyIntMax) => $$"""

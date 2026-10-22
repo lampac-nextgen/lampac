@@ -1,0 +1,14 @@
+{
+  "Redheadsound": {
+    "enable": true,
+    "useproxy": true,
+    "useproxystream": true,
+    "proxy": {
+      "list": [
+        "socks5://USER:PASSWORD@PROXY_HOST:PORT"
+      ]
+    },
+    "ladoniallvoices": true,
+    "httptimeout": 40
+  }
+}

@@ -2,7 +2,6 @@
   "enable": true,
   "dynamic": true,
   "tree": [
-    "AllohaBorth.cs",
     "Controller.cs",
     "Model.cs",
     "ModInit.cs",

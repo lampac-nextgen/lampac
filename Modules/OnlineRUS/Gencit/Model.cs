@@ -27,6 +27,8 @@ public class GencitApiData
 
 public class GencitVideoData
 {
+    public string h { get; set; }
+
     public string video { get; set; }
 
     public string video_new { get; set; }
@@ -49,6 +51,8 @@ public class GencitPlayerData
 
 public class GencitPlayerConfig
 {
+    public string h { get; set; }
+
     public string video { get; set; }
 
     public string video_new { get; set; }

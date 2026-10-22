@@ -7,6 +7,7 @@ using Shared.Services;
 using Shared.Services.Utilities;
 using System;
 using System.IO;
+using System.Net;
 using IO = System.IO;
 
 namespace KitMod.Controllers
@@ -27,6 +28,8 @@ namespace KitMod.Controllers
                 return raw.Trim();
             }
         }
+
+        const int maxKitJsonChars = 4 * 1024 * 1024;
 
         static bool IsValidateOnlyRequest(string validateOnly) =>
             validateOnly == "1" || string.Equals(validateOnly, "true", StringComparison.OrdinalIgnoreCase);
@@ -60,6 +63,12 @@ namespace KitMod.Controllers
 
             if (!string.IsNullOrEmpty(json))
             {
+                if (json.Length > maxKitJsonChars)
+                {
+                    HttpContext.Response.StatusCode = 413;
+                    return Content("{\"success\":false,\"msg\":\"max_size\"}", "application/json; charset=utf-8");
+                }
+
                 if (IsValidateOnlyRequest(validateOnly))
                 {
                     try
@@ -97,7 +106,7 @@ namespace KitMod.Controllers
                 string raw = IO.File.Exists(filePath) ? CryptoKit.ReadFile(aesGcmKey, filePath) : null;
                 string conf = FormatKitConfForEditor(raw);
 
-                return Content(html.Replace("{conf}", conf), "text/html; charset=utf-8");
+                return Content(html.Replace("{conf}", WebUtility.HtmlEncode(conf)), "text/html; charset=utf-8");
             }
         }
     }

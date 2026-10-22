@@ -97,6 +97,8 @@
                 // Lampa определяет позицию в плейлисте по url, а затем по episode/season,
                 // без этих полей позиция всегда сбрасывается на первый элемент
                 var item = Object.assign({}, p);
+                // HLS entries use the regular player, just like the first converted item.
+                delete item.torrent_hash;
                 item.url_orig = p.url;
                 // У ссылки на файл торрента TorrServer-хвост &preload / &stat / &m3u
                 // (настройка torrserver_preload). Ядро Lampa подменяет его на &play

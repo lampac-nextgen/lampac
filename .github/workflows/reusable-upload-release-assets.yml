@@ -18,19 +18,19 @@ on:
 jobs:
   upload-release-assets:
     name: Attach artifacts to release
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-26.04
     permissions:
       contents: write
     steps:
       - name: Download release artifact (zip, no extract)
-        uses: actions/download-artifact@v8.0.1
+        uses: actions/download-artifact@v8.0.2
         with:
           pattern: ${{ inputs.artifact_pattern }}
           path: release-files
           skip-decompress: true
 
       - name: Upload to Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@v3.0.3
         with:
           tag_name: ${{ inputs.tag }}
           working_directory: release-files

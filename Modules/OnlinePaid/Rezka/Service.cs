@@ -311,7 +311,7 @@ public class RezkaInvoke
             cookieContainer.Add(
                 new Uri($"{siteUrl}/"),
                 new Cookie(
-                    "techaro.lol-anubis-cookie-verification",
+                    AnubisFast.GetVerificationCookieName(cookieContainer, siteUri, challenge.Id),
                     challenge.Id,
                     "/"
                 )

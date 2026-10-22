@@ -81,11 +81,9 @@ public class StorageController : BaseController
     #region Set
     [HttpPost]
     [Route("/storage/set")]
+    [RequestSizeLimit(maxRequestSize)]
     async public Task<ActionResult> Set([FromQuery] string path, [FromQuery] string pathfile, [FromQuery] string connectionId)
     {
-        if (HttpContext.Request.ContentLength > maxRequestSize)
-            return ContentTo("{\"success\": false, \"msg\": \"max_size\"}");
-
         string outFile = getFilePath(path, pathfile, true);
         if (outFile == null)
             return ContentTo("{\"success\": false, \"msg\": \"outFile\"}");
@@ -94,14 +92,8 @@ public class StorageController : BaseController
         {
             try
             {
-                using (var byteBuf = new BufferPool())
-                {
-                    int bytesRead;
-                    var memBuf = byteBuf.Memory;
-
-                    while ((bytesRead = await HttpContext.Request.Body.ReadAsync(memBuf, HttpContext.RequestAborted).ConfigureAwait(false)) > 0)
-                        msm.Write(memBuf.Span.Slice(0, bytesRead));
-                }
+                if (!await TryReadBody(msm).ConfigureAwait(false))
+                    return ContentTo("{\"success\": false, \"msg\": \"max_size\"}");
             }
             catch
             {
@@ -204,13 +196,11 @@ public class StorageController : BaseController
     #region TempSet
     [HttpPost]
     [Route("/storage/temp/{key}")]
+    [RequestSizeLimit(maxRequestSize)]
     async public Task<ActionResult> TempSet(string key)
     {
         if (!ModInit.conf.enableTemp || string.IsNullOrEmpty(key))
             return ContentTo("{\"success\": false, \"msg\": \"403\"}");
-
-        if (HttpContext.Request.ContentLength > maxRequestSize)
-            return ContentTo("{\"success\": false, \"msg\": \"max_size\"}");
 
         string outFile = getFilePath("temp", null, true, user_uid: key);
         if (outFile == null)
@@ -220,14 +210,8 @@ public class StorageController : BaseController
         {
             try
             {
-                using (var byteBuf = new BufferPool())
-                {
-                    int bytesRead;
-                    var memBuf = byteBuf.Memory;
-
-                    while ((bytesRead = await HttpContext.Request.Body.ReadAsync(memBuf, HttpContext.RequestAborted).ConfigureAwait(false)) > 0)
-                        msm.Write(memBuf.Span.Slice(0, bytesRead));
-                }
+                if (!await TryReadBody(msm).ConfigureAwait(false))
+                    return ContentTo("{\"success\": false, \"msg\": \"max_size\"}");
             }
             catch
             {
@@ -276,6 +260,29 @@ public class StorageController : BaseController
     }
     #endregion
 
+
+    async Task<bool> TryReadBody(MemoryStream msm)
+    {
+        if (HttpContext.Request.ContentLength is null or > maxRequestSize)
+            return false;
+
+        long total = 0;
+        using (var byteBuf = new BufferPool())
+        {
+            var memBuf = byteBuf.Memory;
+            int bytesRead;
+            while ((bytesRead = await HttpContext.Request.Body.ReadAsync(memBuf, HttpContext.RequestAborted).ConfigureAwait(false)) > 0)
+            {
+                total += bytesRead;
+                if (total > maxRequestSize)
+                    return false;
+
+                msm.Write(memBuf.Span.Slice(0, bytesRead));
+            }
+        }
+
+        return true;
+    }
 
     #region getFilePath
     string getFilePath(string path, string pathfile, bool createDirectory, string user_uid = null)

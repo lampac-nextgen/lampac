@@ -3,13 +3,14 @@ using Shared.Models.Base;
 using Shared.Services;
 using System;
 using System.Collections.Generic;
+using System.Text;
 using System.Threading.Tasks;
 
 namespace Gencit;
 
 public class GencitService
 {
-    public const string Referer = "https://kinomix.web.app/";
+    public const string Referer = "https://web.kino.bz/";
 
     private readonly ModuleConf init;
     private readonly HttpHydra httpHydra;
@@ -271,13 +272,35 @@ public class GencitService
     }
 
     public string GetHls(GencitPageData page)
-        => NormalizeHls(page?.player?.config?.video, page?.player?.config?.video_new);
+        => NormalizeHls(page?.player?.config?.h, page?.player?.config?.video, page?.player?.config?.video_new);
 
     public string GetHls(GencitVideoData video)
-        => NormalizeHls(video?.video, video?.video_new);
+        => NormalizeHls(video?.h, video?.video, video?.video_new);
 
-    private static string NormalizeHls(string hls, string fallback)
+    private static string NormalizeHls(string encoded, string hls, string fallback)
     {
+        // The player decodes h before playback; video can contain an invalid signature.
+        if (!string.IsNullOrWhiteSpace(encoded))
+        {
+            try
+            {
+                string base64 = encoded.Replace('-', '+').Replace('_', '/');
+                byte[] data = Convert.FromBase64String(base64.PadRight(base64.Length + (4 - base64.Length % 4) % 4, '='));
+                const string key = "xu0vKTL4wJBuU2j7";
+                for (int i = 0; i < data.Length; i++)
+                    data[i] ^= (byte)key[i % key.Length];
+
+                hls = Encoding.UTF8.GetString(data);
+                return Uri.TryCreate(hls, UriKind.Absolute, out var uri) && (uri.Scheme == "https" || uri.Scheme == "http")
+                    ? hls
+                    : null;
+            }
+            catch (FormatException)
+            {
+                return null;
+            }
+        }
+
         if (string.IsNullOrWhiteSpace(hls))
             hls = fallback;
 

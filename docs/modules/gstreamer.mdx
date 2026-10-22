@@ -197,6 +197,10 @@ Portable MinGW GStreamer уже включён в модуль, дополнит
 
 ### Linux (Debian/Ubuntu)
 
+<Warning>
+  Нужен системный GStreamer не ниже **1.28.5**. В 1.26 `matroskademux` не читает блок больше 15 МБ: MKV с крупными Attachments (встроенные шрифты) даёт `502 probe` на `/gst/add`. Официальный Docker-образ ставит GStreamer 1.28.x из Debian forky. Параметр `gst_version` и пакет GirCore не заменяют эти библиотеки. На Debian 13 пакеты остаются 1.26; без Docker нужен дистрибутив с GStreamer 1.28 или новее.
+</Warning>
+
 ```bash
 apt-get update
 

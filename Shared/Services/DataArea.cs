@@ -52,41 +52,43 @@ public static class DataArea
     /// побеждает самый длинный: если есть и <c>andrey</c>, и <c>andrey_x</c>, то <c>andrey_x</c> —
     /// это пользователь, а не профиль <c>x</c>. Именно так и читал бы accsdb, и именно того,
     /// чьи это данные на самом деле.
+    ///
+    /// Ещё раньше uid не чистили вовсе, поэтому в базе лежат и <c>a@b.c_kisa</c>, и просто
+    /// <c>a@b.c</c>: идентификатор сравнивается и как есть, и очищенным.
     /// </summary>
     public static bool TrySplitLegacy(string legacyUser, IEnumerable<string> knownUsers, out string renamed)
     {
         renamed = null;
 
-        if (string.IsNullOrEmpty(legacyUser) || !legacyUser.Contains('_'))
+        if (string.IsNullOrEmpty(legacyUser))
             return false;
 
-        string best = null;
+        string bestUser = null, bestProfile = null;
+        int bestLength = -1;
 
         foreach (string candidate in knownUsers)
         {
-            string user = Sanitize(candidate);
-            if (string.IsNullOrEmpty(user) || user.Length >= legacyUser.Length)
+            if (string.IsNullOrEmpty(candidate))
                 continue;
 
-            if (!legacyUser.StartsWith($"{user}_", StringComparison.Ordinal))
-                continue;
+            foreach (string prefix in new[] { candidate, Sanitize(candidate) })
+            {
+                if (prefix.Length == 0 || prefix.Length <= bestLength)
+                    continue;
 
-            if (best == null || user.Length > best.Length)
-                best = user;
+                // Совпал целиком — это сам пользователь, а не чей-то профиль.
+                if (legacyUser == prefix)
+                    (bestUser, bestProfile, bestLength) = (candidate, null, prefix.Length);
+                else if (legacyUser.StartsWith($"{prefix}_", StringComparison.Ordinal))
+                    (bestUser, bestProfile, bestLength) = (candidate, legacyUser.Substring(prefix.Length + 1), prefix.Length);
+            }
         }
 
-        // Совпал целиком с известным пользователем — это он сам, а не чей-то профиль.
-        foreach (string candidate in knownUsers)
-        {
-            if (string.Equals(Sanitize(candidate), legacyUser, StringComparison.Ordinal))
-                return false;
-        }
-
-        if (best == null)
+        if (bestUser == null)
             return false;
 
-        renamed = $"{best}{Separator}{legacyUser.Substring(best.Length + 1)}";
-        return true;
+        renamed = Compose(bestUser, bestProfile);
+        return !string.IsNullOrEmpty(renamed) && renamed != legacyUser;
     }
 
     /// <summary>Идентичности, которые сервер вообще признаёт: список accsdb плюс общая.</summary>

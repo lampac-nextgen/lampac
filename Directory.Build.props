@@ -1,0 +1,48 @@
+<Project>
+
+  <!--
+    Version for every project under this repo. GitInfo (PrivateAssets=all) fills the Git*
+    properties and ThisAssembly.Git. Directory.Build.targets writes AssemblyVersion,
+    FileVersion, and InformationalVersion from those properties.
+
+    Which value wins:
+      1. -p:Version=                  hotfix; LampacApplyGitVersion does not run
+      2. -p:InformationalVersion=     hotfix label; assembly/file versions still come from git
+      3. nearest git tag + commit     normal checkout
+      4. LAMPAC_VERSION + SourceRevisionId
+                                      Docker and source tarballs (.git is not in the image)
+      5. 0.0.0
+
+    CI needs the full history or the commit count and nearest tag are wrong
+    (GitHub Actions fetch-depth: 0, GitLab CI GIT_DEPTH: 0).
+  -->
+  <PropertyGroup>
+    <VersionPrefix Condition="'$(VersionPrefix)' == ''">0.0.0</VersionPrefix>
+
+    <!-- GitSetVersion would replace Version with its own semver+branch.sha. We write Version. -->
+    <GitVersion>false</GitVersion>
+    <!-- Without a repo GitInfo reports branch "main". HEAD means "no branch" in VersionInfo. -->
+    <GitDefaultBranch>HEAD</GitDefaultBranch>
+    <!-- One git read for every csproj. NormalizeDirectory keeps the required trailing separator. -->
+    <GitCachePath>$([MSBuild]::NormalizeDirectory('$(MSBuildThisFileDirectory)obj', 'gitinfo'))</GitCachePath>
+
+    <!-- Captured now: the target below assigns Version and would hide a value passed on the CLI. -->
+    <LampacVersionExplicit Condition="'$(Version)' != ''">true</LampacVersionExplicit>
+    <LampacInformationalVersionExplicit Condition="'$(InformationalVersion)' != ''">true</LampacInformationalVersionExplicit>
+
+    <ContinuousIntegrationBuild
+      Condition="'$(ContinuousIntegrationBuild)' == '' and ('$(CI)' == 'true' or '$(GITHUB_ACTIONS)' == 'true' or '$(TF_BUILD)' == 'True' or '$(GITLAB_CI)' == 'true')">
+      true</ContinuousIntegrationBuild>
+    <Deterministic Condition="'$(ContinuousIntegrationBuild)' == 'true'">true</Deterministic>
+    <!-- The SDK appends SourceRevisionId again, with a dot, when InformationalVersion already has
+    '+'. -->
+    <IncludeSourceRevisionInInformationalVersion>false</IncludeSourceRevisionInInformationalVersion>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="GitInfo">
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+  </ItemGroup>
+
+</Project>

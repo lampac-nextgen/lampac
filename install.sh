@@ -645,7 +645,7 @@ install_os_packages() {
 
   local icu_pkg
   icu_pkg="$(pick_libicu_package)"
-    
+
   manage_packages \
     ca-certificates curl jq fontconfig \
     gstreamer1.0-libav gstreamer1.0-plugins-bad gstreamer1.0-plugins-base \
@@ -761,11 +761,11 @@ build_rsync_excludes() {
     "data/ts/"
 
     # Домашняя директория пользователя lampac (Chrome nssdb, сертификаты и т.д.)
+    # .playwright/ — НЕ исключаем: браузеры из релиза, должны обновляться вместе с приложением
     ".local/"
     ".aspnet/"
     ".claude/"
     ".config/"
-    ".playwright/"
 
     # Пользовательские данные приложения
     "users.json"

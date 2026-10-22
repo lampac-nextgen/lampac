@@ -91,41 +91,72 @@
       TargetPath="%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
-  <!-- Build info for GET /version?type=build. GITHUB_* come from the Actions environment
-  (or Docker build args); runs after Source Link so the local git remote is known. -->
-  <Target Name="AddBuildInfoMetadata" BeforeTargets="GetAssemblyAttributes">
+  <!--
+    Ops fields for GET /version?type=build. Version strings are stamped by
+    Directory.Build.targets; this target only adds the metadata ApiController reads.
+    With no .git (Docker), dirty stays empty and the endpoint returns null.
+  -->
+  <Target Name="AddBuildInfoMetadata" DependsOnTargets="GitVersion"
+    BeforeTargets="GetAssemblyAttributes">
     <PropertyGroup>
+      <!-- 0000000 is GitInfo's placeholder when rev-parse fails. -->
+      <_LampacSha>$(GitSha.Trim())</_LampacSha>
+      <_LampacHasGit
+        Condition="'$(_LampacSha.Trim())' != '' and '$(_LampacSha.Trim())' != '0000000'">true</_LampacHasGit>
+      <!-- -p:BuildRef, else GITHUB_REF, else the local branch. -->
       <BuildRef Condition="'$(BuildRef)' == ''">$(GITHUB_REF)</BuildRef>
-      <BuildRepository Condition="'$(BuildRepository)' == '' and '$(GITHUB_REPOSITORY)' != ''">$(GITHUB_SERVER_URL)/$(GITHUB_REPOSITORY)</BuildRepository>
-      <BuildRepository Condition="'$(BuildRepository)' == ''">$(PrivateRepositoryUrl)</BuildRepository>
-      <BuildRunUrl Condition="'$(GITHUB_RUN_ID)' != ''">$(GITHUB_SERVER_URL)/$(GITHUB_REPOSITORY)/actions/runs/$(GITHUB_RUN_ID)</BuildRunUrl>
+      <BuildRef
+        Condition="'$(BuildRef.Trim())' == '' and '$(_LampacHasGit.Trim())' == 'true' and '$(GitBranch.Trim())' != '' and '$(GitBranch.Trim())' != 'HEAD'">
+        refs/heads/$(GitBranch)</BuildRef>
+      <!-- Actions URL, else the git remote, else Source Link's PrivateRepositoryUrl. -->
+      <BuildRepository Condition="'$(BuildRepository)' == '' and '$(GITHUB_REPOSITORY)' != ''">
+        $(GITHUB_SERVER_URL)/$(GITHUB_REPOSITORY)</BuildRepository>
+      <BuildRepository
+        Condition="'$(BuildRepository.Trim())' == '' and '$(_LampacHasGit.Trim())' == 'true' and '$(GitRepositoryUrl)' != ''">
+        $(GitRepositoryUrl)</BuildRepository>
+      <BuildRepository Condition="'$(BuildRepository.Trim())' == ''">$(PrivateRepositoryUrl)</BuildRepository>
+      <BuildRunUrl Condition="'$(GITHUB_RUN_ID)' != ''">
+        $(GITHUB_SERVER_URL)/$(GITHUB_REPOSITORY)/actions/runs/$(GITHUB_RUN_ID)</BuildRunUrl>
+      <!-- GitIsDirty is 0 when the worktree is clean and 1 when it is not. -->
+      <BuildDirty Condition="'$(_LampacHasGit.Trim())' == 'true' and '$(GitIsDirty)' == '0'">false</BuildDirty>
+      <BuildDirty Condition="'$(_LampacHasGit.Trim())' == 'true' and '$(GitIsDirty)' == '1'">true</BuildDirty>
+      <BuildDate>$([System.DateTime]::UtcNow.ToString('o'))</BuildDate>
+      <BuildOs>$([System.Runtime.InteropServices.RuntimeInformation]::OSDescription)</BuildOs>
+      <BuildArch>$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)</BuildArch>
     </PropertyGroup>
-    <!-- Local git state: no .git (Docker context, source zip) leaves these empty. -->
-    <Exec Command="git rev-parse --abbrev-ref HEAD" Condition="'$(BuildRef)' == ''" ConsoleToMSBuild="true"
-      IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
-      <Output TaskParameter="ConsoleOutput" PropertyName="_GitBranch" />
-      <Output TaskParameter="ExitCode" PropertyName="_GitBranchExit" />
-    </Exec>
-    <Exec Command="git status --porcelain" ConsoleToMSBuild="true"
-      IgnoreExitCode="true" StandardOutputImportance="low" StandardErrorImportance="low">
-      <Output TaskParameter="ConsoleOutput" PropertyName="_GitStatus" />
-      <Output TaskParameter="ExitCode" PropertyName="_GitStatusExit" />
-    </Exec>
-    <PropertyGroup>
-      <BuildRef Condition="'$(BuildRef)' == '' and '$(_GitBranchExit)' == '0' and '$(_GitBranch)' != 'HEAD'">refs/heads/$(_GitBranch)</BuildRef>
-      <BuildDirty Condition="'$(_GitStatusExit)' == '0' and '$(_GitStatus)' == ''">false</BuildDirty>
-      <BuildDirty Condition="'$(_GitStatusExit)' == '0' and '$(_GitStatus)' != ''">true</BuildDirty>
-    </PropertyGroup>
+    <!-- CreateProperty drops the newline an XML reformat leaves on the element body. -->
+    <CreateProperty Value="$(BuildRef.Trim())">
+      <Output TaskParameter="Value" PropertyName="BuildRef" />
+    </CreateProperty>
+    <CreateProperty Value="$(BuildRepository.Trim())">
+      <Output TaskParameter="Value" PropertyName="BuildRepository" />
+    </CreateProperty>
+    <CreateProperty Value="$(BuildRunUrl.Trim())">
+      <Output TaskParameter="Value" PropertyName="BuildRunUrl" />
+    </CreateProperty>
+    <CreateProperty Value="$(BuildDirty.Trim())">
+      <Output TaskParameter="Value" PropertyName="BuildDirty" />
+    </CreateProperty>
+    <CreateProperty Value="$(BuildDate.Trim())">
+      <Output TaskParameter="Value" PropertyName="BuildDate" />
+    </CreateProperty>
+    <CreateProperty Value="$(BuildOs.Trim())">
+      <Output TaskParameter="Value" PropertyName="BuildOs" />
+    </CreateProperty>
+    <CreateProperty Value="$(BuildArch.Trim())">
+      <Output TaskParameter="Value" PropertyName="BuildArch" />
+    </CreateProperty>
     <ItemGroup>
       <AssemblyMetadata Include="BuildDirty" Value="$(BuildDirty)" />
-      <AssemblyMetadata Include="BuildOs" Value="$([System.Runtime.InteropServices.RuntimeInformation]::OSDescription)" />
-      <AssemblyMetadata Include="BuildArch" Value="$([System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture)" />
       <AssemblyMetadata Include="BuildRef" Value="$(BuildRef)" />
       <AssemblyMetadata Include="BuildRepository" Value="$(BuildRepository)" />
       <AssemblyMetadata Include="BuildRunUrl" Value="$(BuildRunUrl)" />
-      <AssemblyMetadata Include="BuildDate" Value="$([System.DateTime]::UtcNow.ToString('o'))" />
+      <!-- Compile time, not the commit time, so a rebuild of the same commit still changes. -->
+      <AssemblyMetadata Include="BuildDate" Value="$(BuildDate)" />
       <AssemblyMetadata Include="BuildConfiguration" Value="$(Configuration)" />
       <AssemblyMetadata Include="BuildSdk" Value="$(NETCoreSdkVersion)" />
+      <AssemblyMetadata Include="BuildOs" Value="$(BuildOs)" />
+      <AssemblyMetadata Include="BuildArch" Value="$(BuildArch)" />
     </ItemGroup>
   </Target>
 

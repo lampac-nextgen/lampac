@@ -7,6 +7,7 @@ using System.Collections.Generic;
 using System.ComponentModel.DataAnnotations;
 using System.ComponentModel.DataAnnotations.Schema;
 using System.IO;
+using System.Linq;
 
 namespace TimeCode;
 
@@ -93,6 +94,9 @@ public class SqlContext : DbContext
     /// известных пользователей, и при совпадении побеждает самый длинный: это и есть тот, чьи
     /// данные на самом деле. Неразобранное не трогаем — лучше оставить как есть, чем увести
     /// чужое.
+    ///
+    /// Новая область к этому моменту может уже существовать: клиенты писали в неё, пока старая
+    /// оставалась непереименованной. Тогда области сливаются, а не пропускаются.
     /// </summary>
     static void MigrateProfileAreas(SqlContext db)
     {
@@ -100,7 +104,6 @@ public class SqlContext : DbContext
         if (known.Count == 0)
             return;
 
-        var existing = new HashSet<string>(StringComparer.Ordinal);
         var legacy = new List<string>();
 
         using (var connection = new SqliteConnection(_connection))
@@ -115,10 +118,7 @@ public class SqlContext : DbContext
                 if (reader.IsDBNull(0))
                     continue;
 
-                string user = reader.GetString(0);
-                existing.Add(user);
-                if (user.Contains('_'))
-                    legacy.Add(user);
+                legacy.Add(reader.GetString(0));
             }
         }
 
@@ -129,21 +129,54 @@ public class SqlContext : DbContext
             if (!DataArea.TrySplitLegacy(user, known, out string target))
                 continue;
 
-            // Область с новым именем уже есть — сливать две истории молча нельзя.
-            if (existing.Contains(target))
-            {
-                Serilog.Log.Warning(
-                    "{Module} data area {Legacy} not renamed: {Target} already exists", "TimeCode", user, target);
-                continue;
-            }
-
-            db.Database.ExecuteSqlRaw("UPDATE timecodes SET user = {0} WHERE user = {1};", target, user);
-            existing.Add(target);
+            MergeArea(db, user, target);
             renamed++;
         }
 
         if (renamed > 0)
             Serilog.Log.Information("{Module} renamed {Count} profile data area(s)", "TimeCode", renamed);
+    }
+
+    /// <summary>
+    /// Старая область вливается в новую. Одна и та же отметка (по хешу или по identity) —
+    /// остаётся та, что смотрели позже. Перенесённым строкам курсор выдаётся выше текущего,
+    /// иначе клиент, уже дошедший до него, их не увидит.
+    /// </summary>
+    static void MergeArea(SqlContext db, string legacy, string target)
+    {
+        using var transaction = db.Database.BeginTransaction();
+
+        long last = db.timecodes.Where(i => i.user == target).Max(i => (long?)i.updated_at) ?? 0;
+        long stamp = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), last + 1);
+
+        const string same = "(t.card = o.card AND t.item = o.item OR t.identity = o.identity)";
+
+        // Веб-запись без identity переживёт ту же отметку из старой области — забираем identity
+        // у проигравшей, как это сделал бы Write, иначе нативный клиент её по id не найдёт.
+        db.Database.ExecuteSqlRaw("""
+            UPDATE timecodes AS t SET identity = o.identity, updated_at = {2} + t.Id
+            FROM timecodes AS o
+            WHERE t.user = {1} AND o.user = {0} AND t.identity IS NULL AND o.identity IS NOT NULL
+              AND t.card = o.card AND t.item = o.item AND t.watched_at >= o.watched_at
+              AND NOT EXISTS (SELECT 1 FROM timecodes AS x WHERE x.user = {1} AND x.identity = o.identity);
+            """, legacy, target, stamp);
+
+        db.Database.ExecuteSqlRaw($$"""
+            DELETE FROM timecodes AS o WHERE o.user = {0} AND EXISTS (
+                SELECT 1 FROM timecodes AS t WHERE t.user = {1} AND {{same}} AND t.watched_at >= o.watched_at);
+            """, legacy, target);
+
+        db.Database.ExecuteSqlRaw($$"""
+            DELETE FROM timecodes AS t WHERE t.user = {1} AND EXISTS (
+                SELECT 1 FROM timecodes AS o WHERE o.user = {0} AND {{same}});
+            """, legacy, target);
+
+        // Id уникален, поэтому stamp + Id даёт каждой строке свою метку.
+        db.Database.ExecuteSqlRaw(
+            "UPDATE timecodes SET user = {1}, updated_at = {2} + Id WHERE user = {0};",
+            legacy, target, stamp);
+
+        transaction.Commit();
     }
     #endregion
 

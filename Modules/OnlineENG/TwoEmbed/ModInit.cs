@@ -49,7 +49,7 @@ public class ModInit : IModuleLoaded, IModuleOnline
         /// <summary>
         /// EmbedSu
         /// </summary>
-        conf = ModuleInvoke.Init("Twoembed", new OnlinesSettings("Twoembed", "https://embed.su")
+        conf = ModuleInvoke.Init("Twoembed", new OnlinesSettings("Twoembed", "https://www.2embed.cc")
         {
             enable = false,
             displayindex = 1045,
@@ -57,8 +57,8 @@ public class ModInit : IModuleLoaded, IModuleOnline
             headers_stream = HeadersModel.Init(
                 ("accept", "*/*"),
                 ("accept-language", "en-US,en;q=0.5"),
-                ("referer", "https://embed.su/"),
-                ("origin", "https://embed.su"),
+                ("referer", "https://www.2embed.cc/"),
+                ("origin", "https://www.2embed.cc"),
                 ("sec-fetch-dest", "empty"),
                 ("sec-fetch-mode", "cors"),
                 ("sec-fetch-site", "cross-site")

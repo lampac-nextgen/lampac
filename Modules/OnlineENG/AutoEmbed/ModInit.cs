@@ -46,7 +46,7 @@ public class ModInit : IModuleLoaded, IModuleOnline
 
     private void UpdateConf()
     {
-        conf = ModuleInvoke.Init("Autoembed", new OnlinesSettings("Autoembed", "https://player.autoembed.cc")
+        conf = ModuleInvoke.Init("Autoembed", new OnlinesSettings("Autoembed", "https://player.autoembed.to")
         {
             enable = false,
             displayindex = 1035,

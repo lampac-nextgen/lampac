@@ -2,7 +2,7 @@
 # Dependabot version updates for all dependency ecosystems in this repository.
 #
 # Covered manifests:
-#   - *.csproj / NextGen.slnx                                    (nuget)
+#   - Directory.Packages.props (CPM) + *.csproj / NextGen.slnx   (nuget)
 #   - site/package.json, site/package-lock.json                  (npm)
 #   - Dockerfile                                                 (docker)
 #   - .github/workflows/*.yml                                    (github-actions)

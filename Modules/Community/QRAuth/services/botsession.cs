@@ -55,7 +55,7 @@ namespace QRAuth.Services
             }
             catch (Exception ex)
             {
-                FileLog.Write("[TelegramBot] HandleUpdate error", ex);
+                FileLog.Write("[QRAuthBot] HandleUpdate error", ex);
 
                 // otherwise the button just spins forever with no feedback for whoever tapped it
                 if (update.CallbackQuery is { } cb)
@@ -194,11 +194,11 @@ namespace QRAuth.Services
                     var name = msg.From?.Username is { Length: > 0 } uname ? $"@{uname}" : "admin";
                     _repo.AddUser(userId, name);
                     existing = _repo.GetByTgId(userId);
-                    FileLog.Write($"[TelegramBot] Админ tgId={userId} авто-зарегистрирован для QR-входа.");
+                    FileLog.Write($"[QRAuthBot] Админ tgId={userId} авто-зарегистрирован для QR-входа.");
                 }
                 catch (Exception ex)
                 {
-                    FileLog.Write($"[TelegramBot] Авто-регистрация админа tgId={userId} не удалась", ex);
+                    FileLog.Write($"[QRAuthBot] Авто-регистрация админа tgId={userId} не удалась", ex);
                     await bot.SendMessage(msg.Chat.Id, "Ошибка на сервере, смотри tgbot.log.", cancellationToken: ct);
                     return;
                 }
@@ -291,7 +291,7 @@ namespace QRAuth.Services
                 }
                 catch (Exception ex)
                 {
-                    FileLog.Write($"[TelegramBot] notify admin {adminId} failed", ex);
+                    FileLog.Write($"[QRAuthBot] notify admin {adminId} failed", ex);
                 }
             }
         }
@@ -347,7 +347,7 @@ namespace QRAuth.Services
             catch (Exception ex)
             {
                 // no photo / privacy settings hide it — card still works as text-only
-                FileLog.Write($"[TelegramBot] GetUserProfilePhotos failed (tgId={userId})", ex);
+                FileLog.Write($"[QRAuthBot] GetUserProfilePhotos failed (tgId={userId})", ex);
             }
 
             foreach (var adminId in ModInit.conf.admin_ids)
@@ -362,7 +362,7 @@ namespace QRAuth.Services
                 catch (Exception ex)
                 {
                     // admin hasn't started the bot / chat unreachable — don't block other admins
-                    FileLog.Write($"[TelegramBot] notify admin {adminId} failed", ex);
+                    FileLog.Write($"[QRAuthBot] notify admin {adminId} failed", ex);
                 }
             }
 
@@ -374,7 +374,7 @@ namespace QRAuth.Services
             }
             catch (Exception ex)
             {
-                FileLog.Write($"[TelegramBot] notify user {userId} failed (reqaccess ack)", ex);
+                FileLog.Write($"[QRAuthBot] notify user {userId} failed (reqaccess ack)", ex);
             }
         }
 
@@ -458,7 +458,7 @@ namespace QRAuth.Services
             {
                 var target = users[index];
                 _repo.RevokeByToken(target.Id);
-                FileLog.Write($"[TelegramBot] Доступ заблокирован вручную: \"{target.Comment}\" (tg_id={target.TgId}), admin={adminId}");
+                FileLog.Write($"[QRAuthBot] Доступ заблокирован вручную: \"{target.Comment}\" (tg_id={target.TgId}), admin={adminId}");
             }
             await ShowUsersListAsync(bot, chatId, ct);
         }
@@ -470,7 +470,7 @@ namespace QRAuth.Services
             {
                 var target = users[index];
                 _repo.UnbanByToken(target.Id);
-                FileLog.Write($"[TelegramBot] Доступ разблокирован вручную: \"{target.Comment}\" (tg_id={target.TgId}), admin={adminId}");
+                FileLog.Write($"[QRAuthBot] Доступ разблокирован вручную: \"{target.Comment}\" (tg_id={target.TgId}), admin={adminId}");
             }
             await ShowUsersListAsync(bot, chatId, ct);
         }
@@ -648,14 +648,14 @@ namespace QRAuth.Services
             }
             catch (Exception ex)
             {
-                FileLog.Write($"[TelegramBot] AddUser failed (tgId={tgId})", ex);
+                FileLog.Write($"[QRAuthBot] AddUser failed (tgId={tgId})", ex);
                 await bot.AnswerCallbackQuery(cb.Id, "Ошибка записи в users.json, смотри tgbot.log на сервере.", showAlert: true, cancellationToken: ct);
                 return;
             }
 
             _pendingRequesterNames.TryRemove(tgId, out _);
             _lastRequest.TryRemove(tgId, out _);
-            FileLog.Write($"[TelegramBot] Доступ выдан tgId={tgId}, admin={cb.From.Id}");
+            FileLog.Write($"[QRAuthBot] Доступ выдан tgId={tgId}, admin={cb.From.Id}");
             await bot.AnswerCallbackQuery(cb.Id, "✅  Доступ выдан.", cancellationToken: ct);
             await TryMarkHandledAsync(bot, cb, "✅", requester, ct);
 
@@ -665,7 +665,7 @@ namespace QRAuth.Services
             var autoConfirmed = _pendingQrSessions.TryRemove(tgId, out var sessionId)
                 && QrAuthSessions.TryConfirm(sessionId, token);
             if (autoConfirmed)
-                FileLog.Write($"[TelegramBot] QR-сессия {sessionId} авто-подтверждена при выдаче tgId={tgId}");
+                FileLog.Write($"[QRAuthBot] QR-сессия {sessionId} авто-подтверждена при выдаче tgId={tgId}");
 
             var text = autoConfirmed
                 ? $"✅  Администратор выдал вам доступ к Lampa. Вернитесь в Lampa — вход выполнится сам.\n\nЕсли нет — пароль: <code>{token}</code>"
@@ -677,7 +677,7 @@ namespace QRAuth.Services
             }
             catch (Exception ex)
             {
-                FileLog.Write($"[TelegramBot] notify user {tgId} failed", ex);
+                FileLog.Write($"[QRAuthBot] notify user {tgId} failed", ex);
             }
         }
 
@@ -707,7 +707,7 @@ namespace QRAuth.Services
             }
             catch (Exception ex)
             {
-                FileLog.Write($"[TelegramBot] notify user {tgId} failed (deny)", ex);
+                FileLog.Write($"[QRAuthBot] notify user {tgId} failed (deny)", ex);
             }
         }
 
@@ -737,7 +737,7 @@ namespace QRAuth.Services
             }
             catch (Exception ex)
             {
-                FileLog.Write("[TelegramBot] TryMarkHandledAsync failed", ex);
+                FileLog.Write("[QRAuthBot] TryMarkHandledAsync failed", ex);
             }
         }
     }

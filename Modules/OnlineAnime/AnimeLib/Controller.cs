@@ -64,12 +64,12 @@ public class AnimeLibController : BaseOnlineController
                     return data;
                 }
 
-                var result = await goSearch(original_title);
+                var result = (await goSearch(title) ?? Array.Empty<DataSearch>())
+                    .Concat(await goSearch(original_title) ?? Array.Empty<DataSearch>())
+                    .DistinctBy(anime => anime.slug_url)
+                    .ToArray();
 
-                if (result == null || result.Length == 0)
-                    result = await goSearch(title);
-
-                if (result == null || result.Length == 0)
+                if (result.Length == 0)
                     return e.Fail(string.Empty, refresh_proxy: true);
 
                 string stitle = SearchNameTo.Convert(title);
@@ -260,19 +260,41 @@ public class AnimeLibController : BaseOnlineController
         if (!cache.IsSuccess)
             return OnError(cache.ErrorMsg);
 
+        var servers = await InvokeCacheResult<Dictionary<string, string>>($"animelib:videoServers:{init.host}", TimeSpan.FromMinutes(5), async e =>
+        {
+            var root = await httpHydra.Get<ApiResponse<VideoConstants>>($"{init.host}/api/constants?fields[]=videoServers",
+                addheaders: HeadersModel.Init("site-id", "5"), safety: true);
+
+            var domains = new Dictionary<string, string>();
+            foreach (var server in root?.data?.videoServers ?? Array.Empty<VideoServer>())
+            {
+                if (!string.IsNullOrWhiteSpace(server.id) &&
+                    Uri.TryCreate(server.url, UriKind.Absolute, out var uri) && uri.Scheme is "http" or "https")
+                    domains[server.id] = server.url.TrimEnd('/');
+            }
+
+            return domains.Count == 0 ? e.Fail("videoServers", refresh_proxy: true) : e.Success(domains);
+        }, memory: true);
+
+        if (IsRhubFallback(servers, safety: true))
+            goto rhubFallback;
+
+        if (!servers.IsSuccess)
+            return OnError(servers.ErrorMsg);
+
         var headers_stream = httpHeaders(init.host, init.headers_stream);
 
         IReadOnlyList<StreamQualityDto> streams;
 
         if (string.IsNullOrEmpty(voice))
         {
-            streams = goStreams(cache.Value, null, headers_stream);
+            streams = goStreams(cache.Value, servers.Value, null, headers_stream);
         }
         else
         {
-            streams = goStreams(cache.Value, voice, headers_stream);
+            streams = goStreams(cache.Value, servers.Value, voice, headers_stream);
             if (streams.Count == 0)
-                streams = goStreams(cache.Value, null, headers_stream);
+                streams = goStreams(cache.Value, servers.Value, null, headers_stream);
         }
 
         if (streams == null || streams.Count == 0)
@@ -301,7 +323,7 @@ public class AnimeLibController : BaseOnlineController
 
 
     #region goStreams
-    IReadOnlyList<StreamQualityDto> goStreams(Player[] players, string _voice, IReadOnlyList<HeadersModel> headers_stream)
+    IReadOnlyList<StreamQualityDto> goStreams(Player[] players, IReadOnlyDictionary<string, string> videoServers, string _voice, IReadOnlyList<HeadersModel> headers_stream)
     {
         var _streams = new List<StreamQualityDto>(20);
 
@@ -313,12 +335,15 @@ public class AnimeLibController : BaseOnlineController
             if (!string.IsNullOrEmpty(_voice) && _voice != player.team.name)
                 continue;
 
+            if (string.IsNullOrEmpty(player.video_domain) || !videoServers.TryGetValue(player.video_domain, out var videoHost))
+                continue;
+
             foreach (var video in player.video.quality)
             {
                 if (string.IsNullOrEmpty(video.href))
                     continue;
 
-                string file = HostStreamProxy("https://video1.cdnlibs.org/.%D0%B0s/" + video.href, headers: headers_stream);
+                string file = HostStreamProxy(videoHost + "/" + video.href.TrimStart('/'), headers: headers_stream);
 
                 _streams.Add(new StreamQualityDto(file, $"{video.quality}p"));
             }

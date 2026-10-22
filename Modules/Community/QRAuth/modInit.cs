@@ -13,7 +13,7 @@ namespace QRAuth
 {
     public class ModInit : IModuleLoaded, IModuleConfigure
     {
-        public static TelegramBotConf conf = new();
+        public static QRAuthBotConf conf = new();
 
         private static readonly string DenyPagePath =
             Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "plugins", "override", "deny.js");
@@ -86,10 +86,10 @@ namespace QRAuth
             conf = ModuleInvoke.Init("QRAuthBot", DefaultConf());
 
             if (conf.enable && string.IsNullOrWhiteSpace(conf.bot_token))
-                Console.WriteLine("[TelegramBot] enable=true, но bot_token пустой — проверьте секцию QRAuthBot в init.conf.");
+                Console.WriteLine("[QRAuthBot] enable=true, но bot_token пустой — проверьте секцию QRAuthBot в init.conf.");
         }
 
-        static TelegramBotConf DefaultConf() => new()
+        static QRAuthBotConf DefaultConf() => new()
         {
             enable = true,
             bot_token = "",

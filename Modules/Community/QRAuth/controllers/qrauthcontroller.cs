@@ -102,7 +102,7 @@ namespace QRAuth.Controllers
                 }
                 catch (Exception ex)
                 {
-                    FileLog.Write($"[TelegramBot] notify admin {adminId} failed", ex);
+                    FileLog.Write($"[QRAuthBot] notify admin {adminId} failed", ex);
                 }
             }
 

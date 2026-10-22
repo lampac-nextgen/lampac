@@ -1,4 +1,5 @@
 ﻿using System.Text;
+using System.Text.Json;
 using System.Text.Json.Serialization;
 
 namespace Shared.Models.Templates;
@@ -51,19 +52,25 @@ public class VoiceTpl
 
         sb.Append("<div class=\"videos__line\">");
 
-        foreach (var i in data)
+        using (var utf8Buf = new BufferWriterPool<byte>(BufferWriterPoolType.Small))
         {
-            sb.Append("<div class=\"videos__button selector ");
-            if (i.active)
-                sb.Append("active");
+            using (var jsonWriter = new Utf8JsonWriter(utf8Buf, UtilsTpl.jsonWriterOptions))
+            {
+                foreach (var i in data)
+                {
+                    sb.Append("<div class=\"videos__button selector ");
+                    if (i.active)
+                        sb.Append("active");
 
-            sb.Append("\" data-json='{\"method\":\"link\",\"url\":\"");
-            sb.Append(i.url);
-            sb.Append("\"}'>");
+                    sb.Append("\" data-json='");
+                    UtilsTpl.WriteJson(sb, utf8Buf, jsonWriter, i, VoiceJsonContext.Default.VoiceDto);
+                    sb.Append("'>");
 
-            UtilsTpl.HtmlEncode(i.name, sb);
+                    UtilsTpl.HtmlEncode(i.name, sb);
 
-            sb.Append("</div>");
+                    sb.Append("</div>");
+                }
+            }
         }
 
         sb.Append("</div>");
@@ -78,6 +85,14 @@ public class VoiceTpl
     }
 }
 
+
+[JsonSourceGenerationOptions(
+    DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingDefault
+)]
+[JsonSerializable(typeof(VoiceDto))]
+public partial class VoiceJsonContext : JsonSerializerContext
+{
+}
 
 public class VoiceDto
 {

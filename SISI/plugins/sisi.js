@@ -22,6 +22,14 @@
     }
   });
 
+  function escapeHtml(text) {
+    return $('<div></div>').text(text == null ? '' : text).html();
+  }
+
+  function escapeAttr(text) {
+    return escapeHtml(text).replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  }
+
   var network = new Lampa.Reguest();
   var preview_timer, preview_video;
   var SISI_SOURCE = 'sisi_lampac';
@@ -117,8 +125,8 @@
 
         if (recomends.length) {
           recomends.forEach(function(a) {
-            a.title = Lampa.Utils.shortText(a.name, 50);
-            a.icon = '<img class="size-youtube" src="' + a.picture + '" />';
+            a.title = escapeHtml(Lampa.Utils.shortText(a.name, 50));
+            a.icon = '<img class="size-youtube" src="' + escapeAttr(a.picture) + '" />';
             a.template = 'selectbox_icon';
 
             a.url = function(call) {

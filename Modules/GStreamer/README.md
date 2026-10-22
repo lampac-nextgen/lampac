@@ -188,6 +188,8 @@ https://gstreamer.freedesktop.org/download/#windows
 
 ### Linux (Debian/Ubuntu)
 
+Нужен системный GStreamer не ниже 1.28.5. В 1.26 `matroskademux` не читает блок больше 15 МБ, и MKV с крупными Attachments отвечает `502 probe`. Официальный Docker-образ ставит 1.28.x из Debian forky. `gst_version` и GirCore библиотеки не заменяют. На Debian 13 пакеты остаются 1.26.
+
 ```bash
 apt-get update
 

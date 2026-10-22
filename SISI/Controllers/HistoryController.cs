@@ -149,7 +149,7 @@ public class HistoryController : BaseController
                         {
                             Directory.CreateDirectory($"wwwroot/bookmarks/img/{uid.Substring(0, 2)}");
 
-                            bool success = await Http.DownloadFile(img, $"wwwroot/{pimg}", timeoutSeconds: 10);
+                            bool success = await Http.DownloadFile(img, $"wwwroot/{pimg}", timeoutSeconds: 10, maxBytes: 5 * 1024 * 1024);
                             if (success)
                                 data.bookmark.image = pimg;
                         }

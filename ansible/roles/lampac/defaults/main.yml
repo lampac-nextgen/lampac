@@ -106,7 +106,6 @@ lampac_rsync_excludes:
   - .aspnet/
   - .claude/
   - .config/
-  - .playwright/
   - users.json
   - passwd
   - current.conf

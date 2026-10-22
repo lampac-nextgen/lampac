@@ -19,6 +19,7 @@ using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Http;
 using Newtonsoft.Json;
 using Shared;
+using Shared.Models.Base;
 using Shared.Models.Events;
 using Shared.Models.Module;
 using Shared.Models.Module.Entrys;
@@ -315,7 +316,8 @@ public class Startup
                         var mod = new RootModule
                         {
                             assembly = Assembly.LoadFile(Path.Combine(Environment.CurrentDirectory, path)),
-                            name = Path.GetFileName(path)
+                            name = Path.GetFileName(path),
+                            hash = CrypTo.md5File(path)
                         };
 
                         CoreInit.modules.Add(mod);
@@ -415,7 +417,8 @@ public class Startup
                         throw new Exception();
                     }
 
-                    cacheModuePaths.Add(Fnv1a.Base64Url(build.sumhash));
+                    mod.hash = Fnv1a.Base64Url(build.sumhash);
+                    cacheModuePaths.Add(mod.hash);
                     Console.WriteLine($"compilation {mod.name}");
 
                     mod.assembly = build.assembly;
@@ -695,7 +698,20 @@ public class Startup
             {
                 ServeUnknownFileTypes = midd.unknownStaticFiles,
                 DefaultContentType = "application/octet-stream",
-                ContentTypeProvider = contentTypeProvider
+                ContentTypeProvider = contentTypeProvider,
+                OnPrepareResponse = static ctx =>
+                {
+                    var path = ctx.Context.Request.Path.Value;
+                    if (path == null || !path.StartsWith("/bookmarks/", StringComparison.OrdinalIgnoreCase))
+                        return;
+
+                    if (!CoreInit.conf.accsdb.enable || BookmarkStaticAllowed(ctx.Context))
+                        return;
+
+                    ctx.Context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    ctx.Context.Response.ContentLength = 0;
+                    ctx.Context.Response.Body = Stream.Null;
+                }
             });
         }
         #endregion
@@ -823,6 +839,7 @@ public class Startup
                             foreach (var part in parts)
                                 mvcBuilder.PartManager.ApplicationParts.Remove(part);
 
+                            mod.hash = Fnv1a.Base64Url(build.sumhash);
                             mod.assembly = build.assembly;
                             mod.assemblyLoadContext = build.alc;
 
@@ -926,4 +943,29 @@ public class Startup
         }
     }
     #endregion
+
+    static bool BookmarkStaticAllowed(HttpContext httpContext)
+    {
+        var requestInfo = httpContext.Features.Get<RequestModel>();
+        if (requestInfo == null)
+            return false;
+
+        if (requestInfo.IsLocalRequest || requestInfo.IsAnonymousRequest)
+            return true;
+
+        var accsdb = CoreInit.conf.accsdb;
+        string path = httpContext.Request.Path.Value ?? string.Empty;
+
+        if (!string.IsNullOrEmpty(accsdb.whitepattern) && Regex.IsMatch(path, accsdb.whitepattern, RegexOptions.IgnoreCase))
+            return true;
+
+        if (requestInfo.user_uid != null && accsdb.white_uids != null && accsdb.white_uids.Contains(requestInfo.user_uid))
+            return true;
+
+        var user = requestInfo.user;
+        if (user?.bypass_accsdb == true)
+            return true;
+
+        return user != null && !user.ban && DateTime.Now <= user.expires;
+    }
 }
