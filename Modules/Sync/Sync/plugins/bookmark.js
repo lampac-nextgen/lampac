@@ -19,6 +19,7 @@
 
         var host = '{localhost}';
         var syncInProgress = false;
+        var syncPending = false;
 
         function buildUrl(path) {
           var url = host + '/bookmark' + path;
@@ -35,6 +36,13 @@
         }
 
         function ajax(method, path, body, callback){
+            var finished = false;
+            function finish(status, response) {
+                if (finished) return;
+                finished = true;
+                if (callback) callback(status, response);
+                Lampa.Listener.send('lampac', {name: 'bookmark_importСompleted', value: body, path: path});
+            }
             try{
                 var xhr = new XMLHttpRequest();
                 xhr.open(method, buildUrl(path), true);
@@ -43,17 +51,16 @@
                 }
                 xhr.onreadystatechange = function(){
                     if (xhr.readyState === 4){
-                        if (callback) callback(xhr.status, xhr.responseText);
-						Lampa.Listener.send('lampac', {name: 'bookmark_importСompleted', value: body, path: path});
+                        finish(xhr.status, xhr.responseText);
                     }
                 };
                 xhr.onerror = function(){
-                    if (callback) callback(0, null);
+                    finish(0, null);
                 };
                 xhr.send(body ? JSON.stringify(body) : null);
             }
             catch(e){
-                if (callback) callback(0, null);
+                finish(0, null);
             }
         }
 
@@ -144,17 +151,25 @@
          * что менялось. Полный список тянем лишь когда курсора ещё нет.
          */
         function pullFromServer() {
-          if (syncInProgress) return;
+          if (syncInProgress) { syncPending = true; return; }
           syncInProgress = true;
+
+          function complete() {
+            syncInProgress = false;
+            if (syncPending) {
+              syncPending = false;
+              pullFromServer();
+            }
+          }
 
           var since = cursor();
           var full = !since || since === '0';
 
           ajax('GET', full ? '/dump' : '/changelog?since=' + encodeURIComponent(since), null, function(status, response) {
-            if (status != 200 || !response) { syncInProgress = false; return; }
+            if (status != 200 || !response) { complete(); return; }
 
             var data;
-            try { data = JSON.parse(response); } catch (e) { syncInProgress = false; return; }
+            try { data = JSON.parse(response); } catch (e) { complete(); return; }
 
             var rows = (data && data.rows) || [];
 
@@ -163,13 +178,13 @@
               var seed = buildLocalBookmarkSetPayload();
               if (seed.length > 0) ajax('POST', '/set', seed);
               if (data && data.version) setCursor(data.version);
-              syncInProgress = false;
+              complete();
               return;
             }
 
             applyRows(rows, full);
             if (data && data.version) setCursor(data.version);
-            syncInProgress = false;
+            complete();
           });
         }
 
@@ -243,9 +258,16 @@
 
           // Через Storage, а не напрямую в localStorage: у Lampa есть свой кеш прочитанного,
           // и запись мимо него оставляет интерфейс на старых данных до перезагрузки.
-          Lampa.Storage.set('favorite', fav);
-          if (Lampa.Favorite.read) Lampa.Favorite.read(true);
-          else Lampa.Favorite.init();
+          storeFavorite(fav);
+        }
+
+        function storeFavorite(fav) {
+          Lampa.Storage.set('favorite', fav, true);
+          if (Lampa.Favorite.read) Lampa.Favorite.read();
+          else {
+            Lampa.Favorite.init();
+            Lampa.Listener.send('state:changed', {target: 'favorite', reason: 'read'});
+          }
         }
 
         function sendAdd(action, event){
@@ -312,6 +334,10 @@
         pullFromServer();
 		
         document.addEventListener('lwsEvent', function(evnt) {
+          if (evnt.detail.name == 'system' && evnt.detail.data == 'reconnected') {
+            pullFromServer();
+            return;
+          }
           if (evnt.detail.name == 'bookmark'){
             var ob = JSON.parse(evnt.detail.data);
 			if (ob.profile_id && ob.profile_id != '' && Lampa.Storage.get('lampac_profile_id', '') != ob.profile_id)
@@ -403,7 +429,7 @@
           }
 
           try {
-            localStorage.setItem('favorite', JSON.stringify(fav));
+            storeFavorite(fav);
           } catch (e) { }
         }
 

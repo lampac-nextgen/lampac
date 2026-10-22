@@ -487,6 +487,9 @@ public class TimeCodeController : BaseController
         if (i.profile != 0)
             row["profile"] = i.profile;
 
+        if (!string.IsNullOrEmpty(i.extra))
+            row["extra"] = i.extra;
+
         return row;
     }
 

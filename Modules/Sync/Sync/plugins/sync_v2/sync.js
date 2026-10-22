@@ -87,11 +87,37 @@
   }
 
 
-  function goImport(path, call) {
+  var imports = Object.create(null);
+
+  function goImport(path, attempt) {
     if (window.sync_disable || path == '') 
         return;
+    var state = imports[path] || (imports[path] = {});
+    if (state.loading) {
+      state.again = true;
+      return;
+    }
+    clearTimeout(state.timer);
+    state.loading = true;
+
+    function finish(retry) {
+      state.loading = false;
+      if (state.again) {
+        state.again = false;
+        goImport(path);
+      } else if (retry && (attempt || 0) < 2) {
+        state.timer = setTimeout(function() {
+          goImport(path, (attempt || 0) + 1);
+        }, 2000 * ((attempt || 0) + 1));
+      }
+    }
+
     var network = new Lampa.Reguest();
     network.silent(account('{localhost}/storage/get?path='+path+'&pathfile='+Lampa.Storage.get('lampac_profile_id', '')), function(j) {
+      if (!j || (!j.success && j.msg != 'outFile')) {
+        finish(true);
+        return;
+      }
       if (j.success && j.fileInfo && j.data) {
         if (j.fileInfo.changeTime > Lampa.Storage.get('lampac_' + path, '0')) {
           try {
@@ -103,14 +129,25 @@
             Lampa.Storage.set('lampac_' + path, j.fileInfo.changeTime);
           } catch (error) {
             console.log('Lampac Storage', 'import', error.message);
+            finish(true);
+            return;
           }
         }
       } else if (j.msg && j.msg == 'outFile') {
         goExport(path);
       }
-      call();
       sync_invc.importСompleted(path);
       Lampa.Listener.send('lampac', {name: 'storage_importСompleted', value: path});
+      finish(false);
+    }, function() {
+      finish(true);
+    }, false, {timeout: 10000});
+  }
+
+  function refresh() {
+    goImport('sync_view');
+    sync_import_keys().forEach(function(key) {
+      goImport(key);
     });
   }
 
@@ -118,11 +155,6 @@
   function sync() {
     if (!window.sync_init) {
       window.sync_init = true;
-      goImport('sync_view', function() {
-        sync_import_keys().forEach(function(key) {
-          goImport(key, function() {});
-        });
-
 		/*
           принудительный экспорт ключа recomends_list из localStorage на сервер
             Lampa.Storage.listener.send('change', {name: 'recomends_list', value: ''});
@@ -141,21 +173,18 @@
 		*/
         document.addEventListener('lwsEvent', function(evnt) {
           if (evnt.detail.name === 'sync_storage') {
-            goImport(evnt.detail.data, function() {});
+            goImport(evnt.detail.data);
           } 
           else if (evnt.detail.name === 'storage') {
             var ob = JSON.parse(evnt.detail.data);
 			if (ob.pathfile != '' && ob.pathfile != Lampa.Storage.get('lampac_profile_id', '')) return;
-            goImport(ob.path, function() {});
+            goImport(ob.path);
           } 
           else if (evnt.detail.name === 'system' && evnt.detail.data === 'reconnected') {
-            goImport('sync_view', function() {});
-            sync_import_keys().forEach(function(key) {
-              goImport(key, function() {});
-            });
+            refresh();
           }
         });
-      });
+      refresh();
     }
   }
 

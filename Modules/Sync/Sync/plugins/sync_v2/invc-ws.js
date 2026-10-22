@@ -12,6 +12,7 @@
   {invc-rch_nws}
 
   var nwsClient;
+  var connected = false;
   
   window.lwsEvent = {
     uid: '', 
@@ -73,7 +74,8 @@
 	  nwsClient.invoke("RegistryEvent", window.lwsEvent.uid);
       window.rch_nws[hostkey].Registry(nwsClient);
 	  window.rch_nws[hostkey].connectionId = connectionId;
-      sendEvent('system', 'connected');
+      sendEvent('system', connected ? 'reconnected' : 'connected');
+      connected = true;
     });
 
     nwsClient.on("event", function(uid, name, data) {

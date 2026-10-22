@@ -14,6 +14,13 @@
       Lampa.Storage.set('lampac_unic_id', unic_id);
     }
   }
+
+  function timelineExtra(road, card) {
+    if (!road || typeof road.card !== 'string') return;
+    var link = /^(?:[a-z0-9_]+_)?(movie|tv)_(\d+)$/.exec(road.card);
+    if (!link || link[2] + '_' + link[1] !== card) return;
+    return JSON.stringify({ card: road.card, season: road.season, episode: road.episode });
+  }
 	
   function _classCallCheck(instance, Constructor) {
     if (!(instance instanceof Constructor)) {
@@ -61,6 +68,7 @@
         // поэтому своё же эхо здесь не приходит и цикла записи нет.
         document.addEventListener('lwsEvent', function(e) {
           if (e.detail && e.detail.name == 'timecode') _this.update();
+          else if (e.detail && e.detail.name == 'system' && e.detail.data == 'reconnected') _this.update();
         });
 
         _this.awaitBookmarks(0);
@@ -174,6 +182,7 @@
             delete viewed[i].hash;
           }
           Lampa.Storage.set(_this2.filename(), viewed, true);
+          if (typeof Lampa.Timeline.read === 'function') Lampa.Timeline.read();
 
         });
       }
@@ -312,7 +321,8 @@
               position: source.position || 0,
               duration: source.duration || 0,
               percent: source.percent || 0,
-              watched_at: source.watched_at || 0
+              watched_at: source.watched_at || 0,
+              extra: timelineExtra(viewed[hash], found.card) || (source.card === found.card ? source.extra : undefined)
             });
           });
         }
@@ -363,7 +373,8 @@
             position: road.time || 0,
             duration: road.duration || 0,
             percent: road.percent || 0,
-            watched_at: road.updated || 0
+            watched_at: road.updated || 0,
+            extra: timelineExtra(road, found.card)
           }] })
         });
       }
