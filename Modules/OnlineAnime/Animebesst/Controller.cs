@@ -68,12 +68,17 @@ public class AnimebesstController : BaseOnlineController
                                     season = "1";
                             }
 
+                            // сайт отдаёт постер относительным путём, без хоста proxyimg его не скачает
+                            string img = row.Match("<img class=\"img-fit lozad\" data-src=\"([^\"]+)\"");
+                            if (img?.StartsWith("/") == true)
+                                img = init.host + img;
+
                             catalog.Add((
                                 g[2].Value,
                                 row.Match("\">([0-9]{4})</a>"),
                                 g[1].Value,
                                 season,
-                                row.Match("<img class=\"img-fit lozad\" data-src=\"([^\"]+)\"")
+                                img
                             ));
                         }
                     }
@@ -120,9 +125,13 @@ public class AnimebesstController : BaseOnlineController
             var cache = await InvokeCacheResult<List<(string episode, string name, string uri)>>($"animebesst:playlist:{uri}", TimeSpan.FromHours(1), async e =>
             {
                 var links = new List<(string episode, string name, string uri)>(5);
+                bool pageLoaded = false;
 
                 await httpHydra.GetSpan(uri, news =>
                 {
+                    // страница пришла, но своего плеера у релиза может не быть
+                    pageLoaded = true;
+
                     string videoList = Rx.Match(news, "var videoList ?=([^\n\r]+)");
                     if (videoList == null)
                         return;
@@ -138,13 +147,16 @@ public class AnimebesstController : BaseOnlineController
                 });
 
                 if (links.Count == 0)
-                    return e.Fail("links", refresh_proxy: true);
+                    return pageLoaded ? e.Fail("novideo") : e.Fail("links", refresh_proxy: true);
 
                 return e.Success(links);
             });
 
             if (IsRhubFallback(cache))
                 goto rhubFallback;
+
+            if (!cache.IsSuccess && cache.ErrorMsg == "novideo")
+                return ShowError($"{init.displayname ?? init.plugin}: для этого релиза нет видеоплеера");
 
             return ContentTpl(cache, () =>
             {

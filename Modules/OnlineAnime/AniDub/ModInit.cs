@@ -16,6 +16,11 @@ public class ModInit : IModuleLoaded, IModuleOnline
 
     public List<ModuleOnlineItem> Invoke(HttpContext httpContext, RequestModel requestInfo, string host, OnlineEventsModel args)
     {
+        // аниме или азиатские сериалы: на AniDub есть и дорамы, которые Lampa аниме не помечает
+        string lang = args.original_language?.Split("|")?[0];
+        if (!args.isanime && lang is not ("ja" or "ko" or "zh" or "cn" or "th" or "vi" or "tl"))
+            return null;
+
         return new List<ModuleOnlineItem>()
         {
             new(conf)
