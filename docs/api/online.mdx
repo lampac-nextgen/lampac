@@ -19,11 +19,11 @@ keywords: ["Online API", "online.js", "Lampa plugin", "lite provider", "VOD API"
 | `GET` | `/online/js/{token}` | Плагин с авторизацией по токену |
 | `GET` | `/lite/{provider}` | Список источников от провайдера |
 | `GET` | `/externalids` | Маппинг ID (TMDB ↔ KinoPoisk и т.д.) |
-| `GET` | `/lifeevents` | SSE-поток событий здоровья провайдеров |
+| `GET` | `/lifeevents` | Результаты проверки источников (long-poll) |
 | `GET` | `/lite/withsearch` | Поиск по всем провайдерам |
 | `GET` | `/lite/spider` | Паук-обход для сбора метаданных |
 | `GET` | `/lite/spider/anime` | Паук только по аниме-провайдерам |
-| `GET` | `/lite/events` | События агрегатора Online |
+| `GET` | `/lite/events` | Список источников для тайтла с проверкой доступности |
 | `GET` | `/lite/pidtor` | Источник PidTor (стриминг через торрент) |
 
 ### Пример запроса к провайдеру
@@ -70,9 +70,67 @@ curl -s "http://localhost:9118/lite/rezka?title=Интерстеллар&year=20
   Параметры `token` и `account_email` используются для авторизации в платных провайдерах (Filmix, Rezka с `premium: true`, KinoPub и др.). Укажите их в URL или в конфигурации `init.conf`.
 </Note>
 
+## Проверка источников
+
+`/lite/events` собирает список источников для тайтла. При `checkOnlineSearch: true` (по умолчанию) Lampac параллельно проверяет каждый источник запросом `/lite/{provider}?checksearch=true` и отмечает, нашёл ли он контент.
+
+### Запуск проверки
+
+```bash cURL
+curl -s "http://localhost:9118/lite/events?id=157336&serial=0&title=Интерстеллар&original_title=Interstellar&year=2014&source=tmdb&life=true"
+```
+
+<ParamField query="life" type="boolean">
+  `true` — сразу вернуть `{"life": true, "memkey": "..."}`, а результаты забирать через `/lifeevents`. Без `life` запрос ждёт окончания всех проверок (до 10 секунд на источник) и возвращает массив источников.
+</ParamField>
+
+### Результаты: `/lifeevents`
+
+```bash cURL
+curl -s "http://localhost:9118/lifeevents?memkey=MEMKEY&seen=0"
+```
+
+<ParamField query="memkey" type="string" required>
+  Ключ из ответа `/lite/events?life=true`.
+</ParamField>
+
+<ParamField query="seen" type="number">
+  Сколько проверенных источников клиент уже получил. Если готовых результатов не больше `seen`, сервер держит запрос до 1,5 секунды и отвечает, как только появится новый (long-poll). Без `seen` ждёт любого следующего результата.
+</ParamField>
+
+Ответ:
+
+```json
+{
+  "ready": false,
+  "tasks": 24,
+  "head": true,
+  "pending": ["kodik", "rezka"],
+  "online": [
+    { "name": "Filmix - 1080p", "url": "http://localhost:9118/lite/filmix", "index": 2, "show": true, "balanser": "filmix", "rch": false }
+  ]
+}
+```
+
+| Поле | Значение |
+| --- | --- |
+| `ready` | Все источники проверены |
+| `tasks` | Сколько источников проверяется для тайтла |
+| `head` | Лучший рабочий источник по приоритету уже известен: все источники с меньшим `index` проверены |
+| `pending` | Ключи источников, проверка которых ещё идёт |
+| `online` | Проверенные источники: сначала рабочие (`show: true`), затем по `index` |
+
+Если проверены все источники и рабочих нет, ответ содержит `accsdb: true` и текст ошибки в `msg`.
+
 <Note>
-  Эндпоинт `/lifeevents` возвращает **SSE-поток** (Server-Sent Events) с событиями доступности провайдеров. Подключайтесь через `EventSource` для мониторинга состояния источников в реальном времени.
+  `/lifeevents` — это не SSE-поток. Клиент опрашивает его повторно, передавая `seen`, пока не получит `ready: true`.
 </Note>
+
+### Приоритет и кэш
+
+- Порядок источников задаёт `displayindex` в секции провайдера `init.conf`. Учитываются только значения больше `0`; при `0` или отрицательном значении источник получает номер по порядку загрузки модулей.
+- Результат проверки каждого источника кэшируется с учётом данных пользователя (`account_email`, `uid`, `token`, `box_mac`): рабочий — на 10 минут, нерабочий — на 1 минуту.
+- Список целиком хранится 5 минут под ключом `memkey`.
 
 ## Связанные API
 

@@ -31,7 +31,8 @@ namespace Online;
 
 public class OnlineApiController : BaseController
 {
-    record EventLinkItem(string code, int index, bool work);
+    // code == null — источник ещё проверяется (plugin нужен, чтобы отдать его в pending)
+    record EventLinkItem(string code, int index, bool work, string plugin = null);
 
     #region online.js
     [HttpGet, AllowAnonymous]
@@ -543,7 +544,7 @@ public class OnlineApiController : BaseController
     [HttpGet]
     [AllowAnonymous]
     [Route("lifeevents")]
-    public ActionResult LifeEvents(string memkey, long id, string imdb_id, long kinopoisk_id, int serial)
+    async public Task<ActionResult> LifeEvents(string memkey, long id, string imdb_id, long kinopoisk_id, int serial, int seen = -1)
     {
         if (!memoryCache.TryGetValue(memkey, out List<EventLinkItem> links) || links == null)
         {
@@ -552,19 +553,55 @@ public class OnlineApiController : BaseController
             return _emptyResult;
         }
 
-        var onlineItems = new List<EventLinkItem>(links.Count);
-
-        foreach (var item in links)
+        // checkSearch пишет в links из других потоков, а запись по индексу меняет версию List —
+        // поэтому только for по индексу, foreach/LINQ бросят "Collection was modified"
+        static int countDone(List<EventLinkItem> l)
         {
-            if (item?.code != null)
-                onlineItems.Add(item);
+            int n = 0;
+            for (int i = 0; i < l.Count; i++)
+            {
+                if (l[i]?.code != null)
+                    n++;
+            }
+            return n;
         }
 
-        if (onlineItems.Count == 0)
+        // long-poll: держим запрос до 1.5с, пока не появится результат, которого клиент ещё не видел (seen)
+        // ponytail: опрос списка каждые 100мс, сигнал через TaskCompletionSource если станет узким местом
+        int done = seen >= 0 ? seen : countDone(links);
+        try
         {
-            Response.ContentType = "application/json; charset=utf-8";
-            Response.BodyWriter.Write("{\"ready\":false,\"tasks\":0,\"online\":[]}"u8);
-            return _emptyResult;
+            for (int w = 0; w < 15 && done < links.Count && countDone(links) <= done; w++)
+                await Task.Delay(100, HttpContext.RequestAborted);
+        }
+        catch (OperationCanceledException)
+        {
+            return _emptyResult; // клиент ушёл
+        }
+
+        var onlineItems = new List<EventLinkItem>(links.Count);
+
+        // pending: какие источники ещё проверяются — клиент отличает «ещё проверяется» от «нет в списке»
+        var pending = new List<string>();
+
+        // head: первый рабочий источник в порядке приоритета уже известен (все источники до него проверены);
+        // слоты links упорядочены по index в Events
+        bool head = false, headDone = false;
+
+        // один проход: head, onlineItems и pending должны видеть один и тот же снимок
+        for (int i = 0; i < links.Count; i++)
+        {
+            var item = links[i];
+            if (item?.code != null)
+                onlineItems.Add(item);
+            else if (item?.plugin != null)
+                pending.Add(item.plugin);
+
+            if (!headDone && (item?.code == null || item.work))
+            {
+                head = item?.code != null;
+                headDone = true;
+            }
         }
 
         onlineItems.Sort(static (a, b) =>
@@ -584,6 +621,13 @@ public class OnlineApiController : BaseController
 
                 json.WriteBoolean("ready", onlineItems.Count == links.Count);
                 json.WriteNumber("tasks", links.Count);
+                json.WriteBoolean("head", head);
+
+                json.WritePropertyName("pending");
+                json.WriteStartArray();
+                foreach (string p in pending)
+                    json.WriteStringValue(p);
+                json.WriteEndArray();
 
                 json.WritePropertyName("online");
                 json.WriteStartArray();
@@ -880,19 +924,23 @@ public class OnlineApiController : BaseController
             Fnv1a.Append(ref hash, online.Count);
             Fnv1a.Append(ref hash, ':');
             Fnv1a.Append(ref hash, IsKitConf ? requestInfo.user_uid : string.Empty);
+            Fnv1a.Append(ref hash, ':');
+            // life отдельно: синхронный путь (без life) не должен подхватить список, который ещё заполняется
+            Fnv1a.Append(ref hash, life ? 1 : 0);
 
             string memkey = Fnv1a.Base64Url(hash);
 
             if (!memoryCache.TryGetValue(memkey, out List<EventLinkItem> links))
             {
                 var tasks = new List<Task>(online.Count);
+                var ordered = online.OrderBy(i => i.index).ToList();
                 links = new List<EventLinkItem>(online.Count);
-                for (int i = 0; i < online.Count; i++)
-                    links.Add(default);
+                foreach (var o in ordered)
+                    links.Add(new EventLinkItem(null, o.index, false, o.plugin));
 
                 memoryCache.Set(memkey, links, DateTime.Now.AddMinutes(5));
 
-                foreach (var o in online.OrderBy(i => i.index))
+                foreach (var o in ordered)
                 {
                     tasks.Add(checkSearch(
                         memkey, kitconf, links, tasks.Count, o.index, o.name, o.url, o.plugin,
@@ -969,6 +1017,35 @@ public class OnlineApiController : BaseController
 
             string checkuri = $"{srq}{(srq.Contains("?") ? "&" : "?")}id={HttpUtility.UrlEncode(id)}&imdb_id={imdb_id}&kinopoisk_id={kinopoisk_id}&tmdb_id={tmdb_id}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&original_language={original_language}&source={source}&year={year}&serial={serial}&anime={anime}&rchtype={rchtype}&checksearch=true";
 
+            // кэш результата по источнику: ключ — проверочный запрос + личность пользователя (те же поля, что добавляет AccsDbInvk.Args),
+            // без nws_id — он меняется при каждом переподключении rch и обнулял бы кэш
+            var query = HttpContext.Request.Query;
+            var itemHash = Fnv1a.Hash("checkSearchItem:");
+            Fnv1a.Append(ref itemHash, checkuri);
+            Fnv1a.Append(ref itemHash, ':');
+            Fnv1a.Append(ref itemHash, query["account_email"].ToString());
+            Fnv1a.Append(ref itemHash, ':');
+            Fnv1a.Append(ref itemHash, query["uid"].ToString());
+            Fnv1a.Append(ref itemHash, ':');
+            Fnv1a.Append(ref itemHash, query["token"].ToString());
+            Fnv1a.Append(ref itemHash, ':');
+            Fnv1a.Append(ref itemHash, query["box_mac"].ToString());
+            Fnv1a.Append(ref itemHash, ':');
+            Fnv1a.Append(ref itemHash, name);
+            Fnv1a.Append(ref itemHash, ':');
+            Fnv1a.Append(ref itemHash, index);
+            Fnv1a.Append(ref itemHash, life ? 1 : 0);
+            Fnv1a.Append(ref itemHash, ':');
+            Fnv1a.Append(ref itemHash, IsKitConf ? requestInfo.user_uid : string.Empty);
+
+            string itemKey = Fnv1a.Base64Url(itemHash);
+
+            if (memoryCache.TryGetValue(itemKey, out EventLinkItem cached))
+            {
+                links[indexList] = cached;
+                return;
+            }
+
             await Http.GetSpan(AccsDbInvk.Args(checkuri, HttpContext), timeoutSeconds: 10, headers: header, spanAction: res =>
             {
                 rch = res.Contains("\"rch\":true", StringComparison.Ordinal);
@@ -1044,12 +1121,20 @@ public class OnlineApiController : BaseController
                 }
             });
 
-            links[indexList] = new("{" + $"\"name\":\"{name}\",\"url\":\"{uri}\",\"index\":{index},\"show\":{(work ? "true" : "false")},\"balanser\":\"{plugin}\",\"rch\":{(rch ? "true" : "false")}" + "}", index, work);
+            var item = makeLinkItem(name, uri, index, plugin, work, rch);
+            // отрицательный результат может быть временным (таймаут) — держим его недолго
+            memoryCache.Set(itemKey, item, DateTime.Now.AddMinutes(work ? 10 : 1));
+            links[indexList] = item;
         }
         catch (Exception ex)
         {
             Serilog.Log.Error(ex, "CatchId={CatchId}", "id_effc21fb");
+            // пустой слот навсегда блокирует ready/head — помечаем источник нерабочим
+            links[indexList] = makeLinkItem(name, uri, index, plugin, false, false);
         }
     }
+
+    static EventLinkItem makeLinkItem(string name, string uri, int index, string plugin, bool work, bool rch)
+        => new("{" + $"\"name\":\"{name}\",\"url\":\"{uri}\",\"index\":{index},\"show\":{(work ? "true" : "false")},\"balanser\":\"{plugin}\",\"rch\":{(rch ? "true" : "false")}" + "}", index, work);
     #endregion
 }

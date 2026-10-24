@@ -60,8 +60,12 @@
 
   function component(object) {
     // ── state & UI scaffold ──
+    var comp = this;
     var network = new Network();
     network.timeout(BALANCER_TIMEOUT);
+    // отдельный для long-poll lifeevents: reset()/network.clear() не обрывают опрос,
+    // а его таймаут 3с не достаётся запросам к балансеру
+    var life_network = new Network();
     var scroll = new Lampa.Scroll({
       mask: true,
       over: true
@@ -77,8 +81,10 @@
     var images = [];
     var number_of_requests = 0;
     var number_of_requests_timer;
-    var life_wait_times = 0;
     var life_wait_timer;
+    var life_start = 0;
+    var life_pending = null; // ещё проверяются (с сервера); null — неизвестно (старый сервер / без life)
+    var auto_pick = null;
     var filter_sources = {};
     var filter_translate = {
       season: Lampa.Lang.translate('torrent_serial_season'),
@@ -115,6 +121,107 @@
       var bals = j.balanser;
       var name = j.name.split(' ')[0];
       return (bals || name).toLowerCase();
+    }
+
+    // ── автовыбор балансера ──
+    // Предпочтения пишутся только при запуске видео (updateBalanser): выбор тайтла + привычка.
+    // Привычка — счёт с затуханием, +1 только когда тайтл впервые смотрят на этом балансере,
+    // поэтому сериал на 500 серий не накручивает её; хранилище — пара на балансер.
+    // балансер точно не придёт: не проверен и сервер не числит его среди проверяемых
+    function absent(name) {
+      return !sources[name] && life_pending !== null && life_pending.indexOf(name) < 0;
+    }
+
+    function filmChoice() {
+      return Lampa.Storage.cache('online_last_balanser', 3000, {})[object.movie.id];
+    }
+
+    function hasProgress(name) {
+      var choice = comp.getChoice(name);
+      return Lampa.Arrays.getKeys(choice.episodes_view || {}).length > 0;
+    }
+
+    function addHabit(name) {
+      var habits = Lampa.Storage.get('online_balanser_habits', '{}');
+      for (var k in habits) {
+        habits[k] *= 0.85;
+        if (habits[k] < 0.05) delete habits[k];
+      }
+      habits[name] = (habits[name] || 0) + 1;
+      Lampa.Storage.set('online_balanser_habits', habits);
+    }
+
+    function getHabits() {
+      var habits = Lampa.Storage.get('online_balanser_habits', '{}');
+      // перенос старого глобального выбора, чтобы любимый балансер не потерялся после обновления
+      var legacy = Lampa.Storage.get('online_balanser', '');
+      if (legacy && !Lampa.Arrays.getKeys(habits).length) {
+        habits[legacy] = 1;
+        Lampa.Storage.set('online_balanser_habits', habits);
+      }
+      return habits;
+    }
+
+    // самый привычный из уже проверенных рабочих; при равенстве — порядок сервера (приоритет).
+    // Пока не прошла ~1с, ждём (false), если есть более привычный, ещё не проверенный балансер —
+    // иначе побеждал бы просто самый быстрый из привычных. null — привычных среди рабочих нет
+    function habitPick(final) {
+      var habits = getHabits();
+      var pick = null,
+        score = 0;
+      for (var i = 0; i < filter_sources.length; i++) {
+        var k = filter_sources[i];
+        if (sources[k].show && (habits[k] || 0) > score) {
+          score = habits[k];
+          pick = k;
+        }
+      }
+      // ждём и когда рабочих привычных ещё нет вовсе (pick == null, score == 0)
+      if (final || Date.now() - life_start >= 1000) return pick;
+      for (var h in habits) {
+        if (habits[h] > score && !sources[h] && !absent(h)) return false;
+      }
+      return pick;
+    }
+
+    // какой балансер запускать; null — ещё ждём. final — проверка закончена (ready/таймаут)
+    function autoPick(json, final) {
+      // лучший по приоритету известен, когда сервер прислал head (все приоритетнее проверены)
+      var best = null;
+      if (json.head || final) {
+        for (var i = 0; i < filter_sources.length; i++) {
+          if (sources[filter_sources[i]].show) {
+            best = filter_sources[i];
+            break;
+          }
+        }
+      }
+
+      // ручной выбор в фильтре — держим даже нерабочий (покажет свою ошибку)
+      var custom = object.lampac_custom_select;
+      if (custom) return sources[custom] ? custom : final || absent(custom) ? best : null;
+
+      // автопереключение после «не отвечает» — выбор тайтла не учитываем, иначе вернёмся к нему же
+      var auto = object.lampac_auto_select;
+      if (auto) {
+        if (sources[auto]) return sources[auto].show ? auto : best;
+        return final || absent(auto) ? best : null;
+      }
+
+      // уже смотрели этот тайтл — продолжаем на том же балансере
+      var film = filmChoice();
+      if (film) {
+        if (sources[film]) return sources[film].show ? film : best;
+        // сериал с прогрессом ждём до таймаута проверки (своя озвучка и серии), остальное ~4.5с;
+        // если его нет в списке этого тайтла — не ждём вовсе
+        var limit = hasProgress(film) ? 10500 : 4500;
+        if (!final && !absent(film) && Date.now() - life_start < limit) return null;
+        return best;
+      }
+
+      var habit = habitPick(final);
+      if (habit === false) return null; // ждём более привычного, лучшим по приоритету его не перебиваем
+      return habit || best;
     }
 
     function clarificationSearchAdd(value) {
@@ -224,6 +331,7 @@
         balanser = object.balanser;
         filter_sources = [];
 
+        network.timeout(BALANCER_TIMEOUT);
         return network['native'](
           account(object.url.replace('rjson=', 'nojson=')),
           this.parse.bind(this),
@@ -294,14 +402,19 @@
       });
     };
     // ── balanser ──
+    // вызывается только при запуске видео
     this.updateBalanser = function (balanser_name) {
       var last_select_balanser = Lampa.Storage.cache('online_last_balanser', 3000, {});
+      if (last_select_balanser[object.movie.id] !== balanser_name) addHabit(balanser_name);
       last_select_balanser[object.movie.id] = balanser_name;
       Lampa.Storage.set('online_last_balanser', last_select_balanser);
     };
-    this.changeBalanser = function (balanser_name) {
-      this.updateBalanser(balanser_name);
-      Lampa.Storage.set('online_balanser', balanser_name);
+    // смена в рамках этой карточки: в предпочтения не пишем, выбор переживает Activity.replace через object
+    this.changeBalanser = function (balanser_name, auto) {
+      if (auto) {
+        object.lampac_auto_select = balanser_name;
+        delete object.lampac_custom_select;
+      } else delete object.lampac_auto_select;
       var to = this.getChoice(balanser_name);
       var from = this.getChoice();
       if (from.voice_name) to.voice_name = from.voice_name;
@@ -349,14 +462,6 @@
       return url + (url.indexOf('?') >= 0 ? '&' : '?') + query.join('&');
     };
     // ── source & life events ──
-    this.getLastChoiceBalanser = function () {
-      var last_select_balanser = Lampa.Storage.cache('online_last_balanser', 3000, {});
-      if (last_select_balanser[object.movie.id]) {
-        return last_select_balanser[object.movie.id];
-      } else {
-        return Lampa.Storage.get('online_balanser', filter_sources.length ? filter_sources[0] : '');
-      }
-    };
     this.startSource = function (json) {
       return new Promise(function (resolve, reject) {
         json.forEach(function (j) {
@@ -369,14 +474,9 @@
         });
         filter_sources = Lampa.Arrays.getKeys(sources);
         if (filter_sources.length) {
-          var last_select_balanser = Lampa.Storage.cache('online_last_balanser', 3000, {});
-          if (last_select_balanser[object.movie.id]) {
-            balanser = last_select_balanser[object.movie.id];
-          } else {
-            balanser = Lampa.Storage.get('online_balanser', filter_sources[0]);
-          }
+          // lifeSource уже выбрал (auto_pick); без life — список полный, решаем сразу
+          balanser = auto_pick || autoPick({ head: true }, true);
           if (!sources[balanser]) balanser = filter_sources[0];
-          if (!sources[balanser].show && !object.lampac_custom_select) balanser = filter_sources[0];
           source = sources[balanser].url;
           Lampa.Storage.set('active_balanser', balanser);
           resolve(json);
@@ -390,31 +490,22 @@
       return new Promise(function (resolve, reject) {
         var url = _this3.requestParams(Defined.localhost + 'lifeevents?memkey=' + (_this3.memkey || ''));
         var red = false;
-        var gou = function gou(json, any) {
-          if (json.accsdb) return reject(json);
-          var last_balanser = _this3.getLastChoiceBalanser();
-          if (!red) {
-            var _filter = json.online.filter(function (c) {
-              return any ? c.show : c.show && c.name.toLowerCase() == last_balanser;
-            });
-            if (_filter.length) {
-              red = true;
-              resolve(
-                json.online.filter(function (c) {
-                  return c.show;
-                })
-              );
-            } else if (any) {
-              reject();
-            }
-          }
+        var seen = 0;
+        // сервер держит lifeevents до 1.5с (long-poll), поэтому лимит по времени, а не по числу запросов
+        life_start = Date.now();
+        var life_expired = function life_expired() {
+          return Date.now() - life_start > 15000;
         };
         var fin = function fin(call) {
-          network.timeout(3000);
-          network.silent(
-            account(url),
+          var started = Date.now();
+          life_network.timeout(3000);
+          life_network.silent(
+            account(url + '&seen=' + seen),
             function (json) {
-              life_wait_times++;
+              if (json.accsdb) return reject(json);
+              life_pending = json.pending || null;
+              var news = json.online.length > seen;
+              seen = json.online.length;
               filter_sources = [];
               sources = {};
               json.online.forEach(function (j) {
@@ -437,22 +528,36 @@
                   };
                 })
               );
-              filter.chosen('sort', [sources[balanser] ? sources[balanser].name : balanser]);
-              gou(json);
-              var lastb = _this3.getLastChoiceBalanser();
-              if (life_wait_times > 15 || json.ready) {
-                filter.render().find('.lampac-balanser-loader').remove();
-                gou(json, true);
-              } else if (!red && sources[lastb] && sources[lastb].show) {
-                gou(json, true);
-                life_wait_timer = setTimeout(fin, 1000);
-              } else {
-                life_wait_timer = setTimeout(fin, 1000);
+              // до старта показываем, кого ждём, вместо undefined
+              var waiting = object.lampac_custom_select || object.lampac_auto_select || filmChoice();
+              if (waiting && absent(waiting)) waiting = null;
+              filter.chosen('sort', [
+                sources[balanser] ? sources[balanser].name : waiting ? waiting + ' …' : ''
+              ]);
+              var final = life_expired() || json.ready;
+              if (final) filter.render().find('.lampac-balanser-loader').remove();
+              if (!red) {
+                var pick = autoPick(json, final);
+                if (pick) {
+                  red = true;
+                  auto_pick = pick;
+                  resolve(
+                    json.online.filter(function (c) {
+                      return c.show;
+                    })
+                  );
+                } else if (final) {
+                  return reject();
+                }
+              }
+              if (!final) {
+                // сервер держит запрос (long-poll); если ответил сразу без новостей — не долбим его чаще раза в секунду.
+                // 500мс, а не меньше: WAF 10 rps на IP общий для lifeevents/externalids и для всех устройств за NAT
+                life_wait_timer = setTimeout(fin, news || Date.now() - started >= 1000 ? 500 : 1000);
               }
             },
             function () {
-              life_wait_times++;
-              if (life_wait_times > 15) {
+              if (life_expired()) {
                 reject();
               } else {
                 life_wait_timer = setTimeout(fin, 1000);
@@ -526,6 +631,8 @@
     this.request = function (url) {
       number_of_requests++;
       if (number_of_requests < 10) {
+        // общий network: externalids/withsearch/субтитры ставят ему REQUEST_TIMEOUT (10с) — балансеру нужен свой
+        network.timeout(BALANCER_TIMEOUT);
         network['native'](account(url), this.parse.bind(this), this.doesNotAnswer.bind(this), false, {
           dataType: 'text',
           headers: addHeaders()
@@ -585,6 +692,7 @@
           Lampa.Controller.toggle('content');
           network.clear();
         });
+        network.timeout(BALANCER_TIMEOUT);
         network['native'](
           account(file.url),
           function (json) {
@@ -967,7 +1075,6 @@
       var data = Lampa.Storage.cache('online_choice_' + (for_balanser || balanser), 3000, {});
       data[object.movie.id] = choice;
       Lampa.Storage.set('online_choice_' + (for_balanser || balanser), data);
-      this.updateBalanser(for_balanser || balanser);
     };
     this.replaceChoice = function (choice, for_balanser) {
       var to = this.getChoice(for_balanser);
@@ -1630,12 +1737,16 @@
         html.find('.timeout').text(tic);
         if (tic == 0) {
           stopBalanserTimer();
-          var keys = Lampa.Arrays.getKeys(sources);
+          // следующий рабочий (нерабочие пропускаем); если рабочий только текущий — как раньше, по всем
+          var keys = Lampa.Arrays.getKeys(sources).filter(function (k) {
+            return sources[k].show || k == balanser;
+          });
+          if (keys.length < 2) keys = Lampa.Arrays.getKeys(sources);
           var indx = keys.indexOf(balanser);
           var next = keys[indx + 1];
           if (!next) next = keys[0];
           balanser = next;
-          if (Lampa.Activity.active().activity == _this9.activity) _this9.changeBalanser(balanser);
+          if (Lampa.Activity.active().activity == _this9.activity) _this9.changeBalanser(balanser, true);
         }
       };
       Lampa.Timer.add(1000, balanser_timer_tick);
@@ -1700,6 +1811,7 @@
       clearTimeout(life_wait_timer);
       clearTimeout(number_of_requests_timer);
       network.clear();
+      life_network.clear();
     }
 
     this.pause = function () {
