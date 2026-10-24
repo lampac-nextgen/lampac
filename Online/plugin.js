@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var LAMPAC_VERSION = '1.8.0';
+  var LAMPAC_VERSION = '1.9.0';
   var REQUEST_TIMEOUT = 10000;
   var BALANCER_TIMEOUT = 60000;
 
