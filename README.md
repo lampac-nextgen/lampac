@@ -240,6 +240,8 @@ journalctl -u lampac -f
 | `LAMPAC_GITHUB_REPO` | `lampac-nextgen/lampac` | GitHub-репозиторий релизов |
 | `LAMPAC_DOTNET_ROOT` | `/usr/share/dotnet` | Путь установки .NET |
 | `LAMPAC_DOTNET_CHANNEL` | `10.0` | Версия .NET runtime |
+| `LAMPAC_BACKUP_DIR` | `/opt/lampac-backups` | Бэкапы перед `--update` |
+| `LAMPAC_BACKUP_KEEP` | `1` | Сколько бэкапов хранить |
 
 </details>
 
