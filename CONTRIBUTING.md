@@ -19,7 +19,7 @@ Use [Conventional Commits](https://www.conventionalcommits.org/):
 type(scope): short summary
 ```
 
-- **Types:** `feat`, `fix`, `docs`, `chore`, `ci`, `deps`, `security`, `revert` (also `style`, `test` when needed)
+- **Types:** `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `deps`, `security`, `revert`, `umbrel`
 - **Scope:** module or area, e.g. `Kinogo`, `GStreamer`, `install`, `Sync`
 - **Breaking:** add `!` after type/scope → `fix(QRAuth)!: …`
 - Prefer **English** titles (repo convention). Body may be Russian or English.

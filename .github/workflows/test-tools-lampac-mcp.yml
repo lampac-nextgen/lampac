@@ -1,0 +1,60 @@
+---
+name: Test - lampac-mcp
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - tools/lampac-mcp/**
+      - Directory.Packages.props
+      - .github/workflows/test-tools-lampac-mcp.yml
+  pull_request:
+    branches:
+      - main
+    paths:
+      - tools/lampac-mcp/**
+      - Directory.Packages.props
+      - .github/workflows/test-tools-lampac-mcp.yml
+
+permissions:
+  contents: read
+
+jobs:
+  test-tools:
+    name: Test tools/lampac-mcp
+    runs-on: ubuntu-26.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v6.0.0
+        with:
+          dotnet-version: ${{ vars.DOTNET_VERSION || '10.0.x' }}
+
+      - name: Restore
+        run: dotnet restore tools/lampac-mcp/LampacMcp.csproj --verbosity minimal
+
+      - name: Build
+        run: dotnet build tools/lampac-mcp/LampacMcp.csproj --configuration Release --no-restore --verbosity minimal
+
+      - name: Verify formatting
+        run: dotnet format tools/lampac-mcp/LampacMcp.csproj --verify-no-changes --no-restore --verbosity minimal
+
+      - name: Smoke test MCP handshake
+        env:
+          LAMPAC_URL: http://127.0.0.1:1
+          LAMPAC_ADMIN_PASSWORD: ci-placeholder
+        run: |
+          set -euo pipefail
+          output=$({ printf '%s\n' \
+              '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-11-25","capabilities":{},"clientInfo":{"name":"ci","version":"1"}}}' \
+              '{"jsonrpc":"2.0","method":"notifications/initialized"}' \
+              '{"jsonrpc":"2.0","id":2,"method":"tools/list","params":{}}'; sleep 5; } \
+            | dotnet tools/lampac-mcp/bin/Release/net10.0/lampac-mcp.dll)
+          grep -q '"lampac_status"' <<<"$output"
+          grep -q '"lampac_plugin_add"' <<<"$output"
+          grep -q '"plugin_id"' <<<"$output"

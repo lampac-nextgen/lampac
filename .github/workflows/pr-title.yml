@@ -25,7 +25,7 @@ jobs:
               ;;
           esac
           # type(scope)!: summary  — scope and ! optional
-          pattern='^(feat|fix|docs|chore|ci|deps|security|revert|style|test|umbrel)(\([^)]+\))?(!)?: .+'
+          pattern='^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|deps|security|revert|umbrel)(\([^)]+\))?(!)?: .+'
           if [[ "$TITLE" =~ $pattern ]]; then
             echo "OK: $TITLE"
             exit 0
