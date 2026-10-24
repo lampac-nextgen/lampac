@@ -56,6 +56,15 @@
     return (episodeNumber < 10 ? '0' : '') + episodeNumber;
   }
 
+  function timelineLink(card, season, episode) {
+    if (typeof Lampa.Timeline.link !== 'function') return;
+    // У некоторых каталогов у сериала есть только name; исходную карточку не меняем.
+    if (card && card.name && !card.original_name) {
+      card = Object.assign({}, card, { original_name: card.name });
+    }
+    return Lampa.Timeline.link(card, season, episode);
+  }
+
   var Network = Lampa.Reguest;
 
   function component(object) {
@@ -1164,7 +1173,7 @@
             time: Lampa.Utils.secondsToTime((episode ? episode.runtime : object.movie.runtime) * 60, true)
           });
           var hash_timeline = Lampa.Utils.hash(
-            element.season
+            element.season || (serial && element.season === 0)
               ? [element.season, element.season > 10 ? ':' : '', element.episode, object.movie.original_title].join('')
               : object.movie.original_title
           );
@@ -1189,7 +1198,10 @@
             element.translate_voice = element.voice_name;
           }
           if (element.text && !episode) element.title = element.text;
-          element.timeline = Lampa.Timeline.view(hash_timeline);
+          element.timeline = Lampa.Timeline.view(
+            hash_timeline,
+            timelineLink(object.movie, element.season, element.episode)
+          );
           if (episode) {
             element.title = episode.name;
             if (element.info.length < 30 && episode.vote_average)
@@ -1379,7 +1391,8 @@
               .append(
                 Lampa.Timeline.render(
                   Lampa.Timeline.view(
-                    Lampa.Utils.hash([season, episode.episode_number, object.movie.original_title].join(''))
+                    Lampa.Utils.hash([season, episode.episode_number, object.movie.original_title].join('')),
+                    timelineLink(object.movie, season, episode.episode_number)
                   )
                 )
               );
