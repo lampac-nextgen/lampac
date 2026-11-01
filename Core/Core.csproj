@@ -23,6 +23,7 @@
   <ItemGroup>
     <Compile Remove="cache\**" />
     <Compile Remove="database\**" />
+    <Compile Remove="tests\**" />
     <Content Remove="cache\**" />
     <Content Remove="database\**" />
     <Content Remove="$(NuGetPackageRoot)microsoft.playwright/**" />

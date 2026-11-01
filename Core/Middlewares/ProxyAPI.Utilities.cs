@@ -45,10 +45,18 @@ public partial class ProxyAPI
         "content-type"
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    static async Task InvokeProxyApiCreateHttpRequestHandlers(EventProxyApiCreateHttpRequest eventArgs)
+    static async Task<bool> InvokeProxyApiCreateHttpRequestHandlers(EventProxyApiCreateHttpRequest eventArgs)
     {
         foreach (Func<EventProxyApiCreateHttpRequest, Task> handler in EventListener.ProxyApiCreateHttpRequest.GetInvocationList())
+        {
             await handler(eventArgs).ConfigureAwait(false);
+
+            // Modules clear RequestUri when the playback session cannot authorize the request.
+            if (eventArgs.requestMessage.RequestUri == null)
+                return false;
+        }
+
+        return true;
     }
     #endregion
 

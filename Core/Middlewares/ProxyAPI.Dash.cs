@@ -117,7 +117,11 @@ public partial class ProxyAPI
                 if (EventListener.ProxyApiCreateHttpRequest != null)
                 {
                     var em = new EventProxyApiCreateHttpRequest(decryptLink, decryptLink.plugin, httpContext.Request, decryptLink.headers, uri, request);
-                    await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
+                    if (!await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false))
+                    {
+                        httpContext.Response.StatusCode = StatusCodes.Status502BadGateway;
+                        return;
+                    }
                 }
 
                 if (init.showOrigUri)
