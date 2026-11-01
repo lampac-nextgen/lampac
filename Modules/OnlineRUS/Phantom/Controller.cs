@@ -359,13 +359,15 @@ public class PhantomController : BaseOnlineController<ModuleConf>
 
         string memkey = $"phantom:{id_file}:{token_movie}";
 
-        if (!hybridCache.TryGetValue(memkey, out (StreamData watch, List<StreamQualityDto> streams) cache))
+        if (!hybridCache.TryGetValue(memkey, out (StreamData watch, List<StreamQualityDto> streams) cache) ||
+            string.IsNullOrEmpty(cache.watch?.edge_hash) || cache.streams is not { Count: > 0 })
         {
             cache = await goMovie($"{init.linkhost}/?token_movie={token_movie}&token={init.token}", id_file);
-            if (cache.streams.Count == 0)
+            if (string.IsNullOrEmpty(cache.watch?.edge_hash) || cache.streams is not { Count: > 0 })
                 return OnError();
 
-            hybridCache.Set(memkey, cache, DateTime.Now.AddMinutes(10));
+            // Session state must replace incomplete entries even while the file cache has a pending write.
+            hybridCache.Set(memkey, cache, DateTime.Now.AddMinutes(10), inmemory: true);
         }
 
         var streamquality = new StreamQualityTpl();
