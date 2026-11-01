@@ -203,13 +203,16 @@ public partial class ProxyAPI
 
                             using (var requestor = CreateProxyHttpRequest(decryptLink.plugin, httpContext, decryptLink.headers, reqUri))
                             {
+                                bool canSend = true;
                                 if (EventListener.ProxyApiCreateHttpRequest != null)
                                 {
                                     var em = new EventProxyApiCreateHttpRequest(decryptLink, decryptLink.plugin, httpContext.Request, decryptLink.headers, reqUri, requestor);
-                                    await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
+                                    canSend = await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
                                 }
 
-                                using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(7)))
+                                if (!canSend)
+                                    servUri = links[1].Trim();
+                                else using (var cts = new CancellationTokenSource(TimeSpan.FromSeconds(7)))
                                 {
                                     using (var response = await clientor.SendAsync(requestor, HttpCompletionOption.ResponseHeadersRead, cts.Token).ConfigureAwait(false))
                                     {
@@ -240,6 +243,7 @@ public partial class ProxyAPI
                             prefix: [CoreInit.Host(httpContext), "/proxy/"]
                         )
                     );
+                    return;
                 }
                 #endregion
 
@@ -259,7 +263,11 @@ public partial class ProxyAPI
                         if (EventListener.ProxyApiCreateHttpRequest != null)
                         {
                             var em = new EventProxyApiCreateHttpRequest(decryptLink, decryptLink.plugin, httpContext.Request, decryptLink.headers, reqUri, request);
-                            await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false);
+                            if (!await InvokeProxyApiCreateHttpRequestHandlers(em).ConfigureAwait(false))
+                            {
+                                httpContext.Response.StatusCode = StatusCodes.Status502BadGateway;
+                                return;
+                            }
                         }
 
                         if (httpContext.RequestAborted.IsCancellationRequested)
