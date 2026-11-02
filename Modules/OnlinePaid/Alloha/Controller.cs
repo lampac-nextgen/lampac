@@ -280,11 +280,11 @@ public class AllohaController : BaseOnlineController<ModuleConf>
                     string file = q.Value;
                     if (init.reserve && hlsSource.reserve != null)
                     {
-						if (hlsSource.reserve is Dictionary<string, string> hlsreserve)
-						{
-							if (hlsreserve.TryGetValue(q.Key, out string reserve))
-								file += " or " + reserve;
-						}
+                        if (hlsSource.reserve is Dictionary<string, string> hlsreserve)
+                        {
+                            if (hlsreserve.TryGetValue(q.Key, out string reserve))
+                                file += " or " + reserve;
+                        }
                     }
 
                     streams.Add(new StreamQualityDto(HostStreamProxy(file), $"{q.Key}p"));
