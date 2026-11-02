@@ -43,7 +43,7 @@
 <p align="center">
   <img src="https://raw.githubusercontent.com/badbadtrip/QRAuth/main/screenshots/mob.png" width="360" alt="Экран входа на телефоне: кнопка «Войти через Telegram» первой, под ней «Войти по паролю», без QR-кода">
   <br>
-  <sub>На телефоне QR сканировать нечем, поэтому вместо него - кнопка «Войти через Telegram»</sub>
+  <sub>Скриншот прежней версии. Теперь на телефоне под кнопками входа также показывается QR-код.</sub>
 </p>
 
 </details>
@@ -327,7 +327,7 @@ deny.js:  опрос GET /tgbot/qr/status?session=... → { status: confirmed, t
 | `page_title`, `page_subtitle` | `string` | Заголовок и подзаголовок |
 | `step1_text`, `step2_text` | `string` | Строки подсказки под кнопками. Пустая строка не выводится; по умолчанию есть только `step2` (если задан `tg_target`) |
 | `qr_subcaption` | `string` | Подпись под QR |
-| `tg_button_text` | `string` | Текст кнопки «Войти через Telegram». На телефоне она заменяет QR, в браузере на компьютере стоит под кнопкой пароля, на ТВ её нет |
+| `tg_button_text` | `string` | Текст кнопки «Войти через Telegram». На телефоне она стоит первой, QR показывается под блоком входа; в браузере на компьютере стоит под кнопкой пароля, на ТВ её нет |
 | `poster_wall` | `bool` | Фон из постеров, по умолчанию `true` - см. [Фон из постеров](#posters). Без постеров остаётся обычный тёмный фон |
 | `poster_source` | `string` | Откуда постеры: `trending` (по умолчанию, тренды недели), `popular`, `now_playing`, `top_rated` |
 
