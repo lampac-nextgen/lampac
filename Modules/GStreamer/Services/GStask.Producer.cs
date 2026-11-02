@@ -675,10 +675,19 @@ public partial class GStask
 
                 if (!EnsureSegment(next, ct))
                     return false;
+
+                // A cache hit does not consume the physical reader.
+                // Do not assign the next cue to data from an earlier segment.
+                if (Volatile.Read(ref readerSegmentIndex) != next)
+                    break;
             }
 
-            return EnsureSegment(index, ct);
+            if (Volatile.Read(ref readerSegmentIndex) == index - 1)
+                return EnsureSegment(index, ct);
         }
+
+        if (ct.IsCancellationRequested || IsDead)
+            return false;
 
         if (!SeekSegment(index))
             return false;
