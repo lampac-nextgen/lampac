@@ -84,5 +84,5 @@ public class HlsSource
 {
     public bool @default { get; set; }
     public Dictionary<string, string> quality { get; set; }
-    public Dictionary<string, string> reserve { get; set; }
+    public object reserve { get; set; }
 }
