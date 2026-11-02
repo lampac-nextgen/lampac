@@ -34,8 +34,7 @@ namespace QRAuth
             string jsTgUrl = Js(tgUrl);
             string jsTitle = Js(string.IsNullOrWhiteSpace(conf.page_title) ? "Вход в Lampa" : conf.page_title);
             // Short defaults: the buttons already say "log in by password / via Telegram",
-            // so the copy must not re-narrate them. The subtitle never mentions the QR — on
-            // phones there is none (see the no-QR @media rule).
+            // so the copy must not re-narrate them.
             string jsSub = Js(string.IsNullOrWhiteSpace(conf.page_subtitle)
                 ? (hasTg ? "Войдите через Telegram или по паролю." : "Доступ ограничен. Пароль можно получить у администратора.")
                 : conf.page_subtitle);
@@ -210,8 +209,7 @@ namespace QRAuth
             sb.AppendLine("    '@media(hover:hover) and (pointer:fine){.dpc-b:not(:disabled):hover{border-color:rgba(255,255,255,.45)}}',");
             sb.AppendLine("    '.dpc-b:focus{outline:none}',");
             sb.AppendLine("    '.dpc-b:not(:disabled):active{background:rgba(78,78,86,.6)}',");
-            // Mobile-only "log in via Telegram" button — hidden unless the QR block is (see
-            // the no-QR @media rule below).
+            // "Log in via Telegram" button — visible on phones and in plain browsers.
             sb.AppendLine("    '#dpc-tgbtn{display:none}.dpc-web #dpc-tgbtn{display:inline-flex}',");
             // 0.9em, not smaller: this line carries "wrong password"/"connection error" and has
             // to be readable from a couch on TV.
@@ -284,16 +282,10 @@ namespace QRAuth
             // #dpc-content grows into it (a plain min-height:100% on #dpc-content didn't resolve
             // against #dpc-w's auto height, so short content — the ban screen — sat at the
             // top). A tall form still grows and scrolls in #dpc instead of being clipped.
-            sb.AppendLine("    '@media(max-width:700px){#dpc{align-items:flex-start;font-size:1.5em}#dpc-w{height:auto;min-height:100%;display:flex;flex-direction:column}#dpc-content{flex:1 0 auto;flex-direction:column;justify-content:center;height:auto}#dpc-l{flex:0 0 auto;overflow:visible;font-size:1em;padding:2.5em 1.5em}#dpc-r{flex:0 0 auto;width:100%}#dpc-btns{align-self:stretch}.dpc-b{width:100%;font-size:1.05em}}',");
-            // No-QR mode: a QR on the very phone that would have to scan it is useless, so on
-            // phones the whole QR column is swapped for a plain "log in via Telegram" button
-            // in the action list — same session deep link, same polling, the user just taps
-            // instead of scanning. Two triggers: a narrow viewport (portrait phone), or a
-            // short touch viewport (landscape phone — wide enough for two columns, but still
-            // a phone). This is a content choice, not sizing — sizing stays em-based.
-            // TVs/desktops never match: their CSS viewport is ≥540px tall.
+            sb.AppendLine("    '@media(max-width:700px){#dpc{align-items:flex-start;font-size:1.5em}#dpc-w{height:auto;min-height:100%;display:flex;flex-direction:column}#dpc-content{flex:1 0 auto;flex-direction:column;justify-content:center;height:auto}#dpc-l{flex:0 0 auto;overflow:visible;font-size:1em;padding:2.5em 1.5em}#dpc-r{flex:0 0 auto;width:100%;padding:0 1.5em 2.5em}#dpc-qr-wrap{width:16em;height:16em}#dpc-btns{align-self:stretch}.dpc-b{width:100%;font-size:1.05em}}',");
+            // Keep the direct Telegram link first on phones, alongside the QR login.
             if (hasTg && conf.show_qr)
-                sb.AppendLine("    '@media(max-width:700px),(max-height:480px) and (pointer:coarse){#dpc-r{display:none}#dpc-tgbtn{display:inline-flex;order:-1}}',");
+                sb.AppendLine("    '@media(max-width:700px),(max-height:480px) and (pointer:coarse){#dpc-tgbtn{display:inline-flex;order:-1}}',");
 
             // Reduced motion
             sb.AppendLine("    '@media(prefers-reduced-motion:reduce){.dpc-shackle,.dpc-plane{transition:none}#dpc-w,#dpc-logo,#dpc-title,#dpc-subtitle,#dpc-steps,#dpc-qr-wrap,#dpc-qrsub,#dpc-newpass{animation:none!important;opacity:1!important;transform:none!important}#dpc-qr-wrap.loading::after{animation:none!important}.dpc-b{animation:none!important}}',");
@@ -523,7 +515,7 @@ namespace QRAuth
             sb.AppendLine("    + '<div id=\"dpc-actions\">'");
             sb.AppendLine("    + '<div id=\"dpc-btns\">'");
             sb.AppendLine("    + '<button id=\"dpc-btn\" type=\"button\" class=\"dpc-b selector\">' + svgLock + '<span id=\"dpc-btn-text\">Войти по паролю</span>' + svgArrow + '</button>'");
-            // Mobile stand-in for the QR column — hidden by CSS unless the no-QR @media
+            // Direct Telegram link — hidden by CSS unless the phone @media
             // rule matches, or the page runs in a plain browser (.dpc-web, see below).
             // After #dpc-btn in DOM order so the TV's default focus stays
             // on the password button; on phones CSS `order:-1` shows it first instead, since
@@ -588,7 +580,7 @@ namespace QRAuth
                 // Plain desktop browser (not tizen/webos/android): Telegram Desktop can open
                 // the deep link right here, so the button shows under the password one, next
                 // to the QR. On TVs there is no Telegram — the QR stays the only way. This is
-                // a content choice (like the no-QR phone rule), not a sizing branch.
+                // a content choice (like the phone button rule), not a sizing branch.
                 sb.AppendLine("  if (!(window.Lampa && Lampa.Platform && Lampa.Platform.any())) { var _dw = document.getElementById('dpc-w'); if (_dw) _dw.className += ' dpc-web'; }");
                 sb.AppendLine("  renderQr(document.getElementById('dpc-qr-box'), tgUrl);");
                 sb.AppendLine();
@@ -826,8 +818,8 @@ namespace QRAuth
             // элементами внутри #dpc-w, а OK/Enter на активном долетает как 'hover:enter'.
             sb.AppendLine("  Lampa.Controller.add('dpc_component', {");
             sb.AppendLine("    toggle: function() {");
-            // visible_only: whichever of the QR column / mobile Telegram button is
-            // display:none for the current layout must not be reachable by the remote.
+            // visible_only: the Telegram button must not be reachable by the remote
+            // when hidden in the current layout.
             // Focus the password button explicitly rather than "first .selector".
             sb.AppendLine("      Lampa.Controller.collectionSet($('#dpc-w'), false, true);");
             sb.AppendLine("      Lampa.Controller.collectionFocus(_btn, $('#dpc-w'));");
