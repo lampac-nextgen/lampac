@@ -113,6 +113,7 @@
     <Project Path="Modules/OnlineRUS/Kinogo/Kinogo.csproj" />
     <Project Path="Modules/OnlineRUS/Kinotochka/Kinotochka.csproj" />
     <Project Path="Modules/OnlineRUS/LeProduction/LeProduction.csproj" />
+    <Project Path="Modules/OnlineRUS/Lostfilm/Lostfilm.csproj" />
     <Project Path="Modules/OnlineRUS/Mirage/Mirage.csproj" />
     <Project Path="Modules/OnlineRUS/Phantom/Phantom.csproj" />
     <Project Path="Modules/OnlineRUS/PizdatoeHD/PizdatoeHD.csproj" />
