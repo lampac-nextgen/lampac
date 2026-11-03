@@ -1,7 +1,7 @@
 (function () {
   'use strict';
 
-  var LAMPAC_VERSION = '1.9.1';
+  var LAMPAC_VERSION = '1.9.2';
   var REQUEST_TIMEOUT = 10000;
   var BALANCER_TIMEOUT = 60000;
 
@@ -1486,8 +1486,8 @@
               .append(
                 Lampa.Timeline.render(
                   Lampa.Timeline.view(
-                    Lampa.Utils.hash([season, episode.episode_number, object.movie.original_title].join('')),
-					Lampa.Timeline.link ? Lampa.Timeline.link(object.movie, season, episode.episode_number) : null
+                    Lampa.Utils.hash([season, season > 10 ? ':' : '', episode.episode_number, object.movie.original_title].join('')),
+                    Lampa.Timeline.link ? Lampa.Timeline.link(object.movie, season, episode.episode_number) : null
                   )
                 )
               );
