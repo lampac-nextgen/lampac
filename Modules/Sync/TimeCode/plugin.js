@@ -21,6 +21,21 @@
     if (!link || link[2] + '_' + link[1] !== card) return;
     return JSON.stringify({ card: road.card, season: road.season, episode: road.episode });
   }
+
+  // Новая Lampa сама кладёт в road привязку к карточке (Timeline.link): `movie_674` или `tv_1851`
+  // + season/episode. По ней идентичность известна сразу, без перебора закладок, и переживает смену
+  // original_title. Ключи с префиксом источника (`kp_movie_1`) — не TMDB, их не трогаем.
+  // Старая Lampa привязку не шлёт — вернётся null, и сработает прежний перебор.
+  function identityFromRoad(road) {
+    if (!road || typeof road.card !== 'string') return null;
+    var link = /^(movie|tv)_(\d+)$/.exec(road.card);
+    if (!link) return null;
+    if (link[1] === 'movie') return { identity: 'movie-' + link[2], card: link[2] + '_movie' };
+    var season = parseInt(road.season, 10);
+    var episode = parseInt(road.episode, 10);
+    if (isNaN(season) || isNaN(episode)) return null;
+    return { identity: 'tv-' + link[2] + '-s' + season + 'e' + episode, card: link[2] + '_tv' };
+  }
 	
   function _classCallCheck(instance, Constructor) {
     if (!(instance instanceof Constructor)) {
@@ -224,7 +239,15 @@
         if (!ready) ready = ((Lampa.Storage.get('favorite', {}) || {}).card || []).length;
 
         if (ready) return this.migrate();
-        if (attempt > 30) return;
+        // Закладок так и нет — разбираем то, что опознаётся без них (по привязке из road).
+        // Если таких записей нет, полный дамп с сервера тянуть незачем.
+        if (attempt > 30) {
+          var viewed = Lampa.Storage.cache(this.filename(), 10000, {});
+          for (var hash in viewed) {
+            if (identityFromRoad(viewed[hash])) return this.migrate();
+          }
+          return;
+        }
 
         // Никто не запросил — запрашиваем сами, но один раз.
         if (attempt === 2) { try { Lampa.Account.Bookmarks.update(); } catch (e) {} }
@@ -259,12 +282,22 @@
       value: function resolve(known) {
         var viewed = Lampa.Storage.cache(this.filename(), 10000, {});
         var index = this.cards();
-        if (!index.length) return;
-
         var claims = {};
+        var byRoad = {};
+
+        // Записи, к которым новая Lampa приложила привязку к карточке, опознаются сразу и
+        // точнее закладок: закладка могла сохранить старое original_title.
+        for (var key in viewed) {
+          var linked = identityFromRoad(viewed[key]);
+          if (!linked) continue;
+          claims[key] = [linked];
+          byRoad[key] = true;
+        }
+
+        if (!index.length && !Object.keys(claims).length) return;
 
         function claim(hash, identity, card) {
-          if (!viewed[hash]) return;
+          if (!viewed[hash] || byRoad[hash]) return;
           if (!claims[hash]) claims[hash] = [];
           for (var i = 0; i < claims[hash].length; i++) {
             if (claims[hash][i].identity === identity) return;
@@ -350,6 +383,9 @@
       /**
        * Записать отметку.
        *
+       * Если Lampa прислала привязку к карточке (road.card), идентичность берём из неё. Иначе —
+       * старым путём, по закладкам.
+       *
        * Карточку берём не из текущей активности: дельта из куба прилетает фоном, когда открыта
        * Главная, и строка легла бы под `0_movie`. Пишем только тогда, когда карточка установлена —
        * либо открытая страница объясняет этот хеш, либо он уже опознан разбором. Всё остальное
@@ -359,7 +395,7 @@
       value: function add(e) {
         var hash = e.data.hash;
         var road = e.data.road || {};
-        var found = this.identify(hash);
+        var found = identityFromRoad(road) || this.identify(hash);
         if (!found) return;
 
         $.ajax({
