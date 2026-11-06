@@ -21,13 +21,10 @@ public partial class TorBoxController
     }
     class SeriesSession {
         public string Owner, Title, Selection, KeyHash;
-        public int Resolution, Through;
+        public int Resolution;
         public int Version=1;
         public JToken Audio, Subtitle;
         public List<SeriesEpisode> Episodes = new();
-        public List<Pick> Candidates = new();
-        public Dictionary<int,int> Advances = new();
-        public HashSet<string> Used = new(StringComparer.OrdinalIgnoreCase);
         public SemaphoreSlim Gate = new(1,1);
         public DateTime Expires = DateTime.UtcNow.AddHours(12);
     }
@@ -93,7 +90,7 @@ public partial class TorBoxController
     }
     object SeriesInfo(string session,SeriesSession state,int index,int version=-1) => new {
         session, selected_index=index, version=state.Version, title=state.Title, selection=state.Selection,
-        next_season=state.Through+1, next_index=state.Episodes.Count,
+        next_season=0, next_index=state.Episodes.Count, season_only=true,
         items=version==state.Version?null:state.Episodes.Select((e,i)=>new{index=i,title=EpisodeTitle(e),season=e.Season,episode=e.Episode}).ToArray()
     };
     async Task<(string Url,string Notice)> ResolveSeriesStream(SeriesSession state,int index,string key) {
@@ -126,17 +123,13 @@ public partial class TorBoxController
         var current=episodes.FirstOrDefault(e=>e.File==file);
         if(current==null)return Error(400,"Не удалось определить выбранную серию");
         current.ExplicitAudio=audio;current.ExplicitSub=sub;
-        int through=current.Season;
-        while(episodes.Any(e=>e.Season==through+1))through++;
         var known=pick.Metadata[file];
         var audios=known["metadata"]?["audios"] as JArray??new JArray();
         var subtitles=known["metadata"]?["subtitles"] as JArray??new JArray();
-        var state=new SeriesSession{Owner=metadataOwner,KeyHash=SeriesKeyHash(key),Title=pick.Movie,Selection=selection,Resolution=resolution,Through=through,
+        var state=new SeriesSession{Owner=metadataOwner,KeyHash=SeriesKeyHash(key),Title=pick.Movie,Selection=selection,Resolution=resolution,
             Audio=audios.Count>audio?audios[audio].DeepClone():null,Subtitle=sub>=0?subtitles[sub].DeepClone():null,
-            Episodes=episodes.Where(e=>e.Season>=current.Season && e.Season<=through).Take(5000).ToList(),
-            Candidates=(pick.SeriesPicks??new[]{pick}).ToList()};
+            Episodes=episodes.Where(e=>e.Season==current.Season).Take(5000).ToList()};
         foreach(var e in state.Episodes)if(pick.Metadata.TryGetValue(e.File,out var data))e.Metadata=data;
-        state.Used.Add(pick.Hash??pick.Name);
         string session=Guid.NewGuid().ToString("N");seriesSessions[session]=state;
         return await SeriesStream(session,state,state.Episodes.IndexOf(current),key);
     }
@@ -149,47 +142,7 @@ public partial class TorBoxController
     [HttpGet,Route("torbox/series/advance")]
     public Task<ActionResult> AdvanceSeries(string session,int after,int version=-1) => Guard(async(c,key)=>{
         var state=GetSeries(session,key);
-        if(!await state.Gate.WaitAsync(TimeSpan.FromSeconds(2),HttpContext.RequestAborted))return Error(429,"Следующий сезон ещё подготавливается");
-        try {
-            if(state.Advances.TryGetValue(after,out int index))return await SeriesStream(session,state,index,key,version);
-            if(after!=state.Episodes.Count-1)return Error(400,"Некорректный переход к следующему сезону");
-            if(state.Episodes.Count>=5000)return Error(409,"Достигнут предел плейлиста сериала");
-            var next=await AppendSeriesSeason(state,c,key,after);
-            return next.Index.HasValue ? await SeriesStream(session,state,next.Index.Value,key,version) : Payload(new{success=true,ended=true,detail=next.Detail});
-        }finally{state.Gate.Release();}
+        if(after!=state.Episodes.Count-1)return Error(400,"Некорректный переход после последней серии сезона");
+        return Payload(new{success=true,ended=true,detail="Сезон завершён. Добавьте следующий сезон через TorBox и выберите озвучку и субтитры заново"});
     });
-    async Task<(int? Index,string Detail)> AppendSeriesSeason(SeriesSession state,JObject c,string key,int after) {
-            int wanted=state.Through+1;
-            var candidates=state.Candidates.Where(p=>p.Owner==metadataOwner && !state.Used.Contains(p.Hash??p.Name) &&
-                (SeasonHint(p.Name)==wanted || SeasonHint(p.Name)==0 || Regex.IsMatch(p.Name??"",@"(?:сезоны|seasons|S\d{1,2}[ ._-]*[-–][ ._-]*S?\d{1,2})",RegexOptions.IgnoreCase)))
-                .OrderBy(p=>SeasonHint(p.Name)==wanted?0:1).ThenBy(p=>Math.Abs(p.Quality-state.Episodes.Last().Pick.Quality)).ThenByDescending(p=>p.Seeds).Take(12).ToArray();
-            if(candidates.Length==0)return (null,"Следующий сезон не найден среди раздач этого сериала");
-            var owned=await OwnedTorrents(key);
-            var hashes=candidates.Select(p=>p.Hash).Where(h=>Regex.IsMatch(h??"","^([a-f0-9]{40}|[a-z2-7]{32})$",RegexOptions.IgnoreCase)).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
-            var cache=hashes.Length>0 ? await Call("checkcached?hash="+Uri.EscapeDataString(string.Join(",",hashes))+"&format=object",key) as JObject : null;
-            foreach(var candidate in candidates) {
-                var torrent=owned.FirstOrDefault(t=>!string.IsNullOrEmpty(candidate.Hash) && string.Equals((string)t["hash"],candidate.Hash,StringComparison.OrdinalIgnoreCase) && CachedReady(t));
-                if(torrent==null) {
-                    var cached=cache?.Properties().FirstOrDefault(x=>string.Equals(x.Name,candidate.Hash,StringComparison.OrdinalIgnoreCase))?.Value as JObject;
-                    if(!string.IsNullOrEmpty(candidate.Hash) && (cached==null || !cached.HasValues || (bool?)cached["cached"]==false))continue;
-                    if(!await addGate.WaitAsync(TimeSpan.FromSeconds(3),HttpContext.RequestAborted))throw new TorBoxException(429,"Другая операция TorBox ещё выполняется");
-                    try{torrent=await AttachCachedOnly(candidate,c,key);}finally{addGate.Release();}
-                }
-                if(torrent==null)continue;
-                candidate.Id=(long?)torrent["id"];candidate.Torrent=torrent.DeepClone();
-                var next=EpisodeFiles(candidate,torrent).Where(e=>e.Season>=wanted).ToList();
-                if(!next.Any(e=>e.Season==wanted))continue;
-                int through=wanted;while(next.Any(e=>e.Season==through+1))through++;
-                var existing=state.Episodes.Select(e=>(e.Season,e.Episode)).ToHashSet();
-                next=next.Where(e=>e.Season<=through && !existing.Contains((e.Season,e.Episode))).ToList();
-                if(next.Count==0){state.Used.Add(candidate.Hash??candidate.Name);continue;}
-                if(state.Episodes.Count+next.Count>5000)throw new TorBoxException(409,"Достигнут предел плейлиста сериала");
-                int index=state.Episodes.Count;state.Episodes.AddRange(next);state.Through=through;state.Version++;
-                state.Used.Add(candidate.Hash??candidate.Name);state.Advances[after]=index;
-                RememberFilm(torrent,candidate.Film);
-                return (index,null);
-            }
-            return (null,"Следующего сезона нет в готовом кэше TorBox. Загрузки не запускались");
-    }
-
 }

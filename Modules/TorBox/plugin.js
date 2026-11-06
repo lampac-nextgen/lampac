@@ -550,11 +550,10 @@
         timeline: Lampa.Timeline.view(Lampa.Utils.hash([row.season, row.season > 10 ? ':' : '', row.episode, identity].join('')),
           Lampa.Timeline.link ? Lampa.Timeline.link(movie, row.season, row.episode) : null) };
     }
-    function load(target, advance, done) {
+    function load(target, done) {
       if (run.busy || !live()) return;
       run.busy = true;
-      var path = advance ? 'series/advance?session=' + encodeURIComponent(run.session) + '&after=' + (target - 1)
-        : 'series/play?session=' + encodeURIComponent(run.session) + '&index=' + target;
+      var path = 'series/play?session=' + encodeURIComponent(run.session) + '&index=' + target;
       if (typeof info.version === 'number') path += '&version=' + info.version;
       request(path, null, function (j) {
         run.busy = false;
@@ -574,21 +573,13 @@
       } else info = incoming;
       info.items.forEach(function (row) {
         var entry = run.playlist[row.index];
-        if (!entry || entry.torbox_advance) {
-          var value = cell(row);
-          if (!entry) entry = run.playlist[row.index] = value;
-          else { Object.keys(entry).forEach(function (key) { delete entry[key]; }); $.extend(entry, value); }
-          entry.url = function (done) { load(row.index, false, done); };
+        if (!entry) {
+          entry = run.playlist[row.index] = cell(row);
+          entry.url = function (done) { load(row.index, done); };
         }
         if (row.index === info.selected_index) entry.url = j.url;
       });
-      var next = info.next_index;
-      run.playlist.length = next;
-      run.playlist.push({ title: (info.title || '') + ' · ' + info.next_season + ' сезон',
-        season: info.next_season, episode: 1, torbox_session: run.session, torbox_advance: true,
-        url: function (done) { load(next, true, done); } });
-      // Lampa's native playlist callback keeps the currently selected object by reference.
-      // sync therefore mutates the season placeholder instead of replacing that object.
+      run.playlist.length = info.items.length;
       return true;
     }
     sync(response);
