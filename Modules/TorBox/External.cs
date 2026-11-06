@@ -80,8 +80,8 @@ public partial class TorBoxController
             var external=GetExternal(access);
             if(!external.Ready)return Error(409,"Плейлист ещё подготавливается");
             if(index<0 || index>=external.State.Episodes.Count)return Error(404,"Серия отсутствует в плейлисте");
-            var c=Config();
-            if((c["allowed_uids"] as JArray)?.Any(x=>string.Equals((string)x,external.Uid,StringComparison.OrdinalIgnoreCase))!=true)
+            var c=Config(external.ServerMode ? "file" : "client");
+            if(serverCredentials && (c["allowed_uids"] as JArray)?.Any(x=>string.Equals((string)x,external.Uid,StringComparison.OrdinalIgnoreCase))!=true)
                 return Error(403,"Нет доступа к TorBox для этого аккаунта Lampac");
             if(serverCredentials!=external.ServerMode)return Error(410,"Настройки TorBox изменились. Откройте плейлист заново");
             string key=serverCredentials?((string)c["api_key"]??"").Trim():external.ClientKey;

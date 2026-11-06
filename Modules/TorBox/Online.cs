@@ -68,14 +68,14 @@ public partial class TorBoxController
     [HttpGet, Route("lite/torbox")]
     public Task<ActionResult> Online(string title, string original_title, int year=0, byte serial=0, bool rjson=true, long id=0, long tmdb_id=0, string source=null) => Guard(async(c,key)=>{
         if(string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(original_title))return Error(400,"Не указано название фильма");
-        string searchKey=Normalize(title)+":"+Normalize(original_title)+":"+year+":"+serial;
+        string searchKey=SeriesKeyHash(metadataOwner+":"+c["jacred"]?.ToString(Newtonsoft.Json.Formatting.None))+":"+Normalize(title)+":"+Normalize(original_title)+":"+year+":"+serial;
         JArray rows;
         if(searchCache.TryGetValue(searchKey,out var hit) && hit.Expires>DateTime.UtcNow)rows=hit.Rows;
         else {
             var parser=c["jacred"] as JObject;
             if(parser==null || !Uri.TryCreate((string)parser["base_url"],UriKind.Absolute,out var baseUri))return Error(503,"JacRed для TorBox не настроен");
             string url=baseUri.ToString().TrimEnd('/')+"/api/v2.0/indexers/all/results?title="+Uri.EscapeDataString(title??original_title)+"&title_original="+Uri.EscapeDataString(original_title??title)+"&year="+(serial==1?0:year)+"&is_serial="+(serial==1?2:1)+"&apikey="+Uri.EscapeDataString((string)parser["api_key"]??"");
-            using var response=await client.GetAsync(url,HttpContext.RequestAborted);
+            using var response=await ParserClient.GetAsync(url,HttpContext.RequestAborted);
             if(!response.IsSuccessStatusCode)return Error(502,"JacRed не ответил на поиск");
             var parsed=JObject.Parse(await response.Content.ReadAsStringAsync());
             rows=parsed["Results"] as JArray ?? new JArray();

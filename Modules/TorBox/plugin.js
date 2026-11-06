@@ -22,12 +22,13 @@
   var keyPolicy = null;
   var policyExpires = 0;
   var settingsRows = [];
+  var settingsRenderTimer;
   var keyCache = {};
   function keyIdentity() {
     return base + '|' + Lampa.Storage.get('account_email', '') + '|' + Lampa.Storage.get('lampac_unic_id', '');
   }
-  function keyStore(value, done) {
-    var identity = keyIdentity();
+  function keyStore(value, done, profile) {
+    var identity = keyIdentity() + (profile ? "|config" : "");
     if (value === undefined && Object.prototype.hasOwnProperty.call(keyCache, identity)) return done(null, keyCache[identity]);
     if (!window.indexedDB) return done(true, '');
     var open;
@@ -65,59 +66,116 @@
     if (!fresh && keyPolicy && keyPolicy.identity === identity && policyExpires > Date.now()) return done(keyPolicy);
     $.ajax({ url: endpoint('status'), dataType: 'json', timeout: 10000, cache: false,
       success: function (j) {
-        if (!j || !j.success || typeof j.key_editable !== 'boolean') return done(null);
+        if (!j || !j.success || typeof j.key_editable !== 'boolean') { keyPolicy = null; return done(null); }
         j.identity = identity; keyPolicy = j; policyExpires = Date.now() + 15000; done(j);
-      }, error: function () { done(null); }
+      }, error: function () { keyPolicy = null; done(null); }
     });
   }
+  function clientSettings(done) {
+    keyStore(undefined, function (error, profile) {
+      profile = profile && typeof profile === 'object' ? profile : {};
+      keyStore(undefined, function (keyError, key) { done(error || keyError, profile, key); });
+    }, true);
+  }
+  function configMode(profile, policy) { return policy.client_available === true ? 'client' : 'file'; }
   window.lampac_torbox_headers = function (url, done) {
     if (!torboxAddress(url)) return done({});
     var identity = keyIdentity();
     getPolicy(function (policy) {
-      if (!policy || !policy.key_editable || identity !== keyIdentity()) return done({});
-      keyStore(undefined, function (error, key) { done(!error && key && identity === keyIdentity() ? { 'X-TorBox-Key': key } : {}); });
+      if (!policy || identity !== keyIdentity()) return done({ 'X-TorBox-Mode': 'unavailable' });
+      if (!policy.client_available) return done({ 'X-TorBox-Mode': 'file' });
+      clientSettings(function (error, profile, key) {
+        if (error || identity !== keyIdentity()) return done({ 'X-TorBox-Mode': 'unavailable' });
+        var mode = configMode(profile, policy);
+        var headers = { 'X-TorBox-Mode': mode };
+        if (mode === 'client') {
+          if (key) headers['X-TorBox-Key'] = key;
+          var config = {};
+          ['allowed_uids', 'torrent_origins'].forEach(function (name) { if (profile[name] && profile[name].length) config[name] = profile[name]; });
+          if (profile.jacred_url || profile.jacred_key) config.jacred = { base_url: profile.jacred_url || '', api_key: profile.jacred_key || '' };
+          headers['X-TorBox-Config'] = btoa(unescape(encodeURIComponent(JSON.stringify(config))));
+        }
+        done(headers);
+      });
     });
   };
+  var settingFields = [
+    { name: 'api_key', title: 'API-ключ TorBox', secret: true, description: 'Личный ключ TorBox; хранится на этом устройстве' },
+    { name: 'allowed_uids', title: 'Разрешённые Lampac UID', list: true, description: 'Через запятую. Пусто — текущий аккаунт Lampac; серверный список не используется' },
+    { name: 'torrent_origins', title: 'Доверенные адреса torrent-файлов', list: true, description: 'Публичные HTTP/HTTPS адреса через запятую. Пусто — загрузка по адресам запрещена' },
+    { name: 'jacred_url', title: 'Адрес JacRed', description: 'Полный публичный HTTP/HTTPS адрес. Без адреса поиск в балансере недоступен' },
+    { name: 'jacred_key', title: 'API-ключ JacRed', secret: true, description: 'Личный ключ JacRed; значения файла сервера не подставляются' }
+  ];
   function renderKeyPolicy() {
     getPolicy(function (policy) {
-      keyStore(undefined, function (error, key) {
-        settingsRows.forEach(function (item) {
-          var editable = !!(policy && policy.key_editable && !error);
-          item.toggleClass('torbox-key-disabled', !editable).attr('aria-disabled', editable ? 'false' : 'true');
-          item.find('.settings-param__value').text(!policy ? 'Нет связи с сервером' : policy.server_key ? 'Задан на сервере' : error ? 'Хранилище недоступно' : key ? 'Сохранён на этом устройстве' : 'Не указан');
-          item.find('.settings-param__descr').text(policy && policy.server_key ? 'Изменение недоступно: на сервере есть torbox-private.json' : 'Личный ключ хранится только на этом устройстве');
+      clientSettings(function (error, profile, key) {
+        if (policy && !policy.client_available) error = false;
+        settingsRows = settingsRows.filter(function (row) { return $.contains(document, row.item[0]); });
+        settingsRows.forEach(function (row) {
+          var mode = policy ? configMode(profile, policy) : 'file';
+          var visible = row.name === 'mode' || !!(policy && !error && mode === 'client');
+          row.item.toggle(visible).toggleClass('selector', visible);
+          row.item.toggleClass('torbox-key-disabled', !policy || !!error).attr('aria-disabled', !policy || error ? 'true' : 'false');
+          var value = row.name === 'mode' ? (!policy ? 'Нет связи с сервером' : error ? 'Хранилище недоступно' : mode === 'file' ? 'Файл torbox-private.json' + (policy.file_available === false ? ' отсутствует' : '') : 'Данные на клиенте') : row.name === 'api_key' ? key : profile[row.name];
+          if (row.name !== 'mode' && row.secret) value = value ? 'Сохранён на устройстве' : 'Не указан';
+          if (Array.isArray(value)) value = value.join(', ');
+          row.item.find('.settings-param__value').text(value || (row.name === 'allowed_uids' ? 'Текущий аккаунт Lampac' : row.name === 'torrent_origins' ? 'Нет разрешённых адресов' : 'Не указан'));
         });
+        if (Lampa.Controller.enabled().name === 'settings_component') Lampa.Controller.toggle('settings_component');
       });
     }, true);
   }
-  function editClientKey(clear) {
+  function editClientField(field) {
+    var identity = keyIdentity();
     getPolicy(function (policy) {
-      if (!policy || !policy.key_editable) { renderKeyPolicy(); return Lampa.Noty.show(policy && policy.server_key ? 'Используется ключ, заданный на сервере' : 'Не удалось проверить настройки TorBox'); }
-      var editIdentity = policy.identity;
-      if (!torboxAddress(endpoint('list'))) return Lampa.Noty.show('Для личного ключа требуется HTTPS');
-      function save(value) {
-        value = String(value || '').trim();
-        if (!clear && !/^[a-zA-Z0-9_.-]{16,256}$/.test(value)) return Lampa.Noty.show('Введите корректный API-ключ TorBox');
-        // Recheck after editing: a server file may have appeared while the input was open.
-        getPolicy(function (current) {
-          if (!current || !current.key_editable || editIdentity !== keyIdentity() || current.identity !== editIdentity) { renderKeyPolicy(); return Lampa.Noty.show('Сохранение ключа сейчас недоступно'); }
-          keyStore(clear ? '' : value, function (error) {
-            Lampa.Noty.show(error ? 'Не удалось сохранить ключ на устройстве' : clear ? 'Личный ключ удалён с устройства' : 'Ключ TorBox сохранён на устройстве');
-            renderKeyPolicy();
-          });
-        }, true);
-      }
-      if (clear) save('');
-      else Lampa.Input.edit({ title: 'API-ключ TorBox', value: '', free: true, nosave: true }, save);
+      clientSettings(function (error, profile, key) {
+        if (!policy || error || identity !== keyIdentity()) return Lampa.Noty.show('Не удалось прочитать настройки TorBox');
+        if (field.name === 'mode') return Lampa.Noty.show('Источник задаётся allow_client_credentials в файле сервера');
+        if (!torboxAddress(endpoint('list'))) return Lampa.Noty.show('Для настроек клиента требуется HTTPS');
+        if (field.name !== 'mode' && configMode(profile, policy) !== 'client') return;
+        function save(value) {
+          if (identity !== keyIdentity()) return;
+          {
+            value = String(value || '').trim();
+            if (field.name === 'api_key' && value && !/^[a-zA-Z0-9_.-]{16,256}$/.test(value)) return Lampa.Noty.show('Введите корректный API-ключ TorBox');
+            if (field.name === 'jacred_key' && value.length > 256) return Lampa.Noty.show('Слишком длинный ключ JacRed');
+            if (field.name === 'jacred_url' && value && !/^https?:\/\/[^\s?#]+$/i.test(value)) return Lampa.Noty.show('Укажите полный адрес JacRed');
+            if (field.list) {
+              value = value ? value.split(/[,\n]+/).map(function (x) { return x.trim(); }).filter(Boolean) : [];
+              if (value.length > 100 || value.some(function (x) { return x.length > 256; })) return Lampa.Noty.show('Слишком длинный список');
+            }
+            if (field.name !== 'api_key') profile[field.name] = value;
+          }
+          // Recheck the account and source after the input dialog, before saving.
+          getPolicy(function (current) {
+            if (!current || identity !== keyIdentity()) return Lampa.Noty.show('Сохранение настроек сейчас недоступно');
+            clientSettings(function (readError, latest) {
+              if (readError || identity !== keyIdentity()) return;
+              if (field.name !== 'mode' && configMode(latest, current) !== 'client') return Lampa.Noty.show('Источник настроек изменился');
+              keyStore(field.name === 'api_key' ? value : profile, function (writeError) {
+                Lampa.Noty.show(writeError ? 'Не удалось сохранить настройки на устройстве' : 'Настройки TorBox сохранены');
+                renderKeyPolicy();
+              }, field.name !== 'api_key');
+            });
+          }, true);
+        }
+        var value = field.name === 'api_key' ? key : profile[field.name];
+        Lampa.Input.edit({ title: field.title, value: field.secret ? '' : Array.isArray(value) ? value.join(', ') : value || '', free: true, nosave: true }, save);
+      });
     }, true);
   }
   function addTorBoxSettings() {
     Lampa.SettingsApi.addComponent({ component: 'torbox', name: 'TorBox', icon: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M19 10h-.3A7 7 0 0 0 5.2 8.2 5 5 0 0 0 6 18h13a4 4 0 0 0 0-8M10 15V9l5 3z"/></svg>' });
-    ['API-ключ TorBox', 'Удалить личный ключ'].forEach(function (title, index) {
+    [{ name: 'mode', title: 'Источник настроек', description: 'Источник задаёт администратор через allow_client_credentials' }].concat(settingFields).forEach(function (field) {
       Lampa.SettingsApi.addParam({ component: 'torbox', param: { type: 'button' },
-        field: { name: title, description: 'Проверяю настройки сервера…' },
-        onChange: function () { editClientKey(index === 1); },
-        onRender: function (item) { settingsRows = settingsRows.filter(function (row) { return $.contains(document, row[0]); }); settingsRows.push(item); renderKeyPolicy(); }
+        field: { name: field.title, description: field.description },
+        onChange: function () { editClientField(field); },
+        onRender: function (item) {
+          if (!item.find('.settings-param__value').length) $('<div class="settings-param__value">').insertAfter(item.find('.settings-param__name'));
+          if (field.name !== 'mode') item.hide();
+          settingsRows.push({ item: item, name: field.name, secret: field.secret });
+          clearTimeout(settingsRenderTimer); settingsRenderTimer = setTimeout(renderKeyPolicy, 0);
+        }
       });
     });
     $('<style>').text('.torbox-key-disabled{opacity:.45;pointer-events:none}').appendTo('head');
@@ -436,6 +494,10 @@
     var more = false;
     var loading = false;
     var deleting = false;
+    var changingAirlock = false;
+    var airlockUsage = null;
+    var libraryIdentity = keyIdentity();
+    var airlockSummary = $('<div class="torbox-airlock-summary" role="status">').text('Airlocked Data: получаю сведения…').css({ padding: '0 0 1em', opacity: '.8' });
     var g;
     var view = { scope: null, refresh: reload, visible: function () {
       var active = Lampa.Activity.active();
@@ -443,10 +505,27 @@
     } };
     var destroy = this.destroy;
     function reload() { Lampa.Activity.replace({ component: 'my_torbox', title: 'Мой TorBox', page: 1 }); }
+    function airlockGB(bytes) { return (bytes / 1073741824).toFixed(2) + ' GB'; }
+    function showAirlockUsage(j) {
+      airlockUsage = j;
+      if (!j || ['remaining_bytes', 'used_bytes', 'limit_bytes'].some(function (name) { return typeof j[name] !== 'number' || !isFinite(j[name]) || j[name] < 0; }))
+        return airlockSummary.text('Airlocked Data: не удалось получить сведения');
+      if (view.scope && j.scope !== view.scope) return airlockSummary.text('Airlocked Data: аккаунт изменился, обновите список');
+      airlockSummary.text('Airlocked Data: осталось ' + airlockGB(j.remaining_bytes) + ' · занято ' + airlockGB(j.used_bytes) + ' из ' + airlockGB(j.limit_bytes));
+    }
+    function loadAirlockUsage() {
+      request('airlock/info', null, function (j) {
+        if (alive && libraryIdentity === keyIdentity()) showAirlockUsage(j);
+      }, function () {
+        if (alive && libraryIdentity === keyIdentity()) showAirlockUsage(null);
+      }, true);
+    }
+    function attachAirlockUsage() { self.render().find('.scroll__content').first().prepend(airlockSummary); }
     function page(number, done, failed) {
       request('list?offset=' + ((number - 1) * 100), null, function (j) {
         if (!alive) return;
         view.scope = j.deletion_scope;
+        if (airlockUsage) showAirlockUsage(airlockUsage);
         more = !!j.more;
         done({ results: (j.data || []).filter(function (t) {
           return !deletionQueue.some(function (entry) {
@@ -464,11 +543,14 @@
       deletionView = view;
       object.page = 1;
       self.activity.loader(true);
+      loadAirlockUsage();
       page(1, function (data) {
         if (!data.results.length) data.results.push({ id: 'torbox-empty', title: 'В TorBox пока нет загрузок', torboxAction: reload });
         self.build(data);
+        attachAirlockUsage();
       }, function () {
         self.build({ results: [{ id: 'torbox-retry', title: 'Повторить загрузку', torboxAction: reload }], total_pages: 1 });
+        attachAirlockUsage();
       });
     };
     this.nextPageReuest = function (params, done, failed) { page(params.page, done, failed); };
@@ -487,7 +569,9 @@
       var node = card.render();
       node.addClass('torbox-library-card');
       node.find('.card__view').append($('<div class="torbox-library-card__caption">').text(data.title));
-      node.append($('<div class="torbox-library-card__status">').text(t ? state(t) + ' · ' + size(t.size) : 'Нажмите, чтобы обновить'));
+      var cardStatus = $('<div class="torbox-library-card__status">').appendTo(node);
+      function updateStatus() { cardStatus.text(t ? state(t) + ' · ' + size(t.size) + (t.airlocked === true ? ' · Airlock' : '') : 'Нажмите, чтобы обновить'); }
+      updateStatus();
       var posterRequested = false;
       card.onVisible = function () {
         if (!t || posterRequested || !alive) return;
@@ -522,7 +606,27 @@
         originController = 'content';
         var back = function () { Lampa.Controller.toggle('content'); };
         var actions = [{ title: 'Обновить список', run: reload }];
+        var desiredAirlock = t ? !t.airlocked : false;
         if (t) {
+          if (typeof t.airlocked === 'boolean') actions.push({ title: t.airlocked ? 'Disable Airlock' : 'Enable Airlock',
+            subtitle: t.airlocked ? 'Отключить постоянное хранение раздачи' : 'Включить постоянное хранение раздачи', run: function () {
+              if (!alive || changingAirlock || libraryIdentity !== keyIdentity()) return;
+              changingAirlock = true;
+              request('airlock', { id: t.id, enabled: desiredAirlock, scope: view.scope }, function (j) {
+                changingAirlock = false;
+                if (!alive || libraryIdentity !== keyIdentity()) return;
+                if (j.confirmed === true && typeof j.airlocked === 'boolean') {
+                  t.airlocked = j.airlocked; updateStatus();
+                  Lampa.Noty.show(t.airlocked ? 'Airlock включён' : 'Airlock отключён');
+                } else Lampa.Noty.show('Не удалось подтвердить изменение Airlock. Обновите список');
+                loadAirlockUsage();
+                if (view.visible()) back();
+              }, function (message) {
+                changingAirlock = false;
+                if (alive && libraryIdentity === keyIdentity()) { Lampa.Noty.show(message); if (view.visible()) back(); }
+              }, true);
+            }
+          });
           if (t.ready) actions.push({ title: 'Сохранить в Infuse', run: function () { infuseItem(t.id, back, g); } });
           actions.push({ title: 'Уточнить фильм', run: function () { clarifyFilm(t, reload, back, function () { return alive; }); } });
           actions.push({ title: 'Удалить из TorBox', run: function () {
@@ -550,7 +654,7 @@
             ], back);
           } });
           actions.push({ title: 'Сведения о раздаче', run: function () {
-            choose('Раздача', [{ title: escaped(t.name), subtitle: escaped(state(t)) + ' · ' + size(t.size), run: back }], back);
+            choose('Раздача', [{ title: escaped(t.name), subtitle: escaped(state(t)) + ' · ' + size(t.size) + ' · Airlock: ' + (t.airlocked === true ? 'включён' : t.airlocked === false ? 'выключен' : 'состояние неизвестно'), run: back }], back);
           } });
         }
         choose('Мой TorBox', actions, back);

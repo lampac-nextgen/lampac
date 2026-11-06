@@ -9,6 +9,7 @@
     "External.cs",
     "Infuse.cs",
     "Inventory.cs",
-    "Delete.cs"
+    "Delete.cs",
+    "Airlock.cs"
   ]
 }

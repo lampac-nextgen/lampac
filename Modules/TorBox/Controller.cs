@@ -23,13 +23,89 @@ public partial class TorBoxController : BaseController
     const string settingsPath = "torbox-settings.json";
     bool serverCredentials;
     string metadataOwner;
-    JObject Config() {
-        // Read directly: permission/I/O/JSON failures must never enable client override.
-        serverCredentials = true;
-        try { return JObject.Parse(System.IO.File.ReadAllText(configPath)); }
+    bool clientCredentialsAllowed;
+    JObject Config(string mode = null) {
+        // Malformed/unreadable files never enable client credentials.
+        JObject policy=null;
+        try { policy=JObject.Parse(System.IO.File.ReadAllText(configPath)); }
         catch(FileNotFoundException) { }
-        serverCredentials = false;
-        return JObject.Parse(System.IO.File.ReadAllText(settingsPath));
+        bool hasPrivate=policy!=null;
+        policy ??= JObject.Parse(System.IO.File.ReadAllText(settingsPath));
+        var permission=policy["allow_client_credentials"];
+        if(permission!=null && permission.Type!=JTokenType.Boolean)throw new TorBoxException(503,"allow_client_credentials должен быть true или false");
+        clientCredentialsAllowed=(bool?)permission==true;
+        serverCredentials=!clientCredentialsAllowed;
+        if(serverCredentials && !hasPrivate)throw new TorBoxException(503,"Файл torbox-private.json отсутствует");
+        var modes=Request.Headers["X-TorBox-Mode"];
+        if(mode==null && modes.Count>1)throw new TorBoxException(400,"Некорректный источник настроек TorBox");
+        mode ??= modes.Count==1 ? modes[0] : serverCredentials ? "file" : "client";
+        if(mode!="file" && mode!="client")throw new TorBoxException(400,"Некорректный источник настроек TorBox");
+        if((mode=="client")!=clientCredentialsAllowed)throw new TorBoxException(403,"Источник настроек TorBox задан администратором сервера");
+        // In client mode only the permission flag is consumed from this file.
+        // Platform authentication still runs before any TorBox operation.
+        return serverCredentials ? policy : new JObject {
+            ["allowed_uids"]=new JArray(requestInfo.user_uid ?? ""), ["torrent_origins"]=new JArray()
+        };
+    }
+    JObject ClientConfig(JObject policy) {
+        var values=Request.Headers["X-TorBox-Config"];
+        if(values.Count==0)return policy;
+        if(values.Count!=1 || values[0].Length>8192)throw new TorBoxException(400,"Некорректные настройки TorBox");
+        JObject input;
+        try { input=JObject.Parse(System.Text.Encoding.UTF8.GetString(Convert.FromBase64String(values[0]))); }
+        catch { throw new TorBoxException(400,"Некорректные настройки TorBox"); }
+        var c=(JObject)policy.DeepClone();
+        foreach(var property in input.Properties())
+            if(property.Name!="allowed_uids" && property.Name!="torrent_origins" && property.Name!="jacred")throw new TorBoxException(400,"Неизвестное поле настроек TorBox");
+        foreach(string name in new[]{"allowed_uids","torrent_origins"}) {
+            if(input[name]==null)continue;
+            if(input[name] is not JArray list || list.Count>100 || list.Any(x=>x.Type!=JTokenType.String || ((string)x).Length>256))throw new TorBoxException(400,"Некорректный список "+name);
+            if(name=="torrent_origins" && list.Any(x=>!Uri.TryCreate((string)x,UriKind.Absolute,out var u) || !ClientAddress(u) ||
+                u.AbsolutePath!="/" || !string.IsNullOrEmpty(u.Query) || !string.IsNullOrEmpty(u.Fragment)))throw new TorBoxException(400,"Укажите публичные HTTP/HTTPS адреса torrent-файлов");
+            if(name=="allowed_uids" && list.Count==0)continue;
+            c[name]=list.DeepClone();
+        }
+        if(input["jacred"]!=null) {
+            if(input["jacred"] is not JObject parser || parser.Properties().Any(x=>x.Name!="base_url" && x.Name!="api_key") ||
+                parser["base_url"]?.Type!=JTokenType.String || parser["api_key"]?.Type!=JTokenType.String ||
+                ((string)parser["api_key"]).Length>256)throw new TorBoxException(400,"Некорректные настройки JacRed");
+            if(!Uri.TryCreate((string)parser["base_url"],UriKind.Absolute,out var address) || !ClientAddress(address) ||
+                !string.IsNullOrEmpty(address.Query) || !string.IsNullOrEmpty(address.Fragment))throw new TorBoxException(400,"Укажите публичный HTTP/HTTPS адрес JacRed");
+            c["jacred"]=parser.DeepClone();
+        }
+        return c;
+    }
+    // Pin user-selected parser connections to validated public addresses, including
+    // DNS results. The shared server client keeps its existing network behavior.
+    static readonly HttpClient publicClient = new(new SocketsHttpHandler {
+        AllowAutoRedirect=false, UseProxy=false, ConnectCallback=ConnectPublic
+    }) { Timeout=TimeSpan.FromSeconds(22) };
+    HttpClient ParserClient => serverCredentials ? client : publicClient;
+    static bool PublicAddress(System.Net.IPAddress address) {
+        if(address.IsIPv4MappedToIPv6)address=address.MapToIPv4();
+        var b=address.GetAddressBytes();
+        if(b.Length==16)return (b[0]&0xe0)==0x20 &&
+            !(b[0]==0x20 && b[1]==0x01 && (b[2]<2 || (b[2]==0x0d && b[3]==0xb8))) &&
+            !(b[0]==0x20 && b[1]==0x02) && !(b[0]==0x3f && b[1]==0xff);
+        return b[0]!=0 && b[0]!=10 && b[0]!=127 && b[0]<224 &&
+            !(b[0]==100 && b[1]>=64 && b[1]<=127) && !(b[0]==169 && b[1]==254) &&
+            !(b[0]==172 && b[1]>=16 && b[1]<=31) && !(b[0]==192 && (b[1]==168 ||
+                (b[1]==0 && (b[2]==0 || b[2]==2)) || (b[1]==88 && b[2]==99))) &&
+            !(b[0]==198 && (b[1]==18 || b[1]==19 || (b[1]==51 && b[2]==100))) &&
+            !(b[0]==203 && b[1]==0 && b[2]==113);
+    }
+    static bool ClientAddress(Uri u) => (u.Scheme=="https" || u.Scheme=="http") && string.IsNullOrEmpty(u.UserInfo) &&
+        !u.IsLoopback && (!System.Net.IPAddress.TryParse(u.Host.Trim('[',']'),out var ip) || PublicAddress(ip));
+    static async System.Threading.Tasks.ValueTask<System.IO.Stream> ConnectPublic(SocketsHttpConnectionContext context,CancellationToken token) {
+        var addresses=await System.Net.Dns.GetHostAddressesAsync(context.DnsEndPoint.Host,token);
+        if(addresses.Length==0 || addresses.Any(a=>!PublicAddress(a)))throw new HttpRequestException("TorBox parser address is not public");
+        foreach(var address in addresses) {
+            var socket=new System.Net.Sockets.Socket(address.AddressFamily,System.Net.Sockets.SocketType.Stream,System.Net.Sockets.ProtocolType.Tcp);
+            try { await socket.ConnectAsync(new System.Net.IPEndPoint(address,context.DnsEndPoint.Port),token);return new System.Net.Sockets.NetworkStream(socket,true); }
+            catch(System.Net.Sockets.SocketException) { socket.Dispose(); }
+            catch { socket.Dispose();throw; }
+        }
+        throw new HttpRequestException("TorBox parser unavailable");
     }
     string ClientKey() {
         var values=Request.Headers["X-TorBox-Key"];
@@ -54,6 +130,10 @@ public partial class TorBoxController : BaseController
         {
             var c = Config();
             if (!Allowed(c)) return Error(403, "Нет доступа к TorBox для этого аккаунта Lampac");
+            if(!serverCredentials) {
+                c=ClientConfig(c);
+                if(!Allowed(c))return Error(403,"Аккаунт отсутствует в клиентском списке allowed_uids");
+            }
             string key = serverCredentials ? ((string)c["api_key"] ?? "").Trim() : ClientKey();
             if (key.Length == 0) return Error(503, serverCredentials ? "TorBox пока не подключён: требуется API-ключ на сервере" : "Укажите API-ключ в настройках TorBox на этом устройстве");
             metadataOwner=CredentialOwner(key);
@@ -65,9 +145,9 @@ public partial class TorBoxController : BaseController
         catch { return Error(502, "Не удалось обработать ответ TorBox"); }
     }
 
-    async Task<JToken> Call(string path, string key, HttpContent body = null, CancellationToken cancellationToken = default, bool allowMissing = false)
+    async Task<JToken> Call(string path, string key, HttpContent body = null, CancellationToken cancellationToken = default, bool allowMissing = false, HttpMethod method = null)
     {
-        using var req = new HttpRequestMessage(body == null ? HttpMethod.Get : HttpMethod.Post, api + path);
+        using var req = new HttpRequestMessage(method ?? (body == null ? HttpMethod.Get : HttpMethod.Post), api + path);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
         req.Headers.UserAgent.ParseAdd("Lampac-TorBox/1.0");
         req.Content = body;
@@ -100,6 +180,7 @@ public partial class TorBoxController : BaseController
     object FileRow(JToken f) => new { id = (long?)f["id"] ?? -1, name = (string)f["short_name"] ?? (string)f["name"] ?? "Файл", size = (long?)f["size"] ?? 0 };
     object TorrentRow(JToken t) => new {
         id = (long?)t["id"] ?? -1,
+        airlocked = t["airlocked"]?.Type == JTokenType.Boolean ? (bool?)t["airlocked"] : null,
         name = (string)t["name"] ?? "Раздача",
         hash = (string)t["hash"],
         film = ReadFilm(t),
@@ -125,7 +206,7 @@ public partial class TorBoxController : BaseController
         try {
             var c = Config();
             if (!Allowed(c)) return Error(403, "Нет доступа к TorBox для этого аккаунта Lampac");
-            return Payload(new { success = true,
+            return Payload(new { success = true, file_available = !clientCredentialsAllowed, client_available = clientCredentialsAllowed,
                 configured = serverCredentials ? !string.IsNullOrWhiteSpace((string)c["api_key"]) : ClientKey().Length>0,
                 server_key = serverCredentials, key_editable = !serverCredentials });
         } catch { return Error(503, "TorBox пока не настроен на сервере"); }
@@ -336,7 +417,7 @@ public partial class TorBoxController : BaseController
     {
         for (int redirects = 0; redirects < 4; redirects++) {
             if (!HostAllowed(c, u)) throw new TorBoxException(400, "Парсер перенаправил запрос на недоверенный адрес");
-            using var r = await client.GetAsync(u, HttpCompletionOption.ResponseHeadersRead, HttpContext.RequestAborted);
+            using var r = await ParserClient.GetAsync(u, HttpCompletionOption.ResponseHeadersRead, HttpContext.RequestAborted);
             if ((int)r.StatusCode >= 300 && (int)r.StatusCode < 400 && r.Headers.Location != null) { u = new Uri(u, r.Headers.Location); continue; }
             if (!r.IsSuccessStatusCode) throw new TorBoxException(502, "Не удалось получить torrent-файл у парсера");
             if (r.Content.Headers.ContentLength > 8 * 1024 * 1024) throw new TorBoxException(400, "Torrent-файл слишком большой");

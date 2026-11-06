@@ -56,7 +56,28 @@
     return (episodeNumber < 10 ? '0' : '') + episodeNumber;
   }
 
-  var Network = Lampa.Reguest;
+  // Keep TorBox credentials in headers, including Android's native HTTP transport.
+  function Network() {
+    var network = new Lampa.Reguest();
+    var generation = 0;
+    var clear = network.clear;
+    network.clear = function () { generation++; return clear.apply(network, arguments); };
+    ['native', 'silent'].forEach(function (method) {
+      var send = network[method];
+      network[method] = function () {
+        var args = Array.prototype.slice.call(arguments);
+        var requestGeneration = generation;
+        if (!window.lampac_torbox_headers) return send.apply(network, args);
+        window.lampac_torbox_headers(args[0], function (headers) {
+          if (requestGeneration !== generation) return;
+          args[4] = $.extend({}, args[4] || {});
+          args[4].headers = $.extend({}, args[4].headers || {}, headers);
+          send.apply(network, args);
+        });
+      };
+    });
+    return network;
+  }
 
   function component(object) {
     // ── state & UI scaffold ──
