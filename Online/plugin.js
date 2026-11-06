@@ -654,7 +654,7 @@
           var episode = item.attr('e');
           var text = item.text();
           if (!object.movie.name) {
-            if (text.match(/\d+p/i)) {
+            if (text.match(/\d+p/i) && !(balanser === "torbox" && data.similar)) {
               if (!data.quality) {
                 data.quality = {};
                 data.quality[text] = data.url;
@@ -1001,6 +1001,39 @@
         this.doesNotAnswer(e);
       }
     };
+    // TorBox selection menus use the same TMDB stills as episode cards.
+    var torboxMenuFrames = {};
+    this.torboxMenuPreview = function (elem, item) {
+      var image = item.find('.online-prestige__img');
+      var img = item.find('img')[0];
+      item.find('.online-prestige__loader').remove();
+      function show(path) {
+        if (!path) { image.addClass('online-prestige__img--loaded'); return; }
+        img.onerror = function () {
+          img.onerror = null;
+          if (path !== object.movie.backdrop_path && object.movie.backdrop_path)
+            img.src = Lampa.TMDB.image('t/p/w300' + object.movie.backdrop_path);
+          else img.src = './img/img_broken.svg';
+        };
+        img.onload = function () { image.addClass('online-prestige__img--loaded'); };
+        img.src = Lampa.TMDB.image('t/p/w300' + path);
+        images.push(img);
+      }
+      if (!elem.season || !elem.episode) return show(object.movie.backdrop_path);
+      function apply(episodes) {
+        var episode = episodes.find(function (e) { return e.episode_number === elem.episode; });
+        show(episode && episode.still_path || object.movie.backdrop_path);
+      }
+      var cached = torboxMenuFrames[elem.season];
+      if (cached && cached.episodes) return apply(cached.episodes);
+      if (cached) { cached.waiting.push(apply); return; }
+      cached = torboxMenuFrames[elem.season] = { waiting: [apply] };
+      this.getEpisodes(elem.season, function (episodes) {
+        cached.episodes = episodes;
+        cached.waiting.forEach(function (done) { done(episodes); });
+        cached.waiting = [];
+      });
+    };
     this.similars = function (json) {
       var _this6 = this;
       scroll.clear();
@@ -1017,12 +1050,15 @@
         elem.title = name;
         elem.time = elem.time || '';
         elem.info = info.join('<span class="online-prestige-split">●</span>');
-        var item = Lampa.Template.get('lampac_prestige_folder', {
+        var preview = balanser === 'torbox' && elem.torbox_preview;
+        var item = Lampa.Template.get(preview ? 'lampac_prestige_full' : 'lampac_prestige_folder', {
           title: escapeHtml(name),
           time: elem.time,
-          info: elem.info
+          info: elem.info,
+          quality: ''
         });
-        if (elem.img) {
+        if (preview) _this6.torboxMenuPreview(elem, item);
+        if (!preview && elem.img) {
           var image = $('<img style="height: 7em; width: 7em; border-radius: 0.3em;"/>');
           item.find('.online-prestige__folder').empty().append(image);
 

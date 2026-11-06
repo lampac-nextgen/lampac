@@ -65,7 +65,7 @@ public partial class TorBoxController : BaseController
         catch { return Error(502, "Не удалось обработать ответ TorBox"); }
     }
 
-    async Task<JToken> Call(string path, string key, HttpContent body = null, CancellationToken cancellationToken = default)
+    async Task<JToken> Call(string path, string key, HttpContent body = null, CancellationToken cancellationToken = default, bool allowMissing = false)
     {
         using var req = new HttpRequestMessage(body == null ? HttpMethod.Get : HttpMethod.Post, api + path);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
@@ -77,8 +77,12 @@ public partial class TorBoxController : BaseController
             throw new TorBoxException(429, "TorBox ограничил частоту запросов. Попробуйте позже");
         if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized || resp.StatusCode == System.Net.HttpStatusCode.Forbidden)
             throw new TorBoxException(502, "TorBox отклонил запрос: проверьте API-ключ и доступность сервиса");
-        if (!resp.IsSuccessStatusCode) throw new TorBoxException(502, "Ошибка сервиса TorBox (HTTP " + (int)resp.StatusCode + ")");
+        if (!resp.IsSuccessStatusCode && !(allowMissing && resp.StatusCode == System.Net.HttpStatusCode.NotFound))
+            throw new TorBoxException(502, "Ошибка сервиса TorBox (HTTP " + (int)resp.StatusCode + ")");
         var j = JObject.Parse(await resp.Content.ReadAsStringAsync());
+        // TorBox reports an absent torrent as HTTP404 + ITEM_NOT_FOUND, even with success:true.
+        if (allowMissing && path.StartsWith("mylist?id=", StringComparison.Ordinal) && (string)j["error"] == "ITEM_NOT_FOUND")return new JArray();
+        if (!resp.IsSuccessStatusCode)throw new TorBoxException(502,"Не удалось проверить наличие раздачи TorBox");
         if ((bool?)j["success"] != true)
         {
             string code = (string)j["error"] ?? "UNKNOWN";
@@ -131,7 +135,7 @@ public partial class TorBoxController : BaseController
     public Task<ActionResult> List(int offset = 0) => Guard(async (c, key) => {
         if (offset < 0 || offset > 100000) return Error(400, "Некорректная страница");
         var rows = Rows(await Call("mylist?limit=100&offset=" + offset, key));
-        return Payload(new { success = true, data = rows.Select(TorrentRow).ToArray(), more = rows.Count == 100 });
+        return Payload(new { success = true, data = rows.Select(TorrentRow).ToArray(), more = rows.Count == 100, deletion_scope = DeletionScope(key) });
     });
 
     [HttpGet, Route("torbox/item")]

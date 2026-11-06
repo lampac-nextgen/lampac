@@ -34,7 +34,17 @@ public partial class TorBoxController
     static readonly ConcurrentDictionary<string,Pick> picks = new();
     static readonly ConcurrentDictionary<string,(DateTime Expires,JArray Rows)> searchCache = new();
 
-    ActionResult Similar(SimilarTpl t) => Content(t.ToHtml(), "text/html; charset=utf-8");
+    ActionResult Similar(SimilarTpl t, params (int Season,int Episode)[] frames) {
+        string html=t.ToHtml();
+        if(frames.Length>0){
+            int index=0;
+            html=Regex.Replace(html,"data-json='\\{",m=>{
+                var frame=frames[Math.Min(index++,frames.Length-1)];
+                return "data-json='{\"torbox_preview\":true,\"season\":"+frame.Season+",\"episode\":"+frame.Episode+",";
+            });
+        }
+        return Content(html,"text/html; charset=utf-8");
+    }
     string OnlineUrl(string path) => host + "/lite/torbox/" + path;
     Pick GetPick(string ticket) {
         if (ticket == null || !picks.TryGetValue(ticket,out var p) || p.Expires < DateTime.UtcNow || p.Owner != metadataOwner)
@@ -125,11 +135,12 @@ public partial class TorBoxController
             if(file<0){
                 var episodeTpl=new SimilarTpl();
                 foreach(var episode in episodes)episodeTpl.Append(EpisodeTitle(episode),null,null,OnlineUrl("choose?pick="+pick+"&file="+episode.File));
-                return Similar(episodeTpl);
+                return Similar(episodeTpl,episodes.Select(e=>(e.Season,e.Episode)).ToArray());
             }
             if(!episodes.Any(e=>e.File==file))return Error(400,"Выбранный файл не распознан как серия");
         }
         if(file<0)file=(long?)files[0]["id"]??-1;
+        var frame=p.Serial?EpisodeFiles(p,t).FirstOrDefault(e=>e.File==file):null;
         if(!files.Any(f=>(long?)f["id"]==file))return Error(404,"Видеофайл отсутствует в раздаче");
         if(!p.Metadata.TryGetValue(file,out var data)){
             data=await StreamData(key,p.Id.Value,file,0,-1);p.Metadata[file]=data;
@@ -145,7 +156,7 @@ public partial class TorBoxController
             tpl.Append("Разрешение: исходное",null,width+" × "+height,OnlineUrl(route+"&resolution=0"));
             foreach(int res in resolutions)tpl.Append("Разрешение: "+res+"p",null,"TorBox",OnlineUrl(route+"&resolution="+res));
             if(!p.Serial && files.Length>1)foreach(var f in files.Where(f=>(long?)f["id"]!=file))tpl.Append("Другой файл: "+FileName(f),null,null,OnlineUrl("choose?pick="+pick+"&file="+f["id"]));
-            return Similar(tpl);
+            return Similar(tpl,(frame?.Season??0,frame?.Episode??0));
         }
         if(resolution!=0 && !resolutions.Contains(resolution))return Error(400,"Разрешение недоступно для этого файла");
         route+="&resolution="+resolution;
@@ -153,14 +164,14 @@ public partial class TorBoxController
             var choices=audios.Select((a,i)=>new{Track=a,Index=i}).OrderByDescending(x=>((string)x.Track["language"]??"").StartsWith("ru")).ThenByDescending(x=>(bool?)x.Track["default"]==true);
             foreach(var x in choices)tpl.Append("Аудио: "+TrackLabel(x.Track),null,(string)x.Track["codec"]+" · каналов: "+(string)x.Track["channels"],OnlineUrl(route+"&audio="+x.Index));
             if(audios.Count==0)tpl.Append("Аудио: по умолчанию",null,null,OnlineUrl(route+"&audio=0"));
-            return Similar(tpl);
+            return Similar(tpl,(frame?.Season??0,frame?.Episode??0));
         }
         if(audio<0 || audio>=Math.Max(1,audios.Count))return Error(400,"Звуковая дорожка отсутствует");
         route+="&audio="+audio;
         if(sub==-2){
             tpl.Append("Без субтитров",null,null,OnlineUrl(route+"&sub=-1"));
             for(int i=0;i<subtitles.Count;i++)tpl.Append("Субтитры: "+TrackLabel(subtitles[i]),null,(string)subtitles[i]["codec"],OnlineUrl(route+"&sub="+i));
-            return Similar(tpl);
+            return Similar(tpl,(frame?.Season??0,frame?.Episode??0));
         }
         if(sub < -1 || sub>=subtitles.Count)return Error(400,"Дорожка субтитров отсутствует");
         var movie=new MovieTpl(p.Movie,p.Movie);

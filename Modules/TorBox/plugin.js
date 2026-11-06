@@ -123,7 +123,7 @@
     $('<style>').text('.torbox-key-disabled{opacity:.45;pointer-events:none}').appendTo('head');
   }
 
-  function request(path, body, done, failed) {
+  function request(path, body, done, failed, silent) {
     window.lampac_torbox_headers(endpoint(path), function (headers) { $.ajax({
       headers: headers, url: endpoint(path), method: body ? 'POST' : 'GET',
       contentType: body ? 'application/json' : undefined,
@@ -134,7 +134,7 @@
       },
       error: function (xhr) { fail(xhr && xhr.responseJSON && xhr.responseJSON.detail || 'Нет связи с TorBox или истёк доступ Lampac'); }
     }); });
-    function fail(message) { Lampa.Noty.show(message); if (failed) failed(message); }
+    function fail(message) { if (!silent) Lampa.Noty.show(message); if (failed) failed(message); }
   }
   function size(n) {
     n = Number(n) || 0;
@@ -374,6 +374,61 @@
       });
     });
   }
+  // Keep delayed verification across activity changes and client reloads; no API keys.
+  var deletionQueue = Lampa.Storage.get('torbox_deletions_v1', []);
+  if (!Array.isArray(deletionQueue)) deletionQueue = [];
+  var deletionTimers = {}, deletionChecking = {}, deletionView = null;
+  function saveDeletions() { Lampa.Storage.set('torbox_deletions_v1', deletionQueue); }
+  function forgetDeletion(entry) {
+    deletionQueue = deletionQueue.filter(function (item) { return item !== entry; });
+    saveDeletions();
+  }
+  function showDeletionFailures() {
+    if (!deletionView || !deletionView.visible()) return;
+    var messages = deletionQueue.filter(function (entry) {
+      return entry.identity === keyIdentity() && entry.scope === deletionView.scope && entry.failed;
+    });
+    if (!messages.length) return;
+    var titles = messages.map(function (entry) { return '«' + entry.title + '»'; }).join(', ');
+    var cleanupOnly = messages.every(function (entry) { return entry.failed === 'metadata'; });
+    Lampa.Noty.show(cleanupOnly
+      ? 'Раздача удалена из TorBox, но не удалось очистить привязку фильма: ' + titles
+      : 'Не удалось подтвердить удаление ' + titles + '. Проверьте личный кабинет TorBox и удалите вручную, если раздача осталась.');
+    messages.forEach(forgetDeletion);
+    deletionView.refresh();
+  }
+  function scheduleDeletion(entry) {
+    if (entry.failed || deletionTimers[entry.ticket] || deletionChecking[entry.ticket]) return;
+    deletionTimers[entry.ticket] = setTimeout(function () {
+      delete deletionTimers[entry.ticket];
+      if (entry.identity !== keyIdentity()) return;
+      deletionChecking[entry.ticket] = true;
+      function complete(j) {
+        delete deletionChecking[entry.ticket];
+        if (j && j.pending) { entry.due = Math.max(Date.now() + 1000, j.check_after || 0); saveDeletions(); scheduleDeletion(entry); return; }
+        if (j && j.deletion_confirmed) {
+          if (j.metadata_removed === false) { entry.failed = 'metadata'; saveDeletions(); showDeletionFailures(); }
+          else forgetDeletion(entry);
+        }
+        else { entry.failed = true; saveDeletions(); showDeletionFailures(); }
+      }
+      request('delete/check', { ticket: entry.ticket, id: entry.id, scope: entry.scope }, complete, function () { complete(null); }, true);
+    }, Math.max(0, entry.due - Date.now()));
+  }
+  function resumeDeletions(scope) {
+    deletionQueue.forEach(function (entry) {
+      if (entry.identity === keyIdentity() && entry.scope === scope) {
+        if (entry.failed === true) { entry.failed = false; entry.due = Date.now(); }
+        scheduleDeletion(entry);
+      }
+    });
+    showDeletionFailures();
+  }
+  function rememberDeletion(j, title, identity) {
+    var entry = { identity: identity, scope: j.scope, id: j.id, title: title,
+      ticket: j.ticket, due: Math.max(Date.now() + 60000, j.check_after || 0), failed: false };
+    deletionQueue.push(entry); saveDeletions(); scheduleDeletion(entry);
+  }
   function Library(object) {
     Lampa.InteractionCategory.call(this, object);
     var self = this;
@@ -382,20 +437,31 @@
     var loading = false;
     var deleting = false;
     var g;
+    var view = { scope: null, refresh: reload, visible: function () {
+      var active = Lampa.Activity.active();
+      return alive && active && active.component === 'my_torbox' && !Lampa.Player.opened();
+    } };
     var destroy = this.destroy;
     function reload() { Lampa.Activity.replace({ component: 'my_torbox', title: 'Мой TorBox', page: 1 }); }
     function page(number, done, failed) {
       request('list?offset=' + ((number - 1) * 100), null, function (j) {
         if (!alive) return;
+        view.scope = j.deletion_scope;
         more = !!j.more;
-        done({ results: (j.data || []).map(function (t) {
+        done({ results: (j.data || []).filter(function (t) {
+          return !deletionQueue.some(function (entry) {
+            return entry.identity === keyIdentity() && entry.scope === view.scope && entry.id === t.id && !entry.failed;
+          });
+        }).map(function (t) {
           var film = t.film || {};
           return { id: 'torbox-' + t.id, title: film.title || t.name, original_title: film.original_title || t.name, release_date: film.year ? film.year + '-01-01' : '', torboxItem: t };
         }), total_pages: number + (j.more ? 1 : 0) });
+        setTimeout(function () { if (alive) resumeDeletions(view.scope); }, 0);
       }, function () { if (alive && failed) failed(); });
     }
     this.create = function () {
       g = begin('content');
+      deletionView = view;
       object.page = 1;
       self.activity.loader(true);
       page(1, function (data) {
@@ -466,22 +532,20 @@
               { title: 'Удалить из TorBox', subtitle: 'Вся раздача со всеми файлами будет удалена из вашего аккаунта TorBox', run: function () {
                 if (!alive || deleting) return;
                 deleting = true;
-                Lampa.Noty.show('Удаляю из TorBox…');
-                function result(j, attempt) {
-                  if (!alive) { deleting = false; return; }
-                  if (j.deletion_confirmed === false) {
-                    if (j.ticket && attempt < 3) return setTimeout(function () {
-                      if (alive) request('delete/check', { ticket: j.ticket }, function (next) { result(next, attempt + 1); }, function () { deleting = false; if (alive) back(); });
-                    }, 1000);
-                    deleting = false; Lampa.Noty.show('TorBox принял удаление. Подтверждение ещё не получено — обновите список'); back(); return;
-                  }
+                var identity = keyIdentity();
+                request('delete', { id: t.id, confirmed: true }, function (j) {
                   deleting = false;
-                  Lampa.Noty.show(j && j.metadata_removed === false
-                    ? 'Раздача удалена из TorBox. Не удалось очистить привязку фильма'
-                    : 'Раздача удалена из TorBox');
-                  reload();
-                }
-                request('delete', { id: t.id, confirmed: true }, function (j) { result(j, 0); }, function () { deleting = false; if (alive) back(); });
+                  if (j.deletion_confirmed !== true) rememberDeletion(j, title, identity);
+                  if (identity !== keyIdentity()) return;
+                  if (alive) node.remove();
+                  if (view.visible()) { back(); reload(); }
+                }, function () {
+                  deleting = false;
+                  if (identity !== keyIdentity()) return;
+                  deletionQueue.push({ identity: identity, scope: view.scope, id: t.id, title: title, failed: true });
+                  saveDeletions(); showDeletionFailures();
+                  if (view.visible()) back();
+                }, true);
               } }
             ], back);
           } });
@@ -494,6 +558,7 @@
     };
     this.destroy = function () {
       alive = false;
+      if (deletionView === view) deletionView = null;
       if (g === generation) generation++;
       destroy.call(self);
     };
