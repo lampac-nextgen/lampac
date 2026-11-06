@@ -109,7 +109,7 @@ public partial class TorBoxController
             tpl.Append(p.Name,year.ToString(),p.Quality+"p · сидов "+p.Seeds,OnlineUrl("choose?pick="+ticket));
         }
         if(serial==1){var peers=seriesPicks.ToArray();foreach(var p in peers)p.SeriesPicks=peers;}
-        return Similar(tpl);
+        return Similar(tpl,(0,0));
     });
 
     [HttpGet, Route("lite/torbox/choose")]
