@@ -10,7 +10,7 @@ namespace Gencit;
 
 public class GencitService
 {
-    public const string Referer = "https://web.kino.bz/";
+    public const string Referer = "https://ylitron.pro/";
 
     private readonly ModuleConf init;
     private readonly HttpHydra httpHydra;
