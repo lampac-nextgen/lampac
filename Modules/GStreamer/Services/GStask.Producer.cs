@@ -27,7 +27,7 @@ public partial class GStask
         return SeekClockTime(ns);
     }
 
-    bool SeekSegment(int index)
+    protected virtual bool SeekSegment(int index)
     {
         if (cueTimeline?.TryGetSegment(index, out CueSegment segment) == true)
             return SeekClockTime(segment.StartNs, accurate: true);
@@ -325,7 +325,7 @@ public partial class GStask
     #endregion
 
     #region EnsureSegment
-    public bool EnsureSegment(int index, CancellationToken ct, int audio = 0)
+    public virtual bool EnsureSegment(int index, CancellationToken ct, int audio = 0)
     {
         int segmentIndex = index > 0 ? index : 0;
         bool segmentReadStarted = false;

@@ -32,3 +32,6 @@ jobs:
 
       - name: Build
         run: dotnet build NextGen.slnx --configuration Release --verbosity minimal
+
+      - name: GStreamer segment reader regression
+        run: dotnet run --file Modules/GStreamer/tests/segment-reader.cs --configuration Release
