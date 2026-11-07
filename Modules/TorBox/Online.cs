@@ -16,7 +16,12 @@ using System.Threading.Tasks;
 namespace TorBox;
 public partial class TorBoxController
 {
-    class PickGroup { public DateTime LastUsed = DateTime.UtcNow; }
+    class PickGroup {
+        public DateTime LastUsed = DateTime.UtcNow, CacheUntil;
+        public string KeyHash;
+        public Dictionary<string,bool?> Cache;
+        public SemaphoreSlim CacheGate = new(1,1);
+    }
     class Pick {
         public PickGroup Group = new();
         public string Owner, Link, Hash, Name, Movie, Next;
@@ -72,7 +77,7 @@ public partial class TorBoxController
     static string FileName(JToken f) => (string)f["short_name"] ?? (string)f["name"] ?? "Видео";
 
     [HttpGet, Route("lite/torbox")]
-    public Task<ActionResult> Online(string title, string original_title, int year=0, byte serial=0, bool rjson=true, long id=0, long tmdb_id=0, string source=null) => Guard(async(c,key)=>{
+    public Task<ActionResult> Online(string title, string original_title, int year=0, byte serial=0, bool rjson=true, long id=0, long tmdb_id=0, string source=null, string tb_voice=null) => Guard(async(c,key)=>{
         if(string.IsNullOrWhiteSpace(title) && string.IsNullOrWhiteSpace(original_title))return Error(400,"Не указано название фильма");
         string searchKey=SeriesKeyHash(metadataOwner+":"+c["jacred"]?.ToString(Newtonsoft.Json.Formatting.None))+":"+Normalize(title)+":"+Normalize(original_title)+":"+year+":"+serial;
         JArray rows;
@@ -88,13 +93,23 @@ public partial class TorBoxController
             if(searchCache.Count>256)searchCache.Clear();
             searchCache[searchKey]=(DateTime.UtcNow.AddMinutes(5),rows);
         }
-        var candidates=rows.Where(t=>!string.IsNullOrWhiteSpace((string)t["Title"]) &&
+        var eligible=rows.Where(t=>!string.IsNullOrWhiteSpace((string)t["Title"]) &&
             ((!string.IsNullOrWhiteSpace(title) && Normalize((string)t["Title"]).Contains(Normalize(title))) ||
              (!string.IsNullOrWhiteSpace(original_title) && Normalize((string)t["Title"]).Contains(Normalize(original_title)))) &&
             !Regex.IsMatch((string)t["Title"],@"\b(CAMRip|HDCAM|HDTS|TSRip|TELESYNC)\b",RegexOptions.IgnoreCase) &&
             (serial==1 || year<=0 || !Regex.IsMatch((string)t["Title"],@"\b(19|20)\d{2}\b") || Regex.IsMatch((string)t["Title"],@"\b"+year+@"\b")))
-            .OrderByDescending(Resolution).ThenByDescending(t=>(int?)t["Seeders"]??0).Take(serial==1?96:12).ToArray();
-        if(candidates.Length==0)return Error(404,"JacRed не нашёл подходящих раздач фильма");
+            .OrderByDescending(Resolution).ThenByDescending(t=>(int?)t["Seeders"]??0).ToArray();
+        if(eligible.Length==0)return Error(404,"JacRed не нашёл подходящих раздач фильма");
+        var voices=eligible.SelectMany(ReleaseVoices).Distinct(StringComparer.OrdinalIgnoreCase).OrderBy(v=>v,StringComparer.OrdinalIgnoreCase).ToArray();
+        string selected=(tb_voice??"").Trim();
+        if(selected.Length>160)return Error(400,"Слишком длинное название озвучки");
+        selected=voices.FirstOrDefault(v=>string.Equals(v,selected,StringComparison.OrdinalIgnoreCase))??selected;
+        string search=host+"/lite/torbox?title="+Uri.EscapeDataString(title??"")+"&original_title="+Uri.EscapeDataString(original_title??"")+"&year="+year+"&serial="+serial+"&id="+id+"&tmdb_id="+tmdb_id+"&source="+Uri.EscapeDataString(source??"");
+        var candidates=eligible.Where(t=>selected.Length==0 || ReleaseVoices(t).Contains(selected,StringComparer.OrdinalIgnoreCase)).Take(serial==1?96:12).ToArray();
+        if(candidates.Length==0) {
+            var empty=new SimilarTpl();empty.Append("По выбранной озвучке раздач нет. Выберите другую озвучку или «Все» в фильтре.",null,null,search);
+            return Content(SimilarReleaseHtml(empty,voices,selected,search,true),"text/html; charset=utf-8");
+        }
         lock(pickCacheGate) {
         foreach(var expired in picks.Where(p=>p.Value.Expires<DateTime.UtcNow).ToArray())picks.TryRemove(expired.Key,out _);
         // Evict whole least-recently-used menus, keeping release chains intact.
@@ -103,7 +118,7 @@ public partial class TorBoxController
             var oldest=picks.Values.OrderBy(p=>p.Group.LastUsed).First().Group;
             foreach(var entry in picks.Where(p=>p.Value.Group==oldest).ToArray())picks.TryRemove(entry.Key,out _);
         }
-        var group=new PickGroup();
+        var group=new PickGroup{KeyHash=SeriesKeyHash(key)};
         var tpl=new SimilarTpl();
         string previous=null;
         var seriesPicks=new List<Pick>();
@@ -112,19 +127,130 @@ public partial class TorBoxController
             if(string.IsNullOrWhiteSpace(link))continue;
             string hash=Regex.Match(Uri.UnescapeDataString(link),@"urn:btih:([a-z0-9]+)",RegexOptions.IgnoreCase).Groups[1].Value;
             if(string.IsNullOrEmpty(hash))hash=(string)t["InfoHash"]??(string)t["Hash"]??"";
-            hash=hash.ToLowerInvariant();
+            hash=NormalizeCacheHash(hash)??"";
             string ticket=Guid.NewGuid().ToString("N");
             var p=new Pick{Group=group,Owner=metadataOwner,Link=link,Hash=hash,Name=(string)t["Title"],Movie=title??original_title,Serial=serial==1,Quality=Resolution(t),Seeds=(int?)t["Seeders"]??0,
                 Film=new FilmInput{tmdb_id=tmdb_id>0 ? tmdb_id : (source=="tmdb" || source=="cub" ? id : 0),title=string.IsNullOrWhiteSpace(title)?original_title:title,original_title=original_title,year=year,media_type=serial==1?"tv":"movie"}};
             picks[ticket]=p;seriesPicks.Add(p);
             if(previous!=null)picks[previous].Next=ticket;
             previous=ticket;
-            tpl.Append(p.Name,year.ToString(),p.Quality+"p · сидов "+p.Seeds,OnlineUrl("choose?pick="+ticket));
+            tpl.Append(p.Name,year.ToString(),p.Quality+"p · Озвучка: "+ReleaseVoices(t)[0]+(ReleaseVoices(t).Length>1 ? " + "+(ReleaseVoices(t).Length-1) : ""),OnlineUrl("choose?pick="+ticket));
         }
         if(serial==1){var peers=seriesPicks.ToArray();foreach(var p in peers)p.SeriesPicks=peers;}
-        return Similar(tpl,(0,0));
+        return Content(SimilarReleaseHtml(tpl,voices,selected,search),"text/html; charset=utf-8");
         }
     });
+
+    static string[] ReleaseVoices(JToken row) {
+        var values=(row["info"] as JObject)?["voices"] as JArray;
+        var names=(values??new JArray()).Where(v=>v.Type==JTokenType.String).Select(v=>((string)v).Trim()).Where(v=>v.Length>0 && v.Length<=160).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+        return names.Length>0 ? names : new[]{"Не указана"};
+    }
+    static string SimilarReleaseHtml(SimilarTpl tpl,string[] voices,string selected,string search,bool empty=false) {
+        var meta=new JObject{["torbox_preview"]=!empty,["torbox_release"]=!empty,["torbox_voice_empty"]=empty,
+            ["torbox_voice_options"]=new JArray(voices),["torbox_voice_selected"]=selected,["torbox_voice_search"]=search};
+        string json=meta.ToString(Newtonsoft.Json.Formatting.None).Replace("'", "\\u0027").Replace("<", "\\u003c").Replace(">", "\\u003e").Replace("&", "\\u0026");
+        string prefix=json.Substring(0,json.Length-1)+",";
+        string html=tpl.ToHtml();
+        if(string.IsNullOrEmpty(html))return html??"";
+        bool first=true;
+        return Regex.Replace(html,"data-json='\\{",m=>{
+            string flags="data-json='{\"torbox_preview\":"+(!empty?"true":"false")+",\"torbox_release\":"+(!empty?"true":"false")+",";
+            if(!first)return flags;
+            first=false;return "data-json='"+prefix;
+        });
+    }
+
+    // A menu-scoped read-only batch. Opening the release list never waits for TorBox.
+    public class CacheCheckInput { public string[] hashes {get;set;} }
+    [HttpPost, Route("torbox/cache-check"),RequestSizeLimit(16384)]
+    public Task<ActionResult> CacheCheck([FromBody] CacheCheckInput input) => Guard(async(c,key)=>{
+        if(input?.hashes==null || input.hashes.Length==0 || input.hashes.Length>100 || input.hashes.Any(h=>!ValidCacheHash(h)))
+            return Error(400,"Укажите от 1 до 100 корректных хешей раздач");
+        var hashes=input.hashes.Select(NormalizeCacheHash).Distinct().OrderBy(h=>h,StringComparer.Ordinal).ToArray();
+        var result=await CachedBadgeBatch(key,hashes);
+        return Payload(new{success=true,retryable=result.Cache==null,retry_after=result.Cache==null?10:0,
+            items=hashes.Select(hash=>new{hash,cached=CacheBadge(result.Cache,hash)}).ToArray()});
+    });
+
+    class BadgeBatch {
+        public DateTime Until=DateTime.MaxValue;
+        public TaskCompletionSource<JObject> Ready=new(TaskCreationOptions.RunContinuationsAsynchronously);
+    }
+    static readonly object badgeBatchGate=new();
+    static readonly Dictionary<string,BadgeBatch> badgeBatches=new();
+    static readonly Dictionary<string,DateTime> badgeBackoff=new();
+    async Task<(JObject Cache,bool Fresh)> CachedBadgeBatch(string key,string[] hashes) {
+        string owner=SeriesKeyHash(key),id=owner+":"+string.Join(",",hashes.OrderBy(h=>h,StringComparer.Ordinal));
+        BadgeBatch batch;bool fresh=false;
+        lock(badgeBatchGate) {
+            foreach(var expired in badgeBatches.Where(x=>x.Value.Until<DateTime.UtcNow).Select(x=>x.Key).ToArray())badgeBatches.Remove(expired);
+            foreach(var expired in badgeBackoff.Where(x=>x.Value<DateTime.UtcNow).Select(x=>x.Key).ToArray())badgeBackoff.Remove(expired);
+            if(badgeBackoff.ContainsKey(owner))return (null,false);
+            if(!badgeBatches.TryGetValue(id,out batch)) {
+                if(badgeBatches.Count>=256)return (null,false);
+                badgeBatches[id]=batch=new BadgeBatch();fresh=true;
+            }
+        }
+        if(fresh) {
+            JObject cache=null;
+            try {
+                using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(8));
+                cache=await Call("checkcached?hash="+Uri.EscapeDataString(string.Join(",",hashes))+"&format=object",key,cancellationToken:deadline.Token) as JObject;
+            } catch(TorBoxException) { } catch(HttpRequestException) { } catch(OperationCanceledException) { }
+              catch(Newtonsoft.Json.JsonException) { }
+            finally {
+                lock(badgeBatchGate) {
+                    batch.Until=DateTime.UtcNow.AddSeconds(cache==null?10:30);
+                    if(cache==null && badgeBackoff.Count<256)badgeBackoff[owner]=batch.Until;
+                    batch.Ready.TrySetResult(cache);
+                }
+            }
+        }
+        return (await batch.Ready.Task,fresh);
+    }
+
+    [HttpGet, Route("torbox/menu-cache")]
+    public Task<ActionResult> MenuCache(string pick) => Guard(async(c,key)=>{
+        var first=GetPick(pick);var group=first.Group;
+        if(group.KeyHash!=SeriesKeyHash(key))return Error(410,"Настройки TorBox изменились. Откройте список заново");
+        if(!await group.CacheGate.WaitAsync(TimeSpan.FromSeconds(2),HttpContext.RequestAborted))
+            return Payload(new{success=true,available=false,retry_after=1,items=new object[0]});
+        try {
+            (string Ticket,Pick Pick)[] menu;
+            lock(pickCacheGate)menu=picks.Where(x=>x.Value.Group==group).Select(x=>(x.Key,x.Value)).ToArray();
+            if(group.Cache==null || group.CacheUntil<DateTime.UtcNow) {
+                var hashes=menu.Select(x=>x.Pick.Hash).Where(ValidCacheHash).Distinct(StringComparer.OrdinalIgnoreCase).ToArray();
+                JObject cache=hashes.Length>0 ? (await CachedBadgeBatch(key,hashes)).Cache : new JObject();
+                group.Cache=menu.ToDictionary(x=>x.Ticket,x=>CacheBadge(cache,x.Pick.Hash));
+                group.CacheUntil=DateTime.UtcNow.AddSeconds(cache==null?10:30);
+            }
+            return Payload(new{success=true,available=group.Cache.Values.Any(x=>x.HasValue),
+                items=menu.Select(x=>new{pick=x.Ticket,cached=group.Cache.TryGetValue(x.Ticket,out var state)?state:null}).ToArray()});
+        } finally { group.CacheGate.Release(); }
+    });
+    static string NormalizeCacheHash(string hash) {
+        if(!ValidCacheHash(hash))return null;
+        hash=hash.ToLowerInvariant();
+        if(hash.Length==40)return hash;
+        int bits=0,buffer=0;var hex=new StringBuilder(40);
+        foreach(char c in hash) {
+            buffer=(buffer<<5)|"abcdefghijklmnopqrstuvwxyz234567".IndexOf(c);bits+=5;
+            if(bits>=8){bits-=8;hex.Append(((buffer>>bits)&255).ToString("x2"));}
+        }
+        return hex.ToString();
+    }
+    static bool ValidCacheHash(string hash) => Regex.IsMatch(hash??"","^([a-f0-9]{40}|[a-z2-7]{32})$",RegexOptions.IgnoreCase);
+    static bool? CacheBadge(JObject cache,string hash) {
+        if(cache==null || !ValidCacheHash(hash))return null;
+        var entry=cache.Properties().FirstOrDefault(x=>string.Equals(x.Name,hash,StringComparison.OrdinalIgnoreCase))?.Value;
+        if(entry==null)return false;
+        if(entry is not JObject obj)return null;
+        if(!obj.HasValues)return false;
+        if(obj["cached"]?.Type==JTokenType.Boolean)return (bool)obj["cached"];
+        // The object response omits misses; populated file/name records denote hits.
+        return obj.HasValues && (obj["files"] is JArray || obj["name"]?.Type==JTokenType.String) ? true : null;
+    }
 
     [HttpGet, Route("lite/torbox/choose")]
     public Task<ActionResult> Choose(string pick, long file=-1, int audio=-1, int sub=-2, int resolution=-1) => Guard(async(c,key)=>{

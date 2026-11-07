@@ -308,7 +308,8 @@
               season: 0,
               voice: 0,
               voice_url: '',
-              voice_name: ''
+              voice_name: '',
+              torbox_voice: ''
             });
             setTimeout(function () {
               Lampa.Select.close();
@@ -317,6 +318,14 @@
                 similar: 0
               });
             }, 10);
+          } else if (a.stype === 'torbox_voice' && torboxVoiceMenu) {
+            var voiceChoice = _this.getChoice();
+            voiceChoice.torbox_voice = b.voice;
+            _this.saveChoice(voiceChoice);
+            var voiceUrl = _this.torboxVoiceUrl(torboxVoiceMenu.search, b.voice);
+            _this.reset();
+            _this.request(voiceUrl);
+            setTimeout(Lampa.Select.close, 10);
           } else {
             var url = filter_find[a.stype][b.index].url;
             var choice = _this.getChoice();
@@ -354,7 +363,7 @@
 
         network.timeout(BALANCER_TIMEOUT);
         return network['native'](
-          account(object.url.replace('rjson=', 'nojson=')),
+          account(_this.torboxVoiceUrl(object.url.replace('rjson=', 'nojson='))),
           this.parse.bind(this),
           function () {
             files.render().find('.torrent-filter').remove();
@@ -650,6 +659,7 @@
       this.request(this.requestParams(source));
     };
     this.request = function (url) {
+      url = this.torboxVoiceUrl(url);
       number_of_requests++;
       if (number_of_requests < 10) {
         // общий network: externalids/withsearch/субтитры ставят ему REQUEST_TIMEOUT (10с) — балансеру нужен свой
@@ -810,8 +820,15 @@
                   first.vast_platform = json.vast.platform;
                   first.vast_screen = json.vast.screen;
                 }
+                if (json_call.torbox_series && window.lampac_torbox_series_play) {
+                  window.lampac_torbox_series_play(json_call, first, object.movie);
+                  item.mark();
+                  _this5.updateBalanser(balanser);
+                  return;
+                }
                 _this5.orUrlReserve(first);
                 _this5.setDefaultQuality(first);
+                if (json_call.torbox_stream && Lampa.Storage.field('player') !== 'inner') first.url = json.url;
                 if (item.season) {
                   videos.forEach(function (elem) {
                     var cell = _this5.toPlayElement(elem);
@@ -917,6 +934,7 @@
     };
     // ── parse response ──
     this.parse = function (str) {
+      torboxVoiceMenu = null;
       var json = Lampa.Arrays.decodeJson(str, {});
       if (Lampa.Arrays.isObject(str) && str.rch) json = str;
       if (json.rch) return this.rch(json);
@@ -1023,6 +1041,12 @@
       }
     };
     // TorBox selection menus use the same TMDB stills as episode cards.
+    var torboxVoiceMenu = null;
+    this.torboxVoiceUrl = function (url, voice) {
+      if (balanser !== 'torbox' || !/\/lite\/torbox(?:\?|$)/.test(String(url)) || /[?&]tb_voice=/.test(String(url))) return url;
+      if (typeof voice !== 'string') voice = this.getChoice('torbox').torbox_voice || '';
+      return Lampa.Utils.addUrlComponent(url, 'tb_voice=' + encodeURIComponent(voice));
+    };
     var torboxMenuFrames = {};
     this.torboxMenuPreview = function (elem, item) {
       var image = item.find('.online-prestige__img');
@@ -1055,10 +1079,77 @@
         cached.waiting = [];
       });
     };
+    var torboxReleaseMenu = null;
+    this.clearTorboxReleaseMenu = function () {
+      if (torboxReleaseMenu) torboxReleaseMenu.live = false;
+      torboxReleaseMenu = null;
+    };
+    this.torboxReleaseCache = function (rows) {
+      var self = this;
+      if (!rows.length || !window.lampac_torbox_menu_cache) return;
+      var menu = { live: true, rows: rows, ready: false };
+      torboxReleaseMenu = menu;
+      var preference = 'torbox_cached_only_' + Lampa.Utils.hash(Defined.localhost + '|' + Lampa.Storage.get('account_email','') + '|' + Lampa.Storage.get('lampac_unic_id',''));
+      var only = Lampa.Storage.get(preference, false) === true;
+      var tools = $('<div class="torbox-cache-tools" style="margin-bottom:1em"></div>');
+      var toggle = $('<div class="simple-button selector torbox-cache-toggle" style="display:flex;align-items:center"></div>');
+      var status = $('<div class="torbox-cache-info" style="font-size:.8em;opacity:.7;margin-top:.4em"></div>');
+      tools.append(toggle, status);
+      var empty = $('<div class="empty torbox-cache-empty" style="padding:1em"></div>').hide();
+      rows[0].item.before(tools);
+      scroll.append(empty);
+      function current() { return menu.live && torboxReleaseMenu === menu; }
+      function apply(refresh) {
+        if (!current()) return;
+        toggle.text('Только в кэше TorBox: ' + (only ? 'включено' : 'выключено'));
+        status.text(menu.ready ? (menu.failed ? 'Часть раздач не удалось проверить. Можно выключить фильтр.' : '') : 'Проверяю кэш TorBox…').toggle(!menu.ready || menu.failed);
+        var visible = 0;
+        rows.forEach(function (row) {
+          var show = !only || row.cached === true;
+          // Keep selectors so Lampa binds pointer/touch events while cache results are pending.
+          row.item.toggle(show);
+          if (show) visible++;
+        });
+        empty.text(menu.ready ? (menu.failed ? 'Кэш не проверен. Смените озвучку или выключите фильтр, чтобы увидеть остальные релизы.' : 'В этом списке нет подтверждённых раздач в кэше. Смените озвучку или выключите фильтр, чтобы увидеть остальные релизы.') : 'Проверяю кэш TorBox…').toggle(visible === 0);
+        if (refresh && Lampa.Activity.active().activity === self.activity && Lampa.Controller.enabled().name === 'content') {
+          if (last && !$(last).is(':visible')) last = toggle[0];
+          Lampa.Controller.collectionSet(files.render(), false, true);
+          Lampa.Controller.collectionFocus(last || toggle[0], scroll.render(), true);
+        }
+      }
+      toggle.on('hover:enter', function () { only = !only; Lampa.Storage.set(preference, only); apply(true); })
+        .on('hover:focus', function (e) { last = e.target; scroll.update($(e.target), true); });
+      rows.forEach(function (row) {
+        row.badge = $('<span class="torbox-cache-badge" style="margin-left:.8em"></span>').text('Кэш: проверка…');
+        row.item.find('.online-prestige__info').append(row.badge);
+      });
+      apply(false);
+      window.lampac_torbox_menu_cache(rows[0].elem.url, function (response) {
+        if (!current()) return;
+        menu.ready = true; menu.failed = !response || response.available !== true;
+        rows.forEach(function (row) {
+          var match = String(row.elem.url).match(/[?&]pick=([a-f0-9]{32})(?:&|$)/);
+          var state = response && Array.isArray(response.items) && response.items.filter(function (x) { return match && x.pick === match[1]; })[0];
+          row.cached = state && typeof state.cached === 'boolean' ? state.cached : null;
+          row.badge.text(row.cached === true ? '⚡ В кэше' : row.cached === false ? '☁ Нет в кэше' : 'Кэш: не проверено');
+        });
+        apply(only);
+      });
+    };
     this.similars = function (json) {
+      this.clearTorboxReleaseMenu();
+      var torboxRows = [];
+      var voiceMeta = balanser === 'torbox' && json[0];
+      torboxVoiceMenu = voiceMeta && Array.isArray(voiceMeta.torbox_voice_options) ? {
+        options: voiceMeta.torbox_voice_options, selected: voiceMeta.torbox_voice_selected || '', search: voiceMeta.torbox_voice_search
+      } : null;
       var _this6 = this;
       scroll.clear();
       json.forEach(function (elem) {
+        if (balanser === 'torbox' && elem.torbox_voice_empty) {
+          scroll.append($('<div class="empty torbox-voice-empty" style="padding:1em"></div>').text(elem.text));
+          return;
+        }
         elem.title = elem.text;
         elem.info = '';
         var info = [];
@@ -1100,7 +1191,9 @@
             scroll.update($(e.target), true);
           });
         scroll.append(item);
+        if (balanser === 'torbox' && elem.torbox_release) torboxRows.push({elem:elem,item:item});
       });
+      this.torboxReleaseCache(torboxRows);
       this.filter(
         {
           season: filter_find.season.map(function (s) {
@@ -1150,6 +1243,7 @@
      * Очистить список файлов
      */
     this.reset = function () {
+      this.clearTorboxReleaseMenu();
       last = false;
       stopBalanserTimer();
       network.clear();
@@ -1201,7 +1295,12 @@
         reset: true
       });
       this.saveChoice(choice);
-      if (filter_items.voice && filter_items.voice.length) add('voice', Lampa.Lang.translate('torrent_parser_voice'));
+      if (balanser === 'torbox' && torboxVoiceMenu) {
+        var voiceOptions = [{ title: 'Все', voice: '', selected: !torboxVoiceMenu.selected }];
+        torboxVoiceMenu.options.forEach(function (name) { voiceOptions.push({ title: escapeHtml(name), voice: name, selected: torboxVoiceMenu.selected === name }); });
+        select.push({ title: 'Озвучка', subtitle: escapeHtml(torboxVoiceMenu.selected || 'Все'), items: voiceOptions, stype: 'torbox_voice' });
+      }
+      if (!(balanser === 'torbox' && torboxVoiceMenu) && filter_items.voice && filter_items.voice.length) add('voice', Lampa.Lang.translate('torrent_parser_voice'));
       if (filter_items.season && filter_items.season.length)
         add('season', Lampa.Lang.translate('torrent_serial_season'));
       filter.set('filter', select);
@@ -1235,6 +1334,7 @@
           }
         }
       }
+      if (balanser === 'torbox' && torboxVoiceMenu && torboxVoiceMenu.selected) select.push('Озвучка: ' + escapeHtml(torboxVoiceMenu.selected));
       filter.chosen('filter', select);
       filter.chosen('sort', [sources[balanser].name]);
     };
@@ -1832,8 +1932,9 @@
       this.background();
       Lampa.Controller.add('content', {
         toggle: function toggle() {
-          Lampa.Controller.collectionSet(scroll.render(), files.render());
-          Lampa.Controller.collectionFocus(last || false, scroll.render());
+          if (torboxReleaseMenu) Lampa.Controller.collectionSet(files.render(), false, true);
+          else Lampa.Controller.collectionSet(scroll.render(), files.render());
+          Lampa.Controller.collectionFocus(last || false, scroll.render(), !!torboxReleaseMenu);
         },
         gone: function gone() {
           stopBalanserTimer();
@@ -1879,6 +1980,7 @@
       suspendActivity();
     };
     this.destroy = function () {
+      this.clearTorboxReleaseMenu();
       suspendActivity();
       this.clearImages();
       files.destroy();

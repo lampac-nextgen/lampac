@@ -350,11 +350,12 @@ public partial class TorBoxController : BaseController
         if(torrent==null)return Error(404,"Раздача отсутствует в вашем TorBox");
         return Payload(new { success=true, film=SaveFilm(torrent,input.film,!input.automatic) });
     });
-    public class AddInput { public string link { get; set; } public string hash { get; set; } public FilmInput film { get; set; } public bool allow_download { get; set; } }
+    public class AddInput { public string link { get; set; } public string hash { get; set; } public FilmInput film { get; set; } public bool allow_download { get; set; } public bool cache_only { get; set; } }
 
     [HttpPost, Route("torbox/add"), RequestSizeLimit(32768)]
     public Task<ActionResult> Add([FromBody] AddInput input) => Guard(async (c, key) => {
         if (input == null) return Error(400, "Нет ссылки на раздачу");
+        if(input.cache_only && input.allow_download)return Error(400,"Просмотр из кэша не разрешает загрузку раздачи");
         string link = (input.link ?? "").Trim();
         string hash = (input.hash ?? "").Trim().ToLowerInvariant();
         if (!Regex.IsMatch(hash, "^([a-f0-9]{40}|[a-z2-7]{32})$")) hash = null;
@@ -366,12 +367,13 @@ public partial class TorBoxController : BaseController
         else if (!Uri.TryCreate(link, UriKind.Absolute, out var testUri) ||
                  !(testUri.Scheme == "http" || testUri.Scheme == "https") ||
                  !HostAllowed(c, testUri)) return Error(400, "Нет magnet или хеша. Адрес torrent-файла не входит в список доверенных парсеров");
+        hash=NormalizeCacheHash(hash);
         if (link.Length > 16000) return Error(400, "Слишком длинная ссылка");
         if (!await addGate.WaitAsync(TimeSpan.FromSeconds(3), HttpContext.RequestAborted)) return Error(429, "Добавляется другая раздача. Подождите несколько секунд");
         try {
             if (hash != null) {
                 var existing = (await OwnedTorrents(key)).FirstOrDefault(t => string.Equals((string)t["hash"], hash, StringComparison.OrdinalIgnoreCase));
-                if (existing != null) {
+                if (existing != null && (!input.cache_only || CachedReady(existing))) {
                     RememberFilm(existing,input.film);
                     return Payload(new { success = true, id = (long?)existing["id"], existing = true });
                 }
@@ -380,7 +382,7 @@ public partial class TorBoxController : BaseController
             if (hash != null) {
                 var cache = await Call("checkcached?hash=" + Uri.EscapeDataString(hash) + "&format=object", key);
                 var entry=(cache as JObject)?.Properties().FirstOrDefault(p=>string.Equals(p.Name,hash,StringComparison.OrdinalIgnoreCase))?.Value as JObject;
-                cached = entry != null && entry.HasValues && (bool?)entry["cached"] != false;
+                cached = CacheBadge(cache as JObject,hash)==true;
             }
             if(!input.allow_download) {
                 if(hash!=null && !cached)return Payload(new {success=true,confirmation_required=true});

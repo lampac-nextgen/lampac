@@ -99,6 +99,21 @@
       });
     });
   };
+  window.lampac_torbox_menu_cache = function (url, done) {
+    if (!torboxAddress(url)) return done(null);
+    var match = String(url).match(/[?&]pick=([a-f0-9]{32})(?:&|$)/);
+    if (!match) return done(null);
+    var identity = keyIdentity();
+    function check(retried) {
+      if (identity !== keyIdentity()) return done(null);
+      request('menu-cache?pick=' + match[1], null, function (j) {
+        if (identity !== keyIdentity()) return done(null);
+        if (!retried && j && j.retry_after === 1) return setTimeout(function () { check(true); }, 1100);
+        done(j);
+      }, function () { done(null); }, true);
+    }
+    check(false);
+  };
   var settingFields = [
     { name: 'api_key', title: 'API-ключ TorBox', secret: true, description: 'Личный ключ TorBox; хранится на этом устройстве' },
     { name: 'allowed_uids', title: 'Разрешённые Lampac UID', list: true, description: 'Через запятую. Пусто — текущий аккаунт Lampac; серверный список не используется' },
@@ -674,7 +689,7 @@
     for (var k = 0; k < candidates.length; k++) if (/^https?:\/\//i.test(candidates[k] || '')) return candidates[k];
     return '';
   }
-  function watch(t, film, allowDownload) {
+  function watch(t, film, allowDownload, cacheMissing) {
     if (busy) return Lampa.Noty.show('Запрос TorBox уже выполняется');
     var link = torrentLink(t || {});
     var hash = (t && (t.InfoHash || t.Hash || t.infohash || t.hash)) || '';
@@ -682,10 +697,11 @@
     var g = begin('content');
     busy = true;
     Lampa.Noty.show('Проверяю раздачу в TorBox…');
-    request('add', { link: link, hash: hash, film: film, allow_download: allowDownload === true }, function (j) {
+    request('add', { link: link, hash: hash, film: film, allow_download: allowDownload === true, cache_only: !!cacheMissing }, function (j) {
       busy = false;
       if (g !== generation) return;
       if (j.confirmation_required) {
+        if (cacheMissing) return cacheMissing();
         choose('Раздачи нет в кэше TorBox', [
           { title: 'Загрузить', subtitle: 'TorBox скачает выбранную раздачу', run: function () { watch(t, film, true); } },
           { title: 'Вернуться к выбору', run: restore }
@@ -798,8 +814,216 @@
   });
   }
 
+  // Use Lampa's component and parser hooks so cache filtering precedes pagination.
+  function torrentHash(t) {
+    var values = [t.InfoHash, t.Hash, t.infohash, t.hash];
+    var hash = '';
+    values.some(function (value) { if (/^(?:[a-f0-9]{40}|[a-z2-7]{32})$/i.test(value || '')) { hash = String(value).toLowerCase(); return true; } });
+    if (!hash) {
+      try { var match = decodeURIComponent(torrentLink(t)).match(/(?:[?&])xt=urn:btih:([a-f0-9]{40}|[a-z2-7]{32})(?:&|$)/i); if (match) hash = match[1].toLowerCase(); } catch (e) { }
+    }
+    if (hash.length === 32) {
+      var bits = 0, buffer = 0, hex = '', alphabet = 'abcdefghijklmnopqrstuvwxyz234567';
+      for (var i = 0; i < hash.length; i++) {
+        buffer = (buffer << 5) | alphabet.indexOf(hash[i]); bits += 5;
+        if (bits >= 8) { bits -= 8; hex += ('0' + ((buffer >> bits) & 255).toString(16)).slice(-2); }
+      }
+      hash = hex;
+    }
+    return hash;
+  }
+  var torrentCacheInstalled = false, torrentCacheRetry = null;
+  function installTorrentCache() {
+    if (torrentCacheInstalled) return;
+    var Native = Lampa.Component.get('torrents');
+    if (!Native || !Lampa.Parser || !Lampa.Torrent) {
+      if (!torrentCacheRetry) torrentCacheRetry = setTimeout(function () { torrentCacheRetry = null; installTorrentCache(); }, 500);
+      return;
+    }
+    torrentCacheInstalled = true;
+    if (torrentCacheRetry) { clearTimeout(torrentCacheRetry); torrentCacheRetry = null; }
+    var parserGet = Lampa.Parser.get;
+    var nativeStart = Lampa.Torrent.start;
+    var starting = false;
+    function stateFor(session, torrent) {
+      var hash = torrentHash(torrent), state = session && session.states[hash];
+      return state ? state.cached : null;
+    }
+    function live(session) { return !session.dead && session.identity === keyIdentity(); }
+    function focused(session) { return live(session) && Lampa.Activity.active().activity === session.component.activity; }
+    function updateBadges(session) {
+      session.rows = session.rows.filter(function (row) { return $.contains(session.root[0], row.item[0]); });
+      session.rows.forEach(function (row) {
+        var cached = stateFor(session, row.torrent);
+        row.badge.text(cached === true ? '⚡ В кэше TorBox' : cached === false ? '☁ Нет в кэше TorBox' : session.pending ? 'TorBox: проверка…' : 'TorBox: не проверено');
+      });
+    }
+    function redraw(session, keepToggle) {
+      if (!live(session)) return;
+      var active = focused(session) && Lampa.Controller.enabled().name === 'content';
+      session.component.applyFilter();
+      if (active) {
+        session.component.start();
+        if (keepToggle && session.toggle) Lampa.Controller.collectionFocus(session.toggle, session.root);
+      }
+    }
+    function tools(session) {
+      var root = session.component.render().find('.scroll__body').last();
+      if (!root.length) return;
+      session.root = root;
+      var bar = root.children('.torbox-torrents-tools');
+      var create = !bar.length;
+      if (create) bar = $('<div class="torbox-torrents-tools" style="margin-bottom:1em"></div>');
+      var toggle = create ? $('<div class="simple-button selector torbox-torrents-toggle" style="display:flex;align-items:center"></div>') : bar.find('.torbox-torrents-toggle');
+      toggle.text('Только в кэше TorBox: ' + (session.only ? 'включено' : 'выключено'));
+      session.toggle = toggle;
+      if (create) toggle.on('hover:enter', function () {
+        if (!live(session)) return;
+        session.only = !session.only; Lampa.Storage.set(session.preference, session.only);
+        redraw(session, true);
+      }).on('hover:focus', function () {
+        var scroll = session.root.closest('.scroll')[0];
+        if (scroll && scroll.Scroll) scroll.Scroll.update(toggle, true);
+      });
+      if (create) bar.append(toggle);
+      bar.find('.torbox-cache-info').remove();
+      var info = session.pending ? 'Проверяю кэш TorBox…' : session.failed ? 'Часть раздач не удалось проверить. Можно выключить фильтр.' : '';
+      if (info) bar.append($('<div class="torbox-cache-info" style="font-size:.8em;opacity:.7;margin-top:.4em"></div>').text(info));
+      root.prepend(bar);
+      root.find('.torbox-hidden-empty').each(function () {
+        var empty = $(this); empty[0].style.display = empty.data('torbox-display'); empty.removeClass('torbox-hidden-empty');
+        empty.find('.torbox-empty-selector').addClass('selector').removeClass('torbox-empty-selector');
+      });
+      if (session.only && !root.find('.torrent-item').length) {
+        root.find('.empty-filter').each(function () {
+          var empty = $(this); empty.data('torbox-display', this.style.display).addClass('torbox-hidden-empty').hide();
+          empty.find('.selector').addClass('torbox-empty-selector').removeClass('selector');
+        });
+        bar.append($('<div class="torbox-cache-info" style="padding:1em 0"></div>').text(session.pending ? 'Ожидаю результаты проверки…' : 'Подтверждённых раздач в кэше с этими фильтрами нет. Выключите «Только в кэше TorBox», чтобы увидеть остальные.'));
+      }
+      updateBadges(session);
+    }
+    function checkAll(session) {
+      if (!live(session) || !session.data) return;
+      var hashes = [];
+      session.data.Results.forEach(function (torrent) { var hash = torrentHash(torrent); if (hash && hashes.indexOf(hash) === -1) hashes.push(hash); });
+      session.pending = hashes.length > 0; session.failed = false;
+      function next() {
+        if (!live(session)) return;
+        if (!hashes.length) {
+          session.pending = false;
+          if (session.only) redraw(session, true); else tools(session);
+          return;
+        }
+        var chunk = hashes.splice(0, 100);
+        request('cache-check', { hashes: chunk }, function (j) { finish(j); }, function () { finish(null); }, true);
+        function finish(response) {
+          if (!live(session)) return;
+          chunk.forEach(function (hash) {
+            var row = response && Array.isArray(response.items) && response.items.filter(function (x) { return x.hash === hash; })[0];
+            var cached = row && typeof row.cached === 'boolean' ? row.cached : null;
+            if (cached === null) session.failed = true;
+            session.states[hash] = { cached: cached, until: Date.now() + (cached === null ? 10000 : 30000) };
+          });
+          if (session.only) redraw(session, true); else updateBadges(session);
+          if (!response || response.retryable || !Array.isArray(response.items) || chunk.some(function (hash) { return session.states[hash].cached === null; })) {
+            session.pending = false; session.failed = true; tools(session); return;
+          }
+          next();
+        }
+      }
+      next();
+    }
+    Lampa.Component.add('torrents', function (object) {
+      var component = new Native(object);
+      var session = { component: component, identity: keyIdentity(), states: {}, rows: [], dead: false, pending: true };
+      session.preference = 'torbox_torrents_cached_only_' + Lampa.Utils.hash(session.identity);
+      session.only = Lampa.Storage.get(session.preference, false) === true;
+      Object.defineProperty(object, 'lampacTorboxCache', { value: session, configurable: true });
+      var filter = component.filtred, show = component.showResults, destroy = component.destroy;
+      component.filtred = function () {
+        object.page = 1;
+        if (!session.data || !session.only) return filter.apply(component, arguments);
+        var original = session.data.Results;
+        try {
+          session.data.Results = original.filter(function (t) { return stateFor(session, t) === true; });
+          return filter.apply(component, arguments);
+        } finally { session.data.Results = original; }
+      };
+      component.showResults = function () { var value = show.apply(component, arguments); tools(session); return value; };
+      component.destroy = function () { session.dead = true; session.rows = []; return destroy.apply(component, arguments); };
+      return component;
+    });
+    Lampa.Parser.get = function (object, done) {
+      var args = Array.prototype.slice.call(arguments), session = object && object.lampacTorboxCache;
+      if (!session) return parserGet.apply(this, args);
+      args[1] = function (data) {
+        if (!live(session)) return;
+        // Parser caches can be shared: keep our per-screen state off their records.
+        if (!data || !Array.isArray(data.Results)) {
+          session.pending = false; session.failed = true;
+          if (typeof args[2] === 'function') return args[2]('Некорректный ответ парсера');
+          return done({ Results: [] });
+        }
+        var copy = $.extend({}, data, { Results: data.Results.map(function (t) {
+          var row = $.extend({}, t); Object.defineProperty(row, 'lampacTorboxCache', { value: session }); return row;
+        }) });
+        session.data = copy; done(copy);
+        setTimeout(function () { checkAll(session); }, 0);
+      };
+      return parserGet.apply(this, args);
+    };
+    Lampa.Listener.follow('torrent', function (e) {
+      if (e.type !== 'render') return;
+      var session = e.element && e.element.lampacTorboxCache;
+      if (!session || !live(session)) return;
+      var badge = $('<div class="torbox-torrent-cache"></div>');
+      e.item.find('.torrent-item__ffprobe').removeClass('hide').append(badge);
+      session.rows.push({ torrent: e.element, item: e.item, badge: badge });
+      var cached = stateFor(session, e.element);
+      badge.text(cached === true ? '⚡ В кэше TorBox' : cached === false ? '☁ Нет в кэше TorBox' : session.pending ? 'TorBox: проверка…' : 'TorBox: не проверено');
+    });
+    Lampa.Torrent.start = function (torrent, movie) {
+      var self = this, args = arguments, session = torrent && torrent.lampacTorboxCache;
+      if (!session || !focused(session)) return nativeStart.apply(self, args);
+      if (starting) return;
+      var hash = torrentHash(torrent);
+      if (!hash) return nativeStart.apply(self, args);
+      function server() { if (focused(session)) nativeStart.apply(self, args); }
+      function select(cached) {
+        starting = false;
+        if (!focused(session)) return;
+        if (cached !== true) return server();
+        var controller = Lampa.Controller.enabled().name;
+        function back() { Lampa.Select.hide(); Lampa.Controller.toggle(controller); }
+        function missing() {
+          choose('Раздача больше не доступна в кэше TorBox', [
+            { title: 'Воспроизвести через TorrServer', run: server },
+            { title: 'Назад', run: back }
+          ], back);
+        }
+        choose('Где воспроизвести раздачу?', [
+          { title: 'Воспроизвести из кэша TorBox', run: function () { watch(torrent, currentFilm(torrent), false, missing); } },
+          { title: 'Воспроизвести через TorrServer', run: server }
+        ], back);
+      }
+      var known = session.states[hash];
+      var cached = known && known.until > Date.now() ? known.cached : null;
+      if (cached !== null) return select(cached);
+      starting = true;
+      request('cache-check', { hashes: [hash] }, function (j) {
+        var entry = (j.items || []).filter(function (x) { return x.hash === hash; })[0];
+        select(entry && entry.cached);
+      }, function () { select(null); }, true);
+    };
+  }
+
+  var started = false;
   function start() {
+    if (started) return;
+    started = true;
     startSeriesControls();
+    installTorrentCache();
     addTorBoxSettings();
     Lampa.Component.add('my_torbox', Library);
     $('<style>').text('.torbox-library-card .card__img{opacity:.18}.torbox-library-card .card__view{background:rgba(255,255,255,.06)}.torbox-library-card__caption{position:absolute;left:1em;right:1em;top:50%;transform:translateY(-50%);text-align:center;overflow-wrap:anywhere;font-size:1.1em;line-height:1.4;display:-webkit-box;-webkit-line-clamp:7;-webkit-box-orient:vertical;overflow:hidden}.torbox-library-card--poster .card__img{opacity:1}.torbox-library-card--poster .torbox-library-card__caption{display:none}.torbox-library-card__status{font-size:.8em;opacity:.7;margin-top:.4em;line-height:1.4}').appendTo('head');
