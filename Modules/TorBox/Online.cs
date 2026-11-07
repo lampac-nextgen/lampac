@@ -16,7 +16,9 @@ using System.Threading.Tasks;
 namespace TorBox;
 public partial class TorBoxController
 {
+    class PickGroup { public DateTime LastUsed = DateTime.UtcNow; }
     class Pick {
+        public PickGroup Group = new();
         public string Owner, Link, Hash, Name, Movie, Next;
         public int Quality, Seeds;
         public bool Serial;
@@ -32,6 +34,7 @@ public partial class TorBoxController
         public ConcurrentDictionary<long,JToken> Metadata = new();
     }
     static readonly ConcurrentDictionary<string,Pick> picks = new();
+    static readonly object pickCacheGate = new();
     static readonly ConcurrentDictionary<string,(DateTime Expires,JArray Rows)> searchCache = new();
 
     ActionResult Similar(SimilarTpl t, params (int Season,int Episode)[] frames) {
@@ -47,9 +50,12 @@ public partial class TorBoxController
     }
     string OnlineUrl(string path) => host + "/lite/torbox/" + path;
     Pick GetPick(string ticket) {
+        lock(pickCacheGate) {
         if (ticket == null || !picks.TryGetValue(ticket,out var p) || p.Expires < DateTime.UtcNow || p.Owner != metadataOwner)
             throw new TorBoxException(410,"Список устарел. Откройте TorBox заново из карточки фильма");
+        p.Group.LastUsed=DateTime.UtcNow;
         return p;
+        }
     }
     static int Resolution(JToken t) {
         string s = ((string)t["Title"] ?? "").ToLowerInvariant();
@@ -89,8 +95,15 @@ public partial class TorBoxController
             (serial==1 || year<=0 || !Regex.IsMatch((string)t["Title"],@"\b(19|20)\d{2}\b") || Regex.IsMatch((string)t["Title"],@"\b"+year+@"\b")))
             .OrderByDescending(Resolution).ThenByDescending(t=>(int?)t["Seeders"]??0).Take(serial==1?96:12).ToArray();
         if(candidates.Length==0)return Error(404,"JacRed не нашёл подходящих раздач фильма");
+        lock(pickCacheGate) {
         foreach(var expired in picks.Where(p=>p.Value.Expires<DateTime.UtcNow).ToArray())picks.TryRemove(expired.Key,out _);
-        if(picks.Count+candidates.Length>512)return Error(429,"Слишком много открытых подборок. Попробуйте позднее");
+        // Evict whole least-recently-used menus, keeping release chains intact.
+        // Allocation and eviction share a lock so concurrent searches stay bounded.
+        while(picks.Count+candidates.Length>512) {
+            var oldest=picks.Values.OrderBy(p=>p.Group.LastUsed).First().Group;
+            foreach(var entry in picks.Where(p=>p.Value.Group==oldest).ToArray())picks.TryRemove(entry.Key,out _);
+        }
+        var group=new PickGroup();
         var tpl=new SimilarTpl();
         string previous=null;
         var seriesPicks=new List<Pick>();
@@ -101,7 +114,7 @@ public partial class TorBoxController
             if(string.IsNullOrEmpty(hash))hash=(string)t["InfoHash"]??(string)t["Hash"]??"";
             hash=hash.ToLowerInvariant();
             string ticket=Guid.NewGuid().ToString("N");
-            var p=new Pick{Owner=metadataOwner,Link=link,Hash=hash,Name=(string)t["Title"],Movie=title??original_title,Serial=serial==1,Quality=Resolution(t),Seeds=(int?)t["Seeders"]??0,
+            var p=new Pick{Group=group,Owner=metadataOwner,Link=link,Hash=hash,Name=(string)t["Title"],Movie=title??original_title,Serial=serial==1,Quality=Resolution(t),Seeds=(int?)t["Seeders"]??0,
                 Film=new FilmInput{tmdb_id=tmdb_id>0 ? tmdb_id : (source=="tmdb" || source=="cub" ? id : 0),title=string.IsNullOrWhiteSpace(title)?original_title:title,original_title=original_title,year=year,media_type=serial==1?"tv":"movie"}};
             picks[ticket]=p;seriesPicks.Add(p);
             if(previous!=null)picks[previous].Next=ticket;
@@ -110,6 +123,7 @@ public partial class TorBoxController
         }
         if(serial==1){var peers=seriesPicks.ToArray();foreach(var p in peers)p.SeriesPicks=peers;}
         return Similar(tpl,(0,0));
+        }
     });
 
     [HttpGet, Route("lite/torbox/choose")]
