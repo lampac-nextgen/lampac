@@ -203,11 +203,11 @@
       data: body ? JSON.stringify(body) : undefined, dataType: 'json', timeout: /^(series|infuse)\//.test(path) ? 90000 : 30000,
       success: function (j) {
         if (j && j.success) done(j);
-        else fail(j && j.detail || 'Нет доступа или TorBox вернул ошибку');
+        else fail(j && j.detail || 'Нет доступа или TorBox вернул ошибку', j);
       },
-      error: function (xhr) { fail(xhr && xhr.responseJSON && xhr.responseJSON.detail || 'Нет связи с TorBox или истёк доступ Lampac'); }
+      error: function (xhr) { fail(xhr && xhr.responseJSON && xhr.responseJSON.detail || 'Нет связи с TorBox или истёк доступ Lampac', xhr); }
     }); });
-    function fail(message) { if (!silent) Lampa.Noty.show(message); if (failed) failed(message); }
+    function fail(message, error) { if (!silent) Lampa.Noty.show(message); if (failed) failed(message, error); }
   }
   function size(n) {
     n = Number(n) || 0;
@@ -816,6 +816,7 @@
 
   // Use Lampa's component and parser hooks so cache filtering precedes pagination.
   function torrentHash(t) {
+    if (!t || typeof t !== 'object') return '';
     var values = [t.InfoHash, t.Hash, t.infohash, t.hash];
     var hash = '';
     values.some(function (value) { if (/^(?:[a-f0-9]{40}|[a-z2-7]{32})$/i.test(value || '')) { hash = String(value).toLowerCase(); return true; } });
@@ -844,7 +845,7 @@
     if (torrentCacheRetry) { clearTimeout(torrentCacheRetry); torrentCacheRetry = null; }
     var parserGet = Lampa.Parser.get;
     var nativeStart = Lampa.Torrent.start;
-    var starting = false;
+    var starting = null;
     function stateFor(session, torrent) {
       var hash = torrentHash(torrent), state = session && session.states[hash];
       return state ? state.cached : null;
@@ -905,22 +906,34 @@
     }
     function checkAll(session) {
       if (!live(session) || !session.data) return;
+      var run = session.checkGeneration;
+      function current() { return live(session) && run === session.checkGeneration; }
       var hashes = [];
       session.data.Results.forEach(function (torrent) { var hash = torrentHash(torrent); if (hash && hashes.indexOf(hash) === -1) hashes.push(hash); });
       session.pending = hashes.length > 0; session.failed = false;
       function next() {
-        if (!live(session)) return;
+        if (!current()) return;
         if (!hashes.length) {
           session.pending = false;
           if (session.only) redraw(session, true); else tools(session);
           return;
         }
         var chunk = hashes.splice(0, 100);
-        request('cache-check', { hashes: chunk }, function (j) { finish(j); }, function () { finish(null); }, true);
-        function finish(response) {
-          if (!live(session)) return;
+        function send(retried) {
+          if (!current()) return;
+          request('cache-check', { hashes: chunk }, function (j) { finish(j, null, retried); }, function (message, error) { finish(null, error, retried); }, true);
+        }
+        send(false);
+        function finish(response, error, retried) {
+          if (!current()) return;
+          var retryable = response && response.retryable || error && (error.status === 429 || error.retryable);
+          if (!retried && retryable) {
+            var delay = Number(response && response.retry_after || error && error.retry_after || error && error.responseJSON && error.responseJSON.retry_after) || 10;
+            session.retryTimer = setTimeout(function () { session.retryTimer = null; send(true); }, Math.max(1, Math.min(60, delay)) * 1000 + 100);
+            tools(session); return;
+          }
           chunk.forEach(function (hash) {
-            var row = response && Array.isArray(response.items) && response.items.filter(function (x) { return x.hash === hash; })[0];
+            var row = response && Array.isArray(response.items) && response.items.filter(function (x) { return x && x.hash === hash; })[0];
             var cached = row && typeof row.cached === 'boolean' ? row.cached : null;
             if (cached === null) session.failed = true;
             session.states[hash] = { cached: cached, until: Date.now() + (cached === null ? 10000 : 30000) };
@@ -951,7 +964,7 @@
         } finally { session.data.Results = original; }
       };
       component.showResults = function () { var value = show.apply(component, arguments); tools(session); return value; };
-      component.destroy = function () { session.dead = true; session.rows = []; return destroy.apply(component, arguments); };
+      component.destroy = function () { session.dead = true; clearTimeout(session.retryTimer); if (starting && starting.session === session) starting = null; session.rows = []; return destroy.apply(component, arguments); };
       return component;
     });
     Lampa.Parser.get = function (object, done) {
@@ -965,9 +978,10 @@
           if (typeof args[2] === 'function') return args[2]('Некорректный ответ парсера');
           return done({ Results: [] });
         }
-        var copy = $.extend({}, data, { Results: data.Results.map(function (t) {
+        var copy = $.extend({}, data, { Results: data.Results.filter(function (t) { return t && typeof t === 'object' && !Array.isArray(t); }).map(function (t) {
           var row = $.extend({}, t); Object.defineProperty(row, 'lampacTorboxCache', { value: session }); return row;
         }) });
+        clearTimeout(session.retryTimer); session.checkGeneration = (session.checkGeneration || 0) + 1;
         session.data = copy; done(copy);
         setTimeout(function () { checkAll(session); }, 0);
       };
@@ -986,12 +1000,14 @@
     Lampa.Torrent.start = function (torrent, movie) {
       var self = this, args = arguments, session = torrent && torrent.lampacTorboxCache;
       if (!session || !focused(session)) return nativeStart.apply(self, args);
-      if (starting) return;
       var hash = torrentHash(torrent);
       if (!hash) return nativeStart.apply(self, args);
+      if (starting && starting.session === session && starting.hash === hash) return Lampa.Noty.show('Проверяю кэш TorBox…');
+      var attempt = starting = { session: session, hash: hash };
       function server() { if (focused(session)) nativeStart.apply(self, args); }
       function select(cached) {
-        starting = false;
+        if (starting !== attempt) return;
+        starting = null;
         if (!focused(session)) return;
         if (cached !== true) return server();
         var controller = Lampa.Controller.enabled().name;
@@ -1010,7 +1026,6 @@
       var known = session.states[hash];
       var cached = known && known.until > Date.now() ? known.cached : null;
       if (cached !== null) return select(cached);
-      starting = true;
       request('cache-check', { hashes: [hash] }, function (j) {
         var entry = (j.items || []).filter(function (x) { return x.hash === hash; })[0];
         select(entry && entry.cached);

@@ -1126,7 +1126,7 @@
       apply(false);
       window.lampac_torbox_menu_cache(rows[0].elem.url, function (response) {
         if (!current()) return;
-        menu.ready = true; menu.failed = !response || response.available !== true;
+        menu.ready = true; menu.failed = !response || response.available !== true || (response.items || []).some(function (item) { return !item || typeof item.cached !== 'boolean'; });
         rows.forEach(function (row) {
           var match = String(row.elem.url).match(/[?&]pick=([a-f0-9]{32})(?:&|$)/);
           var state = response && Array.isArray(response.items) && response.items.filter(function (x) { return match && x.pick === match[1]; })[0];

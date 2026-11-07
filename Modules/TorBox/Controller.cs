@@ -145,14 +145,14 @@ public partial class TorBoxController : BaseController
         catch { return Error(502, "Не удалось обработать ответ TorBox"); }
     }
 
-    async Task<JToken> Call(string path, string key, HttpContent body = null, CancellationToken cancellationToken = default, bool allowMissing = false, HttpMethod method = null)
+    async Task<JToken> Call(string path, string key, HttpContent body = null, CancellationToken cancellationToken = default, bool allowMissing = false, HttpMethod method = null, bool shared = false)
     {
         using var req = new HttpRequestMessage(method ?? (body == null ? HttpMethod.Get : HttpMethod.Post), api + path);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", key);
         req.Headers.UserAgent.ParseAdd("Lampac-TorBox/1.0");
         req.Content = body;
-        using var linked=cancellationToken.CanBeCanceled?CancellationTokenSource.CreateLinkedTokenSource(cancellationToken,HttpContext.RequestAborted):null;
-        using var resp = await client.SendAsync(req, linked?.Token??HttpContext.RequestAborted);
+        using var linked=!shared && cancellationToken.CanBeCanceled?CancellationTokenSource.CreateLinkedTokenSource(cancellationToken,HttpContext.RequestAborted):null;
+        using var resp = await client.SendAsync(req, shared?cancellationToken:linked?.Token??HttpContext.RequestAborted);
         if (resp.StatusCode == System.Net.HttpStatusCode.TooManyRequests)
             throw new TorBoxException(429, "TorBox ограничил частоту запросов. Попробуйте позже");
         if (resp.StatusCode == System.Net.HttpStatusCode.Unauthorized || resp.StatusCode == System.Net.HttpStatusCode.Forbidden)

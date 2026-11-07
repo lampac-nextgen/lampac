@@ -93,7 +93,7 @@ public partial class TorBoxController
             if(searchCache.Count>256)searchCache.Clear();
             searchCache[searchKey]=(DateTime.UtcNow.AddMinutes(5),rows);
         }
-        var eligible=rows.Where(t=>!string.IsNullOrWhiteSpace((string)t["Title"]) &&
+        var eligible=rows.OfType<JObject>().Where(t=>!string.IsNullOrWhiteSpace((string)t["Title"]) &&
             ((!string.IsNullOrWhiteSpace(title) && Normalize((string)t["Title"]).Contains(Normalize(title))) ||
              (!string.IsNullOrWhiteSpace(original_title) && Normalize((string)t["Title"]).Contains(Normalize(original_title)))) &&
             !Regex.IsMatch((string)t["Title"],@"\b(CAMRip|HDCAM|HDTS|TSRip|TELESYNC)\b",RegexOptions.IgnoreCase) &&
@@ -196,7 +196,7 @@ public partial class TorBoxController
             JObject cache=null;
             try {
                 using var deadline=new CancellationTokenSource(TimeSpan.FromSeconds(8));
-                cache=await Call("checkcached?hash="+Uri.EscapeDataString(string.Join(",",hashes))+"&format=object",key,cancellationToken:deadline.Token) as JObject;
+                cache=await Call("checkcached?hash="+Uri.EscapeDataString(string.Join(",",hashes))+"&format=object",key,cancellationToken:deadline.Token,shared:true) as JObject;
             } catch(TorBoxException) { } catch(HttpRequestException) { } catch(OperationCanceledException) { }
               catch(Newtonsoft.Json.JsonException) { }
             finally {
@@ -214,7 +214,7 @@ public partial class TorBoxController
     public Task<ActionResult> MenuCache(string pick) => Guard(async(c,key)=>{
         var first=GetPick(pick);var group=first.Group;
         if(group.KeyHash!=SeriesKeyHash(key))return Error(410,"Настройки TorBox изменились. Откройте список заново");
-        if(!await group.CacheGate.WaitAsync(TimeSpan.FromSeconds(2),HttpContext.RequestAborted))
+        if(!await group.CacheGate.WaitAsync(TimeSpan.FromSeconds(10),HttpContext.RequestAborted))
             return Payload(new{success=true,available=false,retry_after=1,items=new object[0]});
         try {
             (string Ticket,Pick Pick)[] menu;
@@ -347,8 +347,7 @@ public partial class TorBoxController
             if(torrent==null) {
                 if(!string.IsNullOrEmpty(p.Hash)) {
                     if(!checkedCache) {cache=hashes.Length>0?await Call("checkcached?hash="+Uri.EscapeDataString(string.Join(",",hashes))+"&format=object",key) as JObject:null;checkedCache=true;}
-                    var cached=cache?.Properties().FirstOrDefault(x=>string.Equals(x.Name,p.Hash,StringComparison.OrdinalIgnoreCase))?.Value as JObject;
-                    if(cached==null || !cached.HasValues || (bool?)cached["cached"]==false)continue;
+                    if(CacheBadge(cache,p.Hash)!=true)continue;
                 }
                 torrent=await AttachCachedOnly(p,config,key);
             }
