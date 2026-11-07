@@ -487,7 +487,7 @@ public partial class GStask
         catch { }
     }
 
-    bool SegmentFileReady(int index)
+    protected virtual bool SegmentFileReady(int index)
     {
         if (index < 0)
             return false;

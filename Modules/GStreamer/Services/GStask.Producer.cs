@@ -27,7 +27,7 @@ public partial class GStask
         return SeekClockTime(ns);
     }
 
-    bool SeekSegment(int index)
+    protected virtual bool SeekSegment(int index)
     {
         if (cueTimeline?.TryGetSegment(index, out CueSegment segment) == true)
             return SeekClockTime(segment.StartNs, accurate: true);
@@ -325,7 +325,7 @@ public partial class GStask
     #endregion
 
     #region EnsureSegment
-    public bool EnsureSegment(int index, CancellationToken ct, int audio = 0)
+    public virtual bool EnsureSegment(int index, CancellationToken ct, int audio = 0)
     {
         int segmentIndex = index > 0 ? index : 0;
         bool segmentReadStarted = false;
@@ -675,10 +675,19 @@ public partial class GStask
 
                 if (!EnsureSegment(next, ct))
                     return false;
+
+                // A cache hit does not consume the physical reader.
+                // Do not assign the next cue to data from an earlier segment.
+                if (Volatile.Read(ref readerSegmentIndex) != next)
+                    break;
             }
 
-            return EnsureSegment(index, ct);
+            if (Volatile.Read(ref readerSegmentIndex) == index - 1)
+                return EnsureSegment(index, ct);
         }
+
+        if (ct.IsCancellationRequested || IsDead)
+            return false;
 
         if (!SeekSegment(index))
             return false;
