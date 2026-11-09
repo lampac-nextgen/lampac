@@ -42,7 +42,7 @@ public class ModInit : IModuleLoaded, IModuleOnline
             enable = true,
             displayindex = 535,
             stream_access = "apk,cors,web",
-            api_host = "https://aderom.net",
+            api_host = "https://malsed.site",
             headers = HeadersModel.Init(
                 Http.defaultFullHeaders,
                 ("referer", GencitService.Referer)
