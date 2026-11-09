@@ -15,7 +15,7 @@ public class ModuleConf : BaseSettings, ICloneable
             this.host = host.StartsWith("http") ? host : Decrypt(host);
     }
 
-    public string api_host { get; set; } = "https://aderom.net";
+    public string api_host { get; set; } = "https://malsed.site";
 
     public ModuleConf Clone()
         => (ModuleConf)MemberwiseClone();
