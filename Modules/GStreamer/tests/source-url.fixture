@@ -25,6 +25,18 @@ await Check("https://example.com/video.mkv", null, "sourceUrl", probeOnly: false
 Shared.Services.Http.RedirectTo = "http://127.0.0.1:9118/dlna/stream?path=movie.mkv";
 await Check("http://127.0.0.1:9118/ts/stream?link=x", "ResponseHeaders", "sourceUrl");
 Shared.Services.Http.RedirectTo = null;
+// A standalone TorrServer is trusted only by the exact origin the operator configured.
+GStreamer.ModInit.conf.trusted_origins = new[] { "http://10.0.0.20:8090", "not a url" };
+await Check("http://10.0.0.20:8090/stream/title.mkv?link=x&index=1&play", null);
+await Check("http://10.0.0.20:8091/stream?link=x", "Uri");
+await Check("https://10.0.0.20:8090/stream?link=x", "Uri");
+await Check("http://10.0.0.21:8090/stream?link=x", "Uri");
+await Check("http://user:pass@10.0.0.20:8090/stream?link=x", "Uri");
+Shared.Services.Http.RedirectTo = "http://10.0.0.9/admin";
+await Check("http://10.0.0.20:8090/stream?link=x", "ResponseHeaders", "sourceUrl");
+Shared.Services.Http.RedirectTo = null;
+GStreamer.ModInit.conf.trusted_origins = null;
+await Check("http://10.0.0.20:8090/stream?link=x", "Uri");
 Console.WriteLine("source URL checks passed");
 
 static async Task Check(string url, string expected, string addExpected = null, bool probeOnly = true) {
@@ -60,7 +72,7 @@ namespace Shared.Services.Hybrid {
 }
 namespace GStreamer {
     public static class ModInit { public static Conf conf = new(); }
-    public class Conf { public Dictionary<string, Conf> conf_uids; public bool hdr_to_sdr, transcodeAVI, transcodeVP8, transcodeH264, transcodeH265, transcodeAV1, transcodeVP9; public int maxTasks, inactiveMinutes = 60; }
+    public class Conf { public Dictionary<string, Conf> conf_uids; public bool hdr_to_sdr, transcodeAVI, transcodeVP8, transcodeH264, transcodeH265, transcodeAV1, transcodeVP9; public int maxTasks, inactiveMinutes = 60; public string[] trusted_origins; }
 }
 namespace GStreamer.Models {
     public enum VideoTransfer { Pq, Hlg }

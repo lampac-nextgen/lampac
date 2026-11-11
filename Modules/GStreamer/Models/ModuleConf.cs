@@ -30,6 +30,11 @@ public class ModuleConf : ModuleBaseConf
 
     public string[] allowed_uids { get; set; }
 
+    /// <summary>
+    /// Origin внешних источников в частной сети (scheme://host:port), которым оператор явно доверяет, например отдельный TorrServer.
+    /// </summary>
+    public string[] trusted_origins { get; set; }
+
 
     /// <summary>
     /// задний кеш m4s
