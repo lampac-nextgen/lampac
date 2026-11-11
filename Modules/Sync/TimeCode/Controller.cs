@@ -291,7 +291,7 @@ public class TimeCodeController : BaseController
     #region Write
     /// <summary>
     /// Единственный путь записи — и легаси, и нативный. Возвращает новый курсор и сколько строк
-    /// приняли. Устаревшее по <c>watched_at</c> не пишется, но и ошибкой не считается: очередь
+    /// приняли. Устаревшее по штампу арбитража (<c>changed_at</c>, без него <c>watched_at</c>) не пишется, но и ошибкой не считается: очередь
     /// офлайн-устройства доезжает часами позже, и её строка не должна затирать свежую чужую.
     /// </summary>
     async Task<(long version, int accepted, int skipped)> Write(IEnumerable<JObject> rows, string connectionId)
@@ -339,9 +339,12 @@ public class TimeCodeController : BaseController
                         (entity, hashTaken) = await Locate(sqlDb, userId, identity, card, hash);
 
                     long watchedAt = row.Value<long?>("watched_at") ?? 0;
+                    long changedAt = row.Value<long?>("changed_at") ?? 0;
+                    // Арбитр — когда отметку меняли; у клиента без changed_at (веб-Lampa) это watched_at.
+                    long arbiter = changedAt > 0 ? changedAt : watchedAt;
 
                     // Оба штампа ненулевые и входящий старше — это догнавшая нас старая правда.
-                    if (entity != null && watchedAt > 0 && entity.watched_at > 0 && watchedAt < entity.watched_at)
+                    if (entity != null && arbiter > 0 && entity.arbiter > 0 && arbiter < entity.arbiter)
                     {
                         skipped++;
                         continue;
@@ -368,6 +371,7 @@ public class TimeCodeController : BaseController
                     entity.profile = row.Value<long?>("profile") ?? entity.profile;
                     entity.extra = row.Value<string>("extra") ?? entity.extra;
                     entity.watched_at = watchedAt > 0 ? watchedAt : entity.watched_at;
+                    entity.changed_at = changedAt;
                     entity.updated_at = stamp++;
 
                     // Второй раз тот же ключ в пачке — сущность уже в change tracker, и менять её
@@ -481,6 +485,9 @@ public class TimeCodeController : BaseController
             ["updated_at"] = i.updated_at
         };
 
+        if (i.changed_at > 0)
+            row["changed_at"] = i.changed_at;
+
         if (i.deleted)
             row["deleted"] = true;
 
@@ -502,7 +509,8 @@ public class TimeCodeController : BaseController
             ["time"] = i.position,
             ["percent"] = i.percent,
             ["profile"] = i.profile,
-            ["updated"] = i.watched_at
+            // У веб-Lampa один штамп, и он же её арбитр: отдаём ей тот, по которому решаем сами.
+            ["updated"] = i.arbiter
         };
 
         if (i.identity != null)

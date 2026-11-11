@@ -38,6 +38,7 @@ public class SqlContext : DbContext
         {
             sqlDb.Database.EnsureCreated();
             MigrateLegacyBlob(sqlDb);
+            AddChangedAt(sqlDb);
             MigrateProfileAreas(sqlDb);
         }
     }
@@ -150,20 +151,22 @@ public class SqlContext : DbContext
         long stamp = Math.Max(DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), last + 1);
 
         const string same = "(t.card = o.card AND t.item = o.item OR t.identity = o.identity)";
+        // Тот же арбитр, что в Write: changed_at, а у строки без него — watched_at.
+        const string notOlder = "COALESCE(NULLIF(t.changed_at, 0), t.watched_at) >= COALESCE(NULLIF(o.changed_at, 0), o.watched_at)";
 
         // Веб-запись без identity переживёт ту же отметку из старой области — забираем identity
         // у проигравшей, как это сделал бы Write, иначе нативный клиент её по id не найдёт.
-        db.Database.ExecuteSqlRaw("""
+        db.Database.ExecuteSqlRaw($$"""
             UPDATE timecodes AS t SET identity = o.identity, updated_at = {2} + t.Id
             FROM timecodes AS o
             WHERE t.user = {1} AND o.user = {0} AND t.identity IS NULL AND o.identity IS NOT NULL
-              AND t.card = o.card AND t.item = o.item AND t.watched_at >= o.watched_at
+              AND t.card = o.card AND t.item = o.item AND {{notOlder}}
               AND NOT EXISTS (SELECT 1 FROM timecodes AS x WHERE x.user = {1} AND x.identity = o.identity);
             """, legacy, target, stamp);
 
         db.Database.ExecuteSqlRaw($$"""
             DELETE FROM timecodes AS o WHERE o.user = {0} AND EXISTS (
-                SELECT 1 FROM timecodes AS t WHERE t.user = {1} AND {{same}} AND t.watched_at >= o.watched_at);
+                SELECT 1 FROM timecodes AS t WHERE t.user = {1} AND {{same}} AND {{notOlder}});
             """, legacy, target);
 
         db.Database.ExecuteSqlRaw($$"""
@@ -212,6 +215,7 @@ public class SqlContext : DbContext
                 profile INTEGER NOT NULL DEFAULT 0,
                 deleted INTEGER NOT NULL DEFAULT 0,
                 watched_at INTEGER NOT NULL DEFAULT 0,
+                changed_at INTEGER NOT NULL DEFAULT 0,
                 updated_at INTEGER NOT NULL DEFAULT 0,
                 extra TEXT NULL
             );
@@ -282,6 +286,20 @@ public class SqlContext : DbContext
         Serilog.Log.Information("{Module} identity restored for {Count} movie row(s)", "TimeCode", filled);
     }
 
+    /// <summary>
+    /// Отдельный штамп арбитража. Раньше им был watched_at, и отметка задним числом (смотрел в
+    /// 2024-м, отметил сегодня) проигрывала любой строке новее 2024-го, в том числе собственному
+    /// снятию. У старых строк changed_at = 0: для них арбитром остаётся watched_at.
+    /// </summary>
+    static void AddChangedAt(SqlContext db)
+    {
+        if (HasColumn("timecodes", "changed_at"))
+            return;
+
+        db.Database.ExecuteSqlRaw("ALTER TABLE timecodes ADD COLUMN changed_at INTEGER NOT NULL DEFAULT 0;");
+        Serilog.Log.Information("{Module} changed_at column added", "TimeCode");
+    }
+
     static bool HasColumn(string tableName, string columnName)
     {
         using var connection = new SqliteConnection(_connection);
@@ -333,8 +351,18 @@ public class SqlModel
     /// <summary>Снятая отметка. Строка остаётся: без неё следующий dump вернёт запись назад.</summary>
     public bool deleted { get; set; }
 
-    /// <summary>Когда смотрели. Мс, штампует клиент. Этим арбитрируются конфликты устройств.</summary>
+    /// <summary>Когда смотрели. Мс, штампует клиент. Может быть сколь угодно старым.</summary>
     public long watched_at { get; set; }
+
+    /// <summary>
+    /// Когда отметку поставили или сняли на устройстве. Мс, штампует клиент. Этим арбитрируются
+    /// конфликты устройств. 0 — клиент его не знает (веб-Lampa): арбитром служит watched_at.
+    /// </summary>
+    public long changed_at { get; set; }
+
+    /// <summary>Штамп арбитража строки.</summary>
+    [NotMapped]
+    public long arbiter => changed_at > 0 ? changed_at : watched_at;
 
     /// <summary>Когда сервер принял строку. Мс, монотонно растёт внутри пользователя. Курсор дельт.</summary>
     public long updated_at { get; set; }

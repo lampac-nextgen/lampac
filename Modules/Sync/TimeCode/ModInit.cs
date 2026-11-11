@@ -36,10 +36,11 @@ public class ModInit : IModuleLoaded, IModuleConfigure
         // следующем открытии карточки. Отправителя NwsEvents из рассылки исключает сам.
         NwsEvents.Start(onlyreg: true);
 
+        // 4 = changed_at: арбитраж по времени изменения, watched_at свободен быть старым.
         // 3 = перепись областей данных (/timecode/areas).
         // 2 = типизированные колонки, identity, надгробия, курсор updated_at.
         // 1 был блобом road под хешем и нативным клиентом не поддерживается.
-        ModuleCapabilities.Set("timecode", 3);
+        ModuleCapabilities.Set("timecode", 4);
     }
 
     public void Dispose()
