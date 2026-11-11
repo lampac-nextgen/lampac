@@ -298,8 +298,18 @@ public static class GService
     internal static bool IsInternalSource(Uri uri)
     {
         if ((uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps) ||
-            !string.IsNullOrEmpty(uri.UserInfo) ||
-            (uri.AbsolutePath != "/ts/stream" && uri.AbsolutePath != "/dlna/stream"))
+            !string.IsNullOrEmpty(uri.UserInfo))
+            return false;
+
+        // External sources (e.g. a standalone TorrServer) are trusted only by exact origin from operator configuration.
+        if (ModInit.conf.trusted_origins != null &&
+            Array.Exists(ModInit.conf.trusted_origins, origin =>
+                Uri.TryCreate(origin, UriKind.Absolute, out var trusted) &&
+                uri.Scheme == trusted.Scheme &&
+                uri.Authority.Equals(trusted.Authority, StringComparison.OrdinalIgnoreCase)))
+            return true;
+
+        if (uri.AbsolutePath != "/ts/stream" && uri.AbsolutePath != "/dlna/stream")
             return false;
 
         var listen = CoreInit.conf.listen;
