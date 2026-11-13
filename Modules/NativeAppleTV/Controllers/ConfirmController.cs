@@ -12,7 +12,7 @@ namespace NativeAppleTV;
 /// <summary>Подтверждение кода: страница по QR (пароль администратора) и вызов бота (общий секрет).</summary>
 public class ConfirmController : BaseController
 {
-    public record BotBody(string code, int days = 0, string device = null);
+    public record BotBody(string code, int days = 0, string device = null, string user = null);
 
     static bool Same(string a, string b)
         => !string.IsNullOrEmpty(a) && !string.IsNullOrEmpty(b)
@@ -24,7 +24,7 @@ public class ConfirmController : BaseController
 
     [HttpPost, AllowAnonymous]
     [Route("nativeappletv/confirm")]
-    public ActionResult Submit([FromForm] string code, [FromForm] string passwd)
+    public ActionResult Submit([FromForm] string code, [FromForm] string passwd, [FromForm] string user)
     {
         string ip = requestInfo.IP;
         if (ChallengeStore.IsBlocked(ip))
@@ -40,7 +40,7 @@ public class ConfirmController : BaseController
             return Html(Form(code, "Код не найден или истёк. Обновите код в приложении"), 404);
 
         ChallengeStore.ResetFails(ip);
-        Approve(item, 0, "web");
+        Approve(item, 0, "web", user);
         return Html(Layout("<h2>Готово</h2><p>Вход подтверждён. Вернитесь к приложению.</p>"));
     }
 
@@ -62,11 +62,11 @@ public class ConfirmController : BaseController
         if (!ChallengeStore.TryGet(body?.code, out var item))
             return StatusCode(404, new { error = "expired_token" });
 
-        Approve(item, body.days, body.device ?? "bot");
+        Approve(item, body.days, body.device ?? "bot", body.user);
         return Json(new { confirmed = true });
     }
 
-    static void Approve(ChallengeStore.Challenge item, int days, string device)
+    static void Approve(ChallengeStore.Challenge item, int days, string device, string user)
     {
         lock (item)
         {
@@ -75,7 +75,7 @@ public class ConfirmController : BaseController
                 return;
 
             var conf = ModInit.conf;
-            item.token = TokenStore.Issue(days > 0 ? days : conf.token_days, conf.group, device);
+            item.token = TokenStore.Issue(days > 0 ? days : conf.token_days, conf.group, device, user);
         }
     }
 
@@ -93,6 +93,7 @@ public class ConfirmController : BaseController
         return Layout($@"<h2>Подтверждение входа</h2>{err}
 <form method=""post"" action=""/nativeappletv/confirm"">
 <p><input name=""code"" value=""{c}"" placeholder=""Код"" autocomplete=""off"" style=""font-size:28px;letter-spacing:4px;text-transform:uppercase""></p>
+<p><input name=""user"" placeholder=""Пользователь (необязательно)"" autocomplete=""off"" style=""font-size:18px""></p>
 <p><input name=""passwd"" type=""password"" placeholder=""Пароль администратора"" style=""font-size:18px""></p>
 <p><button type=""submit"" style=""font-size:18px;padding:8px 24px"">Подтвердить</button></p>
 </form>");
