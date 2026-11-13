@@ -272,6 +272,7 @@
                   "modules/series-notify",
                   "modules/kit",
                   "modules/external-bind",
+                  "modules/native-apple-tv",
                   "modules/forkplayer",
                   "modules/msx-native",
                   "modules/potok"

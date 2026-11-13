@@ -1,0 +1,53 @@
+---
+title: "NativeAppleTV: вход для приложения Apple TV"
+sidebarTitle: "NativeAppleTV"
+description: "Вход по QR-коду в нативное приложение Lampa/Luxo для Apple TV (протокол luxo-source/1)."
+keywords: ["Apple TV", "Luxo", "luxo-source", "QR", "accsdb", "capabilities"]
+---
+
+Модуль публикует в `GET /api/capabilities` ключ `source` и выдаёт токены, по которым приложение Apple TV получает онлайн-источники (`/lite/*`). Токен — обычный пользователь `accsdb` в `users.json`, срок и бан проверяет ядро по `?token=`.
+
+## Как это работает
+
+1. Приложение читает `/api/capabilities` → `source` и показывает QR и код.
+2. Пользователь открывает ссылку из QR и подтверждает код паролем администратора (или это делает бот по `bot/confirm`).
+3. Приложение забирает токен через `auth/poll` и добавляет `?token=…` ко всем запросам.
+
+Если `accsdb.enable` выключен, `auth.required` равен `false`, и вход не запрашивается.
+
+## Маршруты
+
+| Метод | Путь | Назначение |
+| --- | --- | --- |
+| `POST` | `/nativeappletv/auth/start` | Выдать код |
+| `POST` | `/nativeappletv/auth/poll` | Опрос: `pending` или `success` + `token` |
+| `POST` | `/nativeappletv/auth/check` | Проверка токена |
+| `GET`/`POST` | `/nativeappletv/confirm` | Страница подтверждения по QR |
+| `POST` | `/nativeappletv/bot/confirm` | Подтверждение ботом, заголовок `X-Bot-Secret` |
+
+## Конфигурация
+
+Секция `NativeAppleTV` в `init.conf`:
+
+```json
+{
+  "NativeAppleTV": {
+    "title": "My Lampac",
+    "public_url": "https://lampac.example.com",
+    "bot_link": "https://t.me/MyBot?start={code}",
+    "bot_secret": "",
+    "methods": ["code_push"],
+    "token_days": 365
+  }
+}
+```
+
+`bot_secret` пуст — маршрут `bot/confirm` закрыт. `bot_link` пуст — QR ведёт на страницу подтверждения.
+
+## Проверка
+
+```sh
+curl -s http://localhost:9118/api/capabilities
+```
+
+Ответ содержит `source.protocol = "luxo-source/1"`. Без токена `/lite/events` отвечает `{"accsdb":true}`.

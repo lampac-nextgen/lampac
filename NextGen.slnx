@@ -57,6 +57,9 @@
   <Folder Name="/Modules/LogUserRequest-Lite/">
     <Project Path="Modules/LogUserRequest-Lite/LogUserRequest.csproj" />
   </Folder>
+  <Folder Name="/Modules/NativeAppleTV/">
+    <Project Path="Modules/NativeAppleTV/NativeAppleTV.csproj" />
+  </Folder>
   <Folder Name="/Modules/OnlineAnime/">
     <Project Path="Modules/OnlineAnime/AiLiberty/AiLiberty.csproj" />
     <Project Path="Modules/OnlineAnime/AniDub/AniDub.csproj" />

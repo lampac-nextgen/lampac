@@ -182,7 +182,9 @@ public class ApiController : BaseController
             // Идентичность для клиента, у которого своей нет: так телефон и приставка попадают
             // в одну область. null там, где accsdb уже раздал каждому свою.
             assignedUid = InstanceIdentity.Assigned,
-            features = ModuleCapabilities.All
+            features = ModuleCapabilities.All,
+            // Как в этот источник входить (Source Connect). null = вход не описан.
+            source = ModuleCapabilities.Source
         });
     }
     #endregion

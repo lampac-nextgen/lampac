@@ -1,0 +1,12 @@
+{
+  "enable": true,
+  "dynamic": true,
+  "tree": [
+    "ModInit.cs",
+    "Models/NativeAppleTVConf.cs",
+    "Services/TokenStore.cs",
+    "Services/ChallengeStore.cs",
+    "Controllers/AuthController.cs",
+    "Controllers/ConfirmController.cs"
+  ]
+}

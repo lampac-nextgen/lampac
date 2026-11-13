@@ -27,4 +27,16 @@ public static class ModuleCapabilities
     }
 
     public static IReadOnlyDictionary<string, int> All => _features;
+
+    static volatile object _source;
+
+    /// <summary>
+    /// Описание входа для нативных клиентов (Source Connect, <c>luxo-source/1</c>): отдаётся в
+    /// <c>/api/capabilities</c> под ключом <c>source</c>. Заполняет модуль, который выдаёт токены.
+    /// </summary>
+    public static object Source => _source;
+
+    public static void SetSource(object manifest) => _source = manifest;
+
+    public static void RemoveSource() => _source = null;
 }
