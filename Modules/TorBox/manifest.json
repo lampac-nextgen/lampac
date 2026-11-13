@@ -1,0 +1,15 @@
+{
+  "enable": false,
+  "dynamic": true,
+  "tree": [
+    "Controller.cs",
+    "ModInit.cs",
+    "Online.cs",
+    "Series.cs",
+    "External.cs",
+    "Infuse.cs",
+    "Inventory.cs",
+    "Delete.cs",
+    "Airlock.cs"
+  ]
+}
