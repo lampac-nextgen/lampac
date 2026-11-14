@@ -491,7 +491,7 @@ public class PiTor : BaseOnlineController
         string magnet = $"magnet:?xt=urn:btih:{id}&" + Regex.Replace(HttpContext.Request.QueryString.Value.Remove(0, 1), "&(account_email|uid|token|nws_id|tsid)=[^&]+", "").Replace("&.m3u8", "");
 
         #region auth_stream
-        async Task<ActionResult> auth_stream(string host, string login, string passwd, bool aes, string uhost = null, Dictionary<string, string> addheaders = null)
+        async Task<ActionResult> auth_stream(string host, string login, string passwd, bool aes, string uhost = null, Dictionary<string, string> addheaders = null, bool ownServer = false)
         {
             if (aes)
             {
@@ -547,12 +547,23 @@ public class PiTor : BaseOnlineController
                 return Redirect($"{uhost ?? host}/{payload}");
             }
 
-            if (ModInit.conf.gst)
-                return Redirect($"{uhost ?? host}/gst/{hash}/master.m3u8?index={index}");
-
-            return Redirect($"{uhost ?? host}/stream?link={hash}&index={index}&play");
+            string media = ModInit.conf.gst
+                ? $"{uhost ?? host}/gst/{hash}/master.m3u8?index={index}"
+                : $"{uhost ?? host}/stream?link={hash}&index={index}&play";
+            return Redirect(ownServer ? ownMedia(media) : media);
         }
         #endregion
+
+        string ownMedia(string uri)
+        {
+            var user = requestInfo.user;
+            if (!CoreInit.conf.accsdb.enable || user == null)
+                return uri;
+
+            bool Matches(string id) => !string.IsNullOrWhiteSpace(id) && ReferenceEquals(CoreInit.conf.accsdb.findUser(id), user);
+            string identity = Matches(user.id) ? user.id : user.ids?.FirstOrDefault(Matches);
+            return string.IsNullOrEmpty(identity) ? uri : uri + "&uid=" + Uri.EscapeDataString(identity);
+        }
 
         if ((init.torrs == null || init.torrs.Length == 0) && (init.auth_torrs == null || init.auth_torrs.Count == 0))
         {
@@ -561,13 +572,13 @@ public class PiTor : BaseOnlineController
                 string accs = System.IO.File.ReadAllText("data/ts/accs.db");
                 string passwd = Regex.Match(accs, "\"ts\":\"([^\"]+)\"").Groups[1].Value;
 
-                return await auth_stream($"http://{CoreInit.conf.listen.localhost}:{ModInit.tsport}", "ts", passwd, false, uhost: $"{host}/ts");
+                return await auth_stream($"http://{CoreInit.conf.listen.localhost}:{ModInit.tsport}", "ts", passwd, false, uhost: $"{host}/ts", ownServer: true);
             }
 
             if (ModInit.conf.gst)
-                return Redirect($"{host}/ts/gst/{id}/master.m3u8?index={index}");
+                return Redirect(ownMedia($"{host}/ts/gst/{id}/master.m3u8?index={index}"));
 
-            return Redirect($"{host}/ts/stream?link={HttpUtility.UrlEncode(magnet)}&index={index}&play");
+            return Redirect(ownMedia($"{host}/ts/stream?link={HttpUtility.UrlEncode(magnet)}&index={index}&play"));
         }
 
         if (init.auth_torrs?.FirstOrDefault(i => i.enable) != null)

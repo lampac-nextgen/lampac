@@ -54,7 +54,8 @@ public class TorrServerController : BaseController
             .Replace("{localhost}", host)
             .Replace("{token}", token ?? string.Empty)
             .Replace("{tshost}", Regex.Replace(host, "^https?://", ""))
-            .Replace("{defaultPasswd}", ModInit.conf.defaultPasswd);
+            .Replace("{defaultPasswd}", ModInit.conf.defaultPasswd)
+            .Replace("{accsdb}", CoreInit.conf.accsdb.enable ? "true" : "false");
 
         return ContentTo(plugins, "application/javascript; charset=utf-8");
     }
@@ -105,7 +106,7 @@ public class TorrServerController : BaseController
 
     #region Bypass
     [AllowAnonymous]
-    [HttpGet, HttpPost]
+    [HttpGet, HttpPost, HttpHead]
     [Route("ts/echo")]
     [Route("ts/gst/echo")]
     [Route("ts/site.webmanifest")]
@@ -115,70 +116,43 @@ public class TorrServerController : BaseController
     [Route("ts/ffp/{suffix}")]
     public Task Bypass()
     {
-        return TorAPI();
+        string path = HttpContext.Request.Path.Value;
+        return path == "/ts/echo" || path == "/ts/gst/echo" || path == "/ts/site.webmanifest"
+            ? TorAPI() : Index();
     }
     #endregion
 
     #region TorAPI
     [AllowAnonymous]
-    [HttpGet, HttpPost]
+    [HttpGet, HttpPost, HttpHead, HttpOptions]
     [Route("ts/{*suffix}")]
     async public Task Index()
     {
-        string path = HttpContext.Request.Path.Value;
-
-        if (CoreInit.conf.accsdb.enable)
+        // Preflight carries no user data and never reaches TorrServer.
+        if (HttpMethods.IsOptions(Request.Method))
         {
-            bool isStream = Regex.IsMatch(path, "^/ts/(stream|playlist|play/|download/|gst/)", RegexOptions.IgnoreCase);
-
-            if (HttpContext.Request.Method == "GET" && isStream)
-            {
-                await TorAPI().ConfigureAwait(false);
-            }
-            else
-            {
-                #region Access-Control-Request-Headers
-                if (HttpContext.Request.Method == "OPTIONS" && HttpContext.Request.Headers.TryGetValue("Access-Control-Request-Headers", out var AccessControl) && AccessControl == "authorization")
-                {
-                    HttpContext.Response.StatusCode = 204;
-                    return;
-                }
-                #endregion
-
-                if (HttpContext.Request.Headers.TryGetValue("Authorization", out var Authorization))
-                {
-                    byte[] data = Convert.FromBase64String(Authorization.ToString().Replace("Basic ", ""));
-                    string[] decodedString = Encoding.UTF8.GetString(data).Split(":");
-
-                    string login = decodedString[0].ToLowerAndTrim();
-                    string passwd = decodedString[1];
-
-                    if (CoreInit.conf.accsdb.findUser(login) is AccsUser user && !user.ban && user.expires > DateTime.UtcNow && passwd == ModInit.conf.defaultPasswd)
-                    {
-                        if (ModInit.conf.group > user.group)
-                        {
-                            HttpContext.Response.ContentType = "text/plain; charset=utf-8";
-                            HttpContext.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                            HttpContext.Response.BodyWriter.Write("NoAccessGroup"u8);
-                            return;
-                        }
-
-                        await TorAPI(user).ConfigureAwait(false);
-                        return;
-                    }
-                }
-
-                HttpContext.Response.StatusCode = 401;
-                HttpContext.Response.Headers["Www-Authenticate"] = "Basic realm=Authorization Required";
-            }
+            Response.StatusCode = StatusCodes.Status204NoContent;
+            return;
         }
-        else
+
+        if (!CoreInit.conf.accsdb.enable || requestInfo.IsLocalRequest)
         {
             await TorAPI().ConfigureAwait(false);
             return;
         }
+
+        var user = MediaAccess.User(HttpContext);
+        if (user == null)
+        {
+            Response.StatusCode = StatusCodes.Status401Unauthorized;
+            Response.Headers.WWWAuthenticate = "Basic realm=\"Authorization Required\"";
+            return;
+        }
+
+        await TorAPI(user).ConfigureAwait(false);
     }
 
+    [NonAction]
     async public Task TorAPI(AccsUser user = null)
     {
         string rawPath = HttpContext.Request.Path.Value ?? "";
@@ -247,11 +221,17 @@ public class TorrServerController : BaseController
             #endregion
 
             #region playlist
-            if (absPath.StartsWith("/stream/", StringComparison.OrdinalIgnoreCase) && HttpContext.Request.QueryString.Value.Contains("&m3u"))
+            if (absPath.StartsWith("/stream/", StringComparison.OrdinalIgnoreCase) && HttpContext.Request.Query.ContainsKey("m3u"))
             {
-                string m3u = await httpClient.GetStringAsync(servUri, ctsHttp.Token).ConfigureAwait(false);
-                HttpContext.Response.ContentType = "audio/x-mpegurl; charset=utf-8";
-                await HttpContext.Response.WriteAsync((m3u ?? string.Empty).Replace("/stream/", "/ts/stream/"), ctsHttp.Token).ConfigureAwait(false);
+                using var playlistResponse = await httpClient.GetAsync(servUri, ctsHttp.Token).ConfigureAwait(false);
+                if (playlistResponse.IsSuccessStatusCode)
+                {
+                    string m3u = await playlistResponse.Content.ReadAsStringAsync(ctsHttp.Token).ConfigureAwait(false);
+                    playlistResponse.Content = new StringContent(
+                        MediaAccess.Playlist(m3u, playlistResponse.RequestMessage.RequestUri, new Uri(host + "/ts/"), user),
+                        Encoding.UTF8, "audio/x-mpegurl");
+                }
+                await CopyProxyHttpResponse(HttpContext, playlistResponse, user).ConfigureAwait(false);
                 return;
             }
             #endregion
@@ -273,13 +253,13 @@ public class TorrServerController : BaseController
                         {
                             string body = await gstResponse.Content.ReadAsStringAsync(ctsGst.Token).ConfigureAwait(false);
                             gstResponse.Content = new StringContent(
-                                (body ?? string.Empty).Replace("/gst/", "/ts/gst/"),
+                                MediaAccess.Playlist(body, gstResponse.RequestMessage.RequestUri, new Uri(host + "/ts/"), user),
                                 Encoding.UTF8,
                                 "application/vnd.apple.mpegurl"
                             );
                         }
 
-                        await CopyProxyHttpResponse(HttpContext, gstResponse).ConfigureAwait(false);
+                        await CopyProxyHttpResponse(HttpContext, gstResponse, user).ConfigureAwait(false);
                     }
                     catch (System.Exception ex)
                     {
@@ -295,7 +275,17 @@ public class TorrServerController : BaseController
         var request = CreateProxyHttpRequest(HttpContext, new Uri(servUri));
 
         var response = await httpClient.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, HttpContext.RequestAborted).ConfigureAwait(false);
-        await CopyProxyHttpResponse(HttpContext, response).ConfigureAwait(false);
+        string mediaType = response.Content?.Headers.ContentType?.MediaType;
+        if (HttpMethods.IsGet(Request.Method) && response.StatusCode == HttpStatusCode.OK
+            && (mediaType == "application/vnd.apple.mpegurl" || mediaType == "application/x-mpegurl"
+                || mediaType == "audio/mpegurl" || mediaType == "audio/x-mpegurl"))
+        {
+            string body = await response.Content.ReadAsStringAsync(HttpContext.RequestAborted).ConfigureAwait(false);
+            response.Content = new StringContent(
+                MediaAccess.Playlist(body, response.RequestMessage.RequestUri, new Uri(host + "/ts/"), user),
+                Encoding.UTF8, mediaType);
+        }
+        await CopyProxyHttpResponse(HttpContext, response, user).ConfigureAwait(false);
     }
     #endregion
 
@@ -345,7 +335,7 @@ public class TorrServerController : BaseController
         "content-disposition"
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
-    async Task CopyProxyHttpResponse(HttpContext context, HttpResponseMessage responseMessage)
+    async Task CopyProxyHttpResponse(HttpContext context, HttpResponseMessage responseMessage, AccsUser user = null)
     {
         var response = context.Response;
         response.StatusCode = (int)responseMessage.StatusCode;
@@ -386,9 +376,15 @@ public class TorrServerController : BaseController
         if (responseMessage.Headers.NonValidated.TryGetValues("Location", out var location))
         {
             string path = location.ToString();
-            if (path.StartsWith('/') && !path.StartsWith("//"))
+            string media = MediaAccess.Url(path, responseMessage.RequestMessage.RequestUri, new Uri(host + "/ts/"), user);
+            if (media != path)
+                response.Headers.Location = media;
+            else if (path.StartsWith('/') && !path.StartsWith("//") && !path.StartsWith("/ts/", StringComparison.OrdinalIgnoreCase))
                 response.Headers.Location = "/ts" + path;
         }
+
+        if (user != null)
+            response.Headers.CacheControl = "private, no-store";
 
         await using (var responseStream = await responseMessage.Content.ReadAsStreamAsync(context.RequestAborted).ConfigureAwait(false))
         {
