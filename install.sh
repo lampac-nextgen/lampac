@@ -22,6 +22,8 @@ readonly GITHUB_REPO="${LAMPAC_GITHUB_REPO:-lampac-nextgen/lampac}"
 readonly RELEASE_ZIP_NAME="lampac-nextgen.zip"
 readonly DOTNET_INSTALL_DIR="${LAMPAC_DOTNET_ROOT:-/usr/share/dotnet}"
 readonly DOTNET_CHANNEL="${LAMPAC_DOTNET_CHANNEL:-10.0}"
+readonly CURL_IMPERSONATE_VERSION="${LAMPAC_CURL_IMPERSONATE_VERSION:-2.3.2}"
+readonly CURL_IMPERSONATE_LIB_VERSION="${LAMPAC_CURL_IMPERSONATE_LIB_VERSION:-4.8.0}"
 readonly LISTEN_PORT="${LAMPAC_PORT:-9118}"
 # Имя скрипта — исключается из синхронизации при обновлении
 readonly UPDATE_SCRIPT_NAME="install.sh"
@@ -755,6 +757,9 @@ build_rsync_excludes() {
     "logs/"
     "cache/"
 
+    # Нативная библиотека TLS-клиента для Aladin (скачивается установщиком)
+    "native/"
+
     # TorrServer — бинарь и состояние управляются отдельно
     "TorrServer"
     "torrserver/"
@@ -869,6 +874,55 @@ install_app() {
   save_installed_version "$release_version"
 }
 
+# Native TLS/HTTP2 client used by the Aladin module. The library is pinned to
+# the same libcurl-impersonate build the Docker image uses; a failed download is
+# not fatal and the module reports that native mode is unavailable.
+install_aladin_native() {
+  local arch asset
+  arch="$(uname -m)"
+
+  case "$arch" in
+    x86_64|amd64)  asset="libcurl-impersonate-v${CURL_IMPERSONATE_VERSION}.x86_64-linux-gnu.tar.gz" ;;
+    aarch64|arm64) asset="libcurl-impersonate-v${CURL_IMPERSONATE_VERSION}.aarch64-linux-gnu.tar.gz" ;;
+    *)
+      log_warn "Unsupported architecture ${arch} — Aladin native mode is unavailable"
+      return 0
+      ;;
+  esac
+
+  local native_dir="${INSTALL_ROOT}/native"
+  local native_lib="${native_dir}/libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}"
+  local version_file="${native_dir}/libcurl-impersonate.version"
+
+  if [[ -f "$native_lib" && -f "$version_file" && "$(cat "$version_file")" == "$CURL_IMPERSONATE_VERSION" ]]; then
+    log_skip "Aladin native library ${CURL_IMPERSONATE_VERSION} already installed"
+    return 0
+  fi
+
+  mkdir -p "$native_dir"
+
+  local tmp_dir
+  tmp_dir="$(mktemp -d /tmp/lampac-curl-impersonate.XXXXXX)"
+  CLEANUP_PATHS+=("$tmp_dir")
+
+  local url="https://github.com/lexiforest/curl-impersonate/releases/download/v${CURL_IMPERSONATE_VERSION}/${asset}"
+  if curl -fSL --retry 3 --connect-timeout 15 --max-time 300 -o "${tmp_dir}/lib.tar.gz" "$url" \
+      && tar -xzf "${tmp_dir}/lib.tar.gz" -C "$tmp_dir" "libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}"; then
+    install -m 0644 "${tmp_dir}/libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}" "$native_lib"
+    ln -sfn "libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}" "${native_dir}/libcurl-impersonate.so.4"
+    printf '%s' "$CURL_IMPERSONATE_VERSION" > "$version_file"
+    chmod 0644 "$version_file"
+
+    if id -u "$LAMPAC_USER" >/dev/null 2>&1; then
+      chown -R "$LAMPAC_USER:$LAMPAC_USER" "$native_dir"
+    fi
+
+    log_ok "Aladin native library ${CURL_IMPERSONATE_VERSION} installed"
+  else
+    log_warn "Could not download the Aladin native library; native mode is unavailable"
+  fi
+}
+
 # ─── Update ──────────────────────────────────────────────────────────────────
 
 # Best-effort restart if --update stopped the service and then failed.
@@ -975,6 +1029,8 @@ do_update() {
   set_install_ownership
 
   save_installed_version "$new_version"
+
+  install_aladin_native
 
   spinner_start "Starting ${SERVICE_NAME}..."
   systemctl start "$SERVICE_NAME"
@@ -1183,6 +1239,7 @@ main() {
 
   step 4 "$total_steps" "Application"
   install_app "$release_version"
+  install_aladin_native
   install_systemd_unit
   set_install_ownership
   start_service

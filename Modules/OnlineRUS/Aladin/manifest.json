@@ -3,11 +3,13 @@
   "dynamic": true,
   "tree": [
     "AladinBorth.cs",
-    "AladinGuard.cs",
-    "AladinWsSession.cs",
+    "AladinBrowser.cs",
+    "AladinHls.cs",
+    "AladinNative.cs",
     "Controller.cs",
     "Model.cs",
     "ModInit.cs",
-    "ModuleConf.cs"
+    "ModuleConf.cs",
+    "CurlClient.cs"
   ]
 }
