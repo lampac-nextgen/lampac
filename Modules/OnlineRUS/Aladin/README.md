@@ -88,6 +88,10 @@
 `ALADIN_CURL_LIBRARY` (или `nativeLibrary`). Без библиотеки native-резолв не
 запустится, в лог пишется предупреждение.
 
+Рядом лежит `native/libaladin_curl_shim.so` — небольшой C-шим для variadic
+`curl_easy_setopt`; Docker и установщик собирают его под текущую архитектуру.
+Без шима native-резолв также не запустится.
+
 `libcurl-impersonate` — обычная C-библиотека без Go runtime и его обработчиков
 сигналов, поэтому она работает в одном процессе с Chrome/Playwright.
 Профиль `chrome_133` отображается на `chrome133a`.

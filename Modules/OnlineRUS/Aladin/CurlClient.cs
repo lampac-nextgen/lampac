@@ -24,6 +24,7 @@ internal static class CurlClient
     static readonly ConcurrentDictionary<string, ConcurrentDictionary<string, string>> _cookieJars = new();
 
     static Api _api;
+    static IntPtr _shimHandle;
     static string _loadError;
 
     // libcurl keeps these pointers after the setopt call, so the delegates
@@ -32,6 +33,8 @@ internal static class CurlClient
     static readonly CurlHeaderFn _headerCallback = HeaderCallback;
 
     public static string Profile { get; set; } = DefaultProfile;
+
+    // Opt-in only: no ModuleConf/ModInit path sets this; it stays false.
     public static bool InsecureSkipVerify { get; set; }
 
     public static bool IsAvailable
@@ -58,9 +61,18 @@ internal static class CurlClient
                 return false;
             }
 
+            string shimPath = ResolveShimPath(path);
+            if (shimPath == null)
+            {
+                _loadError = "native curl shim library not found";
+                return false;
+            }
+
             try
             {
                 var handle = NativeLibrary.Load(path);
+                var shimHandle = NativeLibrary.Load(shimPath);
+                _shimHandle = shimHandle;
                 var api = new Api
                 {
                     GlobalInit = Bind<GlobalInitFn>(handle, "curl_global_init"),
@@ -71,13 +83,10 @@ internal static class CurlClient
                     EasyStrError = Bind<EasyStrErrorFn>(handle, "curl_easy_strerror"),
                     SlistAppend = Bind<SlistAppendFn>(handle, "curl_slist_append"),
                     SlistFreeAll = Bind<SlistFreeAllFn>(handle, "curl_slist_free_all"),
-                    SetOptLong = Bind<SetOptLongFn>(handle, "curl_easy_setopt"),
-                    SetOptString = Bind<SetOptStringFn>(handle, "curl_easy_setopt"),
-                    SetOptPtr = Bind<SetOptPtrFn>(handle, "curl_easy_setopt"),
-                    SetOptWrite = Bind<SetOptWriteFn>(handle, "curl_easy_setopt"),
-                    SetOptHeader = Bind<SetOptHeaderFn>(handle, "curl_easy_setopt"),
-                    GetInfoLong = Bind<GetInfoLongFn>(handle, "curl_easy_getinfo"),
-                    GetInfoString = Bind<GetInfoStringFn>(handle, "curl_easy_getinfo"),
+                    SetOpt = NativeLibrary.GetExport(handle, "curl_easy_setopt"),
+                    SetOptLong = Bind<ShimSetOptLongFn>(shimHandle, "aladin_curl_setopt_long"),
+                    SetOptPtr = Bind<ShimSetOptPtrFn>(shimHandle, "aladin_curl_setopt_ptr"),
+                    SetOptString = Bind<ShimSetOptStringFn>(shimHandle, "aladin_curl_setopt_string"),
                     WsSend = Bind<WsSendFn>(handle, "curl_ws_send"),
                     WsRecv = Bind<WsRecvFn>(handle, "curl_ws_recv")
                 };
@@ -133,6 +142,39 @@ internal static class CurlClient
         return null;
     }
 
+    static string ResolveShimPath(string curlPath)
+    {
+        string env = Environment.GetEnvironmentVariable("ALADIN_CURL_SHIM_LIBRARY");
+        if (!string.IsNullOrWhiteSpace(env) && File.Exists(env))
+            return env;
+
+        string[] names = OperatingSystem.IsMacOS()
+            ? ["libaladin_curl_shim.dylib"]
+            : ["libaladin_curl_shim.so"];
+
+        string baseDir = AppContext.BaseDirectory;
+        var candidates = new List<string>();
+        string curlDir = string.IsNullOrEmpty(curlPath) ? null : Path.GetDirectoryName(curlPath);
+        if (!string.IsNullOrEmpty(curlDir))
+            candidates.Add(curlDir);
+        candidates.Add(Path.Combine(baseDir, "native"));
+        candidates.Add(baseDir);
+        candidates.Add(Path.Combine(baseDir, "module", "Aladin"));
+        candidates.Add(Path.Combine(baseDir, "module", "Aladin", "native"));
+
+        foreach (string directory in candidates)
+        {
+            foreach (string name in names)
+            {
+                string candidate = Path.Combine(directory, name);
+                if (File.Exists(candidate))
+                    return candidate;
+            }
+        }
+
+        return null;
+    }
+
     public static CurlResponse Request(CurlRequest request)
     {
         var api = EnsureApi();
@@ -160,41 +202,42 @@ internal static class CurlClient
             string body = request.RequestBody ?? "";
             string method = (request.RequestMethod ?? "GET").ToUpperInvariant();
             string url = request.RequestUrl;
+            exchange.EffectiveUrl = url;
 
-            api.SetOptString(easy, CurlUrl, url);
-            api.SetOptLong(easy, CurlHttpVersion, 3); // HTTP/2
-            api.SetOptLong(easy, CurlFollowLocation, request.FollowRedirects == false ? 0 : 1);
-            api.SetOptLong(easy, CurlMaxRedirs, 10);
-            api.SetOptLong(easy, CurlNosignal, 1);
-            api.SetOptLong(easy, CurlTimeoutMs, Math.Max(1000, request.TimeoutMilliseconds));
-            api.SetOptLong(easy, CurlConnectTimeoutMs, Math.Max(1000, request.TimeoutMilliseconds));
-            api.SetOptString(easy, CurlAcceptEncoding, "gzip, deflate, br, zstd");
+            SetOptString(api, easy, CurlUrl, url);
+            SetOptLong(api, easy, CurlHttpVersion, 3); // HTTP/2
+            SetOptLong(api, easy, CurlFollowLocation, request.FollowRedirects == false ? 0 : 1);
+            SetOptLong(api, easy, CurlMaxRedirs, 10);
+            SetOptLong(api, easy, CurlNosignal, 1);
+            SetOptLong(api, easy, CurlTimeoutMs, Math.Max(1000, request.TimeoutMilliseconds));
+            SetOptLong(api, easy, CurlConnectTimeoutMs, Math.Max(1000, request.TimeoutMilliseconds));
+            SetOptString(api, easy, CurlAcceptEncoding, "gzip, deflate, br, zstd");
 
             if (request.InsecureSkipVerify || InsecureSkipVerify)
             {
-                api.SetOptLong(easy, CurlSslVerifyPeer, 0);
-                api.SetOptLong(easy, CurlSslVerifyHost, 0);
+                SetOptLong(api, easy, CurlSslVerifyPeer, 0);
+                SetOptLong(api, easy, CurlSslVerifyHost, 0);
             }
 
             if (!string.IsNullOrWhiteSpace(request.ProxyUrl))
-                api.SetOptString(easy, CurlProxy, request.ProxyUrl);
+                SetOptString(api, easy, CurlProxy, request.ProxyUrl);
 
             headers = BuildHeaderList(api, request, easy);
-            api.SetOptPtr(easy, CurlHttpHeader, headers);
-            api.SetOptPtr(easy, CurlWriteData, easy);
-            api.SetOptPtr(easy, CurlHeaderData, easy);
-            api.SetOptWrite(easy, CurlWriteFunction, _writeCallback);
-            api.SetOptHeader(easy, CurlHeaderFunction, _headerCallback);
+            SetOptPtr(api, easy, CurlHttpHeader, headers);
+            SetOptPtr(api, easy, CurlWriteData, easy);
+            SetOptPtr(api, easy, CurlHeaderData, easy);
+            SetOptWrite(api, easy, CurlWriteFunction, _writeCallback);
+            SetOptHeader(api, easy, CurlHeaderFunction, _headerCallback);
 
             if (method == "POST")
             {
-                api.SetOptLong(easy, CurlPost, 1);
-                api.SetOptLong(easy, CurlPostFieldSize, Encoding.UTF8.GetByteCount(body));
-                api.SetOptString(easy, CurlCopyPostFields, body);
+                SetOptLong(api, easy, CurlPost, 1);
+                SetOptLong(api, easy, CurlPostFieldSize, Encoding.UTF8.GetByteCount(body));
+                SetOptString(api, easy, CurlCopyPostFields, body);
             }
             else if (method != "GET")
             {
-                api.SetOptString(easy, CurlCustomRequest, method);
+                SetOptString(api, easy, CurlCustomRequest, method);
             }
 
             int impersonate = api.EasyImpersonate(easy, CurlTarget(request.Profile), 0);
@@ -204,13 +247,13 @@ internal static class CurlClient
             int rc = api.EasyPerform(easy);
             var response = new CurlResponse
             {
-                Status = 0,
+                Status = exchange.Status,
                 Body = "",
                 SessionId = request.SessionId,
                 Headers = exchange.ToHeaders(),
                 Cookies = exchange.ToCookieMap(),
-                Target = ReadEffectiveUrl(api, easy) ?? url,
-                UsedProtocol = ReadProtocol(api, easy)
+                Target = exchange.EffectiveUrl ?? url,
+                UsedProtocol = exchange.Protocol
             };
 
             if (rc != 0)
@@ -219,7 +262,6 @@ internal static class CurlClient
                 return response;
             }
 
-            response.Status = (int)ReadLong(api, easy, CurlInfoResponseCode);
             UpdateCookieJar(request.SessionId, exchange.SetCookies);
             response.Cookies = exchange.ToCookieMap();
 
@@ -348,21 +390,21 @@ internal static class CurlClient
         IntPtr headers = IntPtr.Zero;
         try
         {
-            api.SetOptString(easy, CurlUrl, request.Url);
-            api.SetOptLong(easy, CurlConnectOnly, 2);
-            api.SetOptLong(easy, CurlHttpVersion, 2); // WebSocket handshake is HTTP/1.1
-            api.SetOptLong(easy, CurlWsOptions, CurlWsPermessageDeflate);
-            api.SetOptLong(easy, CurlNosignal, 1);
-            api.SetOptLong(easy, CurlConnectTimeoutMs, Math.Max(1000, request.HandshakeTimeoutMilliseconds));
+            SetOptString(api, easy, CurlUrl, request.Url);
+            SetOptLong(api, easy, CurlConnectOnly, 2);
+            SetOptLong(api, easy, CurlHttpVersion, 2); // WebSocket handshake is HTTP/1.1
+            SetOptLong(api, easy, CurlWsOptions, CurlWsPermessageDeflate);
+            SetOptLong(api, easy, CurlNosignal, 1);
+            SetOptLong(api, easy, CurlConnectTimeoutMs, Math.Max(1000, request.HandshakeTimeoutMilliseconds));
 
             if (request.InsecureSkipVerify || InsecureSkipVerify)
             {
-                api.SetOptLong(easy, CurlSslVerifyPeer, 0);
-                api.SetOptLong(easy, CurlSslVerifyHost, 0);
+                SetOptLong(api, easy, CurlSslVerifyPeer, 0);
+                SetOptLong(api, easy, CurlSslVerifyHost, 0);
             }
 
             if (!string.IsNullOrWhiteSpace(request.ProxyUrl))
-                api.SetOptString(easy, CurlProxy, request.ProxyUrl);
+                SetOptString(api, easy, CurlProxy, request.ProxyUrl);
 
             var values = request.Headers ?? new Dictionary<string, string>();
             var added = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -384,7 +426,7 @@ internal static class CurlClient
             }
 
             headers = list;
-            api.SetOptPtr(easy, CurlHttpHeader, headers);
+            SetOptPtr(api, easy, CurlHttpHeader, headers);
 
             int impersonate = api.EasyImpersonate(easy, target, 0);
             if (impersonate != 0)
@@ -408,6 +450,35 @@ internal static class CurlClient
         }
     }
 
+    // curl_easy_setopt is variadic; C# cannot call it safely through a fixed
+    // delegate on every architecture. The tiny native shim calls it with the
+    // correctly typed argument, so managed code never invokes a variadic
+    // function itself.
+    static void SetOptLong(Api api, IntPtr easy, int option, long value)
+        => api.SetOptLong(api.SetOpt, easy, option, value);
+
+    static void SetOptString(Api api, IntPtr easy, int option, string value)
+    {
+        IntPtr ptr = Marshal.StringToCoTaskMemUTF8(value ?? "");
+        try
+        {
+            api.SetOptString(api.SetOpt, easy, option, ptr);
+        }
+        finally
+        {
+            Marshal.FreeCoTaskMem(ptr);
+        }
+    }
+
+    static void SetOptPtr(Api api, IntPtr easy, int option, IntPtr value)
+        => api.SetOptPtr(api.SetOpt, easy, option, value);
+
+    static void SetOptWrite(Api api, IntPtr easy, int option, CurlWriteFn callback)
+        => api.SetOptPtr(api.SetOpt, easy, option, Marshal.GetFunctionPointerForDelegate(callback));
+
+    static void SetOptHeader(Api api, IntPtr easy, int option, CurlHeaderFn callback)
+        => api.SetOptPtr(api.SetOpt, easy, option, Marshal.GetFunctionPointerForDelegate(callback));
+
     static Api EnsureApi()
     {
         lock (_sync)
@@ -421,25 +492,6 @@ internal static class CurlClient
 
         lock (_sync)
             return _api;
-    }
-
-    static long ReadLong(Api api, IntPtr easy, int info)
-    {
-        long value = 0;
-        api.GetInfoLong(easy, info, out value);
-        return value;
-    }
-
-    static string ReadEffectiveUrl(Api api, IntPtr easy)
-    {
-        api.GetInfoString(easy, CurlInfoEffectiveUrl, out IntPtr value);
-        return value == IntPtr.Zero ? null : Marshal.PtrToStringUTF8(value);
-    }
-
-    static string ReadProtocol(Api api, IntPtr easy)
-    {
-        long version = ReadLong(api, easy, CurlInfoHttpVersion);
-        return version >= 3 ? "HTTP/2.0" : "HTTP/1.1";
     }
 
     static string CurlTarget(string profile)
@@ -484,6 +536,18 @@ internal static class CurlClient
             return (UIntPtr)(ulong)length;
 
         string line = Marshal.PtrToStringUTF8(ptr, length);
+        if (line.StartsWith("HTTP/", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            if (parts.Length >= 2 && int.TryParse(parts[1], out int status))
+            {
+                exchange.Status = status;
+                exchange.Protocol = parts[0];
+            }
+
+            return (UIntPtr)(ulong)length;
+        }
+
         int colon = line.IndexOf(':');
         if (colon > 0)
         {
@@ -494,6 +558,18 @@ internal static class CurlClient
                 exchange.Headers[name] = value;
                 if (name.Equals("set-cookie", StringComparison.OrdinalIgnoreCase))
                     exchange.SetCookies.Add(value);
+                else if (name.Equals("location", StringComparison.OrdinalIgnoreCase) &&
+                         !string.IsNullOrWhiteSpace(value))
+                {
+                    try
+                    {
+                        exchange.EffectiveUrl = new Uri(new Uri(exchange.EffectiveUrl), value).ToString();
+                    }
+                    catch
+                    {
+                        // Keep the previous URL for a malformed Location header.
+                    }
+                }
             }
         }
 
@@ -523,9 +599,6 @@ internal static class CurlClient
     const int CurlWsPermessageDeflate = 1 << 2;
     const int CurlWriteFunction = 20011;
     const int CurlHeaderFunction = 20079;
-    const int CurlInfoEffectiveUrl = 0x100001;
-    const int CurlInfoResponseCode = 0x200002;
-    const int CurlInfoHttpVersion = 0x20002e;
 
     internal const int CurlWsText = 1;
     internal const int CurlWsBinary = 2;
@@ -544,13 +617,10 @@ internal static class CurlClient
         public EasyStrErrorFn EasyStrError;
         public SlistAppendFn SlistAppend;
         public SlistFreeAllFn SlistFreeAll;
-        public SetOptLongFn SetOptLong;
-        public SetOptStringFn SetOptString;
-        public SetOptPtrFn SetOptPtr;
-        public SetOptWriteFn SetOptWrite;
-        public SetOptHeaderFn SetOptHeader;
-        public GetInfoLongFn GetInfoLong;
-        public GetInfoStringFn GetInfoString;
+        public IntPtr SetOpt;
+        public ShimSetOptLongFn SetOptLong;
+        public ShimSetOptPtrFn SetOptPtr;
+        public ShimSetOptStringFn SetOptString;
         public WsSendFn WsSend;
         public WsRecvFn WsRecv;
 
@@ -562,6 +632,9 @@ internal static class CurlClient
     {
         public readonly MemoryStream Body = new();
         public FileStream File;
+        public int Status;
+        public string Protocol = "HTTP/1.1";
+        public string EffectiveUrl;
         public readonly Dictionary<string, string> Headers = new(StringComparer.OrdinalIgnoreCase);
         public readonly List<string> SetCookies = new();
 
@@ -622,31 +695,19 @@ internal delegate IntPtr SlistAppendFn(IntPtr list, [MarshalAs(UnmanagedType.LPU
 internal delegate void SlistFreeAllFn(IntPtr list);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-internal delegate int SetOptLongFn(IntPtr easy, int option, long value);
+internal delegate int ShimSetOptLongFn(IntPtr fn, IntPtr easy, int option, long value);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-internal delegate int SetOptStringFn(IntPtr easy, int option, [MarshalAs(UnmanagedType.LPUTF8Str)] string value);
+internal delegate int ShimSetOptPtrFn(IntPtr fn, IntPtr easy, int option, IntPtr value);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-internal delegate int SetOptPtrFn(IntPtr easy, int option, IntPtr value);
+internal delegate int ShimSetOptStringFn(IntPtr fn, IntPtr easy, int option, IntPtr value);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate UIntPtr CurlWriteFn(IntPtr ptr, UIntPtr size, UIntPtr nmemb, IntPtr userdata);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate UIntPtr CurlHeaderFn(IntPtr ptr, UIntPtr size, UIntPtr nmemb, IntPtr userdata);
-
-[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-internal delegate int SetOptWriteFn(IntPtr easy, int option, CurlWriteFn value);
-
-[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-internal delegate int SetOptHeaderFn(IntPtr easy, int option, CurlHeaderFn value);
-
-[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-internal delegate int GetInfoLongFn(IntPtr easy, int info, out long value);
-
-[UnmanagedFunctionPointer(CallingConvention.Cdecl)]
-internal delegate int GetInfoStringFn(IntPtr easy, int info, out IntPtr value);
 
 [UnmanagedFunctionPointer(CallingConvention.Cdecl)]
 internal delegate int WsSendFn(IntPtr easy, IntPtr buffer, UIntPtr length, out UIntPtr sent, long fragsize, uint flags);
@@ -812,17 +873,8 @@ internal sealed class CurlWebSocket : IDisposable
 
         _closed = true;
 
-        try
-        {
-            long socket = 0;
-            if (_api.GetInfoLong(_easy, 0x50002c, out socket) == 0 && socket > 0)
-                Shutdown((int)socket, 2);
-        }
-        catch
-        {
-            // Best effort: closing the socket is only needed to wake curl_ws_recv.
-        }
-
+        // ReadLoop uses non-blocking curl_ws_recv with a short sleep, so it
+        // notices _closed without querying the active socket.
         if (_readerDone.Wait(2000))
         {
             _queue.CompleteAdding();
@@ -830,14 +882,6 @@ internal sealed class CurlWebSocket : IDisposable
             try { Marshal.FreeHGlobal(_buffer); } catch { }
             _readerDone.Dispose();
         }
-    }
-
-    [DllImport("libc", SetLastError = false)]
-    static extern int shutdown(int socket, int how);
-
-    static void Shutdown(int socket, int how)
-    {
-        try { shutdown(socket, how); } catch { }
     }
 }
 

@@ -34,9 +34,13 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
+    gcc \
     git \
+    libc6-dev \
     libicu76 \
     xz-utils \
+    && if [ "$TARGETARCH" = "arm64" ] && [ "$BUILDARCH" != "arm64" ]; then apt-get install -y --no-install-recommends gcc-aarch64-linux-gnu libc6-dev-arm64-cross; fi \
+    && if [ "$TARGETARCH" = "amd64" ] && [ "$BUILDARCH" != "amd64" ]; then apt-get install -y --no-install-recommends gcc-x86-64-linux-gnu libc6-dev-amd64-cross; fi \
     && rm -rf /var/lib/apt/lists/*
 
 RUN case "$BUILDARCH" in \
@@ -68,21 +72,29 @@ RUN case "$BUILDARCH" in \
     && rm /tmp/dotnet-sdk.tar.gz \
     # Build the application
     && DOTNET_CLI_TELEMETRY_OPTOUT=1 /out/usr/share/dotnet/dotnet publish --configuration Release --runtime "$RID" --output /out/lampac -p:PlaywrightPlatform="$RID" -p:LAMPAC_VERSION="$LAMPAC_VERSION" -p:SourceRevisionId="$GIT_COMMIT" -p:BuildRef="$GITHUB_REF" -p:GITHUB_SERVER_URL="$GITHUB_SERVER_URL" -p:GITHUB_REPOSITORY="$GITHUB_REPOSITORY" -p:GITHUB_REF="$GITHUB_REF" -p:GITHUB_RUN_ID="$GITHUB_RUN_ID" Core/Core.csproj \
-    # Native TLS/HTTP2 client for the Aladin provider
+    # Native TLS/HTTP2 client for the Aladin provider. The archive is verified
+    # before unpacking because the library is loaded into the Lampac process.
     && mkdir -p /out/lampac/native \
     && case "$TARGETARCH" in \
-    arm64) CURL_IMPERSONATE_ARCH="aarch64-linux-gnu" \
+    arm64) CURL_IMPERSONATE_ARCH="aarch64-linux-gnu" CURL_IMPERSONATE_SHA256="1cb74a3b5103df020c252f9efef5a779c87380ee6244b365a90a0e4f7086864e" \
     ;; \
-    amd64) CURL_IMPERSONATE_ARCH="x86_64-linux-gnu" \
+    amd64) CURL_IMPERSONATE_ARCH="x86_64-linux-gnu" CURL_IMPERSONATE_SHA256="7716be1ec87f13ecc776c211003bd1122c345287829b1f18a494a5467c90ab1e" \
     ;; \
     *) echo "Unsupported TARGETARCH: $TARGETARCH" && exit 1 ;; \
     esac \
     && curl -fSL --retry 3 --max-time 300 -o /tmp/curl-impersonate.tar.gz "https://github.com/lexiforest/curl-impersonate/releases/download/v${CURL_IMPERSONATE_VERSION}/libcurl-impersonate-v${CURL_IMPERSONATE_VERSION}.${CURL_IMPERSONATE_ARCH}.tar.gz" \
+    && echo "${CURL_IMPERSONATE_SHA256}  /tmp/curl-impersonate.tar.gz" | sha256sum -c - \
     && tar -xzf /tmp/curl-impersonate.tar.gz -C /tmp "libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}" \
     && mv "/tmp/libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}" /out/lampac/native/ \
     && chmod 0644 "/out/lampac/native/libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}" \
     && ln -sf "libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}" /out/lampac/native/libcurl-impersonate.so.4 \
     && rm -f /tmp/curl-impersonate.tar.gz \
+    # Non-variadic C shim for curl_easy_setopt (variadic calls are unsafe via P/Invoke on arm64)
+    && SHIM_CC="gcc" \
+    && if [ "$TARGETARCH" = "arm64" ] && [ "$BUILDARCH" != "arm64" ]; then SHIM_CC="aarch64-linux-gnu-gcc"; fi \
+    && if [ "$TARGETARCH" = "amd64" ] && [ "$BUILDARCH" != "amd64" ]; then SHIM_CC="x86_64-linux-gnu-gcc"; fi \
+    && "$SHIM_CC" -shared -fPIC -O2 -o /out/lampac/native/libaladin_curl_shim.so /build/Modules/OnlineRUS/Aladin/native/curl_shim.c \
+    && chmod 0644 /out/lampac/native/libaladin_curl_shim.so \
     # Replace SDK with ASP.NET Core runtime for the final image
     && rm -rf /out/usr/share/dotnet \
     && mkdir -p /out/usr/share/dotnet \

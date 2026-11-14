@@ -24,6 +24,9 @@ readonly DOTNET_INSTALL_DIR="${LAMPAC_DOTNET_ROOT:-/usr/share/dotnet}"
 readonly DOTNET_CHANNEL="${LAMPAC_DOTNET_CHANNEL:-10.0}"
 readonly CURL_IMPERSONATE_VERSION="${LAMPAC_CURL_IMPERSONATE_VERSION:-2.3.2}"
 readonly CURL_IMPERSONATE_LIB_VERSION="${LAMPAC_CURL_IMPERSONATE_LIB_VERSION:-4.8.0}"
+# SHA256 of the release archives; verified before unpacking the native library.
+readonly CURL_IMPERSONATE_SHA256_X86_64="7716be1ec87f13ecc776c211003bd1122c345287829b1f18a494a5467c90ab1e"
+readonly CURL_IMPERSONATE_SHA256_AARCH64="1cb74a3b5103df020c252f9efef5a779c87380ee6244b365a90a0e4f7086864e"
 readonly LISTEN_PORT="${LAMPAC_PORT:-9118}"
 # Имя скрипта — исключается из синхронизации при обновлении
 readonly UPDATE_SCRIPT_NAME="install.sh"
@@ -874,27 +877,84 @@ install_app() {
   save_installed_version "$release_version"
 }
 
+# Non-variadic C shim for curl_easy_setopt. Managed P/Invoke cannot safely call
+# the variadic libcurl function on every architecture; the shim is built from
+# the module source and loaded next to libcurl-impersonate.
+build_aladin_curl_shim() {
+  local native_dir="$1"
+  local shim_src="${INSTALL_ROOT}/module/OnlineRUS/Aladin/native/curl_shim.c"
+  local shim_lib="${native_dir}/libaladin_curl_shim.so"
+
+  if [[ ! -f "$shim_src" ]]; then
+    shim_src="${INSTALL_ROOT}/native/curl_shim.c"
+  fi
+
+  if [[ ! -f "$shim_src" ]]; then
+    log_warn "Aladin curl shim source not found — native mode is unavailable"
+    return 1
+  fi
+
+  local cc
+  cc="$(command -v cc || command -v gcc || true)"
+  if [[ -z "$cc" ]]; then
+    log_info "Installing C compiler for the Aladin curl shim"
+    if ! env DEBIAN_FRONTEND=noninteractive apt-get update -qq >/dev/null 2>&1 \
+        || ! env DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends gcc libc6-dev >/dev/null 2>&1; then
+      log_warn "Could not install a C compiler — native mode is unavailable"
+      return 1
+    fi
+    cc="$(command -v cc || command -v gcc || true)"
+  fi
+
+  if [[ -z "$cc" ]]; then
+    log_warn "C compiler not found — native mode is unavailable"
+    return 1
+  fi
+
+  if "$cc" -shared -fPIC -O2 -o "${shim_lib}.tmp" "$shim_src"; then
+    mv "${shim_lib}.tmp" "$shim_lib"
+    chmod 0644 "$shim_lib"
+    return 0
+  fi
+
+  rm -f "${shim_lib}.tmp"
+  log_warn "Could not build the Aladin curl shim — native mode is unavailable"
+  return 1
+}
+
 # Native TLS/HTTP2 client used by the Aladin module. The library is pinned to
 # the same libcurl-impersonate build the Docker image uses; a failed download is
 # not fatal and the module reports that native mode is unavailable.
 install_aladin_native() {
-  local arch asset
+  local arch asset sha256
   arch="$(uname -m)"
 
   case "$arch" in
-    x86_64|amd64)  asset="libcurl-impersonate-v${CURL_IMPERSONATE_VERSION}.x86_64-linux-gnu.tar.gz" ;;
-    aarch64|arm64) asset="libcurl-impersonate-v${CURL_IMPERSONATE_VERSION}.aarch64-linux-gnu.tar.gz" ;;
+    x86_64|amd64)
+      asset="libcurl-impersonate-v${CURL_IMPERSONATE_VERSION}.x86_64-linux-gnu.tar.gz"
+      sha256="$CURL_IMPERSONATE_SHA256_X86_64"
+      ;;
+    aarch64|arm64)
+      asset="libcurl-impersonate-v${CURL_IMPERSONATE_VERSION}.aarch64-linux-gnu.tar.gz"
+      sha256="$CURL_IMPERSONATE_SHA256_AARCH64"
+      ;;
     *)
       log_warn "Unsupported architecture ${arch} — Aladin native mode is unavailable"
       return 0
       ;;
   esac
 
+  if ! command -v sha256sum >/dev/null 2>&1; then
+    log_warn "sha256sum is missing — Aladin native mode is unavailable"
+    return 0
+  fi
+
   local native_dir="${INSTALL_ROOT}/native"
   local native_lib="${native_dir}/libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}"
+  local shim_lib="${native_dir}/libaladin_curl_shim.so"
   local version_file="${native_dir}/libcurl-impersonate.version"
 
-  if [[ -f "$native_lib" && -f "$version_file" && "$(cat "$version_file")" == "$CURL_IMPERSONATE_VERSION" ]]; then
+  if [[ -f "$native_lib" && -f "$shim_lib" && -f "$version_file" && "$(cat "$version_file")" == "$CURL_IMPERSONATE_VERSION" ]]; then
     log_skip "Aladin native library ${CURL_IMPERSONATE_VERSION} already installed"
     return 0
   fi
@@ -907,11 +967,14 @@ install_aladin_native() {
 
   local url="https://github.com/lexiforest/curl-impersonate/releases/download/v${CURL_IMPERSONATE_VERSION}/${asset}"
   if curl -fSL --retry 3 --connect-timeout 15 --max-time 300 -o "${tmp_dir}/lib.tar.gz" "$url" \
+      && echo "${sha256}  ${tmp_dir}/lib.tar.gz" | sha256sum -c - >/dev/null \
       && tar -xzf "${tmp_dir}/lib.tar.gz" -C "$tmp_dir" "libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}"; then
     install -m 0644 "${tmp_dir}/libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}" "$native_lib"
     ln -sfn "libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}" "${native_dir}/libcurl-impersonate.so.4"
     printf '%s' "$CURL_IMPERSONATE_VERSION" > "$version_file"
     chmod 0644 "$version_file"
+
+    build_aladin_curl_shim "$native_dir" || true
 
     if id -u "$LAMPAC_USER" >/dev/null 2>&1; then
       chown -R "$LAMPAC_USER:$LAMPAC_USER" "$native_dir"
