@@ -41,7 +41,7 @@ public class AccsConf
     public ConcurrentBag<AccsUser> users { get; set; } = new ConcurrentBag<AccsUser>();
 
 
-    private static IReadOnlyDictionary<string, AccsUser> _searchUsers;
+    private IReadOnlyDictionary<string, AccsUser> _searchUsers;
 
     public void RefreshUsers()
     {

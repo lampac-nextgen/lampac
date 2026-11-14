@@ -46,6 +46,9 @@ namespace TelegramAuth.Controllers
         [Route("/tg/auth/me")]
         public ActionResult Me([FromQuery] string uid)
         {
+            if (!HasMutationAccess())
+                return MutationUnauthorized();
+
             if (string.IsNullOrWhiteSpace(uid))
                 return JsonError(400, "uid is required");
 
@@ -80,7 +83,7 @@ namespace TelegramAuth.Controllers
         [Route("/tg/auth/bind/complete")]
         public ActionResult BindComplete([FromBody] BindCompleteRequest? request)
         {
-            if (HasConfiguredMutationsSecret() && !HasMutationAccess())
+            if (!HasMutationAccess())
                 return MutationUnauthorized();
 
             if (request == null || string.IsNullOrWhiteSpace(request.Uid) || string.IsNullOrWhiteSpace(request.TelegramId))
@@ -120,6 +123,9 @@ namespace TelegramAuth.Controllers
         [Route("/tg/auth/user/by-telegram")]
         public ActionResult UserByTelegram([FromQuery] string telegramId)
         {
+            if (!HasMutationAccess())
+                return MutationUnauthorized();
+
             if (string.IsNullOrWhiteSpace(telegramId))
                 return JsonError(400, "telegramId is required");
 
@@ -337,6 +343,9 @@ namespace TelegramAuth.Controllers
         [Route("/tg/auth/devices")]
         public ActionResult Devices([FromQuery] string telegramId)
         {
+            if (!HasMutationAccess())
+                return MutationUnauthorized();
+
             if (string.IsNullOrWhiteSpace(telegramId))
                 return JsonError(400, "telegramId is required");
 
@@ -357,6 +366,9 @@ namespace TelegramAuth.Controllers
         [Route("/tg/auth/device/unbind")]
         public ActionResult Unbind([FromBody] DeviceUnbindRequest? request)
         {
+            if (!HasMutationAccess())
+                return MutationUnauthorized();
+
             if (request == null || string.IsNullOrWhiteSpace(request.Uid) || string.IsNullOrWhiteSpace(request.TelegramId))
                 return JsonError(400, "telegramId and uid are required");
 
@@ -374,6 +386,9 @@ namespace TelegramAuth.Controllers
         [Route("/tg/auth/device/reactivate")]
         public ActionResult ReactivateDevice([FromBody] DeviceReactivateRequest? request)
         {
+            if (!HasMutationAccess())
+                return MutationUnauthorized();
+
             if (request == null || string.IsNullOrWhiteSpace(request.TelegramId) || string.IsNullOrWhiteSpace(request.Uid))
                 return JsonError(400, "telegramId and uid are required");
 
@@ -457,9 +472,6 @@ namespace TelegramAuth.Controllers
                 return JsonError(500, "import failed", ex.Message);
             }
         }
-
-        bool HasConfiguredMutationsSecret() =>
-            !string.IsNullOrEmpty(ModInit.conf.mutations_api_secret?.Trim());
 
         bool HasMutationAccess()
         {
