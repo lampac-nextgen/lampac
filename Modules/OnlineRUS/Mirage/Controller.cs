@@ -468,7 +468,12 @@ public class MirageController : BaseOnlineController<ModuleConf>
 
         string type = fileName.Contains(".m3u")
             ? "application/vnd.apple.mpegurl"
-            : "video/MP2T";
+            : Path.GetExtension(fileName) switch
+            {
+                ".mp4" => "video/mp4",
+                ".m4s" => "video/iso.segment",
+                _ => "video/MP2T"
+            };
 
         return File(System.IO.File.OpenRead(path), type);
     }
