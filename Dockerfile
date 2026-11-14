@@ -4,6 +4,8 @@
 # Global ARGs
 ARG DOTNET_VERSION=10.0.14
 ARG DOTNET_SDK_VERSION=10.0.403
+ARG CURL_IMPERSONATE_VERSION=2.3.2
+ARG CURL_IMPERSONATE_LIB_VERSION=4.8.0
 
 # Builder image — platform set by buildx
 FROM --platform=$BUILDPLATFORM debian:13-slim AS builder
@@ -12,6 +14,8 @@ ARG BUILDARCH
 ARG TARGETARCH
 ARG DOTNET_VERSION
 ARG DOTNET_SDK_VERSION
+ARG CURL_IMPERSONATE_VERSION
+ARG CURL_IMPERSONATE_LIB_VERSION
 ARG LAMPAC_VERSION=dev
 ARG GIT_COMMIT=
 ARG GITHUB_SERVER_URL
@@ -64,6 +68,21 @@ RUN case "$BUILDARCH" in \
     && rm /tmp/dotnet-sdk.tar.gz \
     # Build the application
     && DOTNET_CLI_TELEMETRY_OPTOUT=1 /out/usr/share/dotnet/dotnet publish --configuration Release --runtime "$RID" --output /out/lampac -p:PlaywrightPlatform="$RID" -p:LAMPAC_VERSION="$LAMPAC_VERSION" -p:SourceRevisionId="$GIT_COMMIT" -p:BuildRef="$GITHUB_REF" -p:GITHUB_SERVER_URL="$GITHUB_SERVER_URL" -p:GITHUB_REPOSITORY="$GITHUB_REPOSITORY" -p:GITHUB_REF="$GITHUB_REF" -p:GITHUB_RUN_ID="$GITHUB_RUN_ID" Core/Core.csproj \
+    # Native TLS/HTTP2 client for the Aladin provider
+    && mkdir -p /out/lampac/native \
+    && case "$TARGETARCH" in \
+    arm64) CURL_IMPERSONATE_ARCH="aarch64-linux-gnu" \
+    ;; \
+    amd64) CURL_IMPERSONATE_ARCH="x86_64-linux-gnu" \
+    ;; \
+    *) echo "Unsupported TARGETARCH: $TARGETARCH" && exit 1 ;; \
+    esac \
+    && curl -fSL --retry 3 --max-time 300 -o /tmp/curl-impersonate.tar.gz "https://github.com/lexiforest/curl-impersonate/releases/download/v${CURL_IMPERSONATE_VERSION}/libcurl-impersonate-v${CURL_IMPERSONATE_VERSION}.${CURL_IMPERSONATE_ARCH}.tar.gz" \
+    && tar -xzf /tmp/curl-impersonate.tar.gz -C /tmp "libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}" \
+    && mv "/tmp/libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}" /out/lampac/native/ \
+    && chmod 0644 "/out/lampac/native/libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}" \
+    && ln -sf "libcurl-impersonate.so.${CURL_IMPERSONATE_LIB_VERSION}" /out/lampac/native/libcurl-impersonate.so.4 \
+    && rm -f /tmp/curl-impersonate.tar.gz \
     # Replace SDK with ASP.NET Core runtime for the final image
     && rm -rf /out/usr/share/dotnet \
     && mkdir -p /out/usr/share/dotnet \

@@ -8,9 +8,9 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http;
+using System.Text;
 using System.Threading.Tasks;
 using System.Web;
-using Shared.Services.Pools;
 
 namespace Aladin;
 
@@ -38,10 +38,6 @@ public class AladinController : BaseOnlineController<ModuleConf>
             if (j.ContainsKey("m4s"))
                 i.m4s = c.m4s;
 
-            if (j.ContainsKey("reserve"))
-                i.reserve = c.reserve;
-
-            i.secret_token = c.secret_token;
             i.token = c.token;
 
             return i;
@@ -58,7 +54,7 @@ public class AladinController : BaseOnlineController<ModuleConf>
                 return await RouteToSpiderSearch(title);
         }
 
-        if (await IsRequestBlocked(rch: !string.IsNullOrEmpty(init.secret_token)))
+        if (await IsRequestBlocked())
             return badInitMsg;
 
         #region search
@@ -215,292 +211,178 @@ public class AladinController : BaseOnlineController<ModuleConf>
     [Route("lite/aladin/video.m3u8")]
     async public Task<ActionResult> Video(string token_movie, string title, string original_title, string t, int s, short e, bool play, bool directors_cut, long kinopoisk_id = 0, string imdb_id = null)
     {
-        if (await IsRequestBlocked(rch: !string.IsNullOrEmpty(init.secret_token), rch_check: !play))
+        if (await IsRequestBlocked())
             return badInitMsg;
 
-        var cache = await InvokeCacheResult<DirectData>($"aladin:view:stream:{init.secret_token}:{init.token}:{token_movie}:{t}:{s}:{e}:{init.m4s}:{directors_cut}", 20, async cacheEntry =>
+        int translation = int.TryParse(t, out int parsed) ? parsed : 0;
+
+        NativeStream stream;
+        try
         {
-            DirectData data = null;
-
-            if (!string.IsNullOrEmpty(init.secret_token))
-            {
-                string userIp = requestInfo.IP;
-                if (init.localip || init.streamproxy)
-                {
-                    userIp = await mylocalip();
-                    if (userIp == null)
-                        return cacheEntry.Fail("userIp");
-                }
-
-                #region url запроса
-                var uri = StringBuilderPool.ThreadInstance;
-
-                uri.Append($"{init.linkhost}/direct?secret_token={init.secret_token}&token_movie={token_movie}")
-                   .Append($"&ip={userIp}&translation={t}");
-
-                if (s > 0)
-                    uri.Append($"&season={s}");
-
-                if (e > 0)
-                    uri.Append($"&episode={e}");
-
-                if (init.m4s)
-                    uri.Append("&av1=true");
-
-                if (directors_cut)
-                    uri.Append("&directors_cut");
-                #endregion
-
-                var root = await httpHydra.Get<DirectRoot>(uri.ToString(), safety: true);
-                if (root?.data?.file?.hlsSource != null && root.data.file.hlsSource.Count > 0)
-                    data = root.data;
-            }
-
-            if (data == null)
-            {
-                data = await ResolveBnsiStream(token_movie, t, s, e, kinopoisk_id, imdb_id);
-            }
-
-            if (data?.file?.hlsSource == null || data.file.hlsSource.Count == 0)
-                return cacheEntry.Fail("data", refresh_proxy: true);
-
-            return cacheEntry.Success(data);
-        });
-
-        if (!cache.IsSuccess)
-            return OnError(cache.ErrorMsg);
-
-        var data = cache.Value;
-
-        #region subtitle
-        var subtitles = new SubtitleTpl();
-
-        foreach (var sub in data.file?.tracks ?? new List<Track>())
-            subtitles.Append(sub.label, sub.src);
-        #endregion
-
-        List<StreamQualityDto> streams = null;
-
-        string streamOrigin = string.IsNullOrEmpty(init.linkhost) ? "https://scalp-as.stloadi.live" : init.linkhost.TrimEnd('/');
-        string edgeHash = AladinGuard.GetLiveToken(streamOrigin) ?? AladinSessionManager.GetGlobalEdgeHash();
-
-        var streamHeaders = HeadersModel.Init(
-            ("Origin", streamOrigin),
-            ("Referer", streamOrigin + "/"),
-            ("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36")
-        );
-        if (!string.IsNullOrEmpty(edgeHash))
-            streamHeaders.Add(new HeadersModel("Accepts-Controls", edgeHash));
-
-        foreach (var hlsSource in data.file?.hlsSource ?? new List<HlsSource>())
+            stream = await AladinNative.ResolveAsync(init, kinopoisk_id, imdb_id, token_movie, translation, s, e);
+        }
+        catch
         {
-            // first or default
-            if (streams == null || hlsSource.@default)
+            stream = null;
+        }
+
+        if (stream == null)
+            return OnError("data");
+
+        var streamquality = new StreamQualityTpl();
+
+        List<KeyValuePair<string, Dictionary<string, List<string>>>> voices;
+        lock (stream.Sync)
+            voices = stream.Voices.ToList();
+
+        foreach (var voice in voices)
+        {
+            foreach (var quality in voice.Value)
             {
-                streams = new List<StreamQualityDto>(6);
+                if (!init.m4s && (quality.Key == "1440" || quality.Key == "2160"))
+                    continue;
 
-                foreach (var q in hlsSource.quality ?? new Dictionary<string, string>())
-                {
-                    string file = q.Value;
-                    if (init.reserve && hlsSource.reserve != null && hlsSource.reserve.TryGetValue(q.Key, out string reserve))
-                        file += " or " + reserve;
-
-                    streams.Add(new StreamQualityDto(HostStreamProxy(file, headers: streamHeaders, force_streamproxy: true), $"{q.Key}p"));
-                }
+                string link = $"{host}/lite/aladin/hls/{stream.Id}/v/{AladinNative.VoiceKey(voice.Key)}/{Uri.EscapeDataString(quality.Key)}.m3u8";
+                streamquality.Append(link, quality.Key + "p");
             }
         }
 
-        if (streams == null || streams.Count == 0)
+        if (streamquality.IsEmpty)
             return OnError("streams");
 
-        var streamquality = new StreamQualityTpl(streams);
-
         var first = streamquality.Firts();
-        if (first == null)
-            return OnError();
+        if (first == null || string.IsNullOrEmpty(first.link))
+            return OnError("streams");
 
         if (play)
             return RedirectToPlay(first.link);
 
-        #region segments
-        var segments = new SegmentTpl();
-
-        var dfile = data.file;
-        string skipTime = dfile?.skipTime;
-        string removeTime = dfile?.removeTime;
-
-        if (skipTime != null && skipTime.Contains("-"))
-        {
-            foreach (string skp in skipTime.Split(","))
-            {
-                var range = skp.Trim().Split('-');
-                if (range.Length >= 2 && int.TryParse(range[0].Trim(), out int start) && int.TryParse(range[1].Trim(), out int end))
-                    segments.skip(start, end);
-            }
-        }
-
-        if (removeTime != null && removeTime.Contains("-"))
-        {
-            foreach (string skp in removeTime.Split(","))
-            {
-                var range = skp.Trim().Split('-');
-                if (range.Length >= 2 && int.TryParse(range[0].Trim(), out int start) && int.TryParse(range[1].Trim(), out int end))
-                    segments.ad(start, end);
-            }
-        }
-        #endregion
+        var subtitles = new SubtitleTpl();
+        foreach (var track in stream.Tracks)
+            subtitles.Append(track.label, track.src);
 
         return ContentTo(VideoTpl.ToJson(
             "play",
             first.link,
-            (title ?? original_title),
+            title ?? original_title,
             streamquality: streamquality,
-            vast: init.vast,
             subtitles: subtitles,
-            segments: segments,
+            vast: init.vast,
             httpContext: HttpContext
         ));
     }
-    #endregion
 
-    #region ResolveBnsiStream
-    async Task<DirectData> ResolveBnsiStream(string token_movie, string t, int s, short e, long kinopoisk_id, string imdb_id)
+    [HttpGet]
+    [Route("lite/aladin/hls/{id}/v/{voice}/{quality}")]
+    async public Task<ActionResult> HlsPlaylist(string id, string voice, string quality)
     {
-        string linkHost = string.IsNullOrEmpty(init.linkhost) ? "https://scalp-as.stloadi.live" : init.linkhost.TrimEnd('/');
-        string token = string.IsNullOrEmpty(init.token) ? init.secret_token : init.token;
-        if (string.IsNullOrEmpty(token))
-            return null;
+        if (quality.EndsWith(".m3u8", StringComparison.OrdinalIgnoreCase))
+            quality = quality[..^5];
 
-        var pUri = new System.Text.StringBuilder();
-        pUri.Append($"{linkHost}/?token={token}");
-        if (!string.IsNullOrEmpty(token_movie))
-            pUri.Append($"&token_movie={token_movie}");
-        else if (kinopoisk_id > 0)
-            pUri.Append($"&kp={kinopoisk_id}");
-        else if (!string.IsNullOrEmpty(imdb_id))
-            pUri.Append($"&imdb={imdb_id}");
+        var stream = AladinNative.Get(id, init.liveStreamTtl);
+        if (stream == null)
+            return NotFound();
 
-        if (s > 0) pUri.Append($"&season={s}");
-        if (e > 0) pUri.Append($"&episode={e}");
-        if (!string.IsNullOrEmpty(t)) pUri.Append($"&translation={t}");
-
-        string playerUrl = pUri.ToString();
-        var playerHeaders = HeadersModel.Init(
-            ("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"),
-            ("Referer", $"{linkHost}/")
-        );
-
-        string html = await httpHydra.Get(playerUrl, safety: true, addheaders: playerHeaders);
-        if (string.IsNullOrEmpty(html))
-            return null;
-
-        var vpMatch = System.Text.RegularExpressions.Regex.Match(html, @"name=[""']viewporti[""']\s+content=[""']([^""']+)[""']");
-        if (!vpMatch.Success)
-            return null;
-        string viewporti = vpMatch.Groups[1].Value;
-
-        var flMatch = System.Text.RegularExpressions.Regex.Match(html, @"fileList\s*=\s*JSON\.parse\('([^']+)'\);");
-        if (!flMatch.Success)
-            flMatch = System.Text.RegularExpressions.Regex.Match(html, @"fileList\s*=\s*JSON\.parse\(""([^""]+)""\);");
-        if (!flMatch.Success)
-            return null;
-
-        string actId = null;
-        try
+        string voiceName;
+        List<string> mirrors;
+        lock (stream.Sync)
         {
-            string rawJson = flMatch.Groups[1].Value;
-            var fl = Newtonsoft.Json.Linq.JObject.Parse(rawJson);
-
-            if (fl["active"]?["id"] != null)
-                actId = fl["active"]["id"].ToString();
-
-            if (fl["all"] != null && !string.IsNullOrEmpty(t))
-            {
-                string trKey = "t" + t;
-                if (s > 0 && e > 0)
-                {
-                    var epToken = fl["all"]?[s.ToString()]?[e.ToString()]?[trKey];
-                    if (epToken?["id"] != null)
-                        actId = epToken["id"].ToString();
-                }
-                else
-                {
-                    var theatrical = fl["all"]?["theatrical"]?[trKey];
-                    if (theatrical is Newtonsoft.Json.Linq.JObject thObj)
-                    {
-                        foreach (var prop in thObj.Properties())
-                        {
-                            if (prop.Value?["id"] != null)
-                            {
-                                actId = prop.Value["id"].ToString();
-                                break;
-                            }
-                        }
-                    }
-                    if (actId == null && fl["all"]?["directors"]?[trKey] is Newtonsoft.Json.Linq.JObject dirObj)
-                    {
-                        foreach (var prop in dirObj.Properties())
-                        {
-                            if (prop.Value?["id"] != null)
-                            {
-                                actId = prop.Value["id"].ToString();
-                                break;
-                            }
-                        }
-                    }
-                }
-            }
-        }
-        catch { }
-
-        if (string.IsNullOrEmpty(actId))
-            return null;
-
-        string borth = AladinBorth.Compute(viewporti);
-        string postUrl = $"{linkHost}/bnsi/movies/{actId}";
-
-        var bnsiHeaders = HeadersModel.Init(
-            ("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36"),
-            ("Origin", linkHost),
-            ("Referer", playerUrl),
-            ("Borth", borth),
-            ("Accept", "application/json, text/plain, */*"),
-            ("X-Requested-With", "XMLHttpRequest"),
-            ("Content-Type", "application/x-www-form-urlencoded")
-        );
-
-        string audioParam = string.IsNullOrEmpty(t) ? "66" : t;
-        string postData = $"token={token}&av1={(init.m4s ? "true" : "false")}&autoplay=0&audio={audioParam}";
-
-        var bnsiResp = await httpHydra.Post<BnsiResponse>(postUrl, postData, safety: true, addheaders: bnsiHeaders);
-        if (bnsiResp?.hlsSource == null || bnsiResp.hlsSource.Count == 0)
-        {
-            string dynamicBorth = await AladinBorth.ComputeFromHtmlAsync(html, viewporti, linkHost);
-            if (!string.IsNullOrEmpty(dynamicBorth) && dynamicBorth != borth)
-            {
-                bnsiHeaders.RemoveAll(x => x.name == "Borth");
-                bnsiHeaders.Add(new HeadersModel("Borth", dynamicBorth));
-                bnsiResp = await httpHydra.Post<BnsiResponse>(postUrl, postData, safety: true, addheaders: bnsiHeaders);
-            }
+            voiceName = stream.Voices.Keys.FirstOrDefault(x => AladinNative.VoiceKey(x) == voice);
+            if (voiceName == null ||
+                !stream.Voices.TryGetValue(voiceName, out var qualities) ||
+                !qualities.TryGetValue(quality, out mirrors) ||
+                mirrors.Count == 0)
+                return NotFound();
         }
 
-        if (bnsiResp?.hlsSource == null || bnsiResp.hlsSource.Count == 0)
-            return null;
+        string url = AladinNative.PickMirror(stream, voiceName, quality);
+        if (string.IsNullOrEmpty(url))
+            return NotFound();
 
-        if (!string.IsNullOrEmpty(bnsiResp.pnr) && !string.IsNullOrEmpty(bnsiResp.pnk))
+        stream.Ws?.UpdateProgress(url);
+
+        var response = await Task.Run(() => stream.Browser.Send("GET", url, null, AladinRequestKind.Media, stream.PlayerUrl, stream.LinkHost, 30000, AladinNative.CdnControls(stream, init)));
+
+        if (response.Status is 403 or 404)
         {
-            AladinSessionManager.GetOrCreate(bnsiResp.pnr, bnsiResp.pnk, linkHost);
+            await Task.Delay(500);
+            response = await Task.Run(() => stream.Browser.Send("GET", url, null, AladinRequestKind.Media, stream.PlayerUrl, stream.LinkHost, 30000, AladinNative.CdnControls(stream, init)));
         }
-        _ = Task.Run(() => AladinGuard.ForHost(linkHost).GetTokenAsync());
 
-        return new DirectData
+        if (response.Status == 403)
         {
-            file = new FileData
+            if (response.Header("x-vd") == "client_blocked")
+                AladinNative.MarkCdnDead(new Uri(url).Host);
+
+            await Task.Run(() => AladinNative.Refresh(stream, init));
+            stream.Ws?.WaitForEdge(1500);
+            url = AladinNative.Rebuild(stream, url);
+            response = await Task.Run(() => stream.Browser.Send("GET", url, null, AladinRequestKind.Media, stream.PlayerUrl, stream.LinkHost, 30000, AladinNative.CdnControls(stream, init)));
+        }
+
+        if (response.Status != 200)
+            return StatusCode(response.Status == 0 ? 502 : response.Status);
+
+        if (string.IsNullOrEmpty(response.Body))
+            return StatusCode(502);
+
+        string baseUrl = response.Target ?? url;
+        string body = AladinHls.Rewrite(response.Body, uri =>
+        {
+            string absolute = AladinHls.Resolve(baseUrl, uri);
+            return $"{host}/lite/aladin/hls/{id}/item/{stream.AddItem(absolute)}";
+        }, init.m4s ? 2160 : 1080);
+
+        Response.Headers["Cache-Control"] = "private, no-store";
+        return Content(body, "application/vnd.apple.mpegurl");
+    }
+
+    [HttpGet]
+    [Route("lite/aladin/hls/{id}/item/{key}")]
+    async public Task<ActionResult> HlsItem(string id, string key)
+    {
+        var stream = AladinNative.Get(id, init.liveStreamTtl);
+        if (stream == null)
+            return NotFound();
+
+        string url = stream.GetItem(key);
+        if (string.IsNullOrEmpty(url))
+            return NotFound();
+
+        url = AladinNative.Rebuild(stream, url);
+        stream.Ws?.UpdateProgress(url);
+
+        byte[] bytes = null;
+        var response = await Task.Run(() => stream.Browser.FetchBytes(url, AladinRequestKind.Media, stream.PlayerUrl, stream.LinkHost, AladinNative.CdnControls(stream, init), out bytes));
+
+        if (response.Status == 403)
+        {
+            if (response.Header("x-vd") == "client_blocked")
+                AladinNative.MarkCdnDead(new Uri(url).Host);
+
+            await Task.Run(() => AladinNative.Refresh(stream, init));
+            stream.Ws?.WaitForEdge(1500);
+            url = AladinNative.Rebuild(stream, url);
+            response = await Task.Run(() => stream.Browser.FetchBytes(url, AladinRequestKind.Media, stream.PlayerUrl, stream.LinkHost, AladinNative.CdnControls(stream, init), out bytes));
+        }
+
+        if (bytes == null || response.Status < 200 || response.Status >= 300)
+            return StatusCode(response.Status == 0 ? 502 : response.Status);
+
+        if (AladinHls.IsPlaylist(bytes, response))
+        {
+            string baseUrl = response.Target ?? url;
+            string body = AladinHls.Rewrite(Encoding.UTF8.GetString(bytes), uri =>
             {
-                hlsSource = bnsiResp.hlsSource,
-                tracks = bnsiResp.tracks
-            }
-        };
+                string absolute = AladinHls.Resolve(baseUrl, uri);
+                return $"{host}/lite/aladin/hls/{id}/item/{stream.AddItem(absolute)}";
+            }, init.m4s ? 2160 : 1080);
+
+            Response.Headers["Cache-Control"] = "private, no-store";
+            return Content(body, "application/vnd.apple.mpegurl");
+        }
+
+        return File(bytes, AladinHls.ContentType(response, false));
     }
     #endregion
 
@@ -512,7 +394,7 @@ public class AladinController : BaseOnlineController<ModuleConf>
         if (string.IsNullOrWhiteSpace(title))
             return OnError("title", gbcache: false);
 
-        if (await IsRequestBlocked(rch: !string.IsNullOrEmpty(init.token)))
+        if (await IsRequestBlocked())
             return badInitMsg;
 
         var cache = await InvokeCacheResult<List<MediaItem>>($"aladin:search:{title}", TimeSpan.FromHours(4), async e =>

@@ -7,8 +7,25 @@
     "linkhost": "https://scalp-as.stloadi.live",
     "apihost": "https://apbugall.org/v2",
     "m4s": true,
-    "reserve": true,
     "spider": true,
-    "httpversion": 2
+    "httpversion": 2,
+    "tlsProfile": "chrome_133",
+    "nativeLibrary": "",
+    "referer": "https://kinogo.media/",
+    "acceptLanguage": "ru-RU,ru;q=0.9,en-US;q=0.8,en;q=0.7",
+    "linkhosts": [
+      "https://scalp-as.stloadi.live",
+      "https://quadrillion-as.allarknow.online",
+      "https://Aport-as.allarknow.online"
+    ],
+    "nativeProxy": "",
+    "httpRetries": 3,
+    "resolveTimeout": 8,
+    "urlTtl": 7200,
+    "wsReconnectAttempts": 3,
+    "wsMaxSessions": 12,
+    "wsHandshakeConcurrency": 2,
+    "liveMaxStreams": 256,
+    "liveStreamTtl": 14400
   }
 }
