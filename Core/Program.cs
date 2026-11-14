@@ -302,25 +302,34 @@ public class Program
 
         try
         {
-            if (File.Exists("users.json"))
-            {
-                var lastWriteTime = File.GetLastWriteTime("users.json");
+            var conf = CoreInit.conf;
+            var accsdb = conf?.accsdb;
+            if (accsdb == null)
+                return;
 
-                string keyUpdate = $"{CoreInit.conf?.guid}:{CoreInit.conf?.accsdb?.users?.Count ?? 0}:{lastWriteTime}";
+            // TelegramAuth uses the same lock for persistence and cache updates.
+            lock (accsdb)
+            {
+                if (!File.Exists("users.json"))
+                    return;
+
+                var content = File.ReadAllText("users.json");
+                string keyUpdate = $"{conf.guid}:{accsdb.users?.Count ?? 0}:{content}";
                 if (keyUpdate == _usersKeyUpdate)
                     return;
 
-                foreach (var user in JsonConvert.DeserializeObject<List<AccsUser>>(File.ReadAllText("users.json")))
+                foreach (var user in JsonConvert.DeserializeObject<List<AccsUser>>(content))
                 {
                     try
                     {
-                        var find = CoreInit.conf.accsdb.findUser(user.id ?? user.ids?.First());
+                        var find = accsdb.findUser(user.id ?? user.ids?.First());
                         if (find != null)
                         {
                             find.id = user.id;
                             find.ids = user.ids;
                             find.group = user.group;
                             find.IsPasswd = user.IsPasswd;
+                            find.bypass_accsdb = user.bypass_accsdb;
                             find.expires = user.expires;
                             find.ban = user.ban;
                             find.ban_msg = user.ban_msg;
@@ -329,7 +338,7 @@ public class Program
                         }
                         else
                         {
-                            CoreInit.conf.accsdb.users.Add(user);
+                            accsdb.users.Add(user);
                         }
                     }
                     catch (Exception ex)
@@ -339,7 +348,7 @@ public class Program
                 }
 
                 _usersKeyUpdate = keyUpdate;
-                CoreInit.conf.accsdb.RefreshUsers();
+                accsdb.RefreshUsers();
             }
         }
         catch (Exception ex)
