@@ -18,6 +18,7 @@ public partial class TorBoxController
         public int Selected;
         public volatile bool Ready;
         public bool ServerMode;
+        public volatile bool Revoked;
         public DateTime Expires=DateTime.UtcNow.AddHours(12), Limit=DateTime.UtcNow.AddDays(7);
         public ConcurrentDictionary<int,(DateTime Until,string Url)> Streams=new();
     }
@@ -27,7 +28,7 @@ public partial class TorBoxController
     ExternalPlaylist GetExternal(string access) {
         if(string.IsNullOrEmpty(access) || !System.Text.RegularExpressions.Regex.IsMatch(access,"^[a-f0-9]{64}$") ||
             !externalPlaylists.TryGetValue(ExternalHash(access),out var playlist))throw new TorBoxException(410,"Срок действия плейлиста истёк. Откройте сериал в Lampa заново");
-        if(playlist.Expires<DateTime.UtcNow || playlist.Limit<DateTime.UtcNow) {
+        if(playlist.Revoked || playlist.Expires<DateTime.UtcNow || playlist.Limit<DateTime.UtcNow) {
             externalPlaylists.TryRemove(ExternalHash(access),out _);playlist.ClientKey=null;
             throw new TorBoxException(410,"Срок действия плейлиста истёк. Откройте сериал в Lampa заново");
         }
@@ -37,6 +38,7 @@ public partial class TorBoxController
         Metadata=e.Metadata?.DeepClone(),ExplicitAudio=e.ExplicitAudio,ExplicitSub=e.ExplicitSub};
     [HttpPost,Route("torbox/series/external"),RequestSizeLimit(4096)]
     public Task<ActionResult> PrepareExternal([FromBody] ExternalInput input) => Guard(async(c,key)=>{
+        if(!externalPlaylistsAllowed)return Error(403,"Внешние плейлисты отключены администратором");
         if(input==null || input.index<0)return Error(400,"Некорректный плейлист");
         ExternalPlaylist external;
         if(string.IsNullOrEmpty(input.preparation)) {
@@ -65,12 +67,27 @@ public partial class TorBoxController
         }
         if(!await external.State.Gate.WaitAsync(TimeSpan.FromSeconds(2),HttpContext.RequestAborted))return Error(429,"Плейлист ещё подготавливается");
         try {
+            if(external.Revoked)return Error(410,"Плейлист отозван");
             external.Expires=DateTime.UtcNow.AddHours(12);
             external.Ready=true;
             return Payload(new{success=true,pending=false,selected_index=external.Selected,
                 playlist=external.State.Episodes.Select((e,i)=>new{index=i,title=EpisodeTitle(e),season=e.Season,episode=e.Episode,
                     url=host+"/torbox/series/external/"+external.Access+"/"+i+".m3u8"}).ToArray()});
         }finally{external.State.Gate.Release();}
+    });
+    // Authenticated account-wide revocation also works after changing a personal key.
+    [HttpPost,Route("torbox/series/external/revoke"),RequestSizeLimit(4096)]
+    public Task<ActionResult> RevokeExternal() => Guard(async(c,key)=>{
+        int revoked=0;
+        foreach(var entry in externalPlaylists.Where(x=>x.Value.Uid==requestInfo.user_uid).ToArray()) {
+            var playlist=entry.Value;
+            playlist.Revoked=true;
+            externalPlaylists.TryRemove(entry.Key,out _);
+            await playlist.State.Gate.WaitAsync();
+            try { playlist.ClientKey=null;playlist.Streams.Clear();revoked++; }
+            finally { playlist.State.Gate.Release(); }
+        }
+        return Payload(new{success=true,revoked});
     });
     [HttpGet,HttpHead,AllowAnonymous,Route("torbox/series/external/{access}/{index:int}.m3u8")]
     public async Task<ActionResult> ExternalSeriesStream(string access,int index) {
@@ -81,6 +98,7 @@ public partial class TorBoxController
             if(!external.Ready)return Error(409,"Плейлист ещё подготавливается");
             if(index<0 || index>=external.State.Episodes.Count)return Error(404,"Серия отсутствует в плейлисте");
             var c=Config(external.ServerMode ? "file" : "client");
+            if(!externalPlaylistsAllowed)return Error(403,"Внешние плейлисты отключены администратором");
             if(serverCredentials && (c["allowed_uids"] as JArray)?.Any(x=>string.Equals((string)x,external.Uid,StringComparison.OrdinalIgnoreCase))!=true)
                 return Error(403,"Нет доступа к TorBox для этого аккаунта Lampac");
             if(serverCredentials!=external.ServerMode)return Error(410,"Настройки TorBox изменились. Откройте плейлист заново");
@@ -88,11 +106,13 @@ public partial class TorBoxController
             if(string.IsNullOrEmpty(key) || SeriesKeyHash(key)!=external.State.KeyHash)return Error(410,"Ключ TorBox изменился. Откройте плейлист заново");
             if(!await external.State.Gate.WaitAsync(TimeSpan.FromSeconds(10),HttpContext.RequestAborted))return Error(429,"Поток ещё подготавливается");
             try {
+                if(external.Revoked)return Error(410,"Плейлист отозван");
                 external.Expires=DateTime.UtcNow.AddHours(12);
                 if(!external.Streams.TryGetValue(index,out var cached) || cached.Until<DateTime.UtcNow) {
                     var stream=await ResolveSeriesStream(external.State,index,key);
                     cached=(DateTime.UtcNow.AddSeconds(30),stream.Url);external.Streams[index]=cached;
                 }
+                if(external.Revoked)return Error(410,"Плейлист отозван");
                 return Redirect(cached.Url);
             }finally{external.State.Gate.Release();}
         }

@@ -193,6 +193,12 @@
         }
       });
     });
+    Lampa.SettingsApi.addParam({ component: 'torbox', param: { type: 'button' },
+      field: { name: 'Отозвать внешние плейлисты', description: 'Остановить выдачу ссылок всем внешним плейлистам этого аккаунта Lampac' },
+      onChange: function () {
+        request('series/external/revoke', {}, function () { Lampa.Noty.show('Внешние плейлисты отозваны'); });
+      }
+    });
     $('<style>').text('.torbox-key-disabled{opacity:.45;pointer-events:none}').appendTo('head');
   }
 

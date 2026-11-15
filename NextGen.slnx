@@ -22,6 +22,7 @@
     <Project Path="Modules/PidTor/PidTor.csproj" />
     <Project Path="Modules/Potok/Potok.csproj" />
     <Project Path="Modules/TorrServer/TorrServer.csproj" />
+    <Project Path="Modules/TorBox/TorBox.csproj" />
     <Project Path="Modules/Tracks/Tracks.csproj" />
     <Project Path="Modules/Transcoding/Transcoding.csproj" />
     <Project Path="Modules/WatchTogether/WatchTogether.csproj" />

@@ -1,0 +1,52 @@
+name: TorBox checks
+
+on:
+  pull_request:
+    paths:
+      - 'Modules/TorBox/**'
+      - 'Shared/**'
+      - 'Core/**'
+      - 'Modules/Telemetry/**'
+      - 'Modules/LogUserRequest-Lite/**'
+      - 'Online/plugin.js'
+      - 'tools/check-torbox.py'
+      - 'tools/torbox/**'
+      - 'Directory.*'
+      - '.github/workflows/test-torbox.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-26.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - uses: actions/setup-dotnet@v6.0.0
+        with:
+          dotnet-version: '10.0.x'
+      - name: Build host, dynamic module and request loggers
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p check-logs
+          for project in Core/Core.csproj Modules/TorBox/TorBox.csproj Modules/Telemetry/Telemetry.csproj Modules/LogUserRequest-Lite/LogUserRequest.csproj; do
+            dotnet build "$project" --nologo -p:PlaywrightPlatform=linux 2>&1 | tee "check-logs/$(basename "$project").log"
+          done
+      - name: Run offline behavior checks
+        shell: bash
+        run: |
+          set -o pipefail
+          python3 tools/check-torbox.py 2>&1 | tee check-logs/torbox-checks.log
+          node --check Modules/TorBox/plugin.js
+          node --check Online/plugin.js
+          git diff --check
+      - name: Preserve build output and check results
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: torbox-check-logs
+          path: check-logs/
+          if-no-files-found: ignore

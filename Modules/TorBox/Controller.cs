@@ -24,6 +24,7 @@ public partial class TorBoxController : BaseController
     bool serverCredentials;
     string metadataOwner;
     bool clientCredentialsAllowed;
+    bool externalPlaylistsAllowed;
     JObject Config(string mode = null) {
         // Malformed/unreadable files never enable client credentials.
         JObject policy=null;
@@ -34,6 +35,9 @@ public partial class TorBoxController : BaseController
         var permission=policy["allow_client_credentials"];
         if(permission!=null && permission.Type!=JTokenType.Boolean)throw new TorBoxException(503,"allow_client_credentials должен быть true или false");
         clientCredentialsAllowed=(bool?)permission==true;
+        var externalPermission=policy["allow_external_playlists"];
+        if(externalPermission!=null && externalPermission.Type!=JTokenType.Boolean)throw new TorBoxException(503,"allow_external_playlists должен быть true или false");
+        externalPlaylistsAllowed=(bool?)externalPermission==true;
         serverCredentials=!clientCredentialsAllowed;
         if(serverCredentials && !hasPrivate)throw new TorBoxException(503,"Файл torbox-private.json отсутствует");
         var modes=Request.Headers["X-TorBox-Mode"];
@@ -126,6 +130,7 @@ public partial class TorBoxController : BaseController
     async Task<ActionResult> Guard(Func<JObject, string, Task<ActionResult>> work)
     {
         Response.Headers["Cache-Control"] = "no-store";
+        Response.Headers["Referrer-Policy"] = "no-referrer";
         try
         {
             var c = Config();

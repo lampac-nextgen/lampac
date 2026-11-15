@@ -1,77 +1,46 @@
-# TorBox для Lampac
+# TorBox server module
 
-Неофициальный модуль для интеграции TorBox с Lampa через Lampac. В этой версии собраны изменения, применённые на Lampac 1.87.8: выбор качества и дорожек до старта потока, просмотр сериалов, передача плейлиста внешнему плееру, сохранение в Infuse и управление разделом «Мой TorBox».
+Optional TorBox integration for Lampac/Lampa. The module is disabled by default
+(`manifest.enable: false`). No credentials or populated runtime configuration are
+included in the repository.
 
-Модуль использует ту же динамическую архитектуру модулей Lampac. Код проверен на рабочем экземпляре Lampac 1.87.8; для включения в сборку добавьте `TorBox` в `LoadModules` или включите модуль через конфигурацию экземпляра. Файлы `init.conf`, ключи и пользовательская библиотека в репозиторий не входят.
+## Scope of this PR
 
-## Подключение расширения Lampa
+This first PR contains the server APIs and the standalone `torbox.js` extension:
+My TorBox, original-file playback, Infuse actions, Airlock controls, deletion and
+cache checks in the native Torrents component. It does **not** change the shared
+`Online/plugin.js` or register TorBox as an online-balancer source.
 
-После установки и включения модуля добавьте в пользовательские плагины Lampa адрес `https://<адрес-Lampac>/torbox.js` и имя `TorBox`. Например, если Lampac доступен по `https://lampac.example`, адрес расширения будет `https://lampac.example/torbox.js`. Используйте адрес своего сервера и его настроенный внешний путь. Расширение отдаётся самим модулем по маршруту `torbox.js`; отдельный файл или стороннее расширение скачивать не нужно. После добавления перезагрузите Lampa.
+The Online adapter, source registration, release badges/voice filters, menu
+preview cards, selected-stream handoff and series continuation belong to a
+separate dependent change. Their server endpoints remain in this module for
+API review, but this PR does not advertise an incomplete balancer.
 
-## Подписка и транскодирование
+The online streaming endpoints use `stream/createstream` and require TorBox Pro,
+including original-resolution HLS and external-player handoff. There is no
+automatic direct-file fallback. My TorBox and the Torrents adapter use
+`torrents/requestdl` for original-file playback; codec/container and embedded
+track support depend on the receiving player. Lampac does not transcode video.
+Provider entitlements can change; see [TorBox pricing](https://torbox.app/pricing)
+and [streaming documentation](https://support.torbox.app/en/articles/12662996-torbox-web-streaming).
+Whether this paid-provider dependency belongs in the project remains a maintainer
+decision. This PR does not enable it automatically or change other providers.
 
-- **Pro (обычная цена $10/месяц)** нужен для онлайн-балансера TorBox в текущей реализации: меню параметров и запуск используют `stream/createstream`, а плееру передаётся HLS-поток TorBox. Это относится и к встроенному, и к внешнему плееру, запущенному из балансера. Выбор «Исходное разрешение» в балансере не переключает его на прямую ссылку и не снимает требование Pro.
-- Подготовку HLS и необходимое транскодирование выполняет **TorBox**, а не сервер Lampac. Понижение разрешения требует обработки видео; выбранные аудио и субтитры передаются API при подготовке потока. Это не означает, что каждый поток обязательно полностью перекодируется: фактическая обработка зависит от файла и TorBox.
-- На **Essential и Standard** для просмотра используйте **«Мой TorBox»**: этот раздел запрашивает через `torrents/requestdl` прямую ссылку на исходный файл и воспроизводит его в оригинальном качестве, без серверного понижения разрешения и транскодирования. Переключение встроенных аудиодорожек и субтитров, поддержка контейнера и кодеков зависят от выбранного плеера/устройства; для таких файлов подходит совместимый внешний плеер. Это доступный режим просмотра в рамках текущего модуля, а не ограничение всех сторонних приложений TorBox.
-- Автоматического перехода онлайн-балансера на прямой файл при отсутствии Pro сейчас нет. Ограниченный raw-просмотр совместимых файлов в веб-плеере самого torbox.app не означает доступ к используемому балансером режиму транскодирования.
+## Installation
 
-Условия и цены определяет TorBox: [тарифы](https://torbox.app/pricing), [описание веб-просмотра](https://support.torbox.app/en/articles/12662996-torbox-web-streaming), [официальные изменения](https://feedback.torbox.app/en/changelog).
+Install the module sources and `plugin.js` into `mods/TorBox/` in the Lampac
+working directory and enable the module through the instance's module settings.
+Add `https://<your-Lampac>/torbox.js` to Lampa extensions, named TorBox, and reload
+Lampa. Use the actual external address/path of your instance and HTTPS.
+The module serves the extension itself; no third-party script download is needed.
 
-## Возможности
-
-- Поиск и воспроизведение только тех раздач, которые готовы в кеше TorBox. Создание новых загрузок для воспроизведения не запускается.
-- Выбор качества, аудиодорожки и субтитров до получения ссылки на поток. Высота переводится в индекс разрешения, который ожидает API TorBox.
-- Первая страница со списком раздач показывает фон фильма/сериала вместо папок. Выбор серии, разрешения, озвучки и субтитров показывает карточки с кадром серии из TMDB; при отсутствии кадра используется фон сериала/фильма. Поддержка карточек включена в `Online/plugin.js`.
-- Автоматическое продолжение серий только в пределах выбранного сезона с сохранением озвучки, субтитров и качества. Для внешнего Android-плеера передаётся весь выбранный сезон, включая серии до выбранной точки старта. Следующий сезон нужно заново добавить/открыть через TorBox и выбрать параметры; настройки предыдущего сезона не переносятся. Даже из раздачи с несколькими сезонами в плейлист попадает только выбранный сезон.
-- Ручная отправка выбранного файла или набора файлов в Infuse через имеющийся InfuseSaver.
-- Раздел «Мой TorBox»: список раздач, уточнение привязки к фильму и удаление выбранной раздачи после подтверждения.
-- Пагинация длинного списка TorBox, короткоживущий кэш инвентаря по хэшу ключа и объединение параллельных чтений.
-- После принятия запроса на удаление карточка сразу скрывается. Через минуту выполняется проверка результата; ошибка с предложением удалить вручную показывается в «Мой TorBox», при закрытом разделе или работающем плеере — при следующем входе.
-- «Мой TorBox» показывает остаток Airlocked Data и позволяет включать/отключать Airlock выбранной раздачи через меню карточки; состояние и квота обновляются после подтверждения API.
-- Версионирование плейлиста уменьшает ответы при последовательном воспроизведении; старые клиенты получают полный список.
-- Источник настроек TorBox задаётся серверным флагом `allow_client_credentials`: файл сервера или только личные данные клиента. В режиме файла поля ввода скрыты; клиент не может изменить источник или файл сервера.
-
-## Отметки кэша в балансере
-
-Список релизов открывается без ожидания TorBox. Фоновый пакетный запрос добавляет отметки **⚡ В кэше**, **☁ Нет в кэше** или **Кэш: не проверено**. Переключатель **«Только в кэше»** оставляет в текущем списке только подтверждённые варианты; выбор сохраняется на устройстве отдельно для сервера и аккаунта. Если проверка недоступна или готовых вариантов нет, выключите фильтр для возврата ко всему списку.
-
-Проверяются показанные результаты: до 12 релизов фильма или 96 сериала. Результат проверки хранится до 30 секунд в рамках меню, ошибки — до 10 секунд; время ожидания TorBox ограничено 8 секундами. Проверка не добавляет торренты и не запускает загрузки. При выборе релиза выполняется прежняя проверка готовности и сохраняется переход к следующим готовым вариантам. Отметка кэша предварительная и не гарантирует сохранение файла к моменту запуска. Требуются обновлённые `torbox.js` и `online.js`; после установки перезагрузите Lampa.
-
-Общая пакетная проверка использует собственный таймаут и продолжается при отключении первого клиента. Параллельное чтение одного меню ожидает результат до 10 секунд; частично неизвестные результаты сопровождаются предупреждением.
-
-## Предварительный фильтр озвучки в онлайн-балансере
-
-В «Фильтр → Озвучка» доступны названия из `info.voices` JacRed по всем подходящим результатам поиска. Отбор выполняется до ограничения в 12 фильмов / 96 релизов сериала, работает вместе с «Только в кэше TorBox» и сохраняется для фильма или сериала. «Все» снимает отбор, «Не указана» показывает релизы без названия озвучки. При отсутствии результатов фильтр остаётся доступен. В строках раздач показаны их озвучки. Это предварительные сведения поиска; реальная аудиодорожка выбирается позже по данным TorBox. Нужны обновлённые `Online.cs` и `online.js`, затем перезагрузка Lampa.
-
-## Кэш TorBox в разделе «Торренты»
-
-Для отметок кэша нужен авторизованный аккаунт Lampac с непустым UID. В серверном режиме UID должен входить в `allowed_uids` приватного файла. В клиентском режиме применяются личный ключ и клиентский список разрешённых UID; серверный список не наследуется. Без допуска отметки остаются «не проверено».
-
-Расширение добавляет к штатным результатам торрент-поиска отметки **⚡ В кэше TorBox**, **☁ Нет в кэше TorBox** и **TorBox: не проверено**, а также переключатель **«Только в кэше TorBox»**. Проверка всей подборки выполняется фоном пакетами до 100 уникальных хешей. При ответе retryable или HTTP 429 неудачный пакет повторяется один раз после указанной сервером задержки; при успехе проверка продолжается. Повторная ошибка останавливает очередь; непроверенные раздачи остаются доступны при выключенном фильтре. Одинаковые параллельные пакеты объединяются на сервере: успешный результат хранится до 30 секунд, ошибка включает паузу до 10 секунд для текущего аккаунта TorBox. Фильтр применяется до штатной пагинации и работает вместе с фильтрами качества, трекера и озвучки; выбор сохраняется на устройстве отдельно для сервера и аккаунта. Обычные сведения о раздаче, включая сидов, сохраняются в торрентном поиске; в списке релизов онлайн-балансера число сидов больше не выводится.
-
-При выборе раздачи с подтверждённым кэшем появляется окно: **«Воспроизвести из кэша TorBox»** или **«Воспроизвести через TorrServer»**. Второй вариант продолжает штатный запуск торрента с существующими настройками устройства. TorBox использует прямые ссылки на исходные файлы и выбранный торрентный плеер, как в «Мой TorBox». Перед передачей файла готовность проверяется повторно; исчезнувший кэш предлагает TorrServer или возврат, без автоматической загрузки раздачи. Для неподтверждённого или отсутствующего кэша сохраняется штатный запуск. Уже просмотренный статус кэша служит снимком подборки; для запуска данные старше 30 секунд проверяются повторно.
-
-Изменения работают через расширение `torbox.js`; модификация клиентского `app.min.js` не требуется. При ошибке проверки неподтверждённые строки доступны после выключения фильтра.
-
-## Время жизни ссылок в балансере
-
-- Ссылки меню выбора раздачи, файла и параметров действуют **до 6 часов с момента поиска**. Общий кеш ограничен 512 вариантами раздач: при заполнении целиком удаляются самые давно не использованные подборки, чтобы новые поиски продолжали работать. Обращение к варианту обновляет время использования его подборки. Устаревшее или удалённое из кеша меню возвращает `410`: откройте балансер из карточки фильма/сериала заново. Торренты и файлы в аккаунте TorBox не удаляются. Это срок меню Lampac, а не самого видеопотока.
-- Сессия сериала во встроенном плеере действует **12 часов без обращений**; каждый запрос серии продлевает её ещё на 12 часов.
-- Ссылки плейлиста сезона для внешнего Android-плеера действуют **12 часов без обращений**, но не дольше **7 суток с момента создания плейлиста**. Подготовка плейлиста и запрос потока продлевают срок бездействия; непрерывное воспроизведение уже полученного потока само по себе его не продлевает. При открытии ссылки модуль получает свежую HLS-ссылку TorBox; результат сохраняется в кеше на 30 секунд.
-- Перезапуск Lampac сбрасывает эти меню, сессии и внешние плейлисты. Смена API-ключа прекращает доступ к привязанным к нему сессиям/плейлистам; отзыв разрешения Lampac UID блокирует дальнейшие запросы. Для продолжения откройте балансер заново и сформируйте новые ссылки.
-- Срок действия прямой HLS-ссылки, выданной самим TorBox, задаёт TorBox: модуль не устанавливает для неё фиксированный срок. Ограничения 6/12 часов и 7 суток выше относятся к ссылкам и сессиям Lampac; они не гарантируют такой же срок для уже выданного прямого потока. Не публикуйте ссылки: временные адреса внешнего плейлиста дают доступ к его воспроизведению.
-
-## API-ключ TorBox
-
-Ключ даёт доступ к аккаунту TorBox. Предпочтительный режим — хранить его только на сервере в отдельном файле `torbox-private.json` с правами `0600`, доступном пользователю Lampac. Не добавляйте этот файл в Git, архивы для публикации, логи или клиентский JavaScript. Не размещайте реальное значение в `init.conf`, README, примерах команд или снимках экрана.
-
-Полный пример структуры файла (все значения — заглушки):
-
-Создайте `torbox-private.json` в рабочем каталоге Lampac, рядом с `init.conf` (для стандартной установки — `/opt/lampac/torbox-private.json`). Файл читает сервер Lampac, а не расширение на устройстве.
+Place `torbox-private.json` beside `init.conf`. Restrict it to the Lampac service
+account (`0600` on Unix). Never commit a populated configuration:
 
 ```json
 {
   "allow_client_credentials": false,
+  "allow_external_playlists": false,
   "api_key": "REPLACE_WITH_YOUR_TORBOX_KEY",
   "allowed_uids": ["REPLACE_WITH_LAMPAC_UID"],
   "torrent_origins": ["https://parser.example"],
@@ -82,87 +51,179 @@
 }
 ```
 
-Пример выше — только шаблон; подставьте собственные значения на сервере и ограничьте права файла. Не публикуйте заполненный файл.
+The API key and UID whitelist are server-side. Normal Lampac authentication and
+a nonempty authenticated UID are required for protected operations. Enable the
+account's required Lampac permissions as well; client headers do not bypass them.
 
-### Разрешение клиентских данных
+## Credential modes
 
-Источник задаёт **администратор в `torbox-private.json`**, а не пользователь в меню Lampa:
+The administrator selects one mode with the JSON boolean `allow_client_credentials`:
 
-- **`"allow_client_credentials": false`** — используются только данные файла. В **Настройки → TorBox** поля ввода скрыты, сохранённые личные ключи и настройки не отправляются. Попытка включить клиентский режим через заголовок запроса отклоняется сервером. Отсутствующий флаг означает `false`.
-- **`"allow_client_credentials": true`** — используются **только данные клиента**. Поля `api_key`, `allowed_uids`, `torrent_origins` и `jacred` из файла полностью игнорируются: они не подставляются даже в пустые поля и не ограничивают личный адрес JacRed. В меню Lampa открываются пять клиентских полей. Обратное переключение на данные файла из интерфейса запрещено; для этого администратор меняет флаг на `false`.
+- **False or omitted:** only file credentials/settings are used. Personal input
+  fields are hidden; saved personal values are not sent. The authenticated UID
+  must be in the file's `allowed_uids`. Request headers cannot enable client mode.
+- **True:** only personal client settings are used. The file's key, UID list,
+  torrent origins and JacRed configuration are ignored, with no fallback. A
+  minimal file can be `{ "allow_client_credentials": true }`. The independent
+  `allow_external_playlists` flag remains an administrator policy in this mode.
 
-Минимальный файл для клиентского режима:
+If the private file is absent, a protected `torbox-settings.json` can explicitly
+permit client mode. Missing files, an unreadable/malformed existing private file,
+or a nonboolean permission flag fail closed. A client cannot override the mode
+using `X-TorBox-Mode`.
 
-```json
-{
-  "allow_client_credentials": true
-}
+When permitted, Settings → TorBox exposes the personal TorBox key, permitted
+Lampac UIDs, trusted torrent origins, JacRed URL and JacRed key. An empty UID list
+means the current authenticated account. Empty origins disable URL-based torrent
+fetches while magnet/hash handling remains available. Missing personal JacRed
+configuration disables balancer search, not original-file My TorBox playback.
+
+Personal settings are stored in IndexedDB, scoped to the Lampac server/account.
+Disabling client permission retains local values but stops using them. Key
+summaries are masked. Client mode necessarily exposes supplied keys to the
+browser and the Lampac server handling requests: use trusted devices/server and
+HTTPS. `X-TorBox-Key` carries the TorBox key; `X-TorBox-Config` carries UTF-8/base64
+JSON configuration. Base64 is encoding, not encryption. Header forwarding from
+the shared Online component belongs to the dependent Online PR.
+
+User-selected parser/torrent addresses must be public HTTP(S). DNS results and
+redirect destinations are checked, connections are pinned to validated public
+IPs, and private/loopback/special-purpose targets are blocked. Client parser
+connections bypass automatically configured HTTP proxies. Server-file mode and
+TorBox API networking retain their existing network behavior. Redirects are not
+automatically followed by the module's HTTP clients.
+
+## Cache batches and playback
+
+Cache checks accept 1–100 valid hashes per request, normalize base32 hashes to
+hex, and deduplicate them. The Torrents adapter checks the search before native
+pagination, combines its cached-only preference with native filters, and offers
+TorBox or the original TorrServer path for a confirmed cached selection.
+
+Identical concurrent batches share a credential-scoped result for 30 seconds.
+Upstream failures impose a 10-second credential cooldown. Each shared upstream
+batch has its own 8-second deadline, independent of the first client's
+cancellation. Hits, misses and unknown/error states remain distinct. Retryable
+client chunks get one delayed retry; a second failure stops that queue.
+
+Playback rechecks readiness. Attachment requests use `add_only_if_cached=true`;
+there is no silent uncached-download fallback. Cache badges are snapshots and do
+not guarantee the file is still available when playback starts.
+
+## Library, deletion and Airlock
+
+My TorBox lists account torrents/files, supports optional film metadata and
+InfuseSaver actions, and uses per-key inventory snapshots with request
+coalescing and mutation invalidation. Infuse actions require the instance's
+existing InfuseSaver integration. Metadata is scoped to the authenticated
+account (and personal key in client mode).
+
+Deletion requires explicit user confirmation and sends only the selected ID
+with `all=false`. The UI hides the card after acceptance, then checks after one
+minute. Acceptance is not proof of deletion. Only confirmed disappearance
+removes film metadata while the original confirmation ticket is available.
+`HTTP 404` with `ITEM_NOT_FOUND` is recognized; unrelated errors and malformed
+responses do not confirm disappearance. Lost tickets permit only scoped read-only
+lookup, without metadata removal. Client jobs survive reloads; warnings are
+deferred while another section/player is active and are rechecked before display.
+Automated checks use mocks and never delete real account data.
+
+Airlock controls operate on the selected torrent after confirming the API result;
+quota/state refreshes do not imply an unconfirmed mutation succeeded.
+
+## Link lifetimes and external-player access
+
+- Selection menus: up to 6 hours from search creation, subject to whole-menu LRU
+  eviction at the shared 512-choice limit. Expired/evicted menus return 410; reopen
+  the source. Eviction does not delete TorBox torrents or files.
+- Built-in series sessions: 12 hours idle, renewed by episode requests.
+- External season playlists: 12 hours idle and an absolute 7-day cap from creation.
+  Preparation/relay requests renew only the idle deadline. Playing an already
+  resolved stream does not renew it; resolved URLs are cached for 30 seconds.
+- Restarting Lampac loses the in-memory menus/sessions/playlists. TorBox-issued
+  stream URLs have separate provider-controlled lifetimes.
+
+`torbox/series/external/{access}/{index}.m3u8` is an anonymous capability route:
+knowing the URL authorizes the fixed season/selected playback settings without
+client credential headers. Creation still requires authenticated Lampac access.
+`access` is generated using `RandomNumberGenerator.GetBytes(32)`: **256 bits of
+entropy**, encoded as 64 hexadecimal characters. It is not an API key, but the
+complete URL is a bearer secret. Server-side relay sessions and received personal
+keys stay in process memory, without persistence to server disk. Browser personal
+settings remain in IndexedDB.
+
+External playlist creation **and resolution are disabled by default**. The
+administrator must explicitly set boolean `allow_external_playlists: true` in
+the active private/settings policy file after configuring logs as described below.
+Client configuration cannot enable it; nonboolean values fail closed.
+
+Every relay request checks the current mode, server key and server UID whitelist.
+In client mode, the personal key is retained in the session: saving a different
+key in the browser alone does not revoke an older external playlist.
+
+Use **Settings → TorBox → Revoke external playlists** (the existing UI is localized)
+or authenticated `POST /torbox/series/external/revoke` to revoke all external
+playlists for the current Lampac UID. This also works with the account's new
+personal key. It does not affect other UIDs. Revocation removes sessions, clears
+stored keys/stream caches and blocks subsequent resolution. A TorBox URL already
+delivered to a player, or an already opened stream, cannot be revoked by Lampac.
+
+## Logs and Referer
+
+Preparation/protected API and relay responses set `Cache-Control: no-store` and
+`Referrer-Policy: no-referrer`. Core's global error output and the built-in
+Telemetry/LogUserRequest-Lite URI logs redact external path tokens and `apikey`
+query values before writing/truncation. The module does not log raw outbound
+URLs, upstream response bodies or HTTP exception text. Client errors use fixed
+messages. Do not enable HTTP traces that expose full URIs, credential headers,
+response bodies or `Location` values.
+
+The application cannot control reverse proxy/CDN/APM logs, arbitrary extensions
+or external-player histories. Before enabling bearer playlists, exclude the
+relay route from access/error/trace logs at **every** layer or mask its access
+segment. Also exclude/mask `apikey` on the JacRed server and its proxies. Verify
+with dummy tokens/keys and inspect the saved logs; do not use real secrets for
+that check. For nginx, `access_log off` in a dedicated relay location covers
+access logging only: error/diagnostic logs and upstream CDNs need separate review.
+If those layers cannot be controlled, keep `allow_external_playlists: false`.
+
+Browsers that honor `Referrer-Policy` will not forward the capability URL as
+`Referer` across the redirect. An arbitrary external player may ignore that
+policy, save the URL in its own history/logs, or send it as `Referer`. This module
+cannot promise otherwise: use a trusted, verified player or leave the feature off.
+
+The bundled [JacRed controller](../JacRed/ApiController.cs) accepts `apikey` as a
+query parameter and does not implement a header equivalent. The module retains
+that compatible format rather than guessing a header or silently falling back.
+Search requests are server-side; their credential-bearing URLs are not sent to
+the browser. Use HTTPS and configure JacRed/proxy logging as described above.
+
+## Reproducible checks
+
+Requires .NET SDK 10, Python 3 and Node.js. From the repository root:
+
+```bash
+dotnet build Core/Core.csproj --nologo -p:PlaywrightPlatform=linux
+dotnet build Modules/TorBox/TorBox.csproj --nologo -p:PlaywrightPlatform=linux
+dotnet build Modules/Telemetry/Telemetry.csproj --nologo -p:PlaywrightPlatform=linux
+dotnet build Modules/LogUserRequest-Lite/LogUserRequest.csproj --nologo -p:PlaywrightPlatform=linux
+python3 tools/check-torbox.py
+node --check Modules/TorBox/plugin.js
+node --check Online/plugin.js
 ```
 
-При таком разрешении модуль доступен авторизованным пользователям Lampac с их собственными ключами TorBox. Общая авторизация Lampac остаётся обязательной; клиент не может разрешить себе обход входа в Lampac. `allowed_uids` из приватного файла в этом режиме не участвует в проверке. Изменение флага проверяется при каждом API-запросе и обращении внешнего плеера; перевод в `false` блокирует существующие клиентские плейлисты. Интерфейс обновляет состояние при открытии настроек; сведения об источнике для обычных клиентских запросов могут кешироваться до 15 секунд, но сервер применяет актуальный флаг сразу.
+`check-torbox.py` creates a temporary console project outside the solution,
+compiles the actual `manifest.tree` production sources unchanged with a check
+entrypoint, and runs in a disposable working directory. No permanent test csproj
+or test framework packages are added. Test-only interception of existing
+HttpClient handlers prevents real runtime network calls and mutations.
 
-### Личные настройки в Lampa
+The 75 behavior checks cover credential policies/no fallback, UID checks, cache
+normalization/bounds/coalescing/isolation/cooldown/cancellation, deletion and
+metadata confirmation, relay policy/lifetimes/revocation and log redaction. They
+do not validate physical players or operator proxy settings.
 
-После разрешения клиентского режима откройте **Настройки → TorBox**. Строка **Источник настроек** показывает режим, установленный сервером. Доступны:
-
-1. **API-ключ TorBox** — обязательный личный ключ для просмотра своей библиотеки.
-2. **Разрешённые Lampac UID** — необязательный список через запятую. Пустой список означает текущий аккаунт Lampac; непустой список дополнительно ограничивает использование личной конфигурации. Это не замена общей авторизации Lampac.
-3. **Доверенные адреса torrent-файлов** — публичные HTTP/HTTPS origins через запятую, например `https://parser.example`. Пустой список запрещает загрузку torrent-файла по адресу; magnet/хэш продолжают работать.
-4. **Адрес JacRed** — собственный полный публичный HTTP/HTTPS адрес. Без него поиск в балансере недоступен; просмотр уже имеющихся файлов в «Мой TorBox» не требует JacRed.
-5. **API-ключ JacRed** — личный ключ выбранного парсера. Пустое значение остаётся пустым; серверный ключ никогда не используется.
-
-Сохраните пустую строку, чтобы удалить локальное значение поля. Ни одно пустое поле не получает значения из приватного файла. Данные клиента хранятся в IndexedDB отдельно для сервера Lampac и аккаунта Lampa; старый локальный ключ TorBox сохраняется. Запрет клиентского режима не удаляет личные данные с устройства, но прекращает их использование. Повторное разрешение возвращает сохранённые значения; прежний локальный выбор источника игнорируется.
-
-Значения обоих ключей скрыты в строках настроек, не сохраняются в истории ввода или `localStorage`. Клиентский режим раскрывает личные ключи браузеру и владельцу сервера Lampac, который выполняет запросы. Используйте доверенное устройство, сервер и HTTPS. Временные ссылки воспроизведения, выданные TorBox, также могут содержать токены доступа; не публикуйте их.
-
-Клиент может указать собственные публичные адреса независимо от значений файла. Запросы к таким JacRed/torrent-адресам выполняются с проверкой DNS-результатов и подключением к проверенному публичному IP. Локальные, частные, служебные адреса и перенаправления к ним запрещены. Пользовательские parser-запросы не используют автоматически заданный HTTP-прокси; обычные серверные запросы TorBox и файловый режим сохраняют прежнее поведение.
-
-Если `torbox-private.json` отсутствует, отдельный `torbox-settings.json` с правами `0600` может содержать явное `"allow_client_credentials": true`. Отсутствие обоих файлов, повреждение или недоступность существующего приватного файла не включает клиентский режим. Значение флага должно быть JSON boolean, не строка `"true"`.
-
-Ключ TorBox передаётся только в `X-TorBox-Key`, дополнительные личные настройки — в `X-TorBox-Config` (JSON UTF-8/base64; base64 не является шифрованием). `X-TorBox-Mode` отражает решение сервера; изменить это решение заголовком нельзя. Заголовки добавляются только к маршрутам TorBox на настроенном сервере Lampac. Внешний Android-плеер получает временный плейлист без личных ключей в адресах; выбранный режим хранится на сервере. После изменения серверного флага откройте балансер заново.
-
-## Airlock в «Мой TorBox»
-
-Откройте меню карточки долгим нажатием. Для раздачи с выключенным Airlock доступно **Enable Airlock**, с включённым — **Disable Airlock**. Состояние также видно на карточке и в пункте «Сведения о раздаче». Если API не сообщил состояние, переключатель не показывается. Изменение Airlock доступно для готовой кешированной раздачи; решение о доступности и свободном месте принимает TorBox.
-
-Над списком показывается **Airlocked Data: осталось … GB · занято … GB из … GB**. Объём берётся из общей статистики аккаунта `user/stats`: `airlock_storage_limit` минус `airlocked_downloads`, с нижней границей ноль. Это квота всего аккаунта, включая Airlock других типов загрузок, а не сумма текущей страницы торрентов. Числа отображаются с двумя знаками после запятой, GB здесь — 1024³ байт, как в двоичном форматировании размеров интерфейса. Статистика запрашивается один раз при входе и после принятого переключения, без запросов при каждом открытии меню. Если статистика недоступна, список продолжает работать, вместо выдуманного остатка отображается сообщение о недоступности сведений.
-
-Сервер проверяет принадлежность ID текущему аккаунту TorBox и область ключа из загруженного списка, затем отправляет `PUT torrents/edittorrent` только с `torrent_id` и `airlocked`. Имя, теги и дополнительные хэши не отправляются на перезапись. Повторное включение уже включённого состояния безопасно: лишний PUT не выполняется. После изменения сервер перепроверяет состояние через свежий `mylist`; неподтверждённый результат не выдаётся за успешное переключение. Клиент обновляет карточку после подтверждения и запрашивает новую квоту. Защита от повторного нажатия предотвращает параллельные запросы из одного раздела.
-
-Airlock использует текущий разрешённый источник ключа — файл или личные данные клиента. Смена аккаунта/ключа требует обновить список перед изменением старой карточки. **Disable Airlock** возвращает обычные правила хранения TorBox; удаление раздачи выполняется отдельным пунктом меню с подтверждением. Описание функции: [TorBox AirLock](https://support.torbox.app/en/articles/15417147-torbox-airlock), [API TorBox](https://api-docs.torbox.app/).
-
-## Удаление
-
-Удаляется только явно выбранная раздача (`all=false`). Пользователь подтверждает действие в меню. После принятия команды карточка скрывается без промежуточного уведомления. Клиент планирует проверку через минуту и сохраняет очередь на устройстве. Успешное удаление подтверждается без уведомления. Если раздача осталась либо проверка недоступна, интерфейс предлагает проверить личный кабинет TorBox и удалить вручную. Предупреждение откладывается до следующего входа в «Мой TorBox», если раздел закрыт или открыт плеер. Очередь изолирована по аккаунту; привязка фильма очищается только после подтверждённого исчезновения раздачи. Ответ TorBox `404 / ITEM_NOT_FOUND` подтверждает отсутствие раздачи. Сохранённое предупреждение перед показом перепроверяется; потерянный при перезапуске сервера билет допускает только повторную проверку наличия по ID и совпадающей области аккаунта. При полностью закрытом приложении проверка продолжится после следующего входа в раздел.
-
-## Файлы
-
-- `Controller.cs` — авторизация, поиск, библиотека и добавление только готового кешированного контента.
-- `Online.cs` — выбор файла, качества, аудио/субтитров и запуск потока.
-- `Series.cs` — сортировка серий, продолжение просмотра и компактные ответы по версии списка.
-- `External.cs` — подготовка полного плейлиста для внешнего плеера с ограниченными временными ссылками.
-- `Infuse.cs` — пакетная выдача ссылок для InfuseSaver.
-- `Inventory.cs` — пагинация и кэш списка аккаунта.
-- `Delete.cs` — подтверждение удаления и повторная проверка результата.
-- `Airlock.cs` — квота Airlock и проверенное переключение состояния выбранной раздачи.
-- `plugin.js` — интерфейс Lampa.
-- `manifest.json` — состав модуля.
-
-## Проверки
-
-- Исправления ожидания и повторов кеша: 46 серверных и 62 Chromium-проверки, включая отмену первого клиента общего запроса, медленный ответ, некорректный `cached`, один отложенный повтор retryable/429, выбор другой раздачи и отмену таймера при уходе с экрана. Live-запрос на каждом из двух экземпляров: 100 уникальных хешей (31 из аккаунта и 69 синтетических), 31 попадание и 69 промахов. Это проверка размера пакета, а не гарантия задержки TorBox.
-- Проверка подготовки публикации и исправлений кеша/фильтров: 41 изолированная серверная проверка, 30 Chromium-проверок штатного торрентного компонента и 18 проверок публикуемого `Online/plugin.js`. Проверены единичные metadata, пустые ответы парсера, повторная/поздняя установка адаптера, восстановление навигации, остановка батчей при ошибке, нормализация base32, объединение запросов, пауза после 429 и вызов серийного адаптера. Воспроизведение и операции записи TorBox подменены заглушками. На двух рабочих экземплярах проверены компиляция, библиотека и реальные отметки кеша только чтением; исполняемые исходники TorBox совпадают с проверенным форком. Полная сборка текущей upstream-архитектуры этим не подтверждается.
-
-- Исправление заполнения кеша подборок: 11 изолированных серверных проверок, включая 30 одновременных поисков, лимит 512 вариантов, удаление целых подборок, сохранение недавно использованных меню и истечение срока. На рабочем Lampac проверены поиск, библиотека, загрузка модуля и защита изменений при обновлении; пользователь подтвердил работу исправления.
-
-- Исходная доработка надёжности на Lampac 1.87.8: 203 серверные и 91 браузерная проверка.
-- Ограничение просмотра одним сезоном: 21 серверная проверка и проверка клиентской логики плейлистов.
-- Карточки с кадрами: 25 серверных и 9 браузерных проверок; исправление первой страницы расширило набор до 27 серверных и 10 браузерных проверок (первые страницы фильмов/сериалов и последующие меню).
-- Отложенное удаление: 34 серверные и 22 браузерные проверки; последующее исправление ложного предупреждения расширило этот набор до 42 серверных и 26 браузерных проверок. Это последовательные наборы проверок, а не суммарное число уникальных сценариев.
-- Фактический ответ TorBox для отсутствующего ID (`HTTP 404`, `success:true`, `ITEM_NOT_FOUND`) проверен запросом только для чтения; исправленный маршрут Lampac подтвердил отсутствие раздачи. Реальные раздачи в этих автоматических проверках не удалялись.
-- Оператор подтвердил успешное воспроизведение на физических устройствах Android и в Infuse.
-- Серверный флаг клиентского режима проверен отдельно на изолированном Lampac 1.87.8: 111 серверных и 26 Chromium-проверок включают оба значения флага, отсутствие подстановок, настоящую форму Lampa, навигацию пультом, хранение данных, запрет внутренних адресов, передачу заголовков и внешний плейлист без клиентских заголовков. Рабочая установка для этой проверки не менялась.
-- Airlock расширил серверный набор до 150 проверок; 22 отдельных проверки Chromium покрывают реальный раздел библиотеки, меню, квоту, подтверждённые и неподтверждённые результаты, ошибки и поздние ответы. Все мутации выполнялись на mock TorBox. Названия полей и формула квоты сверены с публичным кодом панели TorBox и запросами статистики реального аккаунта только для чтения; рабочий Lampac и реальные состояния Airlock не менялись.
-- Подготовленная версия установлена на рабочем Lampac 1.87.8: проверены загрузка модуля, библиотека, реальная квота Airlock, скрипты и запрет неразрешённого клиентского режима. На сервере сохранён режим `allow_client_credentials: false`. Данные ключей и библиотеки сохранены, реальные состояния Airlock при проверке не переключались.
-
-Проверки выполнялись на рабочем экземпляре и изолированных стендах Lampac 1.87.8. Перед переносом на другую версию повторите сборку и проверки в целевой среде. Для карточек с кадрами, передачи клиентской конфигурации, автопродолжения серий и выбранного потока внешнему плееру нужны соответствующие изменения `Online/plugin.js` (включая хуки `torbox_series` и `torbox_stream`); после обновления перезагрузите Lampa.
+`.github/workflows/test-torbox.yml` builds the host/module/request loggers, runs
+these checks and JS syntax checks, and uploads `torbox-check-logs`. It uses
+read-only `pull_request` permissions and no secrets. Fork runs may require normal
+maintainer approval. It can also be run manually with `workflow_dispatch`.

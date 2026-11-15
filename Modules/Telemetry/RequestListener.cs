@@ -132,7 +132,7 @@ public static class RequestListener
                 UserAgent = userAgent
             };
 
-            var fullUri = path + httpContext.Request.QueryString;
+            var fullUri = Shared.Services.SensitiveLog.Redact(path + httpContext.Request.QueryString);
             if (fullUri.Length > 2048) fullUri = fullUri[..2048];
 
             string balancer = "";
