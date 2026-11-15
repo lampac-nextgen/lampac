@@ -263,8 +263,30 @@ public partial class TorBoxController
         Check("anonymous revocation denied",Result(await Controller(anonymous:true,key:testKey).RevokeExternal()).Status==403);
         await Controller(uid:"other",key:testKey).RevokeExternal();
         Check("revocation cannot affect other UID",!externalPlaylists.IsEmpty);
-        var revoked=Result(await Controller(key:"changed-offline-placeholder-key").RevokeExternal());
-        Check("owner can revoke after personal key change",(int?)revoked.Json["revoked"]==1 && externalPlaylists.IsEmpty && cp.ClientKey==null && cp.Revoked);
+        var second=new ExternalPlaylist{Uid=testUid,ClientKey=testKey,State=new SeriesSession()};
+        second.Streams[0]=(DateTime.UtcNow.AddSeconds(30),"https://stream.example/second");
+        externalPlaylists["offline-second-ticket"]=second;
+        cp.Streams[0]=(DateTime.UtcNow.AddSeconds(30),"https://stream.example/offline");
+        await cp.State.Gate.WaitAsync();
+        Task<ActionResult> revoke=null,queuedRelay=null;
+        bool completedWhileBusy=false,allRevokedWhileBusy=false;
+        try {
+            // Hold the actual relay gate; no scheduling delay is used to assume revocation.
+            queuedRelay=Controller(anonymous:true).ExternalSeriesStream(access3,0);
+            Check("relay is queued behind the playlist gate",!queuedRelay.IsCompleted);
+            revoke=Controller(key:"changed-offline-placeholder-key").RevokeExternal();
+            completedWhileBusy=await Task.WhenAny(revoke,Task.Delay(2000))==revoke;
+            allRevokedWhileBusy=cp.Revoked && second.Revoked && externalPlaylists.IsEmpty &&
+                cp.ClientKey==null && second.ClientKey==null && cp.Streams.IsEmpty && second.Streams.IsEmpty;
+            // Simulate a resolver finishing after the initial cache cleanup.
+            cp.Streams[0]=(DateTime.UtcNow.AddSeconds(30),"https://stream.example/late");
+        }finally{cp.State.Gate.Release();}
+        var revoked=Result(await revoke);
+        Check("revocation completes while a relay gate is held",completedWhileBusy);
+        Check("busy playlist cannot delay other playlist revocation or credential cleanup",allRevokedWhileBusy);
+        Check("owner can revoke after personal key change",(int?)revoked.Json["revoked"]==2);
+        Check("queued relay rechecks revocation after acquiring gate",Result(await queuedRelay).Status==410);
+        Check("revoked relay leaves no cached stream URLs",cp.Streams.IsEmpty);
         Check("revoked bearer returns gone",Result(await Controller().ExternalSeriesStream(access3,0)).Status==410);
         Check("external checks used no upstream network",mock.Calls==0);
     }

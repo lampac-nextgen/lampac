@@ -77,17 +77,16 @@ public partial class TorBoxController
     });
     // Authenticated account-wide revocation also works after changing a personal key.
     [HttpPost,Route("torbox/series/external/revoke"),RequestSizeLimit(4096)]
-    public Task<ActionResult> RevokeExternal() => Guard(async(c,key)=>{
-        int revoked=0;
-        foreach(var entry in externalPlaylists.Where(x=>x.Value.Uid==requestInfo.user_uid).ToArray()) {
-            var playlist=entry.Value;
-            playlist.Revoked=true;
+    public Task<ActionResult> RevokeExternal() => Guard((c,key)=>{
+        var entries=externalPlaylists.Where(x=>x.Value.Uid==requestInfo.user_uid).ToArray();
+        // Invalidate every selected ticket before cleanup; a busy relay cannot delay others.
+        foreach(var entry in entries)entry.Value.Revoked=true;
+        foreach(var entry in entries) {
             externalPlaylists.TryRemove(entry.Key,out _);
-            await playlist.State.Gate.WaitAsync();
-            try { playlist.ClientKey=null;playlist.Streams.Clear();revoked++; }
-            finally { playlist.State.Gate.Release(); }
+            entry.Value.ClientKey=null;
+            entry.Value.Streams.Clear();
         }
-        return Payload(new{success=true,revoked});
+        return Task.FromResult(Payload(new{success=true,revoked=entries.Length}));
     });
     [HttpGet,HttpHead,AllowAnonymous,Route("torbox/series/external/{access}/{index:int}.m3u8")]
     public async Task<ActionResult> ExternalSeriesStream(string access,int index) {
@@ -114,7 +113,7 @@ public partial class TorBoxController
                 }
                 if(external.Revoked)return Error(410,"Плейлист отозван");
                 return Redirect(cached.Url);
-            }finally{external.State.Gate.Release();}
+            }finally{if(external.Revoked)external.Streams.Clear();external.State.Gate.Release();}
         }
         catch(TorBoxException ex){return Error(ex.Status,ex.Message);}
         catch(System.Net.Http.HttpRequestException){return Error(502,"Не удалось связаться с TorBox");}

@@ -165,7 +165,10 @@ Use **Settings → TorBox → Revoke external playlists** (the existing UI is lo
 or authenticated `POST /torbox/series/external/revoke` to revoke all external
 playlists for the current Lampac UID. This also works with the account's new
 personal key. It does not affect other UIDs. Revocation removes sessions, clears
-stored keys/stream caches and blocks subsequent resolution. A TorBox URL already
+stored keys/stream caches and blocks subsequent resolution without waiting for
+active relays. A relay holding the playlist lock cannot delay revocation of other
+selected playlists; queued relays recheck revocation after acquiring the lock.
+A TorBox URL already
 delivered to a player, or an already opened stream, cannot be revoked by Lampac.
 
 ## Logs and Referer
