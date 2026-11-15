@@ -200,7 +200,9 @@ the browser. Use HTTPS and configure JacRed/proxy logging as described above.
 
 ## Reproducible checks
 
-Requires .NET SDK 10, Python 3 and Node.js. From the repository root:
+Requires .NET SDK 10, Python 3 and Node.js. `global.json` keeps builds on SDK 10
+even when a newer major SDK is preinstalled. The temporary check project inherits
+the same policy. From the repository root:
 
 ```bash
 dotnet build Core/Core.csproj --nologo -p:PlaywrightPlatform=linux

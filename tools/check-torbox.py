@@ -7,6 +7,7 @@ project references the real Shared project and compiles the dynamic manifest tre
 import json
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import tempfile
 from xml.sax.saxutils import quoteattr
@@ -18,6 +19,9 @@ assert set(sources) == {p.name for p in module.glob('*.cs')}, 'manifest/source m
 dotnet = os.environ.get('DOTNET', 'dotnet')
 with tempfile.TemporaryDirectory(prefix='lampac-torbox-checks-') as directory:
     work = Path(directory)
+    # A runner may also have a newer SDK installed. Keep the temporary project
+    # on the same SDK policy as the repository, despite its separate CWD.
+    shutil.copy2(root / 'global.json', work / 'global.json')
     items = ''.join(f'<Compile Include={quoteattr(str(module / name))} />' for name in sources)
     items += f'<Compile Include={quoteattr(str(root / "tools/torbox/Checks.cs"))} />'
     shared = quoteattr(str(root / 'Shared/Shared.csproj'))

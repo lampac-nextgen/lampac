@@ -12,6 +12,7 @@ on:
       - 'tools/check-torbox.py'
       - 'tools/torbox/**'
       - 'Directory.*'
+      - 'global.json'
       - '.github/workflows/test-torbox.yml'
   workflow_dispatch:
 
@@ -32,6 +33,7 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p check-logs
+          dotnet --version | tee check-logs/dotnet-sdk.log
           for project in Core/Core.csproj Modules/TorBox/TorBox.csproj Modules/Telemetry/Telemetry.csproj Modules/LogUserRequest-Lite/LogUserRequest.csproj; do
             dotnet build "$project" --nologo -p:PlaywrightPlatform=linux 2>&1 | tee "check-logs/$(basename "$project").log"
           done
