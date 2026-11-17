@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using Newtonsoft.Json;
+using Shared;
 using Shared.Models.Base;
 using TelegramAuth.Models;
 
@@ -25,33 +26,49 @@ namespace TelegramAuth.Services
                 return;
 
             var row = BuildAccsUserForDevice(deviceUid.Trim(), tgUser, expiresLocal, groupAdmin, groupUser);
+            var accsdb = CoreInit.conf?.accsdb;
             lock (FileLock)
-            {
-                EnsureFileExistsUnlocked();
-
-                var list = ReadListUnlocked();
-                var key = row.id;
-                var found = list.FirstOrDefault(u =>
-                    (u.id != null && string.Equals(u.id, key, StringComparison.OrdinalIgnoreCase)) ||
-                    (u.ids != null && u.ids.Any(id => string.Equals(id, key, StringComparison.OrdinalIgnoreCase))));
-
-                if (found != null)
+                lock (accsdb ?? FileLock)
                 {
-                    found.id = row.id;
-                    found.ids = row.ids ?? new List<string>();
-                    found.IsPasswd = row.IsPasswd;
-                    found.expires = row.expires;
-                    found.group = row.group;
-                    found.ban = row.ban;
-                    found.ban_msg = row.ban_msg;
-                    found.comment = row.comment;
-                    found.@params = row.@params;
-                }
-                else
-                    list.Add(row);
+                    EnsureFileExistsUnlocked();
 
-                WriteListUnlocked(list);
-            }
+                    var list = ReadListUnlocked();
+                    var key = row.id;
+                    var found = list.FirstOrDefault(u =>
+                        (u.id != null && string.Equals(u.id, key, StringComparison.OrdinalIgnoreCase)) ||
+                        (u.ids != null && u.ids.Any(id => string.Equals(id, key, StringComparison.OrdinalIgnoreCase))));
+
+                    if (found != null)
+                        ApplyUser(found, row);
+                    else
+                        list.Add(row);
+
+                    WriteListUnlocked(list);
+
+                    if (accsdb?.users != null)
+                    {
+                        var cached = accsdb.findUser(row.id);
+                        if (cached != null)
+                            ApplyUser(cached, row);
+                        else
+                            accsdb.users.Add(row);
+                        accsdb.RefreshUsers();
+                    }
+                }
+        }
+
+        static void ApplyUser(AccsUser target, AccsUser row)
+        {
+            target.id = row.id;
+            target.ids = row.ids ?? new List<string>();
+            target.IsPasswd = row.IsPasswd;
+            target.bypass_accsdb = row.bypass_accsdb;
+            target.expires = row.expires;
+            target.group = row.group;
+            target.ban = row.ban;
+            target.ban_msg = row.ban_msg;
+            target.comment = row.comment;
+            target.@params = row.@params;
         }
 
         static AccsUser BuildAccsUserForDevice(string deviceUid, TelegramUserRecord tg, DateTime expiresLocal, int groupAdmin, int groupUser)
@@ -104,24 +121,45 @@ namespace TelegramAuth.Services
                 return;
 
             var key = deviceUid.Trim();
+            var accsdb = CoreInit.conf?.accsdb;
             lock (FileLock)
-            {
-                if (!File.Exists(Path.GetFullPath(UsersFileName)))
-                    return;
-
-                var list = ReadListUnlocked();
-                foreach (var u in list)
+                lock (accsdb ?? FileLock)
                 {
-                    if (u.ids != null && u.ids.Count > 0)
-                        u.ids = u.ids.Where(id => !string.Equals(id, key, StringComparison.OrdinalIgnoreCase)).ToList();
+                    var list = ReadListUnlocked();
+                    foreach (var u in list)
+                    {
+                        if (u.ids != null && u.ids.Count > 0)
+                            u.ids = u.ids.Where(id => !string.Equals(id, key, StringComparison.OrdinalIgnoreCase)).ToList();
+                    }
+
+                    // Core merges users.json without pruning missing rows. Keep a revoked row
+                    // so both its poller and a restart retain the revocation; upsert permits rebind.
+                    var revoked = list.FirstOrDefault(u => string.Equals(u.id, key, StringComparison.OrdinalIgnoreCase));
+                    if (revoked == null)
+                    {
+                        revoked = new AccsUser { id = key };
+                        list.Add(revoked);
+                    }
+                    revoked.ban = true;
+                    revoked.bypass_accsdb = false;
+                    revoked.ids = new List<string>();
+                    WriteListUnlocked(list);
+
+                    if (accsdb?.users != null)
+                    {
+                        foreach (var user in accsdb.users)
+                        {
+                            if (string.Equals(user.id, key, StringComparison.OrdinalIgnoreCase))
+                            {
+                                user.ban = true;
+                                user.bypass_accsdb = false;
+                            }
+                            if (user.ids != null)
+                                user.ids = user.ids.Where(id => !string.Equals(id, key, StringComparison.OrdinalIgnoreCase)).ToList();
+                        }
+                        accsdb.RefreshUsers();
+                    }
                 }
-
-                list = list
-                    .Where(u => u.id == null || !string.Equals(u.id, key, StringComparison.OrdinalIgnoreCase))
-                    .ToList();
-
-                WriteListUnlocked(list);
-            }
         }
 
         static void EnsureFileExistsUnlocked()

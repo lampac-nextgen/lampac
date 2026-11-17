@@ -2,6 +2,7 @@
   "enable": true,
   "tree": [
     "Controller.cs",
+    "MediaAccess.cs",
     "ModInit.cs",
     "ModuleConf.cs"
   ]

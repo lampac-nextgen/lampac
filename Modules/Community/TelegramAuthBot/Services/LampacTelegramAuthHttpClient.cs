@@ -13,15 +13,16 @@ namespace TelegramAuthBot.Services
         public const string MutationsSecretHeaderName = "X-TelegramAuth-Mutations-Secret";
 
         readonly HttpClient _http;
-        readonly string _mutationsSecret;
 
         public LampacTelegramAuthHttpClient(TelegramAuthBotConf conf)
         {
             var baseUrl = (conf.lampac_base_url ?? "").Trim().TrimEnd('/') + "/";
-            _http = new HttpClient { BaseAddress = new Uri(baseUrl, UriKind.Absolute) };
+            _http = new HttpClient(new HttpClientHandler { AllowAutoRedirect = false }) { BaseAddress = new Uri(baseUrl, UriKind.Absolute) };
             _http.Timeout = TimeSpan.FromSeconds(Math.Max(1, conf.request_timeout_sec));
             _http.DefaultRequestHeaders.Accept.Add(new MediaTypeWithQualityHeaderValue("application/json"));
-            _mutationsSecret = conf.mutations_api_secret?.Trim() ?? "";
+            var secret = conf.mutations_api_secret?.Trim();
+            if (!string.IsNullOrEmpty(secret))
+                _http.DefaultRequestHeaders.TryAddWithoutValidation(MutationsSecretHeaderName, secret);
         }
 
         public void Dispose() => _http.Dispose();
@@ -53,7 +54,6 @@ namespace TelegramAuthBot.Services
             var payload = new { uid, telegramId, username };
             using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
             using var req = new HttpRequestMessage(HttpMethod.Post, "tg/auth/bind/complete") { Content = content };
-            AddMutationsSecret(req);
             using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
             var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
@@ -99,7 +99,6 @@ namespace TelegramAuthBot.Services
         public async Task<(bool ok, string detail)> ImportLegacyAsync(CancellationToken ct)
         {
             using var req = new HttpRequestMessage(HttpMethod.Post, "tg/auth/import");
-            AddMutationsSecret(req);
             using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
             var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             return resp.IsSuccessStatusCode ? (true, body) : (false, body);
@@ -108,7 +107,6 @@ namespace TelegramAuthBot.Services
         public async Task<(bool ok, string detail)> CleanupDevicesAsync(CancellationToken ct)
         {
             using var req = new HttpRequestMessage(HttpMethod.Post, "tg/auth/devices/cleanup");
-            AddMutationsSecret(req);
             using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
             var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             return resp.IsSuccessStatusCode ? (true, body) : (false, body);
@@ -117,7 +115,6 @@ namespace TelegramAuthBot.Services
         public async Task<AdminUsersListResponseDto> GetAdminUsersAsync(CancellationToken ct)
         {
             using var req = new HttpRequestMessage(HttpMethod.Get, "tg/auth/admin/users");
-            AddMutationsSecret(req);
             using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
             var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
@@ -130,7 +127,6 @@ namespace TelegramAuthBot.Services
             var payload = new { telegramId, disabled };
             using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
             using var req = new HttpRequestMessage(HttpMethod.Post, "tg/auth/admin/user/disabled") { Content = content };
-            AddMutationsSecret(req);
             using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
             var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             return resp.IsSuccessStatusCode ? (true, body) : (false, body);
@@ -141,7 +137,6 @@ namespace TelegramAuthBot.Services
             var payload = new { telegramId, approve };
             using var content = new StringContent(JsonConvert.SerializeObject(payload), Encoding.UTF8, "application/json");
             using var req = new HttpRequestMessage(HttpMethod.Post, "tg/auth/admin/user/pending") { Content = content };
-            AddMutationsSecret(req);
             using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
             var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             return resp.IsSuccessStatusCode ? (true, body) : (false, body);
@@ -151,7 +146,6 @@ namespace TelegramAuthBot.Services
         {
             var path = "tg/auth/admin/user?" + Uri.EscapeDataString("telegramId") + "=" + Uri.EscapeDataString(telegramId);
             using var req = new HttpRequestMessage(HttpMethod.Get, path);
-            AddMutationsSecret(req);
             using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
             var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             if (!resp.IsSuccessStatusCode)
@@ -170,16 +164,10 @@ namespace TelegramAuthBot.Services
         {
             using var content = new StringContent(patch.ToString(Formatting.None), Encoding.UTF8, "application/json");
             using var req = new HttpRequestMessage(HttpMethod.Post, "tg/auth/admin/user/patch") { Content = content };
-            AddMutationsSecret(req);
             using var resp = await _http.SendAsync(req, ct).ConfigureAwait(false);
             var body = await resp.Content.ReadAsStringAsync(ct).ConfigureAwait(false);
             return resp.IsSuccessStatusCode ? (true, body) : (false, body);
         }
 
-        void AddMutationsSecret(HttpRequestMessage req)
-        {
-            if (_mutationsSecret.Length > 0)
-                req.Headers.TryAddWithoutValidation(MutationsSecretHeaderName, _mutationsSecret);
-        }
     }
 }
