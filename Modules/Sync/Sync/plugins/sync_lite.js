@@ -51,10 +51,10 @@
 
     if (path == 'sync_view') {
       ['file_view', 'torrents_view'].forEach(function(field) {
-        value[field] = localStorage.getItem(field) || '';
+        value[field] = Lampa.Storage.value(field, '');
       });
     } else {
-      value.favorite = localStorage.getItem('favorite') || '';
+      value.favorite = Lampa.Storage.value('favorite', '');
     }
 
     $.ajax({

@@ -81,7 +81,7 @@
 
 
         function buildLocalBookmarkSetPayload() {
-          var raw = localStorage.getItem('favorite');
+          var raw = Lampa.Storage.value('favorite', '');
           if (!raw) return [];
 
           var fav;
@@ -113,8 +113,10 @@
 
         var CATEGORIES = ['history','like','watch','wath','book','look','viewed','scheduled','continued','thrown'];
 
+        // Не localStorage напрямую: при переполнении Lampa переносит ключ в резерв IndexedDB
+        // и удаляет из localStorage, а дельта, наложенная на пустой объект, затирает все закладки.
         function readFavorite() {
-          var raw = localStorage.getItem('favorite');
+          var raw = Lampa.Storage.value('favorite', '');
           if (!raw) return {};
           try { return JSON.parse(raw) || {}; } catch (e) { return {}; }
         }
@@ -391,7 +393,7 @@
 
         function setFavoriteField(ob) {
           // Прочитать текущее значение
-          var raw = localStorage.getItem('favorite');
+          var raw = Lampa.Storage.value('favorite', '');
           var fav = {};
           if (raw) {
             try {
