@@ -37,7 +37,7 @@
     <PackageVersion Include="Serilog.AspNetCore" Version="10.0.0" />
     <PackageVersion Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageVersion Include="SQLitePCLRaw.bundle_e_sqlite3" Version="2.1.14" />
-    <PackageVersion Include="System.Management" Version="10.0.14" />
+    <PackageVersion Include="System.Management" Version="11.0.0" />
     <PackageVersion Include="Telegram.Bot" Version="22.10.3.3" />
     <PackageVersion Include="YamlDotNet" Version="18.1.0" />
     <PackageVersion Include="YoutubeExplode" Version="6.6.3" />
