@@ -581,7 +581,7 @@ public class Startup
                                 }
                             }
 
-                            await _exceptionLogWriter.WriteAsync(sb.ToString());
+                            await _exceptionLogWriter.WriteAsync(SensitiveLog.Redact(sb.ToString()));
                         }
                         catch (Exception ex)
                         {
@@ -590,7 +590,7 @@ public class Startup
                     }
                     else
                     {
-                        Console.WriteLine(sb.ToString());
+                        Console.WriteLine(SensitiveLog.Redact(sb.ToString()));
                     }
                 }
                 finally

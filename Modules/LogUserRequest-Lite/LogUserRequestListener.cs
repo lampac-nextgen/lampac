@@ -133,7 +133,7 @@ public static class LogUserRequestListener
             var header = new HeaderModelSql { Headers = new Dictionary<string, string>() };
             header.Id = "";
 
-            var fullUri = path + httpContext.Request.QueryString;
+            var fullUri = Shared.Services.SensitiveLog.Redact(path + httpContext.Request.QueryString);
             if (fullUri.Length > 2048) fullUri = fullUri[..2048];
 
             string balancer = "";
