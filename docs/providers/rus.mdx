@@ -9,7 +9,7 @@ keywords: ["OnlineRUS", "Collaps", "Mirage", "HDVB", "Gencit", "Kinoteatrkg", "R
 
 | Провайдер | Примечания |
 | --- | --- |
-| `Aladin` | Балансер на базе источника Alloha |
+| `Aladin` | Балансер Alloha; нативный TLS/HTTP2 (`libcurl-impersonate`, Chrome 133) |
 | `CDNvideohub` | CDN |
 | `Collaps` | Обычный и DASH |
 | `FanCDN` | fanserial |
@@ -33,6 +33,16 @@ keywords: ["OnlineRUS", "Collaps", "Mirage", "HDVB", "Gencit", "Kinoteatrkg", "R
 | `VideoDB` / `Videoseed` | `/lite/videodb`, `/lite/videoseed`; у `VideoDB` `httptimeout` 30 |
 | `VkMovie` | ВКонтакте |
 | `Zetflix` / `ZetflixDB` | Два варианта; `ZetflixDB` идёт через `VideoDB` и требует cookie `wd_approval` в `VideoDB.headers` или Chrome в `VideoDB.cdp` |
+
+## Aladin
+
+`Aladin` — балансер Alloha. Страница плеера, `/bnsi`, WebSocket-телеметрия и CDN запрашиваются нативным `libcurl-impersonate` с отпечатком Chrome 133; обычный `HttpClient` для этого источника не используется.
+
+- `token` — вебмастерский токен балансера.
+- `authorizations` — публичный bearer CDN из плеера; значение по умолчанию есть в модуле, можно переопределить в `init.conf`.
+- `Accepts-Controls` — edge hash из WebSocket, не путать с `token`.
+
+Установщик и Docker-образ кладут `libcurl-impersonate` 2.3.2 в `native/libcurl-impersonate.so.4.8.0`. Это C/BoringSSL-библиотека без Go runtime, поэтому она работает вместе с Chrome/Playwright. Параметры, маршруты и тайминги — в [README модуля](https://github.com/lampac-nextgen/lampac/blob/main/Modules/OnlineRUS/Aladin/README.md).
 
 ## FlixCDN
 
