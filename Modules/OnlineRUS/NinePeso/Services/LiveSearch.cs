@@ -30,6 +30,7 @@ internal sealed class LiveSearchCandidate
     public string PagePath { get; set; }
     public string Title { get; set; }
     public string Year { get; set; }
+    public string Poster { get; set; }
 }
 
 internal sealed class LiveMetadataException : Exception
@@ -48,15 +49,45 @@ internal static class LiveSearch
         @"/CDN/ChangeCDN\.php\?[^""'<>\s]+",
         RegexOptions.IgnoreCase | RegexOptions.Compiled);
 
-    static string PageTitle(string html)
+    static string PageMeta(string html, string property)
     {
         if (string.IsNullOrWhiteSpace(html))
             return null;
 
         var meta = HtmlParse.Nodes(html, "//meta[@property]")
             .FirstOrDefault(node => string.Equals(node.SelectText(null, "property"),
-                "og:title", StringComparison.OrdinalIgnoreCase));
+                property, StringComparison.OrdinalIgnoreCase));
         return WebUtility.HtmlDecode(meta?.SelectText(null, "content"));
+    }
+
+    static string PageTitle(string html) => PageMeta(html, "og:title");
+
+    static string PagePoster(string html, Uri pageUri)
+    {
+        string image = PageMeta(html, "og:image");
+        if (string.IsNullOrWhiteSpace(image) ||
+            !Uri.TryCreate(pageUri, image, out var uri) ||
+            uri.Scheme != Uri.UriSchemeHttps || uri.Port != 443 ||
+            !string.IsNullOrEmpty(uri.UserInfo) ||
+            (uri.Host != "tartugi.name" &&
+             !uri.Host.EndsWith(".tartugi.name", StringComparison.OrdinalIgnoreCase)))
+            return null;
+
+        return uri.AbsoluteUri;
+    }
+
+    // DLE appends a single year or a comma-separated list of season years.
+    // Strip only this suffix; numbers that belong to the title must survive.
+    static (string Title, int[] Years) ParsePageTitle(string name)
+    {
+        name = (name ?? "").Trim();
+        Match suffix = Regex.Match(name, @"\s*\((\d{4}(?:\s*,\s*\d{4})*)\)\s*$");
+        if (!suffix.Success)
+            return (name, Array.Empty<int>());
+
+        int[] years = suffix.Groups[1].Value.Split(',')
+            .Select(value => int.Parse(value.Trim())).ToArray();
+        return (name.Substring(0, suffix.Index).Trim(), years);
     }
 
     // When neither external ID can be used, the player can only be found
@@ -176,11 +207,13 @@ internal static class LiveSearch
 
                 // Candidates are suggestions only. Never auto-select a work
                 // whose external ID, title or year is not confirmed.
+                var pageTitle = ParsePageTitle(foundTitle);
                 candidates.Add(new LiveSearchCandidate
                 {
                     PagePath = pageUri.AbsolutePath,
-                    Title = foundTitle,
-                    Year = PageYear(foundTitle)
+                    Title = pageTitle.Title,
+                    Year = pageTitle.Years.Length > 0 ? pageTitle.Years[0].ToString() : null,
+                    Poster = PagePoster(pageHtml, pageUri)
                 });
             }
         }
@@ -231,11 +264,13 @@ internal static class LiveSearch
                 if (string.IsNullOrEmpty(PlayerEmbed(response)))
                     return null;
 
+                var pageTitle = ParsePageTitle(foundTitle);
                 return new LiveSearchCandidate
                 {
                     PagePath = pageUri.AbsolutePath,
-                    Title = Regex.Replace(foundTitle, @"\s*\(\d{4}\)\s*$", "").Trim(),
-                    Year = PageYear(foundTitle)
+                    Title = pageTitle.Title,
+                    Year = pageTitle.Years.Length > 0 ? pageTitle.Years[0].ToString() : null,
+                    Poster = PagePoster(pageHtml, pageUri)
                 };
             }
             catch (Exception ex)
@@ -368,12 +403,12 @@ internal static class LiveSearch
         if (string.IsNullOrWhiteSpace(pageName) || !playerLink.Success)
             return null;
 
-        string cleanTitle = Regex.Replace(pageName, @"\s*\(\d{4}\)\s*$", "").Trim();
-        int.TryParse(PageYear(pageName), out int releaseYear);
+        var pageTitle = ParsePageTitle(pageName);
         string ajaxPath = WebUtility.HtmlDecode(playerLink.Value);
         return await FindFromCdn(
             new Uri(siteUri, ajaxPath).AbsoluteUri, api, siteHttp, apiHttp,
-            null, 0, cleanTitle, null, releaseYear, serial, pageUri.AbsoluteUri);
+            null, 0, pageTitle.Title, null, pageTitle.Years.FirstOrDefault(),
+            serial, pageUri.AbsoluteUri, selectedYears: pageTitle.Years);
     }
 
     static bool IsSafePagePath(string path)
@@ -383,13 +418,11 @@ internal static class LiveSearch
            !path.Contains("%2f", StringComparison.OrdinalIgnoreCase) &&
            !path.Contains("%5c", StringComparison.OrdinalIgnoreCase);
 
-    static string PageYear(string name)
-        => Regex.Match(name ?? "", @"\((\d{4})\)\s*$").Groups[1].Value;
-
     static async Task<LiveLookupResult> FindFromCdn(
         string url, string api, HttpHydra siteHttp, HttpHydra apiHttp,
         string imdb, long kp, string title,
-        string originalTitle, int year, bool? expectedSerial, string referer)
+        string originalTitle, int year, bool? expectedSerial, string referer,
+        int[] selectedYears = null)
     {
         string response = await SiteGet(url, referer, true, siteHttp);
         string embed = PlayerEmbed(response);
@@ -414,7 +447,7 @@ internal static class LiveSearch
             return null;
         }
 
-        if (!MatchesMetadata(data, imdb, kp, title, originalTitle, year))
+        if (!MatchesMetadata(data, imdb, kp, title, originalTitle, year, selectedYears))
             return null;
 
         if (serial && data["seasons"] is not JArray)
@@ -470,7 +503,7 @@ internal static class LiveSearch
     // or release year. If no ID matches, reject conflicting known IDs and use
     // an exact normalized title (optionally ending in a release year).
     static bool MatchesMetadata(JObject data, string imdb, long kp,
-        string title, string originalTitle, int year)
+        string title, string originalTitle, int year, int[] selectedYears = null)
     {
         string siteKp = data["kinopoisk_id"]?.ToString();
         string siteImdb = data.Value<string>("imdb_id");
@@ -491,9 +524,18 @@ internal static class LiveSearch
             !SameTitle(data.Value<string>("orig_title"), originalTitle))
             return false;
 
-        return year <= 0 ||
-            !int.TryParse(LiveRecord.ReleaseYear(data["released"]?.ToString()), out int released) ||
-            released == year;
+        if (year <= 0 ||
+            !int.TryParse(LiveRecord.ReleaseYear(data["released"]?.ToString()), out int released))
+            return true;
+
+        // The selected page already supplies a specific player and exact title.
+        // Accept its listed season years and a one-year release-date discrepancy.
+        // Ordinary ID/title lookups retain their existing strict year check.
+        if (selectedYears != null && selectedYears.Length > 0)
+            return selectedYears.Contains(released) ||
+                Math.Abs((long)released - selectedYears[0]) == 1;
+
+        return released == year;
     }
 
     private static async Task<JObject> LoadMetadata(
@@ -542,8 +584,8 @@ internal static class LiveSearch
         if (allowPrefix)
             return SearchNameTo.StartsWith(found, b);
 
-        const string releaseSuffix = @"\s*\(\d{4}\)\s*$";
-        return Regex.IsMatch(found, releaseSuffix) &&
-            SearchNameTo.Equals(Regex.Replace(found, releaseSuffix, ""), b);
+        var pageTitle = ParsePageTitle(found);
+        return pageTitle.Years.Length > 0 &&
+            SearchNameTo.Equals(pageTitle.Title, b);
     }
 }

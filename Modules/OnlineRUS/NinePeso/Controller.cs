@@ -246,7 +246,8 @@ public class NinePesoController : BaseOnlineController
 
                 string link = $"{baseHost}/lite/ninepeso?site_page=" +
                     $"{HttpUtility.UrlEncode(candidate.PagePath)}&serial={type}";
-                similar.Append(candidate.Title, candidate.Year, string.Empty, link);
+                similar.Append(candidate.Title, candidate.Year, string.Empty, link,
+                    PosterApi.Size(candidate.Poster));
             }
         }
 
