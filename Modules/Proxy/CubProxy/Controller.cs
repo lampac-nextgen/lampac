@@ -267,8 +267,13 @@ public class CubProxyController : BaseController
                 {
                     foreach (var header in HttpContext.Request.Headers)
                     {
-                        if (header.Key.Equals("cookie", StringComparison.OrdinalIgnoreCase) ||
-                            header.Key.Equals("user-agent", StringComparison.OrdinalIgnoreCase))
+                        if (header.Key.Equals("cookie", StringComparison.OrdinalIgnoreCase))
+                        {
+                            string cookie = ForeignCookies(header.Value.ToString());
+                            if (cookie.Length > 0)
+                                headers.Add(new(header.Key, cookie));
+                        }
+                        else if (header.Key.Equals("user-agent", StringComparison.OrdinalIgnoreCase))
                             headers.Add(new(header.Key, header.Value.ToString()));
                     }
                 }
@@ -349,6 +354,18 @@ public class CubProxyController : BaseController
         "accept-encoding"
     }.ToFrozenSet(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>
+    /// Cookie самого сервера (пароль админки, ключ kit, сессия журнала запросов) стороннему сервису не передаются.
+    /// </summary>
+    static string ForeignCookies(string cookie)
+    {
+        return string.Join("; ", cookie
+            .Split(';', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(c => !c.StartsWith("accspasswd=", StringComparison.OrdinalIgnoreCase)
+                     && !c.StartsWith("aesgcmkey=", StringComparison.OrdinalIgnoreCase)
+                     && !c.StartsWith("loguser_session=", StringComparison.OrdinalIgnoreCase)));
+    }
+
     static HttpRequestMessage CreateProxyHttpRequest(HttpContext context, Uri uri, RequestModel requestInfo)
     {
         var request = context.Request;
@@ -372,6 +389,15 @@ public class CubProxyController : BaseController
 
             if (key.StartsWith("x-", StringComparison.OrdinalIgnoreCase))
                 continue;
+
+            if (key.Equals("cookie", StringComparison.OrdinalIgnoreCase))
+            {
+                string cookie = ForeignCookies(header.Value.ToString());
+                if (cookie.Length > 0)
+                    requestMessage.Headers.TryAddWithoutValidation(header.Key, cookie);
+
+                continue;
+            }
 
             if (!requestMessage.Headers.TryAddWithoutValidation(header.Key, header.Value.ToArray()))
             {
