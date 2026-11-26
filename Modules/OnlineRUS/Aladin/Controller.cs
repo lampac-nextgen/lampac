@@ -305,7 +305,7 @@ public class AladinController : BaseOnlineController<ModuleConf>
                     if (init.reserve && hlsSource.reserve != null && hlsSource.reserve.TryGetValue(q.Key, out string reserve))
                         file += " or " + reserve;
 
-                    streams.Add(new StreamQualityDto(HostStreamProxy(file, headers: streamHeaders, force_streamproxy: true), $"{q.Key}p"));
+                    streams.Add(new StreamQualityDto(HostStreamProxy(file, headers: streamHeaders, force_streamproxy: true, forceMd5: true), $"{q.Key}p"));
                 }
             }
         }
