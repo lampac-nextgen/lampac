@@ -15,7 +15,7 @@
     <PackageVersion Include="HtmlAgilityPack" Version="1.13.1" />
     <PackageVersion Include="HtmlKit" Version="1.3.0" />
     <PackageVersion Include="Jint" Version="4.18.0" />
-    <PackageVersion Include="MaxMind.GeoIP2" Version="6.1.0" />
+    <PackageVersion Include="MaxMind.GeoIP2" Version="6.2.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp" Version="5.12.0" />
     <PackageVersion Include="Microsoft.CodeAnalysis.CSharp.Scripting" Version="5.12.0" />
     <!-- EF Core Design restores these at 5.0.0, which demands CSharp/Common = 5.0.0. Pin to the
@@ -28,7 +28,7 @@
     <PackageVersion Include="Microsoft.EntityFrameworkCore.Sqlite" Version="10.0.15" />
     <PackageVersion Include="Microsoft.Extensions.DependencyModel" Version="10.0.15" />
     <PackageVersion Include="Microsoft.IO.RecyclableMemoryStream" Version="4.0.1" />
-    <PackageVersion Include="Microsoft.Playwright" Version="1.64.1" />
+    <PackageVersion Include="Microsoft.Playwright" Version="1.65.1" />
     <PackageVersion Include="ModelContextProtocol.AspNetCore" Version="2.3.0" />
     <PackageVersion Include="MonoTorrent" Version="3.0.2" />
     <PackageVersion Include="NetVips" Version="3.2.0" />
