@@ -1284,7 +1284,7 @@
                 object.movie.original_title,
                 element.voice_name
               ].join('')
-              : object.movie.original_title + element.voice_name
+              : object.movie.original_title + (element.translate || element.voice_name)
           );
           var data = {
             hash_timeline: hash_timeline,
