@@ -377,6 +377,9 @@ public class PiTor : BaseOnlineController
         if (!init.enable)
             return StatusCode(403);
 
+        if (!IsInfoHash(id))
+            return StatusCode(400);
+
         if (NoAccessGroup(init, out string error_msg))
             return Json(new { accsdb = true, msg = error_msg });
 
@@ -430,7 +433,7 @@ public class PiTor : BaseOnlineController
             var ts = gots();
 
             string magnet = $"magnet:?xt=urn:btih:{id}&" + tr;
-            string hash = await Http.Post($"{ts.host}/torrents", "{\"action\":\"add\",\"link\":\"" + magnet + "\",\"title\":\"\",\"poster\":\"\",\"save_to_db\":false}", timeoutSeconds: 15, headers: ts.header);
+            string hash = await Http.Post($"{ts.host}/torrents", AddTorrentBody(magnet), timeoutSeconds: 15, headers: ts.header);
             if (hash == null)
                 return e.Fail("torrents:add");
 
@@ -473,6 +476,12 @@ public class PiTor : BaseOnlineController
     }
 
 
+    static bool IsInfoHash(string id)
+        => id != null && Regex.IsMatch(id, "^[a-zA-Z0-9]{32,64}$");
+
+    static string AddTorrentBody(string magnet)
+        => JsonSerializer.Serialize(new { action = "add", link = magnet, title = "", poster = "", save_to_db = false });
+
     [HttpGet]
     [Route("lite/pidtor/s{id}")]
     async public Task<ActionResult> Stream(string id, short tsid = -1)
@@ -480,6 +489,9 @@ public class PiTor : BaseOnlineController
         var init = ModInit.conf;
         if (!init.enable)
             return StatusCode(403);
+
+        if (!IsInfoHash(id))
+            return StatusCode(400);
 
         if (NoAccessGroup(init, out string error_msg))
             return Json(new { accsdb = true, msg = error_msg });
@@ -523,7 +535,7 @@ public class PiTor : BaseOnlineController
             {
                 hash = await Http.Post(
                     $"{host}/torrents",
-                    "{\"action\":\"add\",\"link\":\"" + magnet + "\",\"title\":\"\",\"poster\":\"\",\"save_to_db\":false}",
+                    AddTorrentBody(magnet),
                     timeoutSeconds: 15,
                     headers: HeadersModel.Init(
                         addheaders,
