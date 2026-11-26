@@ -1,26 +1,12 @@
 using System;
-using System.Collections.Concurrent;
 using System.Collections.Generic;
-using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
-using System.Text.RegularExpressions;
-using System.Threading.Tasks;
-using Jint;
 
 namespace Aladin;
 
 public static class AladinBorth
 {
-    private static readonly ConcurrentDictionary<string, string> _scriptRunnerCache = new();
-    private static readonly HttpClient _httpClient = new(new HttpClientHandler
-    {
-        AutomaticDecompression = System.Net.DecompressionMethods.All
-    })
-    {
-        Timeout = TimeSpan.FromSeconds(15)
-    };
-
     #region Fast Static Algorithm
     private static string Zy(string zj, bool zr = false)
     {
@@ -138,129 +124,27 @@ public static class AladinBorth
         return zx;
     }
 
-    public static string Compute(string viewporti)
+    public static string Compute(string viewporti, string fingerprintHash = null)
     {
         if (string.IsNullOrEmpty(viewporti)) return string.Empty;
         string transformed = Z9(Zz(Zy(viewporti, false), false), false);
-        return FormatBorth(transformed);
+        return FormatBorth(transformed, fingerprintHash);
     }
     #endregion
 
-    #region Dynamic JS Runtime Extraction
-    public static async Task<string> ComputeFromHtmlAsync(string playerHtml, string viewporti, string linkHost)
+    private static string FormatBorth(string transformed, string fingerprintHash = null)
     {
-        if (string.IsNullOrEmpty(playerHtml) || string.IsNullOrEmpty(viewporti))
-            return Compute(viewporti);
-
-        try
+        string fp = fingerprintHash;
+        if (string.IsNullOrEmpty(fp) || fp.Length != 64)
         {
-            var match = Regex.Match(playerHtml, @"<script[^>]+src=[""']([^""']*(?:app|player|build)[^""']*\.js)[""']", RegexOptions.IgnoreCase);
-            if (!match.Success)
-                return Compute(viewporti);
-
-            string scriptPath = match.Groups[1].Value;
-            string scriptUrl = scriptPath.StartsWith("http")
-                ? scriptPath
-                : $"{linkHost.TrimEnd('/')}/{scriptPath.TrimStart('/')}";
-
-            if (!_scriptRunnerCache.TryGetValue(scriptUrl, out string runnerCode))
-            {
-                using var req = new HttpRequestMessage(HttpMethod.Get, scriptUrl);
-                req.Headers.Add("User-Agent", "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36");
-                req.Headers.Add("Referer", $"{linkHost.TrimEnd('/')}/");
-
-                using var resp = await _httpClient.SendAsync(req);
-                if (!resp.IsSuccessStatusCode)
-                    return Compute(viewporti);
-
-                string jsContent = await resp.Content.ReadAsStringAsync();
-                runnerCode = ExtractRunnerFromJs(jsContent);
-                if (!string.IsNullOrEmpty(runnerCode))
-                {
-                    _scriptRunnerCache.TryAdd(scriptUrl, runnerCode);
-                }
-            }
-
-            if (!string.IsNullOrEmpty(runnerCode))
-            {
-                string transformed = ExecuteRunnerWithJint(runnerCode, viewporti);
-                if (!string.IsNullOrEmpty(transformed))
-                    return FormatBorth(transformed);
-            }
-        }
-        catch
-        {
-            // Fall back to compiled static implementation
+            using var sha = SHA256.Create();
+            byte[] hashBytes = sha.ComputeHash(Encoding.UTF8.GetBytes("fingerprint-alloha"));
+            var sb = new StringBuilder(64);
+            foreach (byte b in hashBytes)
+                sb.Append(b.ToString("x2"));
+            fp = sb.ToString();
         }
 
-        return Compute(viewporti);
+        return $"{fp}|{transformed}";
     }
-
-    private static string ExtractRunnerFromJs(string appJs)
-    {
-        try
-        {
-            var a0zMatch = Regex.Match(appJs, @"function\s+a0Z\(\)\{[\s\S]+?return\s+a0Z\(\);\s*\}");
-            if (!a0zMatch.Success) return null;
-
-            var rotMatch = Regex.Match(appJs, @"\(function\([a-zA-Z0-9_$,\s]+\)\{[\s\S]+?\}\(a0Z,[\s\S]+?\)\);");
-            if (!rotMatch.Success) return null;
-
-            var zyMatch = Regex.Match(appJs, @"function\s+zy\(zj\)\{[\s\S]+?return\s+zR&&q0[\s\S]+?q0;\}");
-            var zZMatch = Regex.Match(appJs, @"function\s+zZ\(zj\)\{[\s\S]+?return\s+zR&&zk[\s\S]+?zk;\}");
-            var z9Match = Regex.Match(appJs, @"function\s+z9\(zj\)\{[\s\S]+?return\s+zR&&zx[\s\S]+?zx;\}");
-
-            if (!zyMatch.Success || !zZMatch.Success || !z9Match.Success)
-                return null;
-
-            var sb = new StringBuilder();
-            sb.AppendLine(a0zMatch.Value);
-            sb.AppendLine(rotMatch.Value);
-            sb.AppendLine(@"
-                function a0y(Z,y){Z=Z-(0x1a5c+0x5d*-0x23+-0xbf7);var M=a0Z();var a=M[Z];return a;}
-                function a0qw(Z,y){return a0y(Z- -0x195,y);}
-                function qk(Z,y){return a0qw(Z-0x314,y);}
-            ");
-            sb.AppendLine(zyMatch.Value);
-            sb.AppendLine(zZMatch.Value);
-            sb.AppendLine(z9Match.Value);
-            sb.AppendLine(@"
-                function computeBorth(vp) {
-                    return z9(zZ(zy(vp, false), false), false);
-                }
-            ");
-
-            return sb.ToString();
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static string ExecuteRunnerWithJint(string runnerCode, string viewporti)
-    {
-        try
-        {
-            var engine = new Engine();
-            engine.Execute(runnerCode);
-            var result = engine.Invoke("computeBorth", viewporti);
-            return result?.AsString();
-        }
-        catch
-        {
-            return null;
-        }
-    }
-
-    private static string FormatBorth(string transformed)
-    {
-        using var sha = SHA256.Create();
-        byte[] hashBytes = sha.ComputeHash(Encoding.UTF8.GetBytes("fingerprint-alloha"));
-        var sb = new StringBuilder(64);
-        foreach (byte b in hashBytes)
-            sb.Append(b.ToString("x2"));
-        return $"{sb}|{transformed}";
-    }
-    #endregion
 }
