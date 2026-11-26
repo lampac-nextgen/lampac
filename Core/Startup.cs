@@ -262,7 +262,7 @@ public class Startup
         services.AddSingleton<IActionDescriptorChangeProvider>(DynamicActionDescriptorChangeProvider.Instance);
         services.AddSingleton(DynamicActionDescriptorChangeProvider.Instance);
 
-        IMvcBuilder mvcBuilder = services.AddControllersWithViews();
+        IMvcBuilder mvcBuilder = services.AddControllersWithViews(o => o.Conventions.Add(new InheritedHelpersConvention()));
 
         mvcBuilder.AddJsonOptions(options =>
         {
