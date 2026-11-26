@@ -34,7 +34,7 @@ public static class KitInvoke
             {
                 try
                 {
-                    if (IsScriptSink(prop.Name))
+                    if (IsScriptSink(prop.Name) || IsLocalOverride(prop.Name, prop.Value))
                         continue;
 
                     var propertyInfo = typeof(T).GetProperty(prop.Name, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase);
@@ -74,9 +74,10 @@ public static class KitInvoke
             update<string>("scheme", v => init.scheme = v);
             update<bool>("hls", v => init.hls = v);
 
-            update<string>("overridehost", v => init.overridehost = v);
+            if (!IsLocalOverride("overridehost", userconf["overridehost"]))
+                update<string>("overridehost", v => init.overridehost = v);
             update<string>("overridepasswd", v => init.overridepasswd = v);
-            if (userconf.ContainsKey("overridehosts"))
+            if (userconf.ContainsKey("overridehosts") && !IsLocalOverride("overridehosts", userconf["overridehosts"]))
                 init.overridehosts = userconf["overridehosts"].ToObject<string[]>();
 
             if (userconf.ContainsKey("headers"))
@@ -132,6 +133,17 @@ public static class KitInvoke
             return func.Invoke(userconf, init, userconf.ToObject<T>());
 
         return init;
+    }
+
+    /// <summary>
+    /// {localhost} в overridehost — это запрос сервера к самому себе с внутренним секретом.
+    /// Задавать его может оператор в init.conf, но не пользователь в своём kit-конфиге.
+    /// </summary>
+    static bool IsLocalOverride(string name, JToken value)
+    {
+        return value != null
+            && name.StartsWith("overridehost", StringComparison.OrdinalIgnoreCase)
+            && value.ToString().Contains("{localhost}", StringComparison.OrdinalIgnoreCase);
     }
 
     static bool IsScriptSink(string name)

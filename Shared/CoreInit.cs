@@ -22,6 +22,26 @@ public class CoreInit
     #region static
     public static string rootPasswd;
 
+    static string _selfPasswd;
+
+    /// <summary>
+    /// Секрет для запросов сервера к самому себе (заголовок lcrqpasswd).
+    /// Выводится из rootPasswd, но в админку с ним не войти и исходный пароль из него не восстановить.
+    /// </summary>
+    public static string selfPasswd => _selfPasswd ??= Convert.ToHexString(
+        System.Security.Cryptography.HMACSHA256.HashData(System.Text.Encoding.UTF8.GetBytes(rootPasswd ?? string.Empty), "lampac-internal-call"u8));
+
+    public static bool IsLocalPasswd(string value)
+    {
+        if (string.IsNullOrEmpty(value))
+            return false;
+
+        byte[] v = System.Text.Encoding.UTF8.GetBytes(value);
+
+        return System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(v, System.Text.Encoding.UTF8.GetBytes(rootPasswd ?? string.Empty))
+            || System.Security.Cryptography.CryptographicOperations.FixedTimeEquals(v, System.Text.Encoding.UTF8.GetBytes(selfPasswd));
+    }
+
     public static readonly HashSet<string> CompressionMimeTypes
         = ResponseCompressionDefaults.MimeTypes.Concat(["image/svg+xml"]).ToHashSet(StringComparer.OrdinalIgnoreCase);
 
@@ -228,7 +248,7 @@ public class CoreInit
 
         // xhost is only for internal self-requests; clients must not control the advertised host
         if (httpContext.Request.Headers.TryGetValue("xhost", out var xhost) && xhost.Count > 0
-            && httpContext.Request.Headers.TryGetValue("lcrqpasswd", out var passwd) && passwd.Count > 0 && passwd[0] == rootPasswd)
+            && httpContext.Request.Headers.TryGetValue("lcrqpasswd", out var passwd) && passwd.Count > 0 && IsLocalPasswd(passwd[0]))
             return $"{scheme}://{Regex.Replace(xhost, "^https?://", "")}{suffix}";
 
         return $"{scheme}://{httpContext.Request.Host.Value}{suffix}";

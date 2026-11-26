@@ -1007,15 +1007,20 @@ public class OnlineApiController : BaseController
     {
         try
         {
-            string srq = uri.Replace("{localhost}", $"http://{CoreInit.conf.listen.localhost}:{CoreInit.conf.listen.port}");
+            // секрет уходит только на собственный адрес: {localhost} обязан стоять в начале, а не где-то внутри url
+            bool isSelf = uri.StartsWith("{localhost}/", StringComparison.Ordinal);
 
-            var header = uri.Contains("{localhost}")
-                ? HeadersModel.Init(("xhost", host), ("xscheme", HttpContext.Request.Scheme), ("lcrqpasswd", CoreInit.rootPasswd))
+            string srq = isSelf
+                ? $"http://{CoreInit.conf.listen.localhost}:{CoreInit.conf.listen.port}{uri.Substring("{localhost}".Length)}"
+                : uri;
+
+            var header = isSelf
+                ? HeadersModel.Init(("xhost", host), ("xscheme", HttpContext.Request.Scheme), ("lcrqpasswd", CoreInit.selfPasswd))
                 : null;
 
             bool work = false, rch = false;
 
-            string checkuri = $"{srq}{(srq.Contains("?") ? "&" : "?")}id={HttpUtility.UrlEncode(id)}&imdb_id={imdb_id}&kinopoisk_id={kinopoisk_id}&tmdb_id={tmdb_id}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&original_language={original_language}&source={source}&year={year}&serial={serial}&anime={anime}&rchtype={rchtype}&checksearch=true";
+            string checkuri = $"{srq}{(srq.Contains("?") ? "&" : "?")}id={HttpUtility.UrlEncode(id)}&imdb_id={HttpUtility.UrlEncode(imdb_id)}&kinopoisk_id={kinopoisk_id}&tmdb_id={tmdb_id}&title={HttpUtility.UrlEncode(title)}&original_title={HttpUtility.UrlEncode(original_title)}&original_language={HttpUtility.UrlEncode(original_language)}&source={HttpUtility.UrlEncode(source)}&year={year}&serial={serial}&anime={anime}&rchtype={HttpUtility.UrlEncode(rchtype)}&checksearch=true";
 
             // кэш результата по источнику: ключ — проверочный запрос + личность пользователя (те же поля, что добавляет AccsDbInvk.Args),
             // без nws_id — он меняется при каждом переподключении rch и обнулял бы кэш

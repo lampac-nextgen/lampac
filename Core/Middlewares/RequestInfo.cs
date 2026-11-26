@@ -58,7 +58,7 @@ public class RequestInfo
             if (!CoreInit.conf.WAF.allowExternalIpAccessToLocalRequest && CoreInit.conf.listen.localhost == "127.0.0.1" && !IsLocalIp)
                 return httpContext.Response.WriteAsync("listen.localhost");
 
-            if (_localpasswd[0] != CoreInit.rootPasswd)
+            if (!CoreInit.IsLocalPasswd(_localpasswd[0]))
                 return httpContext.Response.WriteAsync("error passwd");
 
             IsLocalRequest = true;

@@ -102,7 +102,7 @@ internal sealed class TranscodingService
         Directory.CreateDirectory(outputDir);
 
         #region ffprobe
-        var ffprobe = await Http.Get<JObject>($"http://{CoreInit.conf.listen.localhost}:{CoreInit.conf.listen.port}/ffprobe?media={HttpUtility.UrlEncode(request.src)}", headers: HeadersModel.Init("lcrqpasswd", CoreInit.rootPasswd));
+        var ffprobe = await Http.Get<JObject>($"http://{CoreInit.conf.listen.localhost}:{CoreInit.conf.listen.port}/ffprobe?media={HttpUtility.UrlEncode(request.src)}", headers: HeadersModel.Init("lcrqpasswd", CoreInit.selfPasswd));
 
         if (ffprobe == null || !ffprobe.ContainsKey("format"))
             return (null!, "ffprobe");

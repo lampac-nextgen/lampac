@@ -1164,7 +1164,7 @@ public class DLNAController : BaseController
 
                     #region tmdb
                     string cat = serial ? "tv" : "movie";
-                    var header = HeadersModel.Init("lcrqpasswd", CoreInit.rootPasswd);
+                    var header = HeadersModel.Init("lcrqpasswd", CoreInit.selfPasswd);
                     string json = await Http.Get($"http://{CoreInit.conf.listen.localhost}:{CoreInit.conf.listen.port}/tmdb/api/3/{cat}/{id}?api_key={CoreInit.conf.cub.api_key}&language=ru", timeoutSeconds: 20, headers: header);
 
                     if (string.IsNullOrEmpty(json))
