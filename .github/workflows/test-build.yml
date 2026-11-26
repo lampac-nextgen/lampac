@@ -32,3 +32,6 @@ jobs:
 
       - name: Build
         run: dotnet build NextGen.slnx --configuration Release --verbosity minimal
+
+      - name: GStreamer MP4 slice regression
+        run: dotnet run --file Modules/GStreamer/tests/mp4-slices.cs --configuration Release

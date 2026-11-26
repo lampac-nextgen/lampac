@@ -1427,7 +1427,7 @@ public sealed class Mp4BoxReader : IDisposable
                 globalSample = runEnd;
             }
 
-            if (result.Runs.Count == 0 || result.Duration == 0 || result.Payload.Length == 0)
+            if (result.Runs.Count == 0)
                 throw new InvalidDataException("Audio split produced an empty fragment.");
 
             result.StartsWithSync = result.Runs[0].StartsWithSync;
@@ -1484,7 +1484,9 @@ public sealed class Mp4BoxReader : IDisposable
             result.DataSize = checked(result.DataSize + sample.Size);
         }
 
-        if (result.Samples.Count == 0 || result.Duration == 0 || result.DataSize == 0)
+        // A nonempty slice of a validated run can have zero duration or size
+        // (for example, mp4mux's final AAC sample). Preserve its samples as-is.
+        if (result.Samples.Count == 0)
             throw new InvalidDataException("Empty trun slice.");
 
         result.StartsWithSync = IsSyncSample(result.Samples[0].Flags);
