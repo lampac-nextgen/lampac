@@ -25,7 +25,7 @@ public class ModInit : IModuleLoaded
 
     static bool IsShutdown;
 
-    public static string tspass = CrypTo.md5(DateTime.Now.ToBinary().ToString());
+    public static string tspass = Convert.ToHexString(System.Security.Cryptography.RandomNumberGenerator.GetBytes(16)).ToLowerInvariant();
 
     public static string homedir;
 
