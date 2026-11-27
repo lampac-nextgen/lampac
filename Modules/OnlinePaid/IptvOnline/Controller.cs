@@ -34,7 +34,7 @@ public class IptvOnlineController : BaseOnlineController
         }
         else
         {
-            html = "Добавьте в init.conf<br><br>\"IptvOnline\": {<br>&nbsp;&nbsp;\"enable\": true,<br>&nbsp;&nbsp;\"token\": \"" + $"{ID}:{KEY}" + "\"<br>}";
+            html = "Добавьте в init.conf<br><br>\"IptvOnline\": {<br>&nbsp;&nbsp;\"enable\": true,<br>&nbsp;&nbsp;\"token\": \"" + HttpUtility.HtmlEncode($"{ID}:{KEY}") + "\"<br>}";
         }
 
         return ContentTo(html);

@@ -62,9 +62,9 @@ public class VoKino : BaseOnlineController<ModuleConf>
 
             string authToken = token_request.Value<string>("authToken");
             if (string.IsNullOrEmpty(authToken))
-                return ContentTo(token_request.Value<string>("error") ?? "Не удалось получить токен");
+                return ContentTo(HttpUtility.HtmlEncode(token_request.Value<string>("error")) ?? "Не удалось получить токен");
 
-            html = "Добавьте в init.conf<br><br>\"VoKino\": {<br>&nbsp;&nbsp;\"enable\": true,<br>&nbsp;&nbsp;\"token\": \"" + authToken + "\"<br>}";
+            html = "Добавьте в init.conf<br><br>\"VoKino\": {<br>&nbsp;&nbsp;\"enable\": true,<br>&nbsp;&nbsp;\"token\": \"" + HttpUtility.HtmlEncode(authToken) + "\"<br>}";
         }
 
         return ContentTo(html);

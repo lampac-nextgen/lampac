@@ -54,10 +54,10 @@ public class KinoPubController : BaseOnlineController<ModuleConf>
                 return ContentTo($"нет доступа к {init.host}");
 
             string html = "1. Откройте <a href='https://kino.pub/device'>https://kino.pub/device</a> <br>";
-            html += $"2. Введите код активации <b>{token_request.Value<string>("user_code")}</b><br>";
+            html += $"2. Введите код активации <b>{System.Web.HttpUtility.HtmlEncode(token_request.Value<string>("user_code"))}</b><br>";
             html += $"3. Когда на сайте kino.pub появится \"Ожидание устройства\", нажмите кнопку \"Проверить активацию\" которая ниже</b>";
 
-            html += $"<br><br><a href='/lite/kinopubpro?code={token_request.Value<string>("code")}&name={name}'><button>Проверить активацию</button></a>";
+            html += $"<br><br><a href='/lite/kinopubpro?code={System.Web.HttpUtility.UrlEncode(token_request.Value<string>("code"))}&name={System.Web.HttpUtility.UrlEncode(name)}'><button>Проверить активацию</button></a>";
 
             return ContentTo(html);
         }
