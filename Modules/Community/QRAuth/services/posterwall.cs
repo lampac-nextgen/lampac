@@ -165,7 +165,7 @@ namespace QRAuth.Services
                 }
 
                 string host = $"http://{CoreInit.conf.listen.localhost}:{CoreInit.conf.listen.port}";
-                var headers = HeadersModel.Init(("lcrqpasswd", CoreInit.rootPasswd));
+                var headers = HeadersModel.Init(("lcrqpasswd", CoreInit.selfPasswd));
                 var posters = new List<string>();
                 bool answered = false;
 

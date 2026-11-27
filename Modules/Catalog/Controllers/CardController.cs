@@ -283,7 +283,7 @@ public class CardController : BaseController
         if (jo.ContainsKey("imdb_id"))
             imdbId = jo["imdb_id"]?.ToString();
 
-        var header = HeadersModel.Init(("lcrqpasswd", CoreInit.rootPasswd));
+        var header = HeadersModel.Init(("lcrqpasswd", CoreInit.selfPasswd));
 
         long id = 0;
         string cat = string.Empty;
