@@ -66,6 +66,10 @@ public class ProxyImg
 
     async public Task InvokeAsync(HttpContext httpContext)
     {
+        // ответ источника отдаётся с нашего домена: если его откроют как страницу, скрипты в нём не исполняются и cookie домена недоступны.
+        // На загрузку через XHR, <video> и <img> заголовок не влияет.
+        httpContext.Response.Headers.ContentSecurityPolicy = "sandbox";
+
         var init = CoreInit.conf.serverproxy.image;
         if (!init.enable)
         {
